@@ -1,0 +1,7 @@
+{
+    "name": "Game Lib Backend",
+    // Official Microsoft .NET 8 Dev Image (Bookworm/Debian)
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "app",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
+}
