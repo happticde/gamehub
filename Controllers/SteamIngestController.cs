@@ -93,7 +93,7 @@ public class SteamIngestController : ControllerBase
         });
     }
 
-    // GET: api/ingest/steam/CUSA00001_00
+    // GET: api/ingest/steam/10
     [HttpGet("{appId}")]
     public async Task<IActionResult> GetItem(int appId)
     {

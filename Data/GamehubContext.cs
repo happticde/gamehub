@@ -8,4 +8,6 @@ public class GameHubContext : DbContext
 
     public DbSet<PsnRawItem> PsnRawItems => Set<PsnRawItem>();
     public DbSet<SteamRawItem> SteamRawItems => Set<SteamRawItem>();
+    public DbSet<GogRawItem> GogRawItems => Set<GogRawItem>();
+    public DbSet<EpicRawItem> EpicRawItems => Set<EpicRawItem>();
 }
