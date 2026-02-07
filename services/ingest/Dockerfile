@@ -1,11 +1,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY ["GameHub.csproj", "./"]
-RUN dotnet restore "GameHub.csproj"
+COPY ["GameHub.Ingest.csproj", "./"]
+RUN dotnet restore "GameHub.Ingest.csproj"
 
 COPY . .
-RUN dotnet publish "GameHub.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "GameHub.Ingest.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 WORKDIR /app

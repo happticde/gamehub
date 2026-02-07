@@ -1,4 +1,4 @@
-using GameHub.Data;
+using GameHub.Ingest.Data;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);

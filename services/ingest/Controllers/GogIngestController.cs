@@ -1,4 +1,4 @@
-using GameHub.Data;
+using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -6,12 +6,12 @@ using System.Text.Json;
 namespace GameHub.Controllers;
 
 [ApiController]
-[Route("api/ingest/steam")]
-public class SteamIngestController : ControllerBase
+[Route("api/ingest/gog")]
+public class GogIngestController : ControllerBase
 {
     private readonly GameHubContext _db;
 
-    public SteamIngestController(GameHubContext db)
+    public GogIngestController(GameHubContext db)
     {
         _db = db;
     }
@@ -24,29 +24,29 @@ public class SteamIngestController : ControllerBase
 
         foreach (var gameJson in rawGames)
         {
-            // Steam returns 'appid' (int)
-            if (!gameJson.TryGetProperty("appid", out var appIdProp)) continue;
-            int appId = appIdProp.GetInt32();
+            // GOG API usually returns 'id' (int/long)
+            if (!gameJson.TryGetProperty("id", out var idProp)) continue;
+            long gameId = idProp.GetInt64();
 
-            string? name = null;
-            if (gameJson.TryGetProperty("name", out var nameProp)) name = nameProp.GetString();
+            string? title = null;
+            if (gameJson.TryGetProperty("title", out var tProp)) title = tProp.GetString();
 
-            var existing = await _db.SteamRawItems.FirstOrDefaultAsync(x => x.AppId == appId);
+            var existing = await _db.GogRawItems.FirstOrDefaultAsync(x => x.GameId == gameId);
             string jsonString = gameJson.ToString();
 
             if (existing != null)
             {
                 existing.RawJson = jsonString;
-                existing.Name = name ?? existing.Name;
+                existing.Title = title ?? existing.Title;
                 existing.LastUpdated = DateTime.UtcNow;
                 updated++;
             }
             else
             {
-                _db.SteamRawItems.Add(new SteamRawItem
+                _db.GogRawItems.Add(new GogRawItem
                 {
-                    AppId = appId,
-                    Name = name,
+                    GameId = gameId,
+                    Title = title,
                     RawJson = jsonString,
                     LastUpdated = DateTime.UtcNow
                 });
@@ -58,7 +58,8 @@ public class SteamIngestController : ControllerBase
         return Ok(new { Added = added, Updated = updated });
     }
 
-    // GET: api/ingest/steam?page=1&pageSize=50
+
+    // GET: api/ingest/gog?page=1&pageSize=50
     [HttpGet]
     public async Task<IActionResult> ListItems([FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
@@ -66,7 +67,7 @@ public class SteamIngestController : ControllerBase
         if (pageSize > 100) pageSize = 100;
         if (page < 1) page = 1;
 
-        var query = _db.SteamRawItems.AsNoTracking();
+        var query = _db.GogRawItems.AsNoTracking();
 
         var totalCount = await query.CountAsync();
 
@@ -77,8 +78,8 @@ public class SteamIngestController : ControllerBase
             .Select(x => new
             {
                 x.Id,
-                x.AppId,
-                x.Name,
+                x.GameId,
+                x.Title,
                 // Do NOT return the massive RawJson blob in the list view
                 x.LastUpdated
             })
@@ -93,16 +94,16 @@ public class SteamIngestController : ControllerBase
         });
     }
 
-    // GET: api/ingest/steam/10
-    [HttpGet("{appId}")]
-    public async Task<IActionResult> GetItem(int appId)
+    // GET: api/ingest/gog/10
+    [HttpGet("{gameId}")]
+    public async Task<IActionResult> GetItem(int gameId)
     {
-        var item = await _db.SteamRawItems
+        var item = await _db.GogRawItems
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.AppId == appId);
+            .FirstOrDefaultAsync(x => x.GameId == gameId);
 
         if (item == null)
-            return NotFound(new { Message = $"Steam game with ID {appId} not found" });
+            return NotFound(new { Message = $"Steam game with ID {gameId} not found" });
 
         // For the detail view, we return the parsed JSON object so the frontend can use it easily
         // We deserialize the string back to an object so the API response is clean JSON, not a stringified string.
@@ -120,8 +121,8 @@ public class SteamIngestController : ControllerBase
         return Ok(new
         {
             item.Id,
-            item.AppId,
-            item.Name,
+            item.GameId,
+            item.Title,
             item.LastUpdated,
             RawData = parsedMetadata
         });

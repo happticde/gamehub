@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace GameHub.Data;
+namespace GameHub.Ingest.Data;
 
 public class GameHubContext : DbContext
 {

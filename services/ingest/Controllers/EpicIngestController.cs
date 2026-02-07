@@ -1,4 +1,4 @@
-using GameHub.Data;
+using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -6,12 +6,12 @@ using System.Text.Json;
 namespace GameHub.Controllers;
 
 [ApiController]
-[Route("api/ingest/psn")]
-public class PsnIngestController : ControllerBase
+[Route("api/ingest/epic")]
+public class EpicIngestController : ControllerBase
 {
     private readonly GameHubContext _db;
 
-    public PsnIngestController(GameHubContext db)
+    public EpicIngestController(GameHubContext db)
     {
         _db = db;
     }
@@ -24,41 +24,29 @@ public class PsnIngestController : ControllerBase
 
         foreach (var gameJson in rawGames)
         {
-            // 1. Extract the unique ID safely
-            // PSN usually returns 'titleId' in the library stats
-            string? titleId = null;
-            if (gameJson.TryGetProperty("titleId", out var idProp))
-                titleId = idProp.GetString();
+            // Legendary JSON uses 'app_name' as the unique ID
+            if (!gameJson.TryGetProperty("app_name", out var idProp)) continue;
+            string appName = idProp.GetString()!;
 
-            // Fallback for different API endpoints if needed
-            if (string.IsNullOrEmpty(titleId) && gameJson.TryGetProperty("npTitleId", out var npProp))
-                titleId = npProp.GetString();
+            string? title = null;
+            if (gameJson.TryGetProperty("app_title", out var tProp)) title = tProp.GetString();
 
-            if (string.IsNullOrEmpty(titleId)) continue; // Skip bad data
-
-            string? name = null;
-            if (gameJson.TryGetProperty("name", out var nameProp)) name = nameProp.GetString();
-
-            // 2. IDEMPOTENCY CHECK
-            var existing = await _db.PsnRawItems.FirstOrDefaultAsync(x => x.TitleId == titleId);
-
+            var existing = await _db.EpicRawItems.FirstOrDefaultAsync(x => x.AppName == appName);
             string jsonString = gameJson.ToString();
 
             if (existing != null)
             {
-                // Update existing record
                 existing.RawJson = jsonString;
-                existing.TitleName = name ?? existing.TitleName;
+                existing.Title = title ?? existing.Title;
                 existing.LastUpdated = DateTime.UtcNow;
                 updated++;
             }
             else
             {
-                // Create new record
-                _db.PsnRawItems.Add(new PsnRawItem
+                _db.EpicRawItems.Add(new EpicRawItem
                 {
-                    TitleId = titleId,
-                    TitleName = name,
+                    AppName = appName,
+                    Title = title,
                     RawJson = jsonString,
                     LastUpdated = DateTime.UtcNow
                 });
@@ -67,10 +55,10 @@ public class PsnIngestController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        return Ok(new { Added = added, Updated = updated, TotalProcessed = rawGames.Count });
+        return Ok(new { Added = added, Updated = updated });
     }
 
-    // GET: api/ingest/psn?page=1&pageSize=50
+    // GET: api/ingest/epic?page=1&pageSize=50
     [HttpGet]
     public async Task<IActionResult> ListItems([FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
@@ -78,7 +66,7 @@ public class PsnIngestController : ControllerBase
         if (pageSize > 100) pageSize = 100;
         if (page < 1) page = 1;
 
-        var query = _db.PsnRawItems.AsNoTracking();
+        var query = _db.EpicRawItems.AsNoTracking();
 
         var totalCount = await query.CountAsync();
 
@@ -89,8 +77,8 @@ public class PsnIngestController : ControllerBase
             .Select(x => new
             {
                 x.Id,
-                x.TitleId,
-                x.TitleName,
+                x.AppName,
+                x.Title,
                 // Do NOT return the massive RawJson blob in the list view
                 x.LastUpdated
             })
@@ -105,16 +93,16 @@ public class PsnIngestController : ControllerBase
         });
     }
 
-    // GET: api/ingest/psn/CUSA00001_00
-    [HttpGet("{titleId}")]
-    public async Task<IActionResult> GetItem(string titleId)
+    // GET: api/ingest/epic/10
+    [HttpGet("{gameId}")]
+    public async Task<IActionResult> GetItem(string gameId)
     {
-        var item = await _db.PsnRawItems
+        var item = await _db.EpicRawItems
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.TitleId == titleId);
+            .FirstOrDefaultAsync(x => x.AppName == gameId);
 
         if (item == null)
-            return NotFound(new { Message = $"Game with ID {titleId} not found" });
+            return NotFound(new { Message = $"Steam game with ID {gameId} not found" });
 
         // For the detail view, we return the parsed JSON object so the frontend can use it easily
         // We deserialize the string back to an object so the API response is clean JSON, not a stringified string.
@@ -132,10 +120,11 @@ public class PsnIngestController : ControllerBase
         return Ok(new
         {
             item.Id,
-            item.TitleId,
-            item.TitleName,
+            item.AppName,
+            item.Title,
             item.LastUpdated,
             RawData = parsedMetadata
         });
     }
+
 }
