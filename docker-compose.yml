@@ -1,0 +1,22 @@
+services:
+  ingest:
+    build:
+      context: .
+      dockerfile: services/ingest/Dockerfile
+    ports: ["5000:8080"]
+    volumes: ["./data:/app/data"]
+    environment:
+      - Database__Provider=Sqlite
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/ingest.db
+
+  core:
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+    ports: ["5001:8080"]
+    volumes: ["./data:/app/data"]
+    environment:
+      - Database__Provider=Sqlite
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/core.db
+      - Services__IngestUrl=http://ingest:8080
+    depends_on: ["ingest"]

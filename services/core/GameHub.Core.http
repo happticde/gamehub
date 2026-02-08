@@ -1,0 +1,6 @@
+@GameHub.Core_HostAddress = http://localhost:5049
+
+GET {{GameHub.Core_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -9,9 +9,9 @@ namespace GameHub.Controllers;
 [Route("api/ingest/gog")]
 public class GogIngestController : ControllerBase
 {
-    private readonly GameHubContext _db;
+    private readonly IngestContext _db;
 
-    public GogIngestController(GameHubContext db)
+    public GogIngestController(IngestContext db)
     {
         _db = db;
     }

@@ -2,9 +2,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GameHub.Ingest.Data;
 
-public class GameHubContext : DbContext
+public class IngestContext : DbContext
 {
-    public GameHubContext(DbContextOptions<GameHubContext> options) : base(options) { }
+    public IngestContext(DbContextOptions<IngestContext> options) : base(options) { }
 
     public DbSet<PsnRawItem> PsnRawItems => Set<PsnRawItem>();
     public DbSet<SteamRawItem> SteamRawItems => Set<SteamRawItem>();

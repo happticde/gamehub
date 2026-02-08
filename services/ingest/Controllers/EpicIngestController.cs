@@ -9,9 +9,9 @@ namespace GameHub.Controllers;
 [Route("api/ingest/epic")]
 public class EpicIngestController : ControllerBase
 {
-    private readonly GameHubContext _db;
+    private readonly IngestContext _db;
 
-    public EpicIngestController(GameHubContext db)
+    public EpicIngestController(IngestContext db)
     {
         _db = db;
     }

@@ -9,9 +9,9 @@ namespace GameHub.Controllers;
 [Route("api/ingest/steam")]
 public class SteamIngestController : ControllerBase
 {
-    private readonly GameHubContext _db;
+    private readonly IngestContext _db;
 
-    public SteamIngestController(GameHubContext db)
+    public SteamIngestController(IngestContext db)
     {
         _db = db;
     }

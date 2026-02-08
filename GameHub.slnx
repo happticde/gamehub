@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/services/" />
+  <Folder Name="/services/core/">
+    <Project Path="services/core/GameHub.Core.csproj" />
+  </Folder>
+  <Folder Name="/services/ingest/">
+    <Project Path="services/ingest/GameHub.Ingest.csproj" />
+  </Folder>
+  <Folder Name="/services/shared/">
+    <Project Path="services/shared/GameHub.Shared.csproj" />
+  </Folder>
+</Solution>

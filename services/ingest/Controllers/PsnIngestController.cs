@@ -9,9 +9,9 @@ namespace GameHub.Controllers;
 [Route("api/ingest/psn")]
 public class PsnIngestController : ControllerBase
 {
-    private readonly GameHubContext _db;
+    private readonly IngestContext _db;
 
-    public PsnIngestController(GameHubContext db)
+    public PsnIngestController(IngestContext db)
     {
         _db = db;
     }

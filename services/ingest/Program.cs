@@ -13,7 +13,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";
-builder.Services.AddDbContext<GameHubContext>(options =>
+builder.Services.AddDbContext<IngestContext>(options =>
 {
     if (dbProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
     {
@@ -37,7 +37,7 @@ var app = builder.Build();
 // Auto-create DB
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<GameHubContext>();
+    var db = scope.ServiceProvider.GetRequiredService<IngestContext>();
     db.Database.EnsureCreated();
 }
 
