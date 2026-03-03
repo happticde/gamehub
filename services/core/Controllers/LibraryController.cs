@@ -1,10 +1,18 @@
 using GameHub.Core.Data;
 using GameHub.Core.Services;
+using GameHub.Shared;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace GameHub.Core.Controllers;
 
+/// <summary>
+/// The main API for the unified game library.
+/// Provides endpoints for:
+///   - Syncing data from the Ingest service
+///   - Querying the unified library
+///   - Manually merging/splitting games across platforms
+/// </summary>
 [ApiController]
 [Route("api/library")]
 public class LibraryController : ControllerBase
@@ -18,33 +26,36 @@ public class LibraryController : ControllerBase
         _db = db;
     }
 
-    // POST: api/library/sync
-    // Triggers the merge process from Ingest -> Core
+    /// <summary>
+    /// POST: api/library/sync
+    /// Triggers an incremental sync from Ingest → Core.
+    /// Fetches new/updated records from all platforms and merges them into the unified library.
+    /// </summary>
     [HttpPost("sync")]
     public async Task<IActionResult> Sync()
     {
-        // Run the unification logic defined in UnificationService
         var count = await _unifier.RunFullSyncAsync();
         return Ok(new { Processed = count, Message = "Sync completed successfully." });
     }
 
-    // GET: api/library
-    // The main endpoint for your future Frontend to display games
+    /// <summary>
+    /// GET: api/library?search=witcher
+    /// Returns all unified games with their platform tags.
+    /// Optionally filter by title search.
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetLibrary([FromQuery] string? search)
     {
-        // 1. Start query
         var query = _db.UnifiedGames
-            .Include(g => g.Items) // Eager load the platforms (Steam, PSN, etc.)
-            .AsNoTracking();       // Faster for read-only
+            .Include(g => g.Items)
+            .AsNoTracking();
 
-        // 2. Filter if search param exists
+        // Filter by search term if provided
         if (!string.IsNullOrWhiteSpace(search))
         {
             query = query.Where(g => g.Title.ToLower().Contains(search.ToLower()));
         }
 
-        // 3. Execute and map to simple JSON
         var games = await query
             .OrderBy(g => g.Title)
             .ToListAsync();
@@ -54,10 +65,187 @@ public class LibraryController : ControllerBase
             g.Id,
             g.Title,
             g.Slug,
-            // Return a simple list of strings like ["Steam", "Gog"]
-            Platforms = g.Items.Select(i => i.Platform.ToString()).ToList()
+            Platforms = g.Items.Select(i => new
+            {
+                i.Platform,
+                i.ExternalId,
+                i.LastSynced
+            }).ToList()
         });
 
         return Ok(result);
     }
+
+    // =========================================================================
+    // Manual Merge / Split Endpoints
+    // =========================================================================
+
+    /// <summary>
+    /// POST: api/library/merge
+    /// Body: { "sourceGameId": 42, "targetGameId": 7 }
+    ///
+    /// Merges two UnifiedGame records into one:
+    ///   1. Moves all LibraryItems from the source game to the target game
+    ///   2. Creates ManualLinks for each moved item (so future syncs respect the override)
+    ///   3. Deletes the now-empty source game
+    ///
+    /// Use this when the same game appears as two separate entries due to
+    /// different titles across storefronts (e.g. "GOTY Edition" vs base game).
+    /// </summary>
+    [HttpPost("merge")]
+    public async Task<IActionResult> MergeGames([FromBody] MergeRequest request)
+    {
+        // Load both games with their LibraryItems
+        var source = await _db.UnifiedGames
+            .Include(g => g.Items)
+            .FirstOrDefaultAsync(g => g.Id == request.SourceGameId);
+
+        var target = await _db.UnifiedGames
+            .Include(g => g.Items)
+            .FirstOrDefaultAsync(g => g.Id == request.TargetGameId);
+
+        if (source == null)
+            return NotFound(new { Message = $"Source game with ID {request.SourceGameId} not found" });
+        if (target == null)
+            return NotFound(new { Message = $"Target game with ID {request.TargetGameId} not found" });
+        if (source.Id == target.Id)
+            return BadRequest(new { Message = "Cannot merge a game with itself" });
+
+        // Move each LibraryItem from source to target
+        foreach (var item in source.Items.ToList())
+        {
+            // Check if the target already has an entry for this platform
+            var existingLink = target.Items.FirstOrDefault(i => i.Platform == item.Platform);
+            if (existingLink != null)
+            {
+                // Target already has this platform — keep the target's entry, remove the source's
+                _db.LibraryItems.Remove(item);
+            }
+            else
+            {
+                // Move the item to the target game
+                item.UnifiedGameId = target.Id;
+            }
+
+            // Create a ManualLink so future syncs respect this decision
+            var manualLink = await _db.ManualLinks
+                .FirstOrDefaultAsync(ml => ml.Platform == item.Platform && ml.ExternalId == item.ExternalId);
+
+            if (manualLink == null)
+            {
+                _db.ManualLinks.Add(new ManualLink
+                {
+                    Platform = item.Platform,
+                    ExternalId = item.ExternalId,
+                    UnifiedGameId = target.Id
+                });
+            }
+            else
+            {
+                manualLink.UnifiedGameId = target.Id;
+            }
+        }
+
+        // Delete the now-empty source game
+        _db.UnifiedGames.Remove(source);
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Message = $"Merged '{source.Title}' into '{target.Title}'.",
+            TargetGameId = target.Id
+        });
+    }
+
+    /// <summary>
+    /// POST: api/library/split
+    /// Body: { "libraryItemId": 15 }
+    ///
+    /// Detaches a single LibraryItem from its current UnifiedGame and creates
+    /// a new UnifiedGame for it. Also creates a ManualLink to prevent future
+    /// syncs from merging it back.
+    ///
+    /// Use this when two different games have been incorrectly merged because
+    /// they have similar/identical titles (e.g. "DOOM" 1993 vs "DOOM" 2016).
+    /// </summary>
+    [HttpPost("split")]
+    public async Task<IActionResult> SplitGame([FromBody] SplitRequest request)
+    {
+        // Load the LibraryItem and its parent game
+        var item = await _db.LibraryItems
+            .Include(i => i.UnifiedGame)
+            .FirstOrDefaultAsync(i => i.Id == request.LibraryItemId);
+
+        if (item == null)
+            return NotFound(new { Message = $"Library item with ID {request.LibraryItemId} not found" });
+
+        if (item.UnifiedGame == null)
+            return BadRequest(new { Message = "Library item is not linked to any game" });
+
+        // Create a new UnifiedGame for the detached item
+        // Use the original title but append the platform name to differentiate
+        var newTitle = $"{item.UnifiedGame.Title} ({item.Platform})";
+        var newSlug = UnificationService.GenerateSlug(newTitle);
+
+        var newGame = new UnifiedGame
+        {
+            Title = newTitle,
+            Slug = newSlug
+        };
+
+        _db.UnifiedGames.Add(newGame);
+        await _db.SaveChangesAsync(); // Save to get the new game's ID
+
+        // Move the item to the new game
+        item.UnifiedGameId = newGame.Id;
+
+        // Create a ManualLink so future syncs don't merge it back
+        var manualLink = await _db.ManualLinks
+            .FirstOrDefaultAsync(ml => ml.Platform == item.Platform && ml.ExternalId == item.ExternalId);
+
+        if (manualLink == null)
+        {
+            _db.ManualLinks.Add(new ManualLink
+            {
+                Platform = item.Platform,
+                ExternalId = item.ExternalId,
+                UnifiedGameId = newGame.Id
+            });
+        }
+        else
+        {
+            manualLink.UnifiedGameId = newGame.Id;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Message = $"Split '{item.Platform}' entry into new game '{newTitle}'.",
+            NewGameId = newGame.Id,
+            OriginalGameId = item.UnifiedGame.Id
+        });
+    }
+}
+
+// =========================================================================
+// Request DTOs
+// =========================================================================
+
+/// <summary>Request body for the merge endpoint.</summary>
+public class MergeRequest
+{
+    /// <summary>ID of the game to merge FROM (will be deleted).</summary>
+    public int SourceGameId { get; set; }
+
+    /// <summary>ID of the game to merge INTO (will keep all items).</summary>
+    public int TargetGameId { get; set; }
+}
+
+/// <summary>Request body for the split endpoint.</summary>
+public class SplitRequest
+{
+    /// <summary>ID of the LibraryItem to detach into its own UnifiedGame.</summary>
+    public int LibraryItemId { get; set; }
 }
