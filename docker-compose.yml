@@ -12,7 +12,8 @@ services:
       - Database__Provider=Sqlite
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/ingest.db
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # Use wget instead of curl — Alpine images don't include curl
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -31,7 +32,7 @@ services:
       ingest:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 15s
       timeout: 5s
       retries: 3

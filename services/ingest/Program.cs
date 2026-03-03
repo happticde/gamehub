@@ -42,19 +42,15 @@ builder.Services.AddDbContext<IngestContext>(options =>
 
 var app = builder.Build();
 
-
-
-// --- Database Migration (Improvement #7) ---
-// On startup, automatically apply any pending EF Core migrations.
-// This replaces the old EnsureCreated() which couldn't handle schema changes.
-//
-// To create a new migration after changing entities, run inside the devcontainer:
-//   cd services/ingest
-//   dotnet ef migrations add <MigrationName>
+// --- Database Initialization ---
+// EnsureCreated() creates the database and all tables if they don't exist.
+// To switch to migrations later:
+//   1. Run: dotnet ef migrations add InitialCreate
+//   2. Replace the line below with: db.Database.Migrate();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<IngestContext>();
-    db.Database.Migrate();
+    db.Database.EnsureCreated();
 }
 
 // --- Swagger UI ---

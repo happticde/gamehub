@@ -42,22 +42,15 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-
-
-// --- Database Migration (Improvement #7) ---
-// On startup, automatically apply any pending EF Core migrations.
-// This replaces the old EnsureCreated() which couldn't handle schema changes.
-//
-// To create a new migration after changing entities, run inside the devcontainer:
-//   cd services/core
-//   dotnet ef migrations add <MigrationName>
-//
-// Migrations are applied automatically on next app startup.
-// For a fresh database, the initial migration creates all tables from scratch.
+// --- Database Initialization ---
+// EnsureCreated() creates the database and all tables if they don't exist.
+// If you later want incremental schema changes without data loss, switch to EF Core Migrations:
+//   1. Run: dotnet ef migrations add InitialCreate
+//   2. Replace the line below with: db.Database.Migrate();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
-    db.Database.Migrate();
+    db.Database.EnsureCreated();
 }
 
 // --- Health Check Endpoint ---
