@@ -17,6 +17,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.2" />
     <!-- Adds retry, timeout, and circuit-breaker policies to HttpClient -->
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
+    <!-- Health checks for EF Core database connectivity -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.2" />
   </ItemGroup>
 
   <ItemGroup>

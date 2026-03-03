@@ -1,3 +1,6 @@
+# Docker Compose for local development
+# Run: docker compose up --build
+
 services:
   ingest:
     build:
@@ -8,6 +11,11 @@ services:
     environment:
       - Database__Provider=Sqlite
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/ingest.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   core:
     build:
@@ -19,4 +27,11 @@ services:
       - Database__Provider=Sqlite
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/core.db
       - Services__IngestUrl=http://ingest:8080
-    depends_on: ["ingest"]
+    depends_on:
+      ingest:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
