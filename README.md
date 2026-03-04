@@ -5,22 +5,28 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, and
 ## Architecture
 
 ```
-┌─────────────┐     POST /api/ingest/{platform}     ┌──────────────┐
-│  gamehub-cli │ ──────────────────────────────────▶  │ Ingest Service│
-│   (Go CLI)   │                                      │  :5000        │
-└─────────────┘                                      └──────┬───────┘
-                                                            │
-                  GET /api/export/{platform}                 │
-┌─────────────┐ ◀───────────────────────────────────────────┘
-│ Core Service │
-│  :5001       │──▶ Unified Library (slug-based matching + manual overrides)
-└─────────────┘
++-------------------+                          +-------------------+
+|   gamehub-cli     |  POST /api/ingest/{p}    |                   |
+|   (Go CLI)        | -----------------------> |  Ingest Service   |
++-------------------+                          |  :5000            |
+                                               |                   |
+  Any HTTP client      POST /api/retrieve/{p}  |  Fetches from     |
+  (curl, browser,   ----------------------->   |  Steam/GOG/PSN    |
+   future UI)                                  +--------+----------+
+                                                        |
+                       GET /api/export/{p}              |
++-------------------+ <---------------------------------+
+|                   |
+|  Core Service     |
+|  :5001            | -->  Unified Library (slug matching + manual overrides)
+|                   |
++-------------------+
 ```
 
 **Three components:**
-- **Ingest Service** (.NET) — stores raw game data per platform
+- **Ingest Service** (.NET) — stores raw game data per platform, can also fetch directly from APIs
 - **Core Service** (.NET) — merges data into a unified library with cross-platform matching
-- **CLI** (Go) — fetches game libraries from Steam, PSN, GOG and pushes to Ingest
+- **CLI** (Go) — alternative client that fetches libraries and pushes to Ingest
 
 ## Quick Start
 
