@@ -1,4 +1,5 @@
 using GameHub.Ingest.Data;
+using GameHub.Ingest.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,10 +15,16 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// --- Health Checks (Improvement #9) ---
-// Registers a /health endpoint that checks DB connectivity.
+// --- Health Checks ---
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<IngestContext>("database");
+
+// --- Platform Fetchers (ADR-001: Server-Side Retrieval) ---
+// These services call external APIs (Steam, GOG, PSN) to fetch game libraries.
+// Used by RetrieveController for one-call fetch + ingest.
+builder.Services.AddHttpClient<SteamFetcher>(); // Uses typed HttpClient
+builder.Services.AddTransient<GogFetcher>();     // Creates its own cookie-based client
+builder.Services.AddTransient<PsnFetcher>();     // Creates its own cookie-based client
 
 // --- Database ---
 var dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";

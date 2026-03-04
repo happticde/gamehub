@@ -82,6 +82,28 @@ gamehub-cli ingest gog
 gamehub-cli ingest psn
 ```
 
+### Alternative: Server-Side Retrieval (no CLI needed)
+
+The Ingest service can also fetch game libraries directly — no CLI required.
+Just POST the credentials and the service handles both fetching and ingesting:
+
+```bash
+# Steam
+curl -X POST http://localhost:5000/api/retrieve/steam \
+  -H "Content-Type: application/json" \
+  -d '{"apiKey": "YOUR_KEY", "steamId": "YOUR_STEAM_ID_64"}'
+
+# GOG
+curl -X POST http://localhost:5000/api/retrieve/gog \
+  -H "Content-Type: application/json" \
+  -d '{"cookie": "YOUR_GOG_AL_COOKIE", "user": "YOUR_GOG_USERNAME"}'
+
+# PSN
+curl -X POST http://localhost:5000/api/retrieve/psn \
+  -H "Content-Type: application/json" \
+  -d '{"cookies": {"JSESSIONID": "...", "sb-cdn.session": "..."}}'
+```
+
 ### 5. Trigger unification
 
 ```bash
@@ -108,6 +130,9 @@ curl http://localhost:5001/api/library?search=witcher
 | `GET` | `/api/ingest/{platform}?page=1&pageSize=20` | List ingested items |
 | `GET` | `/api/ingest/{platform}/{externalId}` | Get single item detail |
 | `GET` | `/api/export/{platform}?page=1&pageSize=200&updatedAfter=` | Paginated export for Core sync |
+| `POST` | `/api/retrieve/steam` | Fetch + ingest Steam library `{ apiKey, steamId }` |
+| `POST` | `/api/retrieve/gog` | Fetch + ingest GOG library `{ cookie, user }` |
+| `POST` | `/api/retrieve/psn` | Fetch + ingest PSN library `{ cookies: {...} }` |
 
 ### Core Service (`:5001`)
 
