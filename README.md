@@ -1,156 +1,169 @@
 # GameHub Backend
 
-A unified game library aggregator that ingests data from **Steam**, **PSN**, **GOG**, and **Epic Games** into a single queryable "Data Lake". It provides a REST API to access raw game ownership data, designed to be resilient and idempotent.
+A unified game library aggregator that ingests data from **Steam**, **PSN**, and **GOG** into a single queryable library. It merges games across platforms using intelligent title matching and provides a REST API for your unified collection.
 
-## 🚀 Features
+## Architecture
 
-* **Unified Ingestion:** Separate endpoints for PSN, Steam, GOG, and Epic.
-* **Idempotent Storage:** Re-running import scripts updates existing records instead of creating duplicates.
-* **Multi-Provider DB:** Configurable support for **SQLite** (default/dev) and **PostgreSQL** (production).
-* **Raw Data Preservation:** Stores the full JSON response from providers, allowing for future schema evolution without re-fetching.
-* **Dockerized:** Full DevContainer support and production-ready Dockerfile.
-
-
-## 🛠️ Tech Stack
-
-* **.NET 10** (ASP.NET Core Web API)
-* **Entity Framework Core**
-* **SQLite** / **PostgreSQL**
-* **Python 3** (for import scripts)
-* **Legendary** (for Epic Games auth)
-
-***
-
-## ⚡ Quick Start (Development)
-
-The easiest way to run the project is using **VS Code Dev Containers**. This requires **Docker Desktop** and **VS Code** with the *Dev Containers* extension.
-
-1. **Open in VS Code:**
-Open this folder in VS Code. Click **"Reopen in Container"** when prompted.
-*(This installs .NET SDK, Python, Legendary, and DB tools automatically inside Docker.)*
-2. **Run the API:**
-Open the integrated terminal (Ctrl+`)` and run:
-
-```bash
-dotnet run
+```
+┌─────────────┐     POST /api/ingest/{platform}     ┌──────────────┐
+│  gamehub-cli │ ──────────────────────────────────▶  │ Ingest Service│
+│   (Go CLI)   │                                      │  :5000        │
+└─────────────┘                                      └──────┬───────┘
+                                                            │
+                  GET /api/export/{platform}                 │
+┌─────────────┐ ◀───────────────────────────────────────────┘
+│ Core Service │
+│  :5001       │──▶ Unified Library (slug-based matching + manual overrides)
+└─────────────┘
 ```
 
-The API is now live at `http://localhost:5000`.
-Swagger UI: `http://localhost:5000/swagger`
-3. **Run Import Scripts:**
-Open a *new* terminal split (still inside the container) to run Python scripts.
+**Three components:**
+- **Ingest Service** (.NET) — stores raw game data per platform
+- **Core Service** (.NET) — merges data into a unified library with cross-platform matching
+- **CLI** (Go) — fetches game libraries from Steam, PSN, GOG and pushes to Ingest
 
-***
+## Quick Start
 
-## 📥 Ingesting Data
-
-Scripts are located in the project root. Ensure the Backend is running before executing these.
-
-### 🎮 Steam
-
-Requires an API Key and your 64-bit Steam ID.
-
-* Get Key: https://steamcommunity.com/dev/apikey
-* Get ID: https://steamdb.info/calculator/
+### 1. Start the backend
 
 ```bash
-python3 import_steam.py <YOUR_API_KEY> <YOUR_STEAM_ID>
+docker compose up --build
 ```
 
+- Ingest API: `http://localhost:5000` (Swagger UI at root)
+- Core API: `http://localhost:5001/swagger`
+- Health checks: `/health` on both services
 
-### 🎮 PlayStation (PSN)
-
-Requires an `npsso` token from your Sony account login.
-
-* Guide to get token: [PSNAWP Docs](https://psnawp.readthedocs.io/en/latest/authentication/)
+### 2. Install the CLI
 
 ```bash
-python3 import_psn.py <YOUR_NPSSO_TOKEN>
+cd services/cli
+go build -o gamehub-cli .
 ```
 
+### 3. Create a config file (optional)
 
-### 🎮 GOG
+Save credentials in `~/.gamehub.yaml` so you don't need flags every time:
 
-Requires the `gog-al` cookie value from a logged-in browser session.
-
-1. Log into GOG.com
-2. Open DevTools -> Application -> Cookies -> `gog-al`
-```bash
-python3 import_gog.py <YOUR_GOG_AL_COOKIE>
+```yaml
+backend-url: http://localhost:5000
+steam:
+  key: "YOUR_STEAM_API_KEY"
+  id: "YOUR_STEAM_ID_64"
+gog:
+  user: "your_gog_username"
+  token: "your_gog_al_cookie_value"
+psn:
+  cookies: '{"JSESSIONID":"abc","sb-cdn.session":"xyz"}'
 ```
 
-
-### 🎮 Epic Games
-
-Uses **Legendary** (pre-installed in container).
-
-1. **Authenticate (One-time):**
-
-```bash
-legendary auth
-```
-
-*(Follow the prompts to copy the SID from your browser)*
-2. **Run Import:**
+### 4. Ingest your libraries
 
 ```bash
-python3 import_epic.py
+# Steam — requires API Key + Steam ID 64
+# Get key: https://steamcommunity.com/dev/apikey
+# Get ID:  https://steamdb.info/calculator/
+gamehub-cli ingest steam --key YOUR_KEY --id YOUR_STEAM_ID
+
+# GOG — requires gog-al cookie + username
+# Log into gog.com → DevTools → Cookies → copy "gog-al" value
+gamehub-cli ingest gog --user YOUR_USERNAME --token YOUR_GOG_AL_COOKIE
+
+# PSN — requires browser cookies from store.playstation.com
+# Log into store.playstation.com → DevTools → Cookies → export as JSON
+gamehub-cli ingest psn --cookies '{"JSESSIONID":"...","sb-cdn.session":"..."}'
 ```
 
-
-***
-
-## 🐳 Running in Production (Docker)
-
-To run the backend as a standalone service (without VS Code).
-
-### 1. Build the Image
+Or with the config file, just:
 
 ```bash
-docker build -t gamehub-backend .
+gamehub-cli ingest steam
+gamehub-cli ingest gog
+gamehub-cli ingest psn
 ```
 
-
-### 2. Run (SQLite)
-
-Persist data to a local `data/` folder.
+### 5. Trigger unification
 
 ```bash
-docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/data:/app/data \
-  -e Database__Provider="Sqlite" \
-  -e ConnectionStrings__Sqlite="Data Source=/app/data/gamehub.db" \
-  gamehub-backend
+curl -X POST http://localhost:5001/api/library/sync
 ```
 
-
-### 3. Run (PostgreSQL)
-
-Connect to an external Postgres database.
+### 6. Query your library
 
 ```bash
-docker run -d \
-  -p 8080:8080 \
-  -e Database__Provider="Postgres" \
-  -e ConnectionStrings__Postgres="Host=my-postgres;Database=gamehub;Username=user;Password=pass" \
-  gamehub-backend
+# List all games
+curl http://localhost:5001/api/library
+
+# Search
+curl http://localhost:5001/api/library?search=witcher
 ```
 
+## API Reference
 
-***
+### Ingest Service (`:5000`)
 
-## 📂 Project Structure
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/ingest/{platform}` | Batch upsert raw game data |
+| `GET` | `/api/ingest/{platform}?page=1&pageSize=20` | List ingested items |
+| `GET` | `/api/ingest/{platform}/{externalId}` | Get single item detail |
+| `GET` | `/api/export/{platform}?page=1&pageSize=200&updatedAfter=` | Paginated export for Core sync |
 
-* `Controllers/` - API Endpoints (`SteamIngestController`, `EpicIngestController`...)
-* `Data/` - EF Core Context and Database Models (`SteamRawItem`, `PsnRawItem`...)
-* `.devcontainer/` - VS Code environment configuration.
-* `import_*.py` - Python ETL scripts.
-* `gamehub.db` - Local SQLite database (created on first run).
+### Core Service (`:5001`)
 
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/library/sync` | Trigger incremental sync from Ingest |
+| `GET` | `/api/library?search=` | Query unified library |
+| `POST` | `/api/library/merge` | Merge two games `{ sourceGameId, targetGameId }` |
+| `POST` | `/api/library/split` | Split a platform entry `{ libraryItemId }` |
 
-## ⚠️ Notes
+## Tech Stack
 
-* **Schema Updates:** Since this is a single-user app, if you change the database schema, simply **delete `gamehub.db`** and restart the app. Then re-run your import scripts.
-* **Swagger:** Available at `/swagger` or the root `/` URL.
+- **.NET 10** — Ingest + Core services (ASP.NET Core, EF Core)
+- **Go 1.24** — CLI (Cobra + Viper)
+- **SQLite** (dev) / **PostgreSQL** (prod)
+- **Docker Compose** — orchestration with health checks
 
+## Project Structure
+
+```
+services/
+├── ingest/                 # Raw data storage service
+│   ├── Controllers/
+│   │   ├── IngestControllerBase.cs   # Generic base (shared logic)
+│   │   ├── SteamIngestController.cs  # Platform-specific
+│   │   ├── PsnIngestController.cs
+│   │   ├── GogIngestController.cs
+│   │   ├── EpicIngestController.cs
+│   │   └── ExportController.cs      # Paginated export for Core
+│   └── Data/
+├── core/                   # Unified library service
+│   ├── Controllers/
+│   │   └── LibraryController.cs      # Library + merge/split
+│   ├── Services/
+│   │   ├── UnificationService.cs     # Slug matching + manual links
+│   │   └── IngestClient.cs           # HTTP client for Ingest
+│   └── Data/
+├── shared/                 # Shared DTOs and interfaces
+│   ├── IRawItem.cs
+│   ├── RawGameDto.cs
+│   ├── PagedResult.cs
+│   └── Platform.cs
+└── cli/                    # Go CLI for data ingestion
+    ├── main.go
+    └── cmd/
+        ├── root.go
+        ├── config.go         # ~/.gamehub.yaml support
+        ├── helpers.go        # Shared PostToBackend logic
+        ├── ingest.go         # Parent command
+        ├── ingest_steam.go
+        ├── ingest_gog.go
+        └── ingest_psn.go
+```
+
+## Notes
+
+- **Schema changes:** Delete `data/*.db` and restart. Data can be re-ingested from the platform APIs.
+- **Swagger:** Available at `/swagger` on both services (Ingest also serves it at `/`).
+- **Health checks:** Both services expose `GET /health` with DB connectivity checks.
