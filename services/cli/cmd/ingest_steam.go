@@ -1,24 +1,46 @@
+// Steam ingest command — fetches the user's Steam library via the
+// Steam Web API and pushes it to the GameHub Ingest service.
+//
+// Usage:
+//
+//	gamehub-cli ingest steam --key YOUR_KEY --id YOUR_STEAM_ID_64
+//
+// Or with config file (~/.gamehub.yaml):
+//
+//	steam:
+//	  key: "YOUR_STEAM_API_KEY"
+//	  id: "YOUR_STEAM_ID_64"
+//
+// Then just: gamehub-cli ingest steam
+//
+// The Steam Web API returns JSON like:
+//
+//	{
+//	  "response": {
+//	    "game_count": 42,
+//	    "games": [
+//	      { "appid": 730, "name": "Counter-Strike 2", "playtime_forever": 1234 },
+//	      ...
+//	    ]
+//	  }
+//	}
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"time"
 
 	"github.com/spf13/cobra"
 )
 
-// 1. Data Models (Structs)
-// In Go, you define the "shape" of your JSON with structs.
-// The `json:"name"` tags are like [JsonProperty("name")] in C#.
+// SteamGame represents a single game entry from the Steam API response.
 type SteamGame struct {
 	AppId           int    `json:"appid"`
 	Name            string `json:"name"`
 	PlaytimeForever int    `json:"playtime_forever"`
 }
 
+// SteamResponse is the top-level wrapper for the Steam GetOwnedGames API.
 type SteamResponse struct {
 	Response struct {
 		GameCount int         `json:"game_count"`
@@ -26,99 +48,63 @@ type SteamResponse struct {
 	} `json:"response"`
 }
 
-// 2. Variables for Flags
-// These will hold the values passed via CLI (e.g. --key "123").
+// Flag variables — set by CLI flags or config file
 var (
 	steamKey string
 	steamId  string
 )
 
-// 3. The Command Definition
-// This struct defines what happens when you type `gamehub ingest steam`
 var ingestSteamCmd = &cobra.Command{
 	Use:   "steam",
-	Short: "Fetch library from Steam API and push to GameHub Core",
-	Run: func(cmd *cobra.Command, args []string) {
+	Short: "Fetch library from Steam API and push to GameHub Ingest",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Resolve credentials: flags override config file
+		key := GetConfigString("steam.key", steamKey)
+		id := GetConfigString("steam.id", steamId)
 
-		// A. Log start
-		fmt.Printf("🚀 Starting Steam Ingest for ID: %s\n", steamId)
+		if key == "" || id == "" {
+			return fmt.Errorf("steam API key and Steam ID are required (use --key/--id flags or config file)")
+		}
 
-		// B. Build the URL
+		fmt.Printf("🚀 Starting Steam ingest for Steam ID: %s\n", id)
+
+		// Build the Steam Web API URL
+		// include_appinfo=1 gives us game names, not just IDs
 		url := fmt.Sprintf(
 			"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=%s&steamid=%s&format=json&include_appinfo=1",
-			steamKey, steamId,
+			key, id,
 		)
 
-		// C. Create HTTP Client with Timeout (Best Practice)
-		// Go's default http.Get has no timeout! Always define one for production.
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := NewHTTPClient()
 
-		// D. Make the Request
+		// Fetch the library from Steam
 		resp, err := client.Get(url)
 		if err != nil {
-			fmt.Printf("❌ Network Error: %v\n", err)
-			return
+			return fmt.Errorf("network error: %w", err)
 		}
-		// E. The 'defer' keyword
-		// This ensures the connection closes when the function exits.
-		// Think of this as C#'s `using` block, but function-scoped.
 		defer resp.Body.Close()
 
 		if resp.StatusCode != 200 {
-			fmt.Printf("❌ Steam API returned status: %s\n", resp.Status)
-			return
+			return fmt.Errorf("Steam API returned status: %s", resp.Status)
 		}
 
-		// F. Decode JSON
-		// We stream the body directly into our struct (Memory Efficient).
+		// Decode the JSON response directly from the body stream
 		var result SteamResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			fmt.Printf("❌ JSON Parse Error: %v\n", err)
-			return
+			return fmt.Errorf("JSON parse error: %w", err)
 		}
 
 		fmt.Printf("✅ Found %d games on Steam. Sending to backend...\n", len(result.Response.Games))
 
-		// G. Prepare Payload for Backend
-		// Marshal our struct back to JSON bytes to send to your Core service.
-		payloadBytes, err := json.Marshal(result.Response.Games)
-		if err != nil {
-			fmt.Printf("❌ Serialization Error: %v\n", err)
-			return
-		}
-
-		// H. Post to Core Service
-		ingestEndpoint := fmt.Sprintf("%s/api/ingest/steam", backendUrl)
-		postResp, err := client.Post(ingestEndpoint, "application/json", bytes.NewBuffer(payloadBytes))
-		if err != nil {
-			fmt.Printf("❌ Failed to send to backend: %v\n", err)
-			return
-		}
-		defer postResp.Body.Close()
-
-		if postResp.StatusCode >= 200 && postResp.StatusCode < 300 {
-			fmt.Println("🎉 Ingest Complete!")
-		} else {
-			fmt.Printf("⚠️ Backend rejected data: %s\n", postResp.Status)
-		}
+		// Send to the Ingest service
+		return PostToBackend(client, "steam", result.Response.Games)
 	},
 }
 
-// 4. Initialization (Constructor)
-// This runs once on startup to register the command and flags.
 func init() {
-	// Add 'steam' as a subcommand to 'ingest'
 	ingestCmd.AddCommand(ingestSteamCmd)
 
-	// Define flags
-	// &steamKey -> Pointer to the variable where the value will be stored
-	// "key" -> The flag name (--key)
-	// "" -> Default value
-	// "Help text" -> Description
+	// Flags are optional if config file is used
 	ingestSteamCmd.Flags().StringVarP(&steamKey, "key", "k", "", "Steam Web API Key")
 	ingestSteamCmd.Flags().StringVarP(&steamId, "id", "i", "", "Steam ID 64")
-
-	// Mark flags as required
-	ingestSteamCmd.MarkFlagRequired("key")
-	ingestSteamCmd.MarkFlagRequired("id")
 }
