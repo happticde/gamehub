@@ -8,7 +8,7 @@
 Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 
 ```
-┌─────────────┐     ┌─────────────┐
+┌──────────────┐     ┌──────────────┐
 │   Ingest     │◄────│    Core      │
 │  :5000       │     │   :5001      │
 │              │     │              │
@@ -17,13 +17,13 @@ Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 │ • Platform   │     │ • Slug-based │
 │   fetchers   │     │   matching   │
 │ • Export API │     │ • Merge/Split│
-└─────────────┘     └─────────────┘
+└──────────────┘     └──────────────┘
        ▲
        │
-┌──────┴──────┐
-│   Go CLI     │
-│ gamehub-cli  │
-└─────────────┘
+┌──────┴────────┐
+│   Go CLI      │
+│ gamehub-cli   │
+└───────────────┘
 ```
 
 ## Tech Stack
