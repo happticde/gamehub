@@ -15,7 +15,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Tests | ✅ xUnit + in-memory SQLite |
 | EF Core Migrations | ✅ Auto-applied on startup |
 | Structured Logging | ✅ All components, debugging guide |
-| Auth | ❌ Not started |
+| Auth | ✅ API key middleware (JWT-ready) |
 | CI/CD | ❌ Not started |
 | Frontend | ❌ API-only |
 | Enrichment / metadata | ❌ Only titles + platform IDs |
