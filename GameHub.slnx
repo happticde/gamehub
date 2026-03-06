@@ -9,4 +9,7 @@
   <Folder Name="/services/shared/">
     <Project Path="services/shared/GameHub.Shared.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GameHub.Tests/GameHub.Tests.csproj" />
+  </Folder>
 </Solution>
