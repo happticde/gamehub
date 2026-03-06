@@ -12,7 +12,8 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Core unification (slug matching, manual merge/split) | ✅ Complete |
 | Go CLI (Cobra/Viper, config file) | ✅ Complete |
 | Docker Compose (SQLite dev, Postgres prod) | ✅ With health checks |
-| Tests | 🟡 In progress (xUnit + in-memory SQLite) |
+| Tests | ✅ xUnit + in-memory SQLite |
+| EF Core Migrations | ✅ Auto-applied on startup |
 | Auth | ❌ Not started |
 | CI/CD | ❌ Not started |
 | Frontend | ❌ API-only |

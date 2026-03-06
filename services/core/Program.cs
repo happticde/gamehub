@@ -43,14 +43,13 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 // --- Database Initialization ---
-// EnsureCreated() creates the database and all tables if they don't exist.
-// If you later want incremental schema changes without data loss, switch to EF Core Migrations:
-//   1. Run: dotnet ef migrations add InitialCreate
-//   2. Replace the line below with: db.Database.Migrate();
+// Automatically applies any pending EF Core migrations on startup.
+// To add a new migration after changing entities:
+//   dotnet ef migrations add <Name> --project services/core/GameHub.Core.csproj
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
 }
 
 // --- Health Check Endpoint ---

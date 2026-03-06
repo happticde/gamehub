@@ -50,14 +50,13 @@ builder.Services.AddDbContext<IngestContext>(options =>
 var app = builder.Build();
 
 // --- Database Initialization ---
-// EnsureCreated() creates the database and all tables if they don't exist.
-// To switch to migrations later:
-//   1. Run: dotnet ef migrations add InitialCreate
-//   2. Replace the line below with: db.Database.Migrate();
+// Automatically applies any pending EF Core migrations on startup.
+// To add a new migration after changing entities:
+//   dotnet ef migrations add <Name> --project services/ingest/GameHub.Ingest.csproj
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<IngestContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
 }
 
 // --- Swagger UI ---

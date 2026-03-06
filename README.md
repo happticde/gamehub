@@ -195,6 +195,6 @@ services/
 
 ## Notes
 
-- **Schema changes:** Delete `data/*.db` and restart. Data can be re-ingested from the platform APIs.
+- **Schema changes:** Run `dotnet ef migrations add <Name> --project services/<service>/<project>.csproj` and restart. Migrations are auto-applied on startup.
 - **Swagger:** Available at `/swagger` on both services (Ingest also serves it at `/`).
 - **Health checks:** Both services expose `GET /health` with DB connectivity checks.
