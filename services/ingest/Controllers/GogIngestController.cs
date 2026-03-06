@@ -22,11 +22,18 @@ public class GogIngestController : IngestControllerBase<GogRawItem>
     protected override string PlatformName => "GOG";
     protected override DbSet<GogRawItem> DbSet => Db.GogRawItems;
 
-    /// <summary>GOG uses "id" (long int) as the unique key and "title" for the name.</summary>
+    /// <summary>
+    /// GOG uses "id" as the unique key and "title" for the name.
+    /// The API returns id as either a number or a string depending on the endpoint,
+    /// so we read it as a raw string to handle both.
+    /// </summary>
     protected override (string? Id, string? Name) ExtractIdAndName(JsonElement json)
     {
         if (!json.TryGetProperty("id", out var idProp)) return (null, null);
-        string id = idProp.GetInt64().ToString();
+        // Handle both numeric and string id values from GOG API
+        string? id = idProp.ValueKind == System.Text.Json.JsonValueKind.Number
+            ? idProp.GetInt64().ToString()
+            : idProp.GetString();
         string? title = json.TryGetProperty("title", out var tProp) ? tProp.GetString() : null;
         return (id, title);
     }
