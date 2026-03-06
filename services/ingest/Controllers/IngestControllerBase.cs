@@ -2,6 +2,7 @@ using GameHub.Shared;
 using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 using System.Text.Json;
 
@@ -27,13 +28,20 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
     /// <summary>The shared EF Core database context for all ingest operations.</summary>
     protected readonly IngestContext Db;
 
+    /// <summary>Logger instance for tracking ingest operations.</summary>
+    protected readonly ILogger Logger;
+
     /// <summary>Display name for error messages (e.g. "Steam", "GOG", "PSN", "Epic").</summary>
     protected abstract string PlatformName { get; }
 
     /// <summary>The EF Core DbSet for this platform's entity type (e.g. Db.SteamRawItems).</summary>
     protected abstract DbSet<TEntity> DbSet { get; }
 
-    protected IngestControllerBase(IngestContext db) { Db = db; }
+    protected IngestControllerBase(IngestContext db, ILogger logger)
+    {
+        Db = db;
+        Logger = logger;
+    }
 
     // -------------------------------------------------------------------------
     // Abstract members — each platform subclass must implement these
@@ -85,14 +93,22 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
     [HttpPost]
     public async Task<IActionResult> IngestBatch([FromBody] List<JsonElement> rawGames)
     {
+        Logger.LogInformation("{Platform}: starting batch ingest of {Count} items", PlatformName, rawGames.Count);
+
         int added = 0;
         int updated = 0;
+        int skipped = 0;
 
         foreach (var gameJson in rawGames)
         {
             // Step 1: Let the subclass extract the ID and name from platform-specific JSON keys
             var (id, name) = ExtractIdAndName(gameJson);
-            if (string.IsNullOrEmpty(id)) continue; // Skip entries without a valid ID
+            if (string.IsNullOrEmpty(id))
+            {
+                skipped++;
+                Logger.LogDebug("{Platform}: skipped item — no valid ID found", PlatformName);
+                continue;
+            }
 
             // Step 2: Check if this game is already in the database (idempotency check)
             var existing = await DbSet.FirstOrDefaultAsync(FindByExternalId(id));
@@ -109,11 +125,16 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
                 // Step 3b: New record → create and add it
                 DbSet.Add(CreateEntity(id, name, jsonString));
                 added++;
+                Logger.LogDebug("{Platform}: new game '{Name}' (ID: {Id})", PlatformName, name, id);
             }
         }
 
         // Step 4: Persist all changes in a single transaction
         await Db.SaveChangesAsync();
+
+        Logger.LogInformation("{Platform}: batch complete — {Added} added, {Updated} updated, {Skipped} skipped",
+            PlatformName, added, updated, skipped);
+
         return Ok(new { Added = added, Updated = updated });
     }
 

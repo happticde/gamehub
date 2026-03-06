@@ -27,6 +27,7 @@ public class RetrieveController : ControllerBase
     private readonly SteamFetcher _steamFetcher;
     private readonly GogFetcher _gogFetcher;
     private readonly PsnFetcher _psnFetcher;
+    private readonly ILogger<RetrieveController> _logger;
 
     // Reuse the existing platform controllers to process the fetched data.
     // We instantiate them directly with the same DbContext.
@@ -38,17 +39,20 @@ public class RetrieveController : ControllerBase
         IngestContext db,
         SteamFetcher steamFetcher,
         GogFetcher gogFetcher,
-        PsnFetcher psnFetcher)
+        PsnFetcher psnFetcher,
+        ILogger<RetrieveController> logger,
+        ILoggerFactory loggerFactory)
     {
         _db = db;
         _steamFetcher = steamFetcher;
         _gogFetcher = gogFetcher;
         _psnFetcher = psnFetcher;
+        _logger = logger;
 
         // Create controller instances to reuse their IngestBatch logic
-        _steamIngest = new SteamIngestController(db);
-        _gogIngest = new GogIngestController(db);
-        _psnIngest = new PsnIngestController(db);
+        _steamIngest = new SteamIngestController(db, loggerFactory.CreateLogger<SteamIngestController>());
+        _gogIngest = new GogIngestController(db, loggerFactory.CreateLogger<GogIngestController>());
+        _psnIngest = new PsnIngestController(db, loggerFactory.CreateLogger<PsnIngestController>());
     }
 
     /// <summary>
@@ -65,13 +69,26 @@ public class RetrieveController : ControllerBase
 
         try
         {
+            _logger.LogInformation("Starting Steam retrieve for user {SteamId}", request.SteamId);
             var games = await _steamFetcher.FetchGamesAsync(request.ApiKey, request.SteamId);
             var result = await _steamIngest.IngestBatch(games);
+            _logger.LogInformation("Steam retrieve completed: {Count} games processed", games.Count);
             return result;
         }
         catch (HttpRequestException ex)
         {
+            _logger.LogError(ex, "Steam API request failed for user {SteamId}", request.SteamId);
             return StatusCode(502, new { Message = $"Failed to fetch from Steam API: {ex.Message}" });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse Steam API response for user {SteamId}", request.SteamId);
+            return StatusCode(502, new { Message = $"Steam API returned unexpected data: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during Steam retrieve for user {SteamId}", request.SteamId);
+            return StatusCode(500, new { Message = $"Internal error: {ex.Message}" });
         }
     }
 
@@ -89,13 +106,26 @@ public class RetrieveController : ControllerBase
 
         try
         {
+            _logger.LogInformation("Starting GOG retrieve for user {Username}", request.User);
             var games = await _gogFetcher.FetchGamesAsync(request.Cookie, request.User);
             var result = await _gogIngest.IngestBatch(games);
+            _logger.LogInformation("GOG retrieve completed: {Count} games processed", games.Count);
             return result;
         }
         catch (HttpRequestException ex)
         {
+            _logger.LogError(ex, "GOG API request failed for user {Username}", request.User);
             return StatusCode(502, new { Message = $"Failed to fetch from GOG API: {ex.Message}" });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse GOG API response for user {Username}", request.User);
+            return StatusCode(502, new { Message = $"GOG API returned unexpected data: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during GOG retrieve for user {Username}", request.User);
+            return StatusCode(500, new { Message = $"Internal error: {ex.Message}" });
         }
     }
 
@@ -113,13 +143,26 @@ public class RetrieveController : ControllerBase
 
         try
         {
+            _logger.LogInformation("Starting PSN retrieve ({CookieCount} cookies provided)", request.Cookies.Count);
             var games = await _psnFetcher.FetchGamesAsync(request.Cookies);
             var result = await _psnIngest.IngestBatch(games);
+            _logger.LogInformation("PSN retrieve completed: {Count} games processed", games.Count);
             return result;
         }
         catch (HttpRequestException ex)
         {
+            _logger.LogError(ex, "PSN API request failed");
             return StatusCode(502, new { Message = $"Failed to fetch from PSN API: {ex.Message}" });
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse PSN API response");
+            return StatusCode(502, new { Message = $"PSN API returned unexpected data: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during PSN retrieve");
+            return StatusCode(500, new { Message = $"Internal error: {ex.Message}" });
         }
     }
 }

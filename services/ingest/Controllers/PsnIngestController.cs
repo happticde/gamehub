@@ -1,6 +1,7 @@
 using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 using System.Text.Json;
 
@@ -17,7 +18,7 @@ namespace GameHub.Ingest.Controllers;
 [Route("api/ingest/psn")]
 public class PsnIngestController : IngestControllerBase<PsnRawItem>
 {
-    public PsnIngestController(IngestContext db) : base(db) { }
+    public PsnIngestController(IngestContext db, ILogger<PsnIngestController> logger) : base(db, logger) { }
 
     protected override string PlatformName => "PSN";
     protected override DbSet<PsnRawItem> DbSet => Db.PsnRawItems;

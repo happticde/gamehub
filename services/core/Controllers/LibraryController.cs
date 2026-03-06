@@ -19,11 +19,13 @@ public class LibraryController : ControllerBase
 {
     private readonly UnificationService _unifier;
     private readonly CoreContext _db;
+    private readonly ILogger<LibraryController> _logger;
 
-    public LibraryController(UnificationService unifier, CoreContext db)
+    public LibraryController(UnificationService unifier, CoreContext db, ILogger<LibraryController> logger)
     {
         _unifier = unifier;
         _db = db;
+        _logger = logger;
     }
 
     /// <summary>
@@ -34,7 +36,9 @@ public class LibraryController : ControllerBase
     [HttpPost("sync")]
     public async Task<IActionResult> Sync()
     {
+        _logger.LogInformation("Starting full library sync");
         var count = await _unifier.RunFullSyncAsync();
+        _logger.LogInformation("Library sync completed: {Count} items processed", count);
         return Ok(new { Processed = count, Message = "Sync completed successfully." });
     }
 
@@ -105,11 +109,20 @@ public class LibraryController : ControllerBase
             .FirstOrDefaultAsync(g => g.Id == request.TargetGameId);
 
         if (source == null)
+        {
+            _logger.LogWarning("Merge failed: source game {Id} not found", request.SourceGameId);
             return NotFound(new { Message = $"Source game with ID {request.SourceGameId} not found" });
+        }
         if (target == null)
+        {
+            _logger.LogWarning("Merge failed: target game {Id} not found", request.TargetGameId);
             return NotFound(new { Message = $"Target game with ID {request.TargetGameId} not found" });
+        }
         if (source.Id == target.Id)
             return BadRequest(new { Message = "Cannot merge a game with itself" });
+
+        _logger.LogInformation("Merging '{Source}' (ID: {SrcId}) into '{Target}' (ID: {TgtId})",
+            source.Title, source.Id, target.Title, target.Id);
 
         // Move each LibraryItem from source to target
         foreach (var item in source.Items.ToList())
@@ -151,6 +164,8 @@ public class LibraryController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        _logger.LogInformation("Merge completed: '{Source}' → '{Target}'", source.Title, target.Title);
+
         return Ok(new
         {
             Message = $"Merged '{source.Title}' into '{target.Title}'.",
@@ -178,10 +193,16 @@ public class LibraryController : ControllerBase
             .FirstOrDefaultAsync(i => i.Id == request.LibraryItemId);
 
         if (item == null)
+        {
+            _logger.LogWarning("Split failed: library item {Id} not found", request.LibraryItemId);
             return NotFound(new { Message = $"Library item with ID {request.LibraryItemId} not found" });
+        }
 
         if (item.UnifiedGame == null)
             return BadRequest(new { Message = "Library item is not linked to any game" });
+
+        _logger.LogInformation("Splitting {Platform} item '{ExternalId}' from game '{Game}'",
+            item.Platform, item.ExternalId, item.UnifiedGame.Title);
 
         // Create a new UnifiedGame for the detached item
         // Use the original title but append the platform name to differentiate
@@ -219,6 +240,8 @@ public class LibraryController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Split completed: new game '{Title}' (ID: {Id})", newTitle, newGame.Id);
 
         return Ok(new
         {

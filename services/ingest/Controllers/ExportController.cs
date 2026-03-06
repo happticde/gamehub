@@ -2,6 +2,7 @@ using GameHub.Shared;
 using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace GameHub.Ingest.Controllers;
 
@@ -18,8 +19,13 @@ namespace GameHub.Ingest.Controllers;
 public class ExportController : ControllerBase
 {
     private readonly IngestContext _db;
+    private readonly ILogger<ExportController> _logger;
 
-    public ExportController(IngestContext db) { _db = db; }
+    public ExportController(IngestContext db, ILogger<ExportController> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     /// <summary>
     /// GET: api/export/{platform}?page=1&amp;pageSize=200&amp;updatedAfter=2024-01-01T00:00:00Z
@@ -40,6 +46,9 @@ public class ExportController : ControllerBase
         [FromQuery] int pageSize = 200,
         [FromQuery] DateTime? updatedAfter = null)
     {
+        _logger.LogDebug("Export: {Platform} page {Page}, pageSize {PageSize}, updatedAfter {After}",
+            platform, page, pageSize, updatedAfter?.ToString("O") ?? "none");
+
         // Enforce safe bounds
         if (pageSize > 500) pageSize = 500;
         if (page < 1) page = 1;
@@ -59,7 +68,10 @@ public class ExportController : ControllerBase
         };
 
         if (query == null)
+        {
+            _logger.LogWarning("Export: unknown platform '{Platform}' requested", platform);
             return BadRequest(new { Message = $"Unknown platform: {platform}. Use steam, psn, gog, or epic." });
+        }
 
         // Get total count for pagination metadata
         var totalCount = await query.CountAsync();

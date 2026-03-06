@@ -59,6 +59,14 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// --- Error Handling ---
+// In development, show full stack traces in error responses instead of bare 500s.
+// In production, this is automatically disabled for security.
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+
 // --- Swagger UI ---
 app.UseSwagger();
 app.UseSwaggerUI(c =>

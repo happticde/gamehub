@@ -1,6 +1,7 @@
 using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 using System.Text.Json;
 
@@ -16,7 +17,7 @@ namespace GameHub.Ingest.Controllers;
 [Route("api/ingest/gog")]
 public class GogIngestController : IngestControllerBase<GogRawItem>
 {
-    public GogIngestController(IngestContext db) : base(db) { }
+    public GogIngestController(IngestContext db, ILogger<GogIngestController> logger) : base(db, logger) { }
 
     protected override string PlatformName => "GOG";
     protected override DbSet<GogRawItem> DbSet => Db.GogRawItems;

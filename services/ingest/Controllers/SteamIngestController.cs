@@ -1,6 +1,7 @@
 using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 using System.Text.Json;
 
@@ -17,7 +18,7 @@ namespace GameHub.Ingest.Controllers;
 [Route("api/ingest/steam")]
 public class SteamIngestController : IngestControllerBase<SteamRawItem>
 {
-    public SteamIngestController(IngestContext db) : base(db) { }
+    public SteamIngestController(IngestContext db, ILogger<SteamIngestController> logger) : base(db, logger) { }
 
     protected override string PlatformName => "Steam";
     protected override DbSet<SteamRawItem> DbSet => Db.SteamRawItems;

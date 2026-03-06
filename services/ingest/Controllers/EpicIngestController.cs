@@ -1,6 +1,7 @@
 using GameHub.Ingest.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 using System.Text.Json;
 
@@ -17,7 +18,7 @@ namespace GameHub.Ingest.Controllers;
 [Route("api/ingest/epic")]
 public class EpicIngestController : IngestControllerBase<EpicRawItem>
 {
-    public EpicIngestController(IngestContext db) : base(db) { }
+    public EpicIngestController(IngestContext db, ILogger<EpicIngestController> logger) : base(db, logger) { }
 
     protected override string PlatformName => "Epic";
     protected override DbSet<EpicRawItem> DbSet => Db.EpicRawItems;

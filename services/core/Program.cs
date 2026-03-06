@@ -52,6 +52,12 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// --- Error Handling ---
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+
 // --- Health Check Endpoint ---
 app.MapHealthChecks("/health");
 
