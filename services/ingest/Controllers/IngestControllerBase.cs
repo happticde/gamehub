@@ -1,5 +1,6 @@
 using GameHub.Shared;
 using GameHub.Ingest.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,7 @@ namespace GameHub.Ingest.Controllers;
 /// Type parameter TEntity must be a class that implements IRawItem,
 /// which all four raw item entities (SteamRawItem, PsnRawItem, etc.) do.
 /// </summary>
+[Authorize]
 public abstract class IngestControllerBase<TEntity> : ControllerBase where TEntity : class, IRawItem
 {
     /// <summary>The shared EF Core database context for all ingest operations.</summary>

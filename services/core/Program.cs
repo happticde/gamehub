@@ -1,5 +1,6 @@
 using GameHub.Core.Data;
 using GameHub.Core.Services;
+using GameHub.Shared.Authentication;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,9 +23,21 @@ builder.Services.AddHealthChecks()
 //   - Request timeout (prevents hanging forever on slow responses)
 //   - Total request timeout (caps the total time including all retries)
 var ingestUrl = builder.Configuration["Services:IngestUrl"] ?? "http://localhost:5000";
-builder.Services.AddHttpClient<IngestClient>(c => c.BaseAddress = new Uri(ingestUrl))
+var ingestApiKey = builder.Configuration["Authentication:ApiKey"] ?? "";
+builder.Services.AddHttpClient<IngestClient>(c =>
+{
+    c.BaseAddress = new Uri(ingestUrl);
+    // Forward the API key to the Ingest service for service-to-service auth
+    if (!string.IsNullOrEmpty(ingestApiKey))
+    {
+        c.DefaultRequestHeaders.Add("X-Api-Key", ingestApiKey);
+    }
+})
     .AddStandardResilienceHandler();
 builder.Services.AddScoped<UnificationService>();
+
+// --- Authentication (ADR-002) ---
+builder.Services.AddApiKeyAuthentication(builder.Configuration);
 
 // --- Database ---
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
@@ -60,6 +73,10 @@ if (app.Environment.IsDevelopment())
 
 // --- Health Check Endpoint ---
 app.MapHealthChecks("/health");
+
+// --- Authentication & Authorization ---
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 app.Run();

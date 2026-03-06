@@ -1,6 +1,7 @@
 using GameHub.Core.Data;
 using GameHub.Core.Services;
 using GameHub.Shared;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,7 @@ namespace GameHub.Core.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/library")]
+[Authorize]
 public class LibraryController : ControllerBase
 {
     private readonly UnificationService _unifier;

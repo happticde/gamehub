@@ -1,5 +1,6 @@
 using GameHub.Shared;
 using GameHub.Ingest.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,7 @@ namespace GameHub.Ingest.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/export")]
+[Authorize]
 public class ExportController : ControllerBase
 {
     private readonly IngestContext _db;

@@ -14,6 +14,10 @@ import (
 // Set via --backend-url flag or config file.
 var backendUrl string
 
+// apiKeyFlag holds the API key for authentication.
+// Set via --api-key flag or "api-key" in config file.
+var apiKeyFlag string
+
 var rootCmd = &cobra.Command{
 	Use:   "gamehub-cli",
 	Short: "CLI for GameHub Ingestion and Management",
@@ -23,8 +27,9 @@ func init() {
 	// Load config file before any command runs
 	cobra.OnInitialize(initConfig)
 
-	// Global flag — available to all subcommands
+	// Global flags — available to all subcommands
 	rootCmd.PersistentFlags().StringVar(&backendUrl, "backend-url", "http://localhost:5000", "Base URL for GameHub Ingest API")
+	rootCmd.PersistentFlags().StringVar(&apiKeyFlag, "api-key", "", "API key for authentication (or set in config file)")
 }
 
 func Execute() {

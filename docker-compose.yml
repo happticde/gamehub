@@ -11,6 +11,7 @@ services:
     environment:
       - Database__Provider=Sqlite
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/ingest.db
+      # - Authentication__ApiKey=your-secret-key-here
     healthcheck:
       # Use wget instead of curl — Alpine images don't include curl
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
@@ -28,6 +29,7 @@ services:
       - Database__Provider=Sqlite
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/core.db
       - Services__IngestUrl=http://ingest:8080
+      # - Authentication__ApiKey=your-secret-key-here
     depends_on:
       ingest:
         condition: service_healthy

@@ -4,6 +4,7 @@
 // Config file format (~/.gamehub.yaml):
 //
 //	backend-url: http://localhost:5000
+//	api-key: "YOUR_API_KEY"
 //	steam:
 //	  key: "YOUR_STEAM_API_KEY"
 //	  id: "YOUR_STEAM_ID_64"

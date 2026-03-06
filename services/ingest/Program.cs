@@ -1,5 +1,6 @@
 using GameHub.Ingest.Data;
 using GameHub.Ingest.Services;
+using GameHub.Shared.Authentication;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +26,11 @@ builder.Services.AddHealthChecks()
 builder.Services.AddHttpClient<SteamFetcher>(); // Uses typed HttpClient
 builder.Services.AddTransient<GogFetcher>();     // Creates its own cookie-based client
 builder.Services.AddTransient<PsnFetcher>();     // Creates its own cookie-based client
+
+// --- Authentication (ADR-002) ---
+// API key auth via X-Api-Key header. If no key is configured, auth is disabled.
+// Uses ASP.NET's AuthenticationHandler pipeline — ready for JWT addition later.
+builder.Services.AddApiKeyAuthentication(builder.Configuration);
 
 // --- Database ---
 var dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";
@@ -77,6 +83,10 @@ app.UseSwaggerUI(c =>
 
 // --- Health Check Endpoint ---
 app.MapHealthChecks("/health");
+
+// --- Authentication & Authorization ---
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 app.Run();

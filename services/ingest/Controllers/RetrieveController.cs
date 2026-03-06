@@ -1,5 +1,6 @@
 using GameHub.Ingest.Data;
 using GameHub.Ingest.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
@@ -21,6 +22,7 @@ namespace GameHub.Ingest.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/retrieve")]
+[Authorize]
 public class RetrieveController : ControllerBase
 {
     private readonly IngestContext _db;
