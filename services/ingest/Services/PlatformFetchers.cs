@@ -224,6 +224,8 @@ public class PsnFetcher
 
             var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Add("Accept", "application/json");
+            req.Headers.Add("x-apollo-operation-name", "getPurchasedGameList");
+            req.Headers.Add("apollo-require-preflight", "true");
 
             var resp = await client.SendAsync(req);
 
