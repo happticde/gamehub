@@ -85,13 +85,20 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
 
 `GET /api/library/stats` — total games, per-platform counts, duplicate %, recently added. Platform overlap data for Venn diagrams.
 
+### 11. MCP Server (Model Context Protocol)
+
+AI agent integration layer — expose library queries, sync triggers, and merge/split as MCP tools. Lets AI assistants interact with the game library via natural language (e.g. *"What RPGs do I own on both Steam and GOG?"*). Best value after metadata enrichment (#4).
+
+Tools: `list_games`, `search_games`, `sync_library`, `fetch_platform`, `merge_games`, `library_stats`
+
 ---
 
 ## Suggested Next Steps
 
 | Goal | Path |
 |------|------|
-| **Stability & confidence** | #1 Tests → #2 Migrations → #3 Auth |
+| **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | #4 Metadata → #5 Frontend → #10 Stats |
-| **Production readiness** | #1 Tests → #7 CI/CD → #3 Auth → #6 Scheduler |
+| **Production readiness** | #7 CI/CD → #6 Scheduler |
+| **AI integration** | #4 Metadata → #11 MCP Server |
 | **Fun features** | #4 Metadata → #9 Activity Feed → #10 Stats |
