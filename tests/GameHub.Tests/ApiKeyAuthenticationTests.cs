@@ -1,0 +1,171 @@
+using System.Net;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
+using GameHub.Shared.Authentication;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Xunit;
+
+namespace GameHub.Tests;
+
+/// <summary>
+/// Tests for the ApiKeyAuthenticationHandler — the core security component.
+///
+/// Covers all four scenarios:
+///   1. No key configured → auth disabled (backward compatible)
+///   2. Key configured, no header → 401
+///   3. Key configured, wrong key → 401
+///   4. Key configured, correct key → authenticated
+/// </summary>
+public class ApiKeyAuthenticationTests
+{
+    private const string TestApiKey = "test-secret-key-123";
+
+    /// <summary>
+    /// Creates an ApiKeyAuthenticationHandler wired up with the given config
+    /// and HTTP context. Uses the real ASP.NET authentication pipeline.
+    /// </summary>
+    private async Task<ApiKeyAuthenticationHandler> CreateHandler(
+        Dictionary<string, string?> configValues,
+        HttpContext httpContext)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configValues)
+            .Build();
+
+        var options = new OptionsMonitor<AuthenticationSchemeOptions>(
+            new OptionsFactory<AuthenticationSchemeOptions>(
+                Enumerable.Empty<IConfigureOptions<AuthenticationSchemeOptions>>(),
+                Enumerable.Empty<IPostConfigureOptions<AuthenticationSchemeOptions>>()),
+            Enumerable.Empty<IOptionsChangeTokenSource<AuthenticationSchemeOptions>>(),
+            new OptionsCache<AuthenticationSchemeOptions>());
+
+        var loggerFactory = NullLoggerFactory.Instance;
+
+        var handler = new ApiKeyAuthenticationHandler(
+            options, loggerFactory, UrlEncoder.Default, configuration);
+
+        var scheme = new AuthenticationScheme(
+            ApiKeyAuthenticationHandler.SchemeName,
+            displayName: null,
+            typeof(ApiKeyAuthenticationHandler));
+
+        await handler.InitializeAsync(scheme, httpContext);
+        return handler;
+    }
+
+    private HttpContext CreateHttpContext(string? apiKeyHeader = null)
+    {
+        var context = new DefaultHttpContext();
+        if (apiKeyHeader != null)
+        {
+            context.Request.Headers["X-Api-Key"] = apiKeyHeader;
+        }
+        return context;
+    }
+
+    // =========================================================================
+    // Scenario 1: No API key configured → auth disabled
+    // =========================================================================
+
+    [Fact]
+    public async Task NoKeyConfigured_AllowsAllRequests()
+    {
+        var context = CreateHttpContext();
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", "" } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("anonymous", result.Principal?.Identity?.Name);
+    }
+
+    [Fact]
+    public async Task NullKeyConfigured_AllowsAllRequests()
+    {
+        var context = CreateHttpContext();
+        var handler = await CreateHandler(
+            new Dictionary<string, string?>(), // No key at all
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.True(result.Succeeded);
+    }
+
+    // =========================================================================
+    // Scenario 2: Key configured, no header → rejected
+    // =========================================================================
+
+    [Fact]
+    public async Task KeyConfigured_NoHeader_Fails()
+    {
+        var context = CreateHttpContext(); // No X-Api-Key header
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", TestApiKey } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Missing", result.Failure?.Message);
+    }
+
+    // =========================================================================
+    // Scenario 3: Key configured, wrong key → rejected
+    // =========================================================================
+
+    [Fact]
+    public async Task KeyConfigured_WrongKey_Fails()
+    {
+        var context = CreateHttpContext("wrong-key");
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", TestApiKey } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Invalid", result.Failure?.Message);
+    }
+
+    // =========================================================================
+    // Scenario 4: Key configured, correct key → authenticated
+    // =========================================================================
+
+    [Fact]
+    public async Task KeyConfigured_CorrectKey_Succeeds()
+    {
+        var context = CreateHttpContext(TestApiKey);
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", TestApiKey } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("ApiKeyUser", result.Principal?.Identity?.Name);
+    }
+
+    [Fact]
+    public async Task KeyConfigured_CorrectKey_HasAuthMethodClaim()
+    {
+        var context = CreateHttpContext(TestApiKey);
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", TestApiKey } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.True(result.Succeeded);
+        var authMethodClaim = result.Principal?.FindFirst(ClaimTypes.AuthenticationMethod);
+        Assert.NotNull(authMethodClaim);
+        Assert.Equal("ApiKey", authMethodClaim.Value);
+    }
+}
