@@ -124,6 +124,22 @@ public class LibraryController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// GET: api/library/tags
+    /// Returns a flat list of all unique tag (genre) names currently in the database.
+    /// Used by frontend dropdown filters.
+    /// </summary>
+    [HttpGet("tags")]
+    public async Task<IActionResult> GetTags()
+    {
+        var tags = await _db.Tags
+            .Select(t => t.Name)
+            .OrderBy(n => n)
+            .ToListAsync();
+
+        return Ok(tags);
+    }
+
     // =========================================================================
     // Enrichment Endpoints
     // =========================================================================

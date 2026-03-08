@@ -23,6 +23,7 @@ export default async function LibraryPage({
     // We use standard fetch syntax. The URL hits our own Next.js server route, 
     // which is then proxied via next.config.ts down to the C# Core API.
     let games: UnifiedGame[] = [];
+    let tagsList: string[] = [];
     let totalCount = 0;
     let pageSize = 50;
     let error: string | null = null;
@@ -37,11 +38,11 @@ export default async function LibraryPage({
         // We proxy it through Next.js
         const fetchUrl = `http://localhost:3000/api/core/library?${query.toString()}`;
 
-        const res = await fetch(fetchUrl, {
-            // By default, Next.js caches fetches. We disable it for dynamic library data initially,
-            // or we can use next: { revalidate: 60 } to cache for 60 seconds.
-            cache: "no-store",
-        });
+        // Fetch both pages in parallel for performance using Promise.all
+        const [res, tagsRes] = await Promise.all([
+            fetch(fetchUrl, { cache: "no-store" }),
+            fetch("http://localhost:3000/api/core/library/tags", { cache: "no-store", next: { revalidate: 300 } }) // Cache tags for 5 minutes
+        ]);
 
         if (!res.ok) {
             throw new Error(`Failed to fetch data: ${res.status} ${res.statusText}`);
@@ -51,6 +52,10 @@ export default async function LibraryPage({
         games = result.items || [];
         totalCount = result.totalCount || 0;
         pageSize = result.pageSize || 50;
+
+        if (tagsRes.ok) {
+            tagsList = await tagsRes.json();
+        }
     } catch (e: any) {
         error = e.message || "An unexpected error occurred while fetching your library.";
         console.error("Fetch Library Error:", error);
@@ -68,7 +73,7 @@ export default async function LibraryPage({
 
                 {/* URL-state Filter Component */}
                 <div className="w-full md:w-auto">
-                    <LibraryFilters />
+                    <LibraryFilters availableTags={tagsList} />
                 </div>
             </div>
 

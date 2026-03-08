@@ -5,7 +5,11 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export default function LibraryFilters() {
+interface LibraryFiltersProps {
+    availableTags: string[];
+}
+
+export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -82,11 +86,9 @@ export default function LibraryFilters() {
                 </SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">All Genres</SelectItem>
-                    <SelectItem value="RPG">RPG</SelectItem>
-                    <SelectItem value="Action">Action</SelectItem>
-                    <SelectItem value="Adventure">Adventure</SelectItem>
-                    <SelectItem value="Strategy">Strategy</SelectItem>
-                    <SelectItem value="Shooter">Shooter</SelectItem>
+                    {availableTags.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
                 </SelectContent>
             </Select>
 
