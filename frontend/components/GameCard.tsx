@@ -22,8 +22,10 @@ function getPlatformColor(platform: Platform): string {
 }
 
 export default function GameCard({ game }: GameCardProps) {
-    // Determine if the game has at least one library item to derive the primary platform badge
-    const primaryPlatform = game.platforms && game.platforms.length > 0 ? game.platforms[0].platform : null;
+    // Determine the unique platforms this game is available on
+    const platforms = game.platforms
+        ? Array.from(new Set(game.platforms.map(p => p.platform)))
+        : [];
 
     return (
         <div className="group relative overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md hover:-translate-y-1">
@@ -63,16 +65,19 @@ export default function GameCard({ game }: GameCardProps) {
                     </div>
                 )}
 
-                {/* Platform Badge Overlay */}
-                {primaryPlatform && (
-                    <div className="absolute right-2 top-2 z-10">
-                        <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold shadow-sm ${getPlatformColor(
-                                primaryPlatform
-                            )}`}
-                        >
-                            {primaryPlatform}
-                        </span>
+                {/* Platform Badges Overlay */}
+                {platforms.length > 0 && (
+                    <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1">
+                        {platforms.map(platform => (
+                            <span
+                                key={platform}
+                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold shadow-sm ${getPlatformColor(
+                                    platform
+                                )}`}
+                            >
+                                {platform}
+                            </span>
+                        ))}
                     </div>
                 )}
 

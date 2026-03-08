@@ -21,6 +21,12 @@ export default async function LibraryPage({
         tags = Array.isArray(resolvedParams.tags) ? resolvedParams.tags : [resolvedParams.tags];
     }
 
+    // Platforms can be undefined, a single string `?platforms=Steam`, or an array `?platforms=Steam&platforms=Gog`
+    let platforms: string[] = [];
+    if (resolvedParams.platforms) {
+        platforms = Array.isArray(resolvedParams.platforms) ? resolvedParams.platforms : [resolvedParams.platforms];
+    }
+
     // Parse page number (default to 1, ensure it's a positive integer)
     const pageParam = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page, 10) : 1;
     const currentPage = !isNaN(pageParam) && pageParam > 0 ? pageParam : 1;
@@ -40,6 +46,9 @@ export default async function LibraryPage({
 
         // Append all tags array values exactly as ASP.NET MVC expects them
         tags.forEach(t => query.append("tags", t));
+
+        // Append all platforms array values exactly as ASP.NET MVC expects them
+        platforms.forEach(p => query.append("platforms", p));
 
         query.append("page", currentPage.toString());
 

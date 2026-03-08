@@ -59,6 +59,7 @@ public class LibraryController : ControllerBase
     public async Task<IActionResult> GetLibrary(
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
+        [FromQuery] Platform[]? platforms,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -85,6 +86,12 @@ public class LibraryController : ControllerBase
                                 .ToList();
             
             query = query.Where(g => g.Tags.Any(t => lowerTags.Contains(t.Name.ToLower())));
+        }
+
+        // Filter by platforms if any are provided
+        if (platforms != null && platforms.Length > 0)
+        {
+            query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
         }
 
         // Get total count for pagination metadata

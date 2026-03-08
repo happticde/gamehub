@@ -19,6 +19,10 @@ export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
     const defaultSearch = searchParams.get("search") || "";
     // In Next.js URLSearchParams, `getAll` pulls every instance of `?tags=X` into an array
     const defaultTags = searchParams.getAll("tags");
+    const defaultPlatforms = searchParams.getAll("platforms");
+
+    // Hardcode platforms since the C# backend uses a fixed Platform enum
+    const AVAILABLE_PLATFORMS = ["Steam", "Gog", "Psn", "Epic"];
 
     const [searchQuery, setSearchQuery] = useState(defaultSearch);
 
@@ -51,6 +55,27 @@ export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
 
             // Append every selected tag to the URL (`?tags=RPG&tags=Action`)
             newTags.forEach(t => params.append("tags", t));
+
+            // Reset page to 1 when filters change
+            params.delete("page");
+
+            startTransition(() => {
+                router.push(`${pathname}?${params.toString()}`);
+            });
+        },
+        [pathname, router, searchParams]
+    );
+
+    // Memoized function to update the platforms array
+    const updatePlatformsUrl = useCallback(
+        (newPlatforms: string[]) => {
+            const params = new URLSearchParams(searchParams.toString());
+
+            // Wipe the old platforms parameters clean
+            params.delete("platforms");
+
+            // Append every selected platform to the URL
+            newPlatforms.forEach(p => params.append("platforms", p));
 
             // Reset page to 1 when filters change
             params.delete("page");
@@ -98,6 +123,15 @@ export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
                 />
             </div>
 
+            <div className="w-full sm:w-[220px]">
+                <MultiSelect
+                    options={AVAILABLE_PLATFORMS}
+                    selected={defaultPlatforms}
+                    onChange={updatePlatformsUrl}
+                    placeholder="Filter platforms..."
+                />
+            </div>
+
             <div className="w-full sm:w-[280px]">
                 <MultiSelect
                     options={availableTags}
@@ -106,7 +140,6 @@ export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
                     placeholder="Select tags..."
                 />
             </div>
-
             {/* Loading spinner when Next.js is fetching new server data */}
             <div className={`flex h-9 w-9 items-center justify-center transition-opacity ${isPending ? 'opacity-100' : 'opacity-0'}`}>
                 <svg className="h-5 w-5 animate-spin text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
