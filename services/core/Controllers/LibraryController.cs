@@ -158,6 +158,43 @@ public class LibraryController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// GET: api/library/enrichment-history
+    /// Returns the most recent enrichment audit logs.
+    /// Optionally filter by a specific gameId.
+    /// </summary>
+    [HttpGet("enrichment-history")]
+    public async Task<IActionResult> GetEnrichmentHistory(
+        [FromQuery] int? gameId, 
+        [FromQuery] int limit = 50)
+    {
+        var query = _db.EnrichmentAuditLogs
+            .Include(l => l.UnifiedGame)
+            .AsNoTracking();
+
+        if (gameId.HasValue)
+            query = query.Where(l => l.UnifiedGameId == gameId.Value);
+
+        var logs = await query
+            .OrderByDescending(l => l.Timestamp)
+            .Take(limit)
+            .Select(l => new
+            {
+                l.Id,
+                l.UnifiedGameId,
+                GameTitle = l.UnifiedGame != null ? l.UnifiedGame.Title : "Unknown",
+                l.Timestamp,
+                l.ProviderName,
+                l.Status,
+                l.ErrorMessage,
+                l.ProviderGameId,
+                l.MatchedTitle
+            })
+            .ToListAsync();
+
+        return Ok(logs);
+    }
+
     // =========================================================================
     // Manual Merge / Split Endpoints
     // =========================================================================

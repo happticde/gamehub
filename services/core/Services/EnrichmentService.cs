@@ -53,30 +53,55 @@ public class EnrichmentService
             return false;
         }
 
-        // If we already have a provider ID (from previous enrichment), use it for a direct lookup
-        // Otherwise, search by title
-        GameMetadata? metadata;
-        if (game.MetadataProviderId.HasValue && game.MetadataSource == _provider.ProviderName)
+        // Determine whether to use direct ID lookup or search
+        bool isReEnrichment = game.MetadataProviderId.HasValue && game.MetadataSource == _provider.ProviderName;
+
+        GameMetadata? metadata = null;
+        string auditStatus = "Success";
+        string? errorMessage = null;
+
+        try
         {
-            metadata = await _provider.GetByIdAsync(game.MetadataProviderId.Value, ct);
+            if (isReEnrichment)
+                metadata = await _provider.GetByIdAsync(game.MetadataProviderId!.Value, ct);
+            else
+                metadata = await _provider.SearchAsync(game.Title, ct);
+
+            if (metadata == null)
+                auditStatus = "NotFound";
         }
-        else
+        catch (Exception ex)
         {
-            metadata = await _provider.SearchAsync(game.Title, ct);
+            auditStatus = "Error";
+            errorMessage = ex.Message;
+            _logger.LogError(ex, "Failed to enrich '{Title}' via {Provider}", game.Title, _provider.ProviderName);
         }
 
+        // Apply metadata (or just update EnrichedAt if NotFound/Error)
         ApplyMetadata(game, metadata);
+
+        // Record the audit log
+        var auditLog = new EnrichmentAuditLog
+        {
+            UnifiedGameId = game.Id,
+            ProviderName = _provider.ProviderName,
+            Status = auditStatus,
+            ErrorMessage = errorMessage,
+            ProviderGameId = metadata?.ProviderId,
+            MatchedTitle = metadata?.MatchedTitle
+        };
+        db.EnrichmentAuditLogs.Add(auditLog);
+
         await db.SaveChangesAsync(ct);
 
-        if (metadata != null)
+        if (auditStatus == "Success")
         {
             _logger.LogInformation("✅ Enriched '{Title}' | Provider ID: {ProviderId} | Rating: {Rating} | Genres: {Genres} | Cover: {HasCover}",
-                game.Title, metadata.ProviderId, metadata.Rating?.ToString("F1") ?? "None", game.Genres ?? "None", game.CoverUrl != null ? "Yes" : "No");
+                game.Title, metadata!.ProviderId, metadata.Rating?.ToString("F1") ?? "None", game.Genres ?? "None", game.CoverUrl != null ? "Yes" : "No");
         }
-        else
+        else if (auditStatus == "NotFound")
         {
-            _logger.LogInformation("❌ No metadata found for '{Title}'",
-                game.Title);
+            _logger.LogInformation("❌ No metadata found for '{Title}'", game.Title);
         }
 
         return true;

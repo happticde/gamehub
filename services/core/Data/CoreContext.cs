@@ -17,5 +17,9 @@ public class CoreContext : DbContext
     // --- Manual Overrides ---
     /// <summary>Stores manual merge/split overrides that bypass automatic slug-based matching.</summary>
     public DbSet<ManualLink> ManualLinks => Set<ManualLink>();
+
+    // --- Audit Logs ---
+    /// <summary>History of metadata enrichment attempts and outcomes.</summary>
+    public DbSet<EnrichmentAuditLog> EnrichmentAuditLogs => Set<EnrichmentAuditLog>();
 }
 

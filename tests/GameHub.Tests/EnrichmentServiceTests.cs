@@ -70,7 +70,8 @@ public class EnrichmentServiceTests : IDisposable
             Summary: "A great RPG.",
             Genres: ["RPG", "Action"],
             FirstReleaseDate: new DateTime(2015, 5, 19, 0, 0, 0, DateTimeKind.Utc),
-            Rating: 92.5
+            Rating: 92.5,
+            MatchedTitle: "Mock Title"
         );
 
         // Act
@@ -88,6 +89,13 @@ public class EnrichmentServiceTests : IDisposable
         Assert.Equal(92.5, updated.Rating);
         Assert.Equal(1001, updated.MetadataProviderId);
         Assert.Equal("MockProvider", updated.MetadataSource);
+
+        var auditLog = await db.EnrichmentAuditLogs.SingleOrDefaultAsync(l => l.UnifiedGameId == game.Id);
+        Assert.NotNull(auditLog);
+        Assert.Equal("Success", auditLog.Status);
+        Assert.Equal("MockProvider", auditLog.ProviderName);
+        Assert.Equal(1001, auditLog.ProviderGameId);
+        Assert.Equal("Mock Title", auditLog.MatchedTitle);
     }
 
     [Fact]
@@ -115,6 +123,12 @@ public class EnrichmentServiceTests : IDisposable
         Assert.NotNull(updated.EnrichedAt); // Marked as processed
         Assert.Null(updated.CoverUrl);      // Still null
         Assert.Null(updated.Summary);
+
+        var auditLog = await db.EnrichmentAuditLogs.SingleOrDefaultAsync(l => l.UnifiedGameId == game.Id);
+        Assert.NotNull(auditLog);
+        Assert.Equal("NotFound", auditLog.Status);
+        Assert.Equal("MockProvider", auditLog.ProviderName);
+        Assert.Null(auditLog.ProviderGameId);
     }
 
     [Fact]

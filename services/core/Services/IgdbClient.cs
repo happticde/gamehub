@@ -164,7 +164,8 @@ public class IgdbClient : IGameMetadataProvider
             Summary: game.Summary,
             Genres: genres!,
             FirstReleaseDate: releaseDate,
-            Rating: game.AggregatedRating
+            Rating: game.AggregatedRating,
+            MatchedTitle: game.Name
         );
     }
 

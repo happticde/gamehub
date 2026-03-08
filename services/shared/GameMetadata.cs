@@ -25,5 +25,8 @@ public record GameMetadata(
     DateTime? FirstReleaseDate,
 
     /// <summary>Critic/aggregate rating normalized to 0–100 scale.</summary>
-    double? Rating
+    double? Rating,
+
+    /// <summary>The actual title returned by the provider (used for audit logs).</summary>
+    string? MatchedTitle = null
 );

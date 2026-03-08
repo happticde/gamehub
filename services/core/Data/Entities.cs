@@ -49,3 +49,17 @@ public class LibraryItem
     public string ExternalId { get; set; } = "";
     public DateTime LastSynced { get; set; } = DateTime.UtcNow;
 }
+
+public class EnrichmentAuditLog
+{
+    public int Id { get; set; }
+    public int UnifiedGameId { get; set; }
+    public UnifiedGame? UnifiedGame { get; set; }
+    
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string ProviderName { get; set; } = "";
+    public string Status { get; set; } = ""; // "Success", "NotFound", "Error"
+    public string? ErrorMessage { get; set; }
+    public int? ProviderGameId { get; set; }
+    public string? MatchedTitle { get; set; }
+}

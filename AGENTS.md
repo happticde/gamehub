@@ -88,3 +88,9 @@ See `docs/adr/` for architecture decision records.
 - **dotnet is NOT installed on the host machine.** Do not attempt to run `dotnet build`, `dotnet test`, `dotnet ef`, or any other dotnet CLI commands directly.
 - All building, testing, and migrations are done inside a **devcontainer** opened in a separate VS Code editor.
 - The agent's role is to write and edit code; the user handles compilation and test execution in the devcontainer.
+
+## 🚨 Critical AI Agent Rules 🚨
+
+1. **NEVER quietly ignore failed code edits.** If a code edit tool returns an error (e.g., "Cannot find original content"), you MUST halt, re-read the file, and apply the edit successfully before proceeding or notifying the user.
+2. **Verify your work.** Always double-check that your code edits were actually applied. Do not blindly assume success if you fired off multiple tools concurrently.
+3. **No sweeping assumptions.** Do not tell the user a feature is complete until you have verified the code actually exists in the file.
