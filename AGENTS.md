@@ -100,3 +100,4 @@ See `docs/adr/` for architecture decision records.
 1. **NEVER quietly ignore failed code edits.** If a code edit tool returns an error (e.g., "Cannot find original content"), you MUST halt, re-read the file, and apply the edit successfully before proceeding or notifying the user.
 2. **Verify your work.** Always double-check that your code edits were actually applied. Do not blindly assume success if you fired off multiple tools concurrently.
 3. **No sweeping assumptions.** Do not tell the user a feature is complete until you have verified the code actually exists in the file.
+4. **Always research latest stable tool versions.** Before proposing or hardcoding a version number for an OS package, runtime (Node.js, Go), NuGet package, or NPM package in an implementation plan, research the *current* latest stable release date/version rather than guessing from old memory blocks.
