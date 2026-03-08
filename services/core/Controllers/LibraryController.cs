@@ -51,13 +51,20 @@ public class LibraryController : ControllerBase
     }
 
     /// <summary>
-    /// GET: api/library?search=witcher
-    /// Returns all unified games with their platform tags.
+    /// GET: api/library?search=witcher&page=1&pageSize=50
+    /// Returns a paginated list of unified games with their platform tags.
     /// Optionally filter by title search.
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetLibrary([FromQuery] string? search)
+    public async Task<IActionResult> GetLibrary(
+        [FromQuery] string? search,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
     {
+        // Enforce safe bounds
+        if (pageSize > 500) pageSize = 500;
+        if (page < 1) page = 1;
+
         var query = _db.UnifiedGames
             .Include(g => g.Items)
             .AsNoTracking();
@@ -68,8 +75,14 @@ public class LibraryController : ControllerBase
             query = query.Where(g => g.Title.ToLower().Contains(search.ToLower()));
         }
 
+        // Get total count for pagination metadata
+        var totalCount = await query.CountAsync();
+
+        // Fetch the current page
         var games = await query
             .OrderBy(g => g.Title)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
         var result = games.Select(g => new
@@ -92,7 +105,14 @@ public class LibraryController : ControllerBase
             }).ToList()
         });
 
-        return Ok(result);
+        // Use the untyped or object-typed PagedResult since we mapped to an anonymous type
+        return Ok(new PagedResult<object>
+        {
+            Items = result.Cast<object>().ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
     }
 
     // =========================================================================
