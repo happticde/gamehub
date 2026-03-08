@@ -96,8 +96,32 @@ namespace GameHub.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CoverUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EnrichedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FirstReleaseDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Genres")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MetadataProviderId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("MetadataSource")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Rating")
+                        .HasColumnType("REAL");
+
                     b.Property<string>("Slug")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Summary")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Title")

@@ -20,12 +20,18 @@ namespace GameHub.Core.Controllers;
 public class LibraryController : ControllerBase
 {
     private readonly UnificationService _unifier;
+    private readonly EnrichmentService _enrichment;
     private readonly CoreContext _db;
     private readonly ILogger<LibraryController> _logger;
 
-    public LibraryController(UnificationService unifier, CoreContext db, ILogger<LibraryController> logger)
+    public LibraryController(
+        UnificationService unifier,
+        EnrichmentService enrichment,
+        CoreContext db,
+        ILogger<LibraryController> logger)
     {
         _unifier = unifier;
+        _enrichment = enrichment;
         _db = db;
         _logger = logger;
     }
@@ -71,6 +77,13 @@ public class LibraryController : ControllerBase
             g.Id,
             g.Title,
             g.Slug,
+            g.CoverUrl,
+            g.Summary,
+            g.Genres,
+            g.FirstReleaseDate,
+            g.Rating,
+            g.MetadataSource,
+            g.EnrichedAt,
             Platforms = g.Items.Select(i => new
             {
                 i.Platform,
@@ -80,6 +93,69 @@ public class LibraryController : ControllerBase
         });
 
         return Ok(result);
+    }
+
+    // =========================================================================
+    // Enrichment Endpoints
+    // =========================================================================
+
+    /// <summary>
+    /// POST: api/library/enrich
+    /// Triggers enrichment for all un-enriched games.
+    /// Returns the number of games processed.
+    /// </summary>
+    [HttpPost("enrich")]
+    public async Task<IActionResult> EnrichAll()
+    {
+        _logger.LogInformation("Starting bulk enrichment of un-enriched games");
+
+        var unenrichedCount = await _enrichment.GetUnenrichedCountAsync();
+        if (unenrichedCount == 0)
+            return Ok(new { Processed = 0, Message = "All games are already enriched." });
+
+        // Process all un-enriched games in batches
+        int totalProcessed = 0;
+        int batchProcessed;
+        do
+        {
+            batchProcessed = await _enrichment.EnrichUnenrichedAsync(batchSize: 10);
+            totalProcessed += batchProcessed;
+        } while (batchProcessed > 0);
+
+        _logger.LogInformation("Bulk enrichment completed: {Count} games processed", totalProcessed);
+        return Ok(new { Processed = totalProcessed, Message = $"Enriched {totalProcessed} games." });
+    }
+
+    /// <summary>
+    /// POST: api/library/enrich/{id}?force=false
+    /// Enriches (or re-enriches) a specific game by ID.
+    /// Pass ?force=true to re-enrich a game that already has metadata.
+    /// </summary>
+    [HttpPost("enrich/{id}")]
+    public async Task<IActionResult> EnrichGame(int id, [FromQuery] bool force = false)
+    {
+        _logger.LogInformation("Enriching game {Id} (force: {Force})", id, force);
+
+        var success = await _enrichment.EnrichGameAsync(id, force);
+        if (!success)
+            return NotFound(new { Message = $"Game with ID {id} not found or already enriched (use ?force=true to re-enrich)." });
+
+        // Reload the game to return the updated data
+        var game = await _db.UnifiedGames
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        return Ok(new
+        {
+            Message = $"Game '{game?.Title}' enriched successfully.",
+            game?.CoverUrl,
+            game?.Summary,
+            game?.Genres,
+            game?.FirstReleaseDate,
+            game?.Rating,
+            game?.MetadataSource,
+            game?.EnrichedAt
+        });
     }
 
     // =========================================================================

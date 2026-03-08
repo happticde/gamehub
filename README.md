@@ -30,7 +30,25 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, and
 
 ## Quick Start
 
-### 1. Start the backend
+### 1. Configure Secrets
+
+GameHub uses an `.env` file to securely pass API keys into Docker:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and configure your credentials. **For Game Metadata Enrichment (IGDB):**
+1. Log in to the [Twitch Developer Console](https://dev.twitch.tv/console) (requires 2FA)
+2. Register your application (OAuth redirect: `https://localhost`, Category: `Application Integration`, Client Type: `Confidential`)
+3. Copy your **Client ID** and generate a **Client Secret**
+4. Paste them into the `.env` file:
+   ```env
+   IGDB_CLIENT_ID=your-client-id
+   IGDB_CLIENT_SECRET=your-client-secret
+   ```
+
+### 2. Start the backend
 
 ```bash
 docker compose up --build
@@ -145,7 +163,9 @@ curl http://localhost:5001/api/library?search=witcher
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/library/sync` | Trigger incremental sync from Ingest |
-| `GET` | `/api/library?search=` | Query unified library |
+| `GET` | `/api/library?search=` | Query unified library (includes metadata) |
+| `POST` | `/api/library/enrich` | Bulk enrich all un-enriched games |
+| `POST` | `/api/library/enrich/{id}` | Enrich/re-enrich a single game `{ ?force=true }` |
 | `POST` | `/api/library/merge` | Merge two games `{ sourceGameId, targetGameId }` |
 | `POST` | `/api/library/split` | Split a platform entry `{ libraryItemId }` |
 

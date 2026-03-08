@@ -18,7 +18,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Auth | ✅ API key middleware (JWT-ready) |
 | CI/CD | ❌ Not started |
 | Frontend | ❌ API-only |
-| Enrichment / metadata | ❌ Only titles + platform IDs |
+| Enrichment / metadata | ✅ IGDB Provider implemented |
 
 ---
 
@@ -50,11 +50,7 @@ Simple API key middleware (`X-Api-Key` header) to protect ingest and sync endpoi
 
 ## 🎮 Tier 2 — Feature Enrichment
 
-### 4. Game Metadata Enrichment (IGDB / RAWG)
-
-Extend `UnifiedGame` with cover art, genres, descriptions, release dates, and ratings. An `EnrichmentService` would look up games by slug/title after sync. Could run as a background `IHostedService` to respect rate limits.
-
-### 5. Web Frontend (Dashboard)
+### 4. Web Frontend (Dashboard)
 
 A browsable UI for the unified library:
 - Cover art grid, search/filter by platform/genre, game detail pages
@@ -98,7 +94,7 @@ Tools: `list_games`, `search_games`, `sync_library`, `fetch_platform`, `merge_ga
 | Goal | Path |
 |------|------|
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
-| **A demo-able product** | #4 Metadata → #5 Frontend → #10 Stats |
+| **A demo-able product** | ~~#4 Metadata~~  ✅ Done → #5 Frontend → #10 Stats |
 | **Production readiness** | #7 CI/CD → #6 Scheduler |
-| **AI integration** | #4 Metadata → #11 MCP Server |
-| **Fun features** | #4 Metadata → #9 Activity Feed → #10 Stats |
+| **AI integration** | ~~#4 Metadata~~ ✅ Done → #11 MCP Server |
+| **Fun features** | ~~#4 Metadata~~ ✅ Done → #9 Activity Feed → #10 Stats |

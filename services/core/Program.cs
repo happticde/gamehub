@@ -1,5 +1,6 @@
 using GameHub.Core.Data;
 using GameHub.Core.Services;
+using GameHub.Shared;
 using GameHub.Shared.Authentication;
 using Microsoft.EntityFrameworkCore;
 
@@ -35,6 +36,20 @@ builder.Services.AddHttpClient<IngestClient>(c =>
 })
     .AddStandardResilienceHandler();
 builder.Services.AddScoped<UnificationService>();
+
+// --- IGDB Metadata Provider (ADR-003) ---
+// IgdbClient is registered as both the concrete type (for HttpClient injection)
+// and the IGameMetadataProvider interface (for EnrichmentService injection).
+// To swap providers, replace IgdbClient with another IGameMetadataProvider implementation.
+builder.Services.AddHttpClient<IgdbClient>();
+builder.Services.AddScoped<IGameMetadataProvider>(sp => sp.GetRequiredService<IgdbClient>());
+builder.Services.AddScoped<EnrichmentService>();
+
+// --- Background Enrichment ---
+if (builder.Configuration.GetValue("Igdb:EnableBackgroundEnrichment", true))
+{
+    builder.Services.AddHostedService<EnrichmentBackgroundService>();
+}
 
 // --- Authentication (ADR-002) ---
 builder.Services.AddApiKeyAuthentication(builder.Configuration);

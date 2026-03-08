@@ -82,3 +82,9 @@ See `docs/adr/` for architecture decision records.
 - XML doc comments (`/// <summary>`) on all public members
 - Comments explain *why*, not *what*
 - Tests follow pattern: `MethodName_Scenario_ExpectedResult`
+
+## Development Environment
+
+- **dotnet is NOT installed on the host machine.** Do not attempt to run `dotnet build`, `dotnet test`, `dotnet ef`, or any other dotnet CLI commands directly.
+- All building, testing, and migrations are done inside a **devcontainer** opened in a separate VS Code editor.
+- The agent's role is to write and edit code; the user handles compilation and test execution in the devcontainer.

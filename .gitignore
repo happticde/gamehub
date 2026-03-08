@@ -3,6 +3,8 @@
 [Oo]bj/
 **/[Bb]in/
 **/[Oo]bj/
+**/*[Bb]in*/
+**/*[Oo]bj*/
 
 ## Visual Studio / VS Code
 .vscode/
@@ -28,3 +30,5 @@ secrets.json
 
 ## App Settings (Don't commit real secrets if you ever add them)
 # appsettings.Development.json
+
+.env
