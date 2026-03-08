@@ -41,7 +41,8 @@ builder.Services.AddScoped<UnificationService>();
 // IgdbClient is registered as both the concrete type (for HttpClient injection)
 // and the IGameMetadataProvider interface (for EnrichmentService injection).
 // To swap providers, replace IgdbClient with another IGameMetadataProvider implementation.
-builder.Services.AddHttpClient<IgdbClient>();
+builder.Services.AddHttpClient<IgdbClient>()
+    .AddStandardResilienceHandler();
 builder.Services.AddScoped<IGameMetadataProvider>(sp => sp.GetRequiredService<IgdbClient>());
 builder.Services.AddScoped<EnrichmentService>();
 

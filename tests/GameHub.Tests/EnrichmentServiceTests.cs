@@ -137,6 +137,38 @@ public class EnrichmentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task EnrichGame_ProviderThrows_SkipsSettingEnrichedAt()
+    {
+        // Arrange
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var service = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+
+        var game = new UnifiedGame { Title = "Buggy Game", Slug = "buggy-game" };
+        db.UnifiedGames.Add(game);
+        await db.SaveChangesAsync();
+
+        _mockProvider.ThrowsException = true; // Simulate API failure
+
+        // Act
+        var result = await service.EnrichGameAsync(game.Id);
+
+        // Assert
+        Assert.True(result); // Service catches and returns true to move to next item
+        db.ChangeTracker.Clear();
+        var updated = await db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == game.Id);
+        Assert.NotNull(updated);
+        Assert.Null(updated.EnrichedAt); // Should not mark it as enriched
+
+        var auditLog = await db.EnrichmentAuditLogs.SingleOrDefaultAsync(l => l.UnifiedGameId == game.Id);
+        Assert.NotNull(auditLog);
+        Assert.Equal("Error", auditLog.Status);
+        
+        // Reset the mock provider for other tests if they share it, though mostly they use fresh scopes
+        _mockProvider.ThrowsException = false;
+    }
+
+    [Fact]
     public async Task EnrichGame_AlreadyEnriched_SkipsUnlessForced()
     {
         // Arrange
@@ -267,6 +299,7 @@ public class EnrichmentServiceTests : IDisposable
 
         public GameMetadata? SearchResult { get; set; }
         public GameMetadata? GetByIdResult { get; set; }
+        public bool ThrowsException { get; set; }
 
         public int SearchCallCount { get; private set; }
         public int GetByIdCallCount { get; private set; }
@@ -274,12 +307,14 @@ public class EnrichmentServiceTests : IDisposable
         public Task<GameMetadata?> SearchAsync(string title, CancellationToken ct = default)
         {
             SearchCallCount++;
+            if (ThrowsException) throw new Exception("Simulated provider error");
             return Task.FromResult(SearchResult);
         }
 
         public Task<GameMetadata?> GetByIdAsync(int providerId, CancellationToken ct = default)
         {
             GetByIdCallCount++;
+            if (ThrowsException) throw new Exception("Simulated provider error");
             return Task.FromResult(GetByIdResult);
         }
     }

@@ -80,8 +80,12 @@ public class EnrichmentService
             _logger.LogError(ex, "Failed to enrich '{Title}' via {Provider}", game.Title, _provider.ProviderName);
         }
 
-        // Apply metadata (or just update EnrichedAt if NotFound/Error)
-        await ApplyMetadataAsync(db, game, metadata);
+        // Apply metadata (or just update EnrichedAt if NotFound)
+        // Skip updating EnrichedAt on Error so the background service retries it later
+        if (auditStatus != "Error")
+        {
+            await ApplyMetadataAsync(db, game, metadata);
+        }
 
         // Record the audit log
         var auditLog = new EnrichmentAuditLog

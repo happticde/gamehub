@@ -293,6 +293,8 @@ public class LibraryController : ControllerBase
         _logger.LogInformation("Merging '{Source}' (ID: {SrcId}) into '{Target}' (ID: {TgtId})",
             source.Title, source.Id, target.Title, target.Id);
 
+        using var transaction = await _db.Database.BeginTransactionAsync();
+
         // Move each LibraryItem from source to target
         foreach (var item in source.Items.ToList())
         {
@@ -332,6 +334,7 @@ public class LibraryController : ControllerBase
         _db.UnifiedGames.Remove(source);
 
         await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         _logger.LogInformation("Merge completed: '{Source}' → '{Target}'", source.Title, target.Title);
 
@@ -373,6 +376,8 @@ public class LibraryController : ControllerBase
         _logger.LogInformation("Splitting {Platform} item '{ExternalId}' from game '{Game}'",
             item.Platform, item.ExternalId, item.UnifiedGame.Title);
 
+        using var transaction = await _db.Database.BeginTransactionAsync();
+
         // Create a new UnifiedGame for the detached item
         // Use the original title but append the platform name to differentiate
         var newTitle = $"{item.UnifiedGame.Title} ({item.Platform})";
@@ -409,6 +414,7 @@ public class LibraryController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         _logger.LogInformation("Split completed: new game '{Title}' (ID: {Id})", newTitle, newGame.Id);
 
