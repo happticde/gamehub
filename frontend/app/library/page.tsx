@@ -1,9 +1,19 @@
 import { PagedResult, UnifiedGame } from "@/types/game";
 import GameCard from "@/components/GameCard";
+import LibraryFilters from "@/components/LibraryFilters";
 
 // Since this is a React Server Component (RSC), we can export an async function directly!
 // It will execute on the Next.js Node server before the page is sent to the browser.
-export default async function LibraryPage() {
+export default async function LibraryPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+
+    // Await the search parameters (required in Next.js 15 app router)
+    const resolvedParams = await searchParams;
+    const search = typeof resolvedParams.search === 'string' ? resolvedParams.search : undefined;
+    const tag = typeof resolvedParams.tag === 'string' ? resolvedParams.tag : undefined;
 
     // We use standard fetch syntax. The URL hits our own Next.js server route, 
     // which is then proxied via next.config.ts down to the C# Core API.
@@ -12,7 +22,15 @@ export default async function LibraryPage() {
     let error: string | null = null;
 
     try {
-        const res = await fetch("http://localhost:3000/api/core/library", {
+        // Construct the query string to pass down to our C# API
+        const query = new URLSearchParams();
+        if (search) query.append("search", search);
+        if (tag) query.append("tag", tag);
+
+        // We proxy it through Next.js
+        const fetchUrl = `http://localhost:3000/api/core/library?${query.toString()}`;
+
+        const res = await fetch(fetchUrl, {
             // By default, Next.js caches fetches. We disable it for dynamic library data initially,
             // or we can use next: { revalidate: 60 } to cache for 60 seconds.
             cache: "no-store",
@@ -39,7 +57,11 @@ export default async function LibraryPage() {
                         Explore your aggregated collection of {totalCount > 0 ? totalCount : "0"} synchronized games.
                     </p>
                 </div>
-                {/* Placeholder for future Search/Filter features */}
+
+                {/* URL-state Filter Component */}
+                <div className="w-full md:w-auto">
+                    <LibraryFilters />
+                </div>
             </div>
 
             {error ? (
