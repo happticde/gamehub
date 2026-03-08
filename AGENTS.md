@@ -8,15 +8,15 @@
 Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 
 ```
-┌──────────────┐     ┌──────────────┐
-│   Ingest     │◄────│    Core      │
-│  :5000       │     │   :5001      │
-│              │     │              │
-│ • Raw game   │     │ • Unified    │
-│   storage    │     │   library    │
-│ • Platform   │     │ • Slug-based │
-│   fetchers   │     │   matching   │
-│ • Export API │     │ • Merge/Split│
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Ingest     │◄────│    Core      │◄────│   Frontend   │
+│  :5000       │     │   :5001      │     │  Next.js     │
+│              │     │              │     │ (React Space)│
+│ • Raw game   │     │ • Unified    │     │ • User UI    │
+│   storage    │     │   library    │     │ • BFF API    │
+│ • Platform   │     │ • Slug-based │     │   Routes     │
+│   fetchers   │     │   matching   │     │              │
+│ • Export API │     │ • Merge/Split│     └──────────────┘
 └──────────────┘     └──────────────┘
        ▲
        │
@@ -30,6 +30,7 @@ Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 
 | Layer | Technology |
 |-------|-----------|
+| Frontend | Next.js (React), TypeScript, Tailwind CSS, shadcn/ui |
 | Services | ASP.NET Core (.NET 10 preview), C# |
 | CLI | Go (Cobra/Viper) |
 | Database | SQLite (dev), Postgres (prod) via EF Core |
@@ -37,6 +38,11 @@ Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 | Docker | Alpine-based images, Docker Compose |
 | Tests | xUnit, in-memory SQLite |
 | Auth | API key via `X-Api-Key` header (JWT-ready) |
+
+### 🧠 Developer Context (Frontend)
+- The user is **new to React and TypeScript**.
+- When writing frontend code, **explain concepts clearly, use best practices, and break down complex React/Next.js paradigms** (e.g., Server Components vs Client Components, hooks, state management).
+- Write highly readable, well-commented TypeScript code to assist in their learning journey.
 
 ## Key Directories
 
