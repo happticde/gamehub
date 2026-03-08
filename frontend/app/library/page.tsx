@@ -1,6 +1,7 @@
 import { PagedResult, UnifiedGame } from "@/types/game";
 import GameCard from "@/components/GameCard";
 import LibraryFilters from "@/components/LibraryFilters";
+import LibraryPagination from "@/components/LibraryPagination";
 
 // Since this is a React Server Component (RSC), we can export an async function directly!
 // It will execute on the Next.js Node server before the page is sent to the browser.
@@ -15,10 +16,15 @@ export default async function LibraryPage({
     const search = typeof resolvedParams.search === 'string' ? resolvedParams.search : undefined;
     const tag = typeof resolvedParams.tag === 'string' ? resolvedParams.tag : undefined;
 
+    // Parse page number (default to 1, ensure it's a positive integer)
+    const pageParam = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page, 10) : 1;
+    const currentPage = !isNaN(pageParam) && pageParam > 0 ? pageParam : 1;
+
     // We use standard fetch syntax. The URL hits our own Next.js server route, 
     // which is then proxied via next.config.ts down to the C# Core API.
     let games: UnifiedGame[] = [];
     let totalCount = 0;
+    let pageSize = 50;
     let error: string | null = null;
 
     try {
@@ -26,6 +32,7 @@ export default async function LibraryPage({
         const query = new URLSearchParams();
         if (search) query.append("search", search);
         if (tag) query.append("tag", tag);
+        query.append("page", currentPage.toString());
 
         // We proxy it through Next.js
         const fetchUrl = `http://localhost:3000/api/core/library?${query.toString()}`;
@@ -43,6 +50,7 @@ export default async function LibraryPage({
         const result: PagedResult<UnifiedGame> = await res.json();
         games = result.items || [];
         totalCount = result.totalCount || 0;
+        pageSize = result.pageSize || 50;
     } catch (e: any) {
         error = e.message || "An unexpected error occurred while fetching your library.";
         console.error("Fetch Library Error:", error);
@@ -88,6 +96,14 @@ export default async function LibraryPage({
                         <GameCard key={game.id} game={game} />
                     ))}
                 </div>
+            )}
+
+            {/* Server component handles total page calculation blindly for the client */}
+            {totalCount > 0 && (
+                <LibraryPagination
+                    currentPage={currentPage}
+                    totalPages={Math.ceil(totalCount / pageSize)}
+                />
             )}
         </div>
     );
