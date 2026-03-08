@@ -136,6 +136,59 @@ public class LibraryController : ControllerBase
     }
 
     /// <summary>
+    /// GET: api/library/{id}
+    /// Returns the full immersive payload for a single unified game, including external links
+    /// and immersive media arrays (artworks, screenshots) mapped from the comma-separated strings.
+    /// </summary>
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var game = await _db.UnifiedGames
+            .Include(g => g.Items)
+            .Include(g => g.Tags)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        if (game == null)
+            return NotFound(new { Message = $"Game with ID {id} not found." });
+
+        List<string> SplitCsv(string? csv) =>
+            string.IsNullOrWhiteSpace(csv) ? new List<string>() : csv.Split(", ").ToList();
+
+        var result = new
+        {
+            game.Id,
+            game.Title,
+            game.Slug,
+            game.CoverUrl,
+            game.Summary,
+            
+            // Expanded Metadata Fields parsed back into arrays
+            Genres = SplitCsv(game.Genres),
+            Platforms = SplitCsv(game.Platforms),
+            Artworks = SplitCsv(game.Artworks),
+            Screenshots = SplitCsv(game.Screenshots),
+            Developers = SplitCsv(game.Developers),
+            Publishers = SplitCsv(game.Publishers),
+            Tags = game.Tags.Select(t => t.Name).ToList(),
+
+            game.FirstReleaseDate,
+            game.Rating,
+            game.MetadataSource,
+            game.EnrichedAt,
+            
+            Items = game.Items.Select(i => new
+            {
+                i.Platform,
+                i.ExternalId,
+                i.LastSynced
+            }).ToList()
+        };
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// GET: api/library/tags
     /// Returns a flat list of all unique tag (genre) names currently in the database.
     /// Used by frontend dropdown filters.

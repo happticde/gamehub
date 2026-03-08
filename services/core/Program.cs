@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// --- Caching ---
+builder.Services.AddMemoryCache();
+
 // --- MVC & Swagger ---
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

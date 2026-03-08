@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace GameHub.Core.Services;
 
@@ -24,6 +25,7 @@ public class IgdbClient : IGameMetadataProvider
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
     private readonly ILogger<IgdbClient> _logger;
+    private readonly IMemoryCache _cache;
 
     private string? _accessToken;
     private DateTime _tokenExpiresAt = DateTime.MinValue;
@@ -32,15 +34,16 @@ public class IgdbClient : IGameMetadataProvider
     private const string IgdbBaseUrl = "https://api.igdb.com/v4";
 
     /// <summary>Fields to request from IGDB for game enrichment.</summary>
-    private const string GameFields = "name,cover.url,summary,genres.name,first_release_date,aggregated_rating";
+    private const string GameFields = "name,cover.url,summary,genres.name,first_release_date,aggregated_rating,artworks.url,screenshots.url,platforms.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher";
 
     public string ProviderName => "IGDB";
 
-    public IgdbClient(HttpClient http, IConfiguration config, ILogger<IgdbClient> logger)
+    public IgdbClient(HttpClient http, IConfiguration config, ILogger<IgdbClient> logger, IMemoryCache cache)
     {
         _http = http;
         _config = config;
         _logger = logger;
+        _cache = cache;
     }
 
     /// <inheritdoc />
@@ -51,7 +54,8 @@ public class IgdbClient : IGameMetadataProvider
 
         // Escape double quotes in the title for the IGDB query
         var escaped = title.Replace("\"", "\\\"");
-        var query = $"search \"{escaped}\"; fields {GameFields}; limit 1;";
+        // Limit to Main Game (0), Remake (8), Remaster (9), Expanded Game (10), Port (11)
+        var query = $"search \"{escaped}\"; fields {GameFields}; where category = (0,8,9,10,11); limit 1;";
 
         var results = await QueryGamesAsync(query, ct);
         return results.Count > 0 ? MapToMetadata(results[0]) : null;
@@ -68,10 +72,18 @@ public class IgdbClient : IGameMetadataProvider
 
     /// <summary>
     /// Sends a query to the IGDB /games endpoint and returns the raw response objects.
-    /// Handles authentication automatically.
+    /// Handles authentication automatically and caches responses to avoid rate limits.
     /// </summary>
     private async Task<List<IgdbGame>> QueryGamesAsync(string query, CancellationToken ct)
     {
+        var cacheKey = $"igdb_query_{Convert.ToBase64String(Encoding.UTF8.GetBytes(query))}";
+        
+        if (_cache.TryGetValue(cacheKey, out List<IgdbGame>? cachedResult) && cachedResult != null)
+        {
+            _logger.LogDebug("IGDB cache hit for query: {Query}", query);
+            return cachedResult;
+        }
+
         await EnsureAuthenticatedAsync(ct);
 
         var clientId = _config["Igdb:ClientId"] ?? "";
@@ -92,7 +104,12 @@ public class IgdbClient : IGameMetadataProvider
         }
 
         var json = await response.Content.ReadAsStringAsync(ct);
-        return JsonSerializer.Deserialize<List<IgdbGame>>(json, JsonOptions) ?? [];
+        var result = JsonSerializer.Deserialize<List<IgdbGame>>(json, JsonOptions) ?? [];
+
+        // Cache the successful result for 24 hours
+        _cache.Set(cacheKey, result, TimeSpan.FromHours(24));
+
+        return result;
     }
 
     /// <summary>
@@ -137,26 +154,36 @@ public class IgdbClient : IGameMetadataProvider
     /// <summary>Maps an IGDB API response object to the provider-agnostic GameMetadata record.</summary>
     private static GameMetadata MapToMetadata(IgdbGame game)
     {
-        // IGDB cover URLs come as //images.igdb.com/... — prepend https:
-        // Also upgrade to higher resolution (t_cover_big = 264x374)
-        string? coverUrl = null;
-        if (game.Cover?.Url != null)
+        string? SanitizeImageUrl(string? url, string size = "t_1080p")
         {
-            coverUrl = game.Cover.Url
-                .Replace("t_thumb", "t_cover_big");
-            if (coverUrl.StartsWith("//"))
-                coverUrl = "https:" + coverUrl;
+            if (url == null) return null;
+            var mapped = url.Replace("t_thumb", size);
+            if (mapped.StartsWith("//")) mapped = "https:" + mapped;
+            return mapped;
         }
 
-        // Convert UNIX timestamp to DateTime
+        var coverUrl = SanitizeImageUrl(game.Cover?.Url, "t_cover_big");
+
         DateTime? releaseDate = null;
         if (game.FirstReleaseDate.HasValue)
         {
             releaseDate = DateTimeOffset.FromUnixTimeSeconds(game.FirstReleaseDate.Value).UtcDateTime;
         }
 
-        var genres = game.Genres?.Select(g => g.Name).Where(n => n != null).ToList()
-            ?? [];
+        var genres = game.Genres?.Select(g => g.Name).Where(n => n != null).ToList() ?? [];
+        var platforms = game.Platforms?.Select(p => p.Name).Where(n => n != null).Cast<string>().ToList();
+        var artworks = game.Artworks?.Select(a => SanitizeImageUrl(a.Url)).Where(u => u != null).Cast<string>().ToList();
+        var screenshots = game.Screenshots?.Select(s => SanitizeImageUrl(s.Url)).Where(u => u != null).Cast<string>().ToList();
+
+        var developers = game.InvolvedCompanies?
+            .Where(c => c.Developer == true && c.Company?.Name != null)
+            .Select(c => c.Company!.Name!)
+            .ToList();
+
+        var publishers = game.InvolvedCompanies?
+            .Where(c => c.Publisher == true && c.Company?.Name != null)
+            .Select(c => c.Company!.Name!)
+            .ToList();
 
         return new GameMetadata(
             ProviderId: game.Id,
@@ -165,7 +192,12 @@ public class IgdbClient : IGameMetadataProvider
             Genres: genres!,
             FirstReleaseDate: releaseDate,
             Rating: game.AggregatedRating,
-            MatchedTitle: game.Name
+            MatchedTitle: game.Name,
+            Platforms: platforms,
+            Artworks: artworks,
+            Screenshots: screenshots,
+            Developers: developers,
+            Publishers: publishers
         );
     }
 
@@ -195,6 +227,18 @@ public class IgdbClient : IGameMetadataProvider
         [JsonPropertyName("genres")]
         public List<IgdbGenre>? Genres { get; set; }
 
+        [JsonPropertyName("platforms")]
+        public List<IgdbPlatform>? Platforms { get; set; }
+
+        [JsonPropertyName("artworks")]
+        public List<IgdbImage>? Artworks { get; set; }
+
+        [JsonPropertyName("screenshots")]
+        public List<IgdbImage>? Screenshots { get; set; }
+
+        [JsonPropertyName("involved_companies")]
+        public List<IgdbInvolvedCompany>? InvolvedCompanies { get; set; }
+
         [JsonPropertyName("first_release_date")]
         public long? FirstReleaseDate { get; set; }
 
@@ -208,7 +252,37 @@ public class IgdbClient : IGameMetadataProvider
         public string? Url { get; set; }
     }
 
+    internal class IgdbImage
+    {
+        [JsonPropertyName("url")]
+        public string? Url { get; set; }
+    }
+
     internal class IgdbGenre
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+    }
+
+    internal class IgdbPlatform
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+    }
+
+    internal class IgdbInvolvedCompany
+    {
+        [JsonPropertyName("company")]
+        public IgdbCompany? Company { get; set; }
+        
+        [JsonPropertyName("developer")]
+        public bool? Developer { get; set; }
+        
+        [JsonPropertyName("publisher")]
+        public bool? Publisher { get; set; }
+    }
+
+    internal class IgdbCompany
     {
         [JsonPropertyName("name")]
         public string? Name { get; set; }

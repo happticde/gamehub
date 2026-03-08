@@ -4,6 +4,7 @@ using GameHub.Core.Services;
 using GameHub.Shared;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Caching.Memory;
 using Moq;
 using Moq.Protected;
 using Xunit;
@@ -88,7 +89,7 @@ public class IgdbClientTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance);
+        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var result = await client.SearchAsync("The Witcher");
@@ -133,7 +134,7 @@ public class IgdbClientTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance);
+        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var result = await client.SearchAsync("NonExistentGame123");
@@ -179,7 +180,7 @@ public class IgdbClientTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance);
+        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var result = await client.GetByIdAsync(42);
@@ -218,7 +219,7 @@ public class IgdbClientTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance);
+        var client = new IgdbClient(httpClient, _config, NullLogger<IgdbClient>.Instance, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         await client.SearchAsync("Game 1");

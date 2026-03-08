@@ -175,7 +175,12 @@ public class EnrichmentService
 
         game.CoverUrl = metadata.CoverUrl;
         game.Summary = metadata.Summary;
-        game.Genres = metadata.Genres.Count > 0 ? string.Join(", ", metadata.Genres) : null;
+        game.Genres = metadata.Genres?.Count > 0 ? string.Join(", ", metadata.Genres) : null;
+        game.Platforms = metadata.Platforms?.Count > 0 ? string.Join(", ", metadata.Platforms) : null;
+        game.Artworks = metadata.Artworks?.Count > 0 ? string.Join(", ", metadata.Artworks) : null;
+        game.Screenshots = metadata.Screenshots?.Count > 0 ? string.Join(", ", metadata.Screenshots) : null;
+        game.Developers = metadata.Developers?.Count > 0 ? string.Join(", ", metadata.Developers) : null;
+        game.Publishers = metadata.Publishers?.Count > 0 ? string.Join(", ", metadata.Publishers) : null;
         game.FirstReleaseDate = metadata.FirstReleaseDate;
         game.Rating = metadata.Rating;
         game.MetadataProviderId = metadata.ProviderId;
@@ -183,7 +188,7 @@ public class EnrichmentService
 
         // Map genres to Tag entities
         game.Tags.Clear();
-        foreach (var genre in metadata.Genres)
+        foreach (var genre in metadata.Genres ?? [])
         {
             if (string.IsNullOrWhiteSpace(genre)) continue;
 

@@ -28,5 +28,20 @@ public record GameMetadata(
     double? Rating,
 
     /// <summary>The actual title returned by the provider (used for audit logs).</summary>
-    string? MatchedTitle = null
+    string? MatchedTitle = null,
+
+    /// <summary>Original platforms the game released on.</summary>
+    List<string>? Platforms = null,
+
+    /// <summary>High resolution background artworks / headers.</summary>
+    List<string>? Artworks = null,
+
+    /// <summary>In-game screenshots.</summary>
+    List<string>? Screenshots = null,
+
+    /// <summary>Developer companies involved.</summary>
+    List<string>? Developers = null,
+
+    /// <summary>Publisher companies involved.</summary>
+    List<string>? Publishers = null
 );

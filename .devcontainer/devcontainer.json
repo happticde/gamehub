@@ -13,5 +13,6 @@
         "ghcr.io/devcontainers/features/go:1": {
             "version": "1.26"
         }
-    }
+    },
+    "postCreateCommand": "dotnet tool install -g dotnet-ef"
 }

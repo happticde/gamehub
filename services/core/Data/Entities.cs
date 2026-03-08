@@ -23,6 +23,21 @@ public class UnifiedGame
     /// <summary>Comma-separated genre names, e.g. "RPG, Action, Adventure".</summary>
     public string? Genres { get; set; }
 
+    /// <summary>Comma-separated platform names the game released on.</summary>
+    public string? Platforms { get; set; }
+
+    /// <summary>Comma-separated URLs for high-resolution background artworks.</summary>
+    public string? Artworks { get; set; }
+
+    /// <summary>Comma-separated URLs for in-game screenshots.</summary>
+    public string? Screenshots { get; set; }
+
+    /// <summary>Comma-separated developer companies involved.</summary>
+    public string? Developers { get; set; }
+
+    /// <summary>Comma-separated publisher companies involved.</summary>
+    public string? Publishers { get; set; }
+
     /// <summary>Automated categorization tags (e.g. Genres from IGDB).</summary>
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();
 

@@ -180,7 +180,13 @@ namespace GameHub.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Artworks")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CoverUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Developers")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("EnrichedAt")
@@ -198,8 +204,17 @@ namespace GameHub.Core.Migrations
                     b.Property<string>("MetadataSource")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Platforms")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Publishers")
+                        .HasColumnType("TEXT");
+
                     b.Property<double?>("Rating")
                         .HasColumnType("REAL");
+
+                    b.Property<string>("Screenshots")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Slug")
                         .IsRequired()
