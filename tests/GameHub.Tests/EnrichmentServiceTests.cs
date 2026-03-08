@@ -80,12 +80,16 @@ public class EnrichmentServiceTests : IDisposable
         // Assert
         Assert.True(result);
 
-        var updated = await db.UnifiedGames.FindAsync(game.Id);
+        db.ChangeTracker.Clear();
+        var updated = await db.UnifiedGames.Include(g => g.Tags).FirstOrDefaultAsync(g => g.Id == game.Id);
         Assert.NotNull(updated);
         Assert.NotNull(updated.EnrichedAt);
         Assert.Equal("https://example.com/cover.jpg", updated.CoverUrl);
         Assert.Equal("A great RPG.", updated.Summary);
         Assert.Equal("RPG, Action", updated.Genres);
+        Assert.Equal(2, updated.Tags.Count);
+        Assert.Contains(updated.Tags, t => t.Name == "RPG");
+        Assert.Contains(updated.Tags, t => t.Name == "Action");
         Assert.Equal(92.5, updated.Rating);
         Assert.Equal(1001, updated.MetadataProviderId);
         Assert.Equal("MockProvider", updated.MetadataSource);
@@ -118,7 +122,8 @@ public class EnrichmentServiceTests : IDisposable
         // Assert
         Assert.True(result); // True because it processed it (even if no metadata found)
 
-        var updated = await db.UnifiedGames.FindAsync(game.Id);
+        db.ChangeTracker.Clear();
+        var updated = await db.UnifiedGames.Include(g => g.Tags).FirstOrDefaultAsync(g => g.Id == game.Id);
         Assert.NotNull(updated);
         Assert.NotNull(updated.EnrichedAt); // Marked as processed
         Assert.Null(updated.CoverUrl);      // Still null
@@ -163,7 +168,8 @@ public class EnrichmentServiceTests : IDisposable
 
         // Assert 1
         Assert.False(result1);
-        Assert.Equal("Old summary", (await db.UnifiedGames.FindAsync(game.Id))!.Summary);
+        db.ChangeTracker.Clear();
+        Assert.Equal("Old summary", (await db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == game.Id))!.Summary);
         Assert.Equal(0, _mockProvider.SearchCallCount);
 
         // Act 2: Forced call (should proceed via search since no ProviderId)
@@ -171,7 +177,8 @@ public class EnrichmentServiceTests : IDisposable
 
         // Assert 2
         Assert.True(result2);
-        Assert.Equal("New summary", (await db.UnifiedGames.FindAsync(game.Id))!.Summary);
+        db.ChangeTracker.Clear();
+        Assert.Equal("New summary", (await db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == game.Id))!.Summary);
         Assert.Equal(1, _mockProvider.SearchCallCount);
         Assert.Equal(0, _mockProvider.GetByIdCallCount);
     }
@@ -211,7 +218,8 @@ public class EnrichmentServiceTests : IDisposable
         Assert.True(result);
         Assert.Equal(0, _mockProvider.SearchCallCount);      // Did NOT search by title
         Assert.Equal(1, _mockProvider.GetByIdCallCount);     // DID fetch by ID directly
-        Assert.Equal("Re-fetched by ID", (await db.UnifiedGames.FindAsync(game.Id))!.Summary);
+        db.ChangeTracker.Clear();
+        Assert.Equal("Re-fetched by ID", (await db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == game.Id))!.Summary);
     }
 
     // =========================================================================

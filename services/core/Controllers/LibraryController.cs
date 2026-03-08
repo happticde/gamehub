@@ -51,13 +51,14 @@ public class LibraryController : ControllerBase
     }
 
     /// <summary>
-    /// GET: api/library?search=witcher&page=1&pageSize=50
+    /// GET: api/library?search=witcher&tag=RPG&page=1&pageSize=50
     /// Returns a paginated list of unified games with their platform tags.
-    /// Optionally filter by title search.
+    /// Optionally filter by title search or specific tag.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetLibrary(
         [FromQuery] string? search,
+        [FromQuery] string? tag,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -67,12 +68,19 @@ public class LibraryController : ControllerBase
 
         var query = _db.UnifiedGames
             .Include(g => g.Items)
+            .Include(g => g.Tags)
             .AsNoTracking();
 
         // Filter by search term if provided
         if (!string.IsNullOrWhiteSpace(search))
         {
             query = query.Where(g => g.Title.ToLower().Contains(search.ToLower()));
+        }
+
+        // Filter by tag if provided
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            query = query.Where(g => g.Tags.Any(t => t.Name.ToLower() == tag.ToLower()));
         }
 
         // Get total count for pagination metadata
@@ -93,6 +101,7 @@ public class LibraryController : ControllerBase
             g.CoverUrl,
             g.Summary,
             g.Genres,
+            Tags = g.Tags.Select(t => t.Name).ToList(),
             g.FirstReleaseDate,
             g.Rating,
             g.MetadataSource,
@@ -162,6 +171,7 @@ public class LibraryController : ControllerBase
 
         // Reload the game to return the updated data
         var game = await _db.UnifiedGames
+            .Include(g => g.Tags)
             .AsNoTracking()
             .FirstOrDefaultAsync(g => g.Id == id);
 
@@ -171,6 +181,7 @@ public class LibraryController : ControllerBase
             game?.CoverUrl,
             game?.Summary,
             game?.Genres,
+            Tags = game?.Tags.Select(t => t.Name).ToList(),
             game?.FirstReleaseDate,
             game?.Rating,
             game?.MetadataSource,

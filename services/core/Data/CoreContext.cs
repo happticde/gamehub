@@ -9,6 +9,7 @@ public class CoreContext : DbContext
     // --- Unified Tables (Owned by Core) ---
     public DbSet<UnifiedGame> UnifiedGames => Set<UnifiedGame>();
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
+    public DbSet<Tag> Tags => Set<Tag>();
 
     // --- Sync Tracking ---
     /// <summary>Stores the last successful sync timestamp per platform for incremental sync.</summary>

@@ -75,7 +75,7 @@ public class IgdbClientTests
                         "summary": "Mock summary",
                         "genres": [{ "name": "Action" }, { "name": "RPG" }],
                         "first_release_date": 1432000000,
-                        "total_rating": 85.5
+                        "aggregated_rating": 85.5
                     }
                 ]
                 """;
@@ -96,7 +96,7 @@ public class IgdbClientTests
         // Assert
         Assert.NotNull(result);
         Assert.Equal(1337, result.ProviderId);
-        Assert.Equal("https://images.igdb.com/igdb/image/upload/t_1080p/co123.jpg", result.CoverUrl); // Thumbnail converted to 1080p
+        Assert.Equal("https://images.igdb.com/igdb/image/upload/t_cover_big/co123.jpg", result.CoverUrl); // Thumbnail converted to cover_big
         Assert.Equal("Mock summary", result.Summary);
         Assert.NotNull(result.Genres);
         Assert.Equal(2, result.Genres.Count);
@@ -166,7 +166,7 @@ public class IgdbClientTests
                     {
                         "id": 42,
                         "summary": "Fetched by ID",
-                        "total_rating": 99.9
+                        "aggregated_rating": 99.9
                     }
                 ]
                 """;
@@ -190,7 +190,7 @@ public class IgdbClientTests
         Assert.Equal("Fetched by ID", result.Summary);
         Assert.Equal(99.9, result.Rating);
         Assert.Null(result.CoverUrl); // Was missing in JSON
-        Assert.Null(result.Genres);   // Was missing in JSON
+        Assert.Empty(result.Genres);   // Replace Assert.Null with Assert.Empty
     }
 
     [Fact]

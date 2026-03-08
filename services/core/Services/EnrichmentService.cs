@@ -39,7 +39,10 @@ public class EnrichmentService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
 
-        var game = await db.UnifiedGames.FindAsync([gameId], ct);
+        var game = await db.UnifiedGames
+            .Include(g => g.Tags)
+            .FirstOrDefaultAsync(g => g.Id == gameId, ct);
+
         if (game == null)
         {
             _logger.LogWarning("Enrichment skipped: game {Id} not found", gameId);
@@ -78,7 +81,7 @@ public class EnrichmentService
         }
 
         // Apply metadata (or just update EnrichedAt if NotFound/Error)
-        ApplyMetadata(game, metadata);
+        await ApplyMetadataAsync(db, game, metadata);
 
         // Record the audit log
         var auditLog = new EnrichmentAuditLog
@@ -96,8 +99,9 @@ public class EnrichmentService
 
         if (auditStatus == "Success")
         {
-            _logger.LogInformation("✅ Enriched '{Title}' | Provider ID: {ProviderId} | Rating: {Rating} | Genres: {Genres} | Cover: {HasCover}",
-                game.Title, metadata!.ProviderId, metadata.Rating?.ToString("F1") ?? "None", game.Genres ?? "None", game.CoverUrl != null ? "Yes" : "No");
+            var tagNames = string.Join(", ", game.Tags.Select(t => t.Name));
+            _logger.LogInformation("✅ Enriched '{Title}' | Provider ID: {ProviderId} | Rating: {Rating} | Genres: {Genres} | Tags: {Tags} | Cover: {HasCover}",
+                game.Title, metadata!.ProviderId, metadata.Rating?.ToString("F1") ?? "None", game.Genres ?? "None", string.IsNullOrEmpty(tagNames) ? "None" : tagNames, game.CoverUrl != null ? "Yes" : "No");
         }
         else if (auditStatus == "NotFound")
         {
@@ -158,7 +162,7 @@ public class EnrichmentService
     /// Applies the metadata from a provider response to a UnifiedGame entity.
     /// If metadata is null (no match found), only EnrichedAt is set to avoid re-trying.
     /// </summary>
-    private void ApplyMetadata(UnifiedGame game, GameMetadata? metadata)
+    private async Task ApplyMetadataAsync(CoreContext db, UnifiedGame game, GameMetadata? metadata)
     {
         game.EnrichedAt = DateTime.UtcNow;
 
@@ -172,5 +176,27 @@ public class EnrichmentService
         game.Rating = metadata.Rating;
         game.MetadataProviderId = metadata.ProviderId;
         game.MetadataSource = _provider.ProviderName;
+
+        // Map genres to Tag entities
+        game.Tags.Clear();
+        foreach (var genre in metadata.Genres)
+        {
+            if (string.IsNullOrWhiteSpace(genre)) continue;
+
+            // Trim and normalize spacing
+            var normalizedGenre = genre.Trim();
+
+            // Find existing tag or create a new one
+            var tag = await db.Tags.FirstOrDefaultAsync(t => t.Name.ToLower() == normalizedGenre.ToLower());
+            if (tag == null)
+            {
+                tag = new Tag { Name = normalizedGenre };
+                db.Tags.Add(tag);
+                // Optionally save here if you want to ensure the ID is generated immediately, 
+                // but adding it to the tracked game.Tags collection is usually sufficient.
+            }
+            
+            game.Tags.Add(tag);
+        }
     }
 }

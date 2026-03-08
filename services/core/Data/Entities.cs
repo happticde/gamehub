@@ -23,6 +23,9 @@ public class UnifiedGame
     /// <summary>Comma-separated genre names, e.g. "RPG, Action, Adventure".</summary>
     public string? Genres { get; set; }
 
+    /// <summary>Automated categorization tags (e.g. Genres from IGDB).</summary>
+    public ICollection<Tag> Tags { get; set; } = new List<Tag>();
+
     /// <summary>Original release date of the game.</summary>
     public DateTime? FirstReleaseDate { get; set; }
 
@@ -73,4 +76,13 @@ public class SyncAuditLog
     public int ItemsProcessed { get; set; }
     public int NewGamesCreated { get; set; }
     public string? ErrorMessage { get; set; }
+}
+
+[Index(nameof(Name), IsUnique = true)]
+public class Tag
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    
+    public ICollection<UnifiedGame> Games { get; set; } = new List<UnifiedGame>();
 }
