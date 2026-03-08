@@ -55,11 +55,12 @@ Simple API key middleware (`X-Api-Key` header) to protect ingest and sync endpoi
 A browsable UI for the unified library:
 - Cover art grid, search/filter by platform/genre, game detail pages
 - Admin actions: merge/split UI, trigger sync, view sync history
-- Options: Vite SPA, Next.js, or Blazor
+- Current Implementation: Next.js App Router
+- **Frontend Polish Needed**: Add "Sort By" dropdowns (Release Date, Rating, Title) to the LibraryController and UI, and add Developer/Publisher tag filtering.
 
 ### 6. Background Sync Scheduler
 
-`IHostedService` or Quartz.NET job that runs `RunFullSyncAsync()` on a configurable interval. Add a `GET /api/library/sync/status` endpoint for sync status.
+`IHostedService` or Quartz.NET job that runs `RunFullSyncAsync()` on a configurable interval (such as once every 6 hours) so the library is always perfectly up to date in the background without manual clicks. Add a `GET /api/library/sync/status` endpoint for sync status.
 
 ---
 
@@ -79,13 +80,17 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
 
 ### 10. Statistics & Analytics
 
-`GET /api/library/stats` — total games, per-platform counts, duplicate %, recently added. Platform overlap data for Venn diagrams.
+`GET /api/library/stats` — total games, per-platform counts, duplicate %, recently added. Platform overlap data for Venn diagrams. Map this to a new dynamic Next.js dashboard/charting page.
 
 ### 11. MCP Server (Model Context Protocol)
 
 AI agent integration layer — expose library queries, sync triggers, and merge/split as MCP tools. Lets AI assistants interact with the game library via natural language (e.g. *"What RPGs do I own on both Steam and GOG?"*). Best value after metadata enrichment (#4).
 
 Tools: `list_games`, `search_games`, `sync_library`, `fetch_platform`, `merge_games`, `library_stats`
+
+### 12. Export / Collection Sharing API
+
+Expose a public, read-only API endpoint to export your curated library collection, allowing users to show off or share their unified library with friends.
 
 ---
 
