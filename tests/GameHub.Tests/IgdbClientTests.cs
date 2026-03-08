@@ -98,7 +98,10 @@ public class IgdbClientTests
         Assert.Equal(1337, result.ProviderId);
         Assert.Equal("https://images.igdb.com/igdb/image/upload/t_1080p/co123.jpg", result.CoverUrl); // Thumbnail converted to 1080p
         Assert.Equal("Mock summary", result.Summary);
-        Assert.Equal("Action, RPG", result.Genres);
+        Assert.NotNull(result.Genres);
+        Assert.Equal(2, result.Genres.Count);
+        Assert.Contains("Action", result.Genres);
+        Assert.Contains("RPG", result.Genres);
         Assert.Equal(85.5, result.Rating);
         Assert.NotNull(result.FirstReleaseDate);
         Assert.Equal(2015, result.FirstReleaseDate.Value.Year); // 1432000000 is ~May 2015

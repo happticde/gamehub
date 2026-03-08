@@ -81,3 +81,13 @@ public class EpicRawItem : IRawItem
     [NotMapped] public string? DisplayName => Title;
     [NotMapped] public string ExternalId => AppName;
 }
+
+public class IngestAuditLog
+{
+    public int Id { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string Platform { get; set; } = ""; // "Steam", "GOG", "PSN", "Epic"
+    public string Status { get; set; } = "";   // "Success", "TokenExpired", "RateLimited", "Error"
+    public int GamesFound { get; set; }
+    public string? ErrorMessage { get; set; }
+}

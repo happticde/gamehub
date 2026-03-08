@@ -108,25 +108,54 @@ public class UnificationService
         // Step 2: Fetch pages until there are no more
         int page = 1;
         bool hasMore = true;
+        int created = 0;
+        string auditStatus = "Success";
+        string? errorMessage = null;
 
-        while (hasMore)
+        try
         {
-            var result = await _client.FetchPageAsync(platform, page, PageSize, lastSyncedAt);
-
-            if (result.Items.Count > 0)
+            while (hasMore)
             {
-                // Step 3: Process this page
-                processed += await ProcessPageAsync(result.Items, platform);
+                var result = await _client.FetchPageAsync(platform, page, PageSize, lastSyncedAt);
+
+                if (result.Items.Count > 0)
+                {
+                    // Step 3: Process this page
+                    var (pageProcessed, pageCreated) = await ProcessPageAsync(result.Items, platform);
+                    processed += pageProcessed;
+                    created += pageCreated;
+                }
+
+                hasMore = result.HasMore;
+                page++;
             }
 
-            hasMore = result.HasMore;
-            page++;
+            // Step 4: Update the sync timestamp
+            if (processed > 0)
+            {
+                await UpdateSyncTimestampAsync(platform);
+            }
+        }
+        catch (Exception ex)
+        {
+            auditStatus = "Error";
+            errorMessage = ex.Message;
+            _logger.LogError(ex, "Sync failed for {Platform}", platform);
         }
 
-        // Step 4: Update the sync timestamp
-        if (processed > 0)
+        // Step 5: Write the audit log
+        using (var scope = _scopeFactory.CreateScope())
         {
-            await UpdateSyncTimestampAsync(platform);
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            db.SyncAuditLogs.Add(new SyncAuditLog
+            {
+                Platform = platform,
+                Status = auditStatus,
+                ItemsProcessed = processed,
+                NewGamesCreated = created,
+                ErrorMessage = errorMessage
+            });
+            await db.SaveChangesAsync();
         }
 
         return processed;
@@ -140,10 +169,12 @@ public class UnificationService
     ///   2. Slug match — generate a normalized slug and find/create a UnifiedGame
     ///
     /// Uses a fresh DbContext scope so each page is saved independently.
+    /// Returns a tuple: (TotalItemsProcessed, NewGamesCreated).
     /// </summary>
-    private async Task<int> ProcessPageAsync(List<RawGameDto> items, Platform platform)
+    private async Task<(int Processed, int Created)> ProcessPageAsync(List<RawGameDto> items, Platform platform)
     {
         int processed = 0;
+        int created = 0;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
@@ -193,6 +224,7 @@ public class UnificationService
                     game = new UnifiedGame { Title = item.Name!, Slug = slug };
                     existingGames[slug] = game;
                     db.UnifiedGames.Add(game);
+                    created++;
                 }
             }
 
@@ -217,7 +249,7 @@ public class UnificationService
         }
 
         await db.SaveChangesAsync();
-        return processed;
+        return (processed, created);
     }
 
     /// <summary>

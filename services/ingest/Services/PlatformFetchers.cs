@@ -14,11 +14,13 @@ public class SteamFetcher
 {
     private readonly HttpClient _http;
     private readonly ILogger<SteamFetcher> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public SteamFetcher(HttpClient http, ILogger<SteamFetcher> logger)
+    public SteamFetcher(HttpClient http, ILogger<SteamFetcher> logger, IServiceScopeFactory scopeFactory)
     {
         _http = http;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>
@@ -38,28 +40,64 @@ public class SteamFetcher
         var url = $"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/" +
                   $"?key={apiKey}&steamid={steamId}&format=json&include_appinfo=1";
 
-        var resp = await _http.GetAsync(url);
-
-        if (!resp.IsSuccessStatusCode)
+        try
         {
-            var body = await resp.Content.ReadAsStringAsync();
-            _logger.LogError("Steam API returned {StatusCode}: {Body}", (int)resp.StatusCode, body);
-            throw new HttpRequestException($"Steam API returned {(int)resp.StatusCode}: {body}");
+            var resp = await _http.GetAsync(url);
+            
+            if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+            {
+                await WriteAuditLogAsync("Steam", "TokenExpired", 0, "API Key is invalid or expired.");
+                throw new HttpRequestException("Steam API Key is invalid or expired.");
+            }
+            if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                await WriteAuditLogAsync("Steam", "RateLimited", 0, "Steam API rate limit exceeded.");
+                throw new HttpRequestException("Steam API rate limit exceeded.");
+            }
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _logger.LogError("Steam API returned {StatusCode}: {Body}", (int)resp.StatusCode, body);
+                await WriteAuditLogAsync("Steam", "Error", 0, $"HTTP {(int)resp.StatusCode}");
+                throw new HttpRequestException($"Steam API returned {(int)resp.StatusCode}: {body}");
+            }
+
+            var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
+
+            // Navigate: response -> games (array)
+            if (doc.RootElement.TryGetProperty("response", out var response) &&
+                response.TryGetProperty("games", out var games))
+            {
+                var list = games.EnumerateArray().ToList();
+                _logger.LogInformation("Steam: fetched {Count} games", list.Count);
+                await WriteAuditLogAsync("Steam", "Success", list.Count);
+                return list;
+            }
+
+            _logger.LogWarning("Steam API returned a valid response but no games array — library may be private");
+            await WriteAuditLogAsync("Steam", "Success", 0, "Library may be private (no games array found).");
+            return [];
         }
-
-        var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
-
-        // Navigate: response -> games (array)
-        if (doc.RootElement.TryGetProperty("response", out var response) &&
-            response.TryGetProperty("games", out var games))
+        catch (Exception ex) when (ex is not HttpRequestException)
         {
-            var list = games.EnumerateArray().ToList();
-            _logger.LogInformation("Steam: fetched {Count} games", list.Count);
-            return list;
+            await WriteAuditLogAsync("Steam", "Error", 0, ex.Message);
+            throw;
         }
+    }
 
-        _logger.LogWarning("Steam API returned a valid response but no games array — library may be private");
-        return [];
+    private async Task WriteAuditLogAsync(string platform, string status, int count, string? error = null)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameHub.Ingest.Data.IngestContext>();
+        db.IngestAuditLogs.Add(new GameHub.Ingest.Data.IngestAuditLog
+        {
+            Platform = platform,
+            Status = status,
+            GamesFound = count,
+            ErrorMessage = error
+        });
+        await db.SaveChangesAsync();
     }
 }
 
@@ -72,10 +110,12 @@ public class SteamFetcher
 public class GogFetcher
 {
     private readonly ILogger<GogFetcher> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public GogFetcher(ILogger<GogFetcher> logger)
+    public GogFetcher(ILogger<GogFetcher> logger, IServiceScopeFactory scopeFactory)
     {
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>
@@ -99,72 +139,106 @@ public class GogFetcher
         var allGames = new List<JsonElement>();
         int page = 1;
 
-        while (true)
+        try
         {
-            var url = $"https://www.gog.com/u/{username}/games/stats?page={page}";
-            _logger.LogDebug("GOG: fetching page {Page} from {Url}", page, url);
-
-            var resp = await client.GetAsync(url);
-
-            if (!resp.IsSuccessStatusCode)
+            while (true)
             {
-                var body = await resp.Content.ReadAsStringAsync();
-                _logger.LogError("GOG API returned {StatusCode} on page {Page}: {Body}",
-                    (int)resp.StatusCode, page, body);
-                throw new HttpRequestException(
-                    $"GOG API returned {(int)resp.StatusCode} on page {page}. " +
-                    $"This usually means the gog-al cookie has expired. Response: {body}");
-            }
+                var url = $"https://www.gog.com/u/{username}/games/stats?page={page}";
+                _logger.LogDebug("GOG: fetching page {Page} from {Url}", page, url);
 
-            var rawJson = await resp.Content.ReadAsStringAsync();
-            JsonDocument doc;
-            try
-            {
-                doc = JsonDocument.Parse(rawJson);
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "GOG: failed to parse JSON response on page {Page}. Raw response: {Raw}",
-                    page, rawJson[..Math.Min(500, rawJson.Length)]);
-                throw;
-            }
+                var resp = await client.GetAsync(url);
 
-            var root = doc.RootElement;
-
-            // Extract game objects from _embedded.items[].game
-            if (root.TryGetProperty("_embedded", out var embedded) &&
-                embedded.TryGetProperty("items", out var items))
-            {
-                foreach (var item in items.EnumerateArray())
+                if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    if (item.TryGetProperty("game", out var game))
+                    await WriteAuditLogAsync("GOG", "TokenExpired", 0, "gog-al cookie expired or invalid.");
+                    throw new HttpRequestException("GOG API returned 401/403. gog-al cookie has expired.");
+                }
+                if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    await WriteAuditLogAsync("GOG", "RateLimited", 0, "GOG API rate limit exceeded.");
+                    throw new HttpRequestException("GOG API rate limit exceeded.");
+                }
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadAsStringAsync();
+                    _logger.LogError("GOG API returned {StatusCode} on page {Page}: {Body}",
+                        (int)resp.StatusCode, page, body);
+                    await WriteAuditLogAsync("GOG", "Error", 0, $"HTTP {(int)resp.StatusCode}");
+                    throw new HttpRequestException($"GOG API returned {(int)resp.StatusCode} on page {page}.");
+                }
+
+                var rawJson = await resp.Content.ReadAsStringAsync();
+                JsonDocument doc;
+                try
+                {
+                    doc = JsonDocument.Parse(rawJson);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError(ex, "GOG: failed to parse JSON response on page {Page}. Raw response: {Raw}",
+                        page, rawJson[..Math.Min(500, rawJson.Length)]);
+                    await WriteAuditLogAsync("GOG", "Error", 0, "JSON Parse Exception");
+                    throw;
+                }
+
+                var root = doc.RootElement;
+
+                // Extract game objects from _embedded.items[].game
+                if (root.TryGetProperty("_embedded", out var embedded) &&
+                    embedded.TryGetProperty("items", out var items))
+                {
+                    foreach (var item in items.EnumerateArray())
                     {
-                        allGames.Add(game.Clone());
+                        if (item.TryGetProperty("game", out var game))
+                        {
+                            allGames.Add(game.Clone());
+                        }
                     }
                 }
-            }
-            else
-            {
-                _logger.LogWarning("GOG: page {Page} response missing _embedded.items structure", page);
+                else
+                {
+                    _logger.LogWarning("GOG: page {Page} response missing _embedded.items structure", page);
+                }
+
+                // Check if we've reached the last page
+                if (!root.TryGetProperty("pages", out var pagesElement))
+                {
+                    _logger.LogWarning("GOG: response missing 'pages' property, stopping pagination");
+                    break;
+                }
+
+                var totalPages = pagesElement.GetInt32();
+                _logger.LogDebug("GOG: page {Page}/{TotalPages}, games so far: {Count}",
+                    page, totalPages, allGames.Count);
+
+                if (page >= totalPages) break;
+                page++;
             }
 
-            // Check if we've reached the last page
-            if (!root.TryGetProperty("pages", out var pagesElement))
-            {
-                _logger.LogWarning("GOG: response missing 'pages' property, stopping pagination");
-                break;
-            }
-
-            var totalPages = pagesElement.GetInt32();
-            _logger.LogDebug("GOG: page {Page}/{TotalPages}, games so far: {Count}",
-                page, totalPages, allGames.Count);
-
-            if (page >= totalPages) break;
-            page++;
+            _logger.LogInformation("GOG: fetched {Count} games across {Pages} pages", allGames.Count, page);
+            await WriteAuditLogAsync("GOG", "Success", allGames.Count);
+            return allGames;
         }
+        catch (Exception ex) when (ex is not HttpRequestException)
+        {
+            await WriteAuditLogAsync("GOG", "Error", 0, ex.Message);
+            throw;
+        }
+    }
 
-        _logger.LogInformation("GOG: fetched {Count} games across {Pages} pages", allGames.Count, page);
-        return allGames;
+    private async Task WriteAuditLogAsync(string platform, string status, int count, string? error = null)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameHub.Ingest.Data.IngestContext>();
+        db.IngestAuditLogs.Add(new GameHub.Ingest.Data.IngestAuditLog
+        {
+            Platform = platform,
+            Status = status,
+            GamesFound = count,
+            ErrorMessage = error
+        });
+        await db.SaveChangesAsync();
     }
 }
 
@@ -177,6 +251,7 @@ public class GogFetcher
 public class PsnFetcher
 {
     private readonly ILogger<PsnFetcher> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     /// <summary>
     /// The PSN GraphQL endpoint with persisted query hash.
@@ -188,9 +263,10 @@ public class PsnFetcher
         "&variables={{\"isActive\":true,\"platform\":[\"ps3\",\"ps4\",\"ps5\"],\"start\":{0},\"size\":{1},\"subscriptionService\":\"NONE\"}}" +
         "&extensions={{\"persistedQuery\":{{\"version\":1,\"sha256Hash\":\"2c045408b0a4d0264bb5a3edfed4efd49fb4749cf8d216be9043768adff905e2\"}}}}";
 
-    public PsnFetcher(ILogger<PsnFetcher> logger)
+    public PsnFetcher(ILogger<PsnFetcher> logger, IServiceScopeFactory scopeFactory)
     {
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>
@@ -217,66 +293,103 @@ public class PsnFetcher
         int offset = 0;
         const int pageSize = 100;
 
-        while (true)
+        try
         {
-            var url = string.Format(GraphQLUrl, offset, pageSize);
-            _logger.LogDebug("PSN: fetching offset {Offset}", offset);
-
-            var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.Add("Accept", "application/json");
-            req.Headers.Add("x-apollo-operation-name", "getPurchasedGameList");
-            req.Headers.Add("apollo-require-preflight", "true");
-
-            var resp = await client.SendAsync(req);
-
-            if (!resp.IsSuccessStatusCode)
+            while (true)
             {
-                var body = await resp.Content.ReadAsStringAsync();
-                _logger.LogError("PSN API returned {StatusCode} at offset {Offset}: {Body}",
-                    (int)resp.StatusCode, offset, body);
-                throw new HttpRequestException(
-                    $"PSN API returned {(int)resp.StatusCode}. " +
-                    $"Cookies may have expired. Response: {body}");
+                var url = string.Format(GraphQLUrl, offset, pageSize);
+                _logger.LogDebug("PSN: fetching offset {Offset}", offset);
+
+                var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Add("Accept", "application/json");
+                req.Headers.Add("x-apollo-operation-name", "getPurchasedGameList");
+                req.Headers.Add("apollo-require-preflight", "true");
+
+                var resp = await client.SendAsync(req);
+
+                if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    await WriteAuditLogAsync("PSN", "TokenExpired", 0, "PSN cookies expired or invalid.");
+                    throw new HttpRequestException("PSN API returned 401/403. Cookies have expired.");
+                }
+                if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    await WriteAuditLogAsync("PSN", "RateLimited", 0, "PSN API rate limit exceeded.");
+                    throw new HttpRequestException("PSN API rate limit exceeded.");
+                }
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadAsStringAsync();
+                    _logger.LogError("PSN API returned {StatusCode} at offset {Offset}: {Body}",
+                        (int)resp.StatusCode, offset, body);
+                    await WriteAuditLogAsync("PSN", "Error", 0, $"HTTP {(int)resp.StatusCode}");
+                    throw new HttpRequestException(
+                        $"PSN API returned {(int)resp.StatusCode}. " +
+                        $"Cookies may have expired. Response: {body}");
+                }
+
+                var rawJson = await resp.Content.ReadAsStringAsync();
+                JsonDocument doc;
+                try
+                {
+                    doc = JsonDocument.Parse(rawJson);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError(ex, "PSN: failed to parse JSON at offset {Offset}. Raw: {Raw}",
+                        offset, rawJson[..Math.Min(500, rawJson.Length)]);
+                    await WriteAuditLogAsync("PSN", "Error", 0, "JSON Parse Exception");
+                    throw;
+                }
+
+                // Navigate: data -> purchasedTitlesRetrieve -> games
+                if (!doc.RootElement.TryGetProperty("data", out var data) ||
+                    !data.TryGetProperty("purchasedTitlesRetrieve", out var retrieve))
+                {
+                    _logger.LogError("PSN: unexpected response structure at offset {Offset}. Raw: {Raw}",
+                        offset, rawJson[..Math.Min(500, rawJson.Length)]);
+                    await WriteAuditLogAsync("PSN", "Error", 0, "Unexpected Response Structure");
+                    throw new InvalidOperationException("PSN API returned an unexpected response structure");
+                }
+
+                var games = retrieve.GetProperty("games");
+                foreach (var game in games.EnumerateArray())
+                {
+                    allGames.Add(game.Clone());
+                }
+
+                // Check if this is the last page
+                var isLast = retrieve.GetProperty("pageInfo").GetProperty("isLast").GetBoolean();
+                _logger.LogDebug("PSN: offset {Offset}, games so far: {Count}, isLast: {IsLast}",
+                    offset, allGames.Count, isLast);
+
+                if (isLast) break;
+                offset += pageSize;
             }
 
-            var rawJson = await resp.Content.ReadAsStringAsync();
-            JsonDocument doc;
-            try
-            {
-                doc = JsonDocument.Parse(rawJson);
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "PSN: failed to parse JSON at offset {Offset}. Raw: {Raw}",
-                    offset, rawJson[..Math.Min(500, rawJson.Length)]);
-                throw;
-            }
-
-            // Navigate: data -> purchasedTitlesRetrieve -> games
-            if (!doc.RootElement.TryGetProperty("data", out var data) ||
-                !data.TryGetProperty("purchasedTitlesRetrieve", out var retrieve))
-            {
-                _logger.LogError("PSN: unexpected response structure at offset {Offset}. Raw: {Raw}",
-                    offset, rawJson[..Math.Min(500, rawJson.Length)]);
-                throw new InvalidOperationException("PSN API returned an unexpected response structure");
-            }
-
-            var games = retrieve.GetProperty("games");
-            foreach (var game in games.EnumerateArray())
-            {
-                allGames.Add(game.Clone());
-            }
-
-            // Check if this is the last page
-            var isLast = retrieve.GetProperty("pageInfo").GetProperty("isLast").GetBoolean();
-            _logger.LogDebug("PSN: offset {Offset}, games so far: {Count}, isLast: {IsLast}",
-                offset, allGames.Count, isLast);
-
-            if (isLast) break;
-            offset += pageSize;
+            _logger.LogInformation("PSN: fetched {Count} games", allGames.Count);
+            await WriteAuditLogAsync("PSN", "Success", allGames.Count);
+            return allGames;
         }
+        catch (Exception ex) when (ex is not HttpRequestException && ex is not InvalidOperationException)
+        {
+            await WriteAuditLogAsync("PSN", "Error", 0, ex.Message);
+            throw;
+        }
+    }
 
-        _logger.LogInformation("PSN: fetched {Count} games", allGames.Count);
-        return allGames;
+    private async Task WriteAuditLogAsync(string platform, string status, int count, string? error = null)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameHub.Ingest.Data.IngestContext>();
+        db.IngestAuditLogs.Add(new GameHub.Ingest.Data.IngestAuditLog
+        {
+            Platform = platform,
+            Status = status,
+            GamesFound = count,
+            ErrorMessage = error
+        });
+        await db.SaveChangesAsync();
     }
 }

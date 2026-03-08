@@ -106,6 +106,36 @@ namespace GameHub.Core.Migrations
                     b.ToTable("ManualLinks");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.SyncAuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ItemsProcessed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("NewGamesCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Platform")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SyncAuditLogs");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.SyncMetadata", b =>
                 {
                     b.Property<int>("Id")

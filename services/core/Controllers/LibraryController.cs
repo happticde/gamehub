@@ -195,6 +195,29 @@ public class LibraryController : ControllerBase
         return Ok(logs);
     }
 
+    /// <summary>
+    /// GET: api/library/sync-history
+    /// Returns the most recent unification sync audit logs.
+    /// Optionally filter by a specific platform.
+    /// </summary>
+    [HttpGet("sync-history")]
+    public async Task<IActionResult> GetSyncHistory(
+        [FromQuery] Platform? platform,
+        [FromQuery] int limit = 50)
+    {
+        var query = _db.SyncAuditLogs.AsNoTracking();
+
+        if (platform.HasValue)
+            query = query.Where(l => l.Platform == platform.Value);
+
+        var logs = await query
+            .OrderByDescending(l => l.Timestamp)
+            .Take(limit)
+            .ToListAsync();
+
+        return Ok(logs);
+    }
+
     // =========================================================================
     // Manual Merge / Split Endpoints
     // =========================================================================

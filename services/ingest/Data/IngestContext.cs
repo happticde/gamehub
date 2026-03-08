@@ -10,4 +10,7 @@ public class IngestContext : DbContext
     public DbSet<SteamRawItem> SteamRawItems => Set<SteamRawItem>();
     public DbSet<GogRawItem> GogRawItems => Set<GogRawItem>();
     public DbSet<EpicRawItem> EpicRawItems => Set<EpicRawItem>();
+    
+    // --- Audit Logs ---
+    public DbSet<IngestAuditLog> IngestAuditLogs => Set<IngestAuditLog>();
 }

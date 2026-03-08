@@ -2,6 +2,7 @@ using GameHub.Ingest.Data;
 using GameHub.Ingest.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace GameHub.Ingest.Controllers;
@@ -166,6 +167,29 @@ public class RetrieveController : ControllerBase
             _logger.LogError(ex, "Unexpected error during PSN retrieve");
             return StatusCode(500, new { Message = $"Internal error: {ex.Message}" });
         }
+    }
+
+    /// <summary>
+    /// GET: api/retrieve/history
+    /// Returns the most recent ingest audit logs.
+    /// Optionally filter by platform (e.g., "Steam").
+    /// </summary>
+    [HttpGet("history")]
+    public async Task<IActionResult> GetIngestHistory(
+        [FromQuery] string? platform,
+        [FromQuery] int limit = 50)
+    {
+        var query = _db.IngestAuditLogs.AsNoTracking();
+
+        if (!string.IsNullOrEmpty(platform))
+            query = query.Where(l => l.Platform.ToLower() == platform.ToLower());
+
+        var logs = await query
+            .OrderByDescending(l => l.Timestamp)
+            .Take(limit)
+            .ToListAsync();
+
+        return Ok(logs);
     }
 }
 

@@ -72,6 +72,34 @@ namespace GameHub.Ingest.Migrations
                     b.ToTable("GogRawItems");
                 });
 
+            modelBuilder.Entity("GameHub.Ingest.Data.IngestAuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("GamesFound")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("IngestAuditLogs");
+                });
+
             modelBuilder.Entity("GameHub.Ingest.Data.PsnRawItem", b =>
                 {
                     b.Property<int>("Id")

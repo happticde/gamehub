@@ -63,3 +63,14 @@ public class EnrichmentAuditLog
     public int? ProviderGameId { get; set; }
     public string? MatchedTitle { get; set; }
 }
+
+public class SyncAuditLog
+{
+    public int Id { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public Platform Platform { get; set; }
+    public string Status { get; set; } = ""; // "Success", "Error"
+    public int ItemsProcessed { get; set; }
+    public int NewGamesCreated { get; set; }
+    public string? ErrorMessage { get; set; }
+}

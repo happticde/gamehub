@@ -21,5 +21,8 @@ public class CoreContext : DbContext
     // --- Audit Logs ---
     /// <summary>History of metadata enrichment attempts and outcomes.</summary>
     public DbSet<EnrichmentAuditLog> EnrichmentAuditLogs => Set<EnrichmentAuditLog>();
+    
+    /// <summary>History of ingestion syncs from platform sources.</summary>
+    public DbSet<SyncAuditLog> SyncAuditLogs => Set<SyncAuditLog>();
 }
 
