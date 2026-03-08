@@ -58,7 +58,7 @@ public class LibraryController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetLibrary(
         [FromQuery] string? search,
-        [FromQuery] string? tag,
+        [FromQuery] string[]? tags,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -77,10 +77,14 @@ public class LibraryController : ControllerBase
             query = query.Where(g => g.Title.ToLower().Contains(search.ToLower()));
         }
 
-        // Filter by tag if provided
-        if (!string.IsNullOrWhiteSpace(tag))
+        // Filter by tags if any are provided
+        if (tags != null && tags.Any(t => !string.IsNullOrWhiteSpace(t)))
         {
-            query = query.Where(g => g.Tags.Any(t => t.Name.ToLower() == tag.ToLower()));
+            var lowerTags = tags.Where(t => !string.IsNullOrWhiteSpace(t))
+                                .Select(t => t.ToLower())
+                                .ToList();
+            
+            query = query.Where(g => g.Tags.Any(t => lowerTags.Contains(t.Name.ToLower())));
         }
 
         // Get total count for pagination metadata

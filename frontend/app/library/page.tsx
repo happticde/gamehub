@@ -14,7 +14,12 @@ export default async function LibraryPage({
     // Await the search parameters (required in Next.js 15 app router)
     const resolvedParams = await searchParams;
     const search = typeof resolvedParams.search === 'string' ? resolvedParams.search : undefined;
-    const tag = typeof resolvedParams.tag === 'string' ? resolvedParams.tag : undefined;
+
+    // Tags can be undefined, a single string `?tags=RPG`, or an array `?tags=RPG&tags=Action`
+    let tags: string[] = [];
+    if (resolvedParams.tags) {
+        tags = Array.isArray(resolvedParams.tags) ? resolvedParams.tags : [resolvedParams.tags];
+    }
 
     // Parse page number (default to 1, ensure it's a positive integer)
     const pageParam = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page, 10) : 1;
@@ -32,7 +37,10 @@ export default async function LibraryPage({
         // Construct the query string to pass down to our C# API
         const query = new URLSearchParams();
         if (search) query.append("search", search);
-        if (tag) query.append("tag", tag);
+
+        // Append all tags array values exactly as ASP.NET MVC expects them
+        tags.forEach(t => query.append("tags", t));
+
         query.append("page", currentPage.toString());
 
         // We proxy it through Next.js

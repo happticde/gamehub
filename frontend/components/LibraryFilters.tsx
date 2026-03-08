@@ -3,7 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 
 interface LibraryFiltersProps {
     availableTags: string[];
@@ -17,21 +17,42 @@ export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
 
     // Initialize local state from URL so it persists across refreshes
     const defaultSearch = searchParams.get("search") || "";
-    const defaultTag = searchParams.get("tag") || "all";
+    // In Next.js URLSearchParams, `getAll` pulls every instance of `?tags=X` into an array
+    const defaultTags = searchParams.getAll("tags");
 
     const [searchQuery, setSearchQuery] = useState(defaultSearch);
 
-    // Create a memoized debounced function to update the URL
-    const updateUrl = useCallback(
-        (key: string, value: string) => {
+    // Memoized function to update text search
+    const updateSearchUrl = useCallback(
+        (value: string) => {
             const params = new URLSearchParams(searchParams.toString());
-            if (value && value !== "all") {
-                params.set(key, value);
+            if (value) {
+                params.set("search", value);
             } else {
-                params.delete(key);
+                params.delete("search");
             }
 
-            // Reset page to 1 when filters change (if we implement pagination later)
+            params.delete("page");
+
+            startTransition(() => {
+                router.push(`${pathname}?${params.toString()}`);
+            });
+        },
+        [pathname, router, searchParams]
+    );
+
+    // Memoized function to update the tags array
+    const updateTagsUrl = useCallback(
+        (newTags: string[]) => {
+            const params = new URLSearchParams(searchParams.toString());
+
+            // Wipe the old tags parameters clean
+            params.delete("tags");
+
+            // Append every selected tag to the URL (`?tags=RPG&tags=Action`)
+            newTags.forEach(t => params.append("tags", t));
+
+            // Reset page to 1 when filters change
             params.delete("page");
 
             startTransition(() => {
@@ -46,12 +67,12 @@ export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
         const timer = setTimeout(() => {
             // Only push if it actually changed from what's in the URL
             if (searchQuery !== (searchParams.get("search") || "")) {
-                updateUrl("search", searchQuery);
+                updateSearchUrl(searchQuery);
             }
         }, 400);
 
         return () => clearTimeout(timer);
-    }, [searchQuery, searchParams, updateUrl]);
+    }, [searchQuery, searchParams, updateSearchUrl]);
 
     return (
         <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center">
@@ -77,20 +98,14 @@ export default function LibraryFilters({ availableTags }: LibraryFiltersProps) {
                 />
             </div>
 
-            <Select
-                defaultValue={defaultTag}
-                onValueChange={(value) => updateUrl("tag", value)}
-            >
-                <SelectTrigger className="w-full sm:w-[180px] bg-background">
-                    <SelectValue placeholder="All Genres" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Genres</SelectItem>
-                    {availableTags.map((t) => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
+            <div className="w-full sm:w-[280px]">
+                <MultiSelect
+                    options={availableTags}
+                    selected={defaultTags}
+                    onChange={updateTagsUrl}
+                    placeholder="Select tags..."
+                />
+            </div>
 
             {/* Loading spinner when Next.js is fetching new server data */}
             <div className={`flex h-9 w-9 items-center justify-center transition-opacity ${isPending ? 'opacity-100' : 'opacity-0'}`}>
