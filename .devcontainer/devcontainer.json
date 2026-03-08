@@ -3,5 +3,15 @@
     // Official Microsoft .NET 8 Dev Image (Bookworm/Debian)
     "dockerComposeFile": "docker-compose.yml",
     "service": "app",
-    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    "features": {
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "24",
+            "pnpmVersion": "latest",
+            "nvmVersion": "latest"
+        },
+        "ghcr.io/devcontainers/features/go:1": {
+            "version": "1.26"
+        }
+    }
 }
