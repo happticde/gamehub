@@ -46,18 +46,155 @@ public class IgdbClient : IGameMetadataProvider
         _cache = cache;
     }
 
+    /// <summary>
+    /// Patterns in game titles that indicate non-game items (tools, servers, soundtracks, betas).
+    /// These are skipped entirely during enrichment since IGDB won't have entries for them.
+    /// </summary>
+    private static readonly string[] NonGamePatterns =
+    [
+        "dedicated server",
+        "soundtrack",
+        "resource archiver",
+        "pre-game editor",
+        "modding tool",
+        "sdk",
+        "editor",
+        "tool",
+    ];
+
+    /// <summary>
+    /// Suffixes that indicate test/beta variants — stripped before searching
+    /// but the game itself may still be findable on IGDB.
+    /// </summary>
+    private static readonly string[] TestVariantSuffixes =
+    [
+        "tech beta",
+        "beta",
+        "experimental",
+        "legacy mode",
+        "ptr",
+        "test branch",
+        "early access",
+    ];
+
+    /// <summary>
+    /// Edition suffixes stripped before searching IGDB (same list as UnificationService).
+    /// </summary>
+    private static readonly string[] EditionSuffixes =
+    [
+        "game of the year edition",
+        "game of the year",
+        "definitive edition",
+        "complete edition",
+        "ultimate edition",
+        "premium edition",
+        "digital deluxe edition",
+        "deluxe edition",
+        "enhanced edition",
+        "legendary edition",
+        "special edition",
+        "standard edition",
+        "gold edition",
+        "directors cut",
+        "director's cut",
+        "remastered",
+        "remake",
+        "goty",
+    ];
+
     /// <inheritdoc />
     public async Task<GameMetadata?> SearchAsync(string title, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(title))
             return null;
 
-        // Escape double quotes in the title for the IGDB query
+        var lower = title.ToLowerInvariant();
+
+        // Skip non-game items entirely (servers, soundtracks, tools, editors)
+        if (NonGamePatterns.Any(p => lower.Contains(p)))
+        {
+            _logger.LogDebug("Skipping non-game item: '{Title}'", title);
+            return null;
+        }
+
+        // Sanitize the title for a better IGDB match
+        var cleaned = SanitizeSearchTitle(title);
+
+        // Attempt 1: Search with the sanitized title
+        var result = await SearchIgdbAsync(cleaned, ct);
+        if (result != null)
+            return result;
+
+        // Attempt 2: Strip everything after the first separator (- or :)
+        // "Warhammer 40,000: Mechanicus" → "Warhammer 40,000"
+        var separatorIdx = cleaned.IndexOfAny(['-', ':']);
+        if (separatorIdx > 3) // Ensure there's a meaningful base name (at least 3 chars)
+        {
+            var baseName = cleaned[..separatorIdx].Trim();
+            result = await SearchIgdbAsync(baseName, ct);
+            if (result != null)
+                return result;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Sends a single IGDB search query and returns the mapped metadata, or null.
+    /// </summary>
+    private async Task<GameMetadata?> SearchIgdbAsync(string title, CancellationToken ct)
+    {
         var escaped = title.Replace("\"", "\\\"");
         var query = $"search \"{escaped}\"; fields {GameFields}; limit 1;";
 
         var results = await QueryGamesAsync(query, ct);
         return results.Count > 0 ? MapToMetadata(results[0]) : null;
+    }
+
+    /// <summary>
+    /// Cleans a game title for better IGDB matching:
+    ///   1. Strip ™ ® © symbols
+    ///   2. Remove edition suffixes ("Standard Edition", "Complete Edition", etc.)
+    ///   3. Remove test/beta suffixes ("Tech Beta", "PTR", "Experimental", etc.)
+    ///   4. Remove parenthesized content like "(Test branch)"
+    ///   5. Clean up trailing separators
+    /// </summary>
+    private static string SanitizeSearchTitle(string title)
+    {
+        // Strip trademark symbols
+        var result = title.Replace("™", "").Replace("®", "").Replace("©", "");
+
+        // Remove parenthesized test/variant markers: "(Test branch)", "(Early Access)"
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"\([^)]*\)", "");
+
+        var lower = result.ToLowerInvariant();
+
+        // Strip edition suffixes
+        foreach (var suffix in EditionSuffixes)
+        {
+            var idx = lower.IndexOf(suffix, StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                result = result[..idx];
+                lower = result.ToLowerInvariant();
+            }
+        }
+
+        // Strip test/beta suffixes
+        foreach (var suffix in TestVariantSuffixes)
+        {
+            var idx = lower.IndexOf(suffix, StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                result = result[..idx];
+                lower = result.ToLowerInvariant();
+            }
+        }
+
+        // Clean trailing separators left after stripping: " - ", " : ", " – "
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"[\s]*[-–—:]+[\s]*$", "");
+
+        return result.Trim();
     }
 
     /// <inheritdoc />
