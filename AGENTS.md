@@ -53,8 +53,8 @@ services/
     Services/       # PlatformFetchers (Steam, GOG, PSN)
     Data/           # EF Core context + entities
   core/             # Core service (unified library)
-    Controllers/    # LibraryController (sync, merge, split)
-    Services/       # UnificationService, IngestClient
+    Controllers/    # LibraryController (sync, merge, split, enrich, enrichment-history)
+    Services/       # UnificationService, IngestClient, EnrichmentService, IgdbClient
     Data/           # EF Core context + entities
   shared/           # Shared DTOs, enums, auth handler
     Authentication/ # ApiKeyAuthenticationHandler (AuthenticationHandler<T>)
@@ -79,8 +79,46 @@ docs/               # ROADMAP.md, DEBUGGING.md, adr/
 ## Current Status
 
 Stability path complete: Tests ✅, Migrations ✅, Logging ✅, Auth ✅.
+Frontend: Next.js library UI with filters, sorting, game detail pages ✅.
+Enrichment: IGDB metadata provider with caching, rate-limiting, smart search ✅.
 See `docs/ROADMAP.md` for full status and next steps.
 See `docs/adr/` for architecture decision records.
+
+## Last Session Summary (2026-03-09)
+
+> Context for the next agent. Read this instead of re-exploring files.
+
+### What Changed
+
+**Backend (`services/core/`):**
+- `IgdbClient.cs` — Singleton registration (via `IHttpClientFactory` in `Program.cs`). Auto-retry on 401 with token refresh. Multi-step title sanitization (strip ™®©, CamelCase split, edition/beta suffixes, year-in-parens). Non-game filter (servers, soundtracks, editors, DLC). Best-match scoring (top 5 results, Jaccard similarity). Empty results NOT cached.
+- `EnrichmentService.cs` — 300ms rate-limit between batch calls. `ResetStaleEnrichmentsAsync()` (reset games with EnrichedAt but no CoverUrl/Summary). `ResetAllEnrichmentsAsync()` (reset all for full re-enrich).
+- `LibraryController.cs` — `POST enrich/stale` (instant reset), `POST enrich?force=true` (instant full reset), `GET enrichment-history?status=Error` filter. `developer`/`publisher` params now `string[]` with OR-logic. Sort by title/rating/releasedate.
+- `Program.cs` — `IgdbClient` + `EnrichmentService` registered as singletons.
+
+**Frontend (`frontend/`):**
+- `LibraryFilters.tsx` — Collapsible "More" toggle for Developer/Publisher (hidden by default). Searchable `MultiSelect` dropdowns. Active-count badge.
+- `multi-select.tsx` — `searchPlaceholder` and `emptyMessage` now configurable via props.
+- `library/page.tsx` — Multi-value `developers`/`publishers` URL params.
+- `GameCard.tsx` — Shows developer name + release year.
+- `app/page.tsx` — Landing page redesign with animated gradients, stats, feature cards.
+- `globals.css` — Indigo accent for dark theme.
+- `lib/platform-colors.ts` — Shared `getPlatformColor` utility.
+
+### Enrichment API Surface
+```
+POST /api/library/enrich              → batch un-enriched (rate-limited, long-running)
+POST /api/library/enrich?force=true   → instant: resets ALL EnrichedAt
+POST /api/library/enrich/stale        → instant: resets only broken enrichments
+POST /api/library/enrich/{id}?force=true → single game re-enrich
+GET  /api/library/enrichment-history?status=Error&gameId=42&limit=50
+```
+
+### Known State / Pending
+- IGDB search improvements deployed but not yet verified with a full re-enrich run
+- Some games may still be NotFound (very short titles like "FATE", unusual naming)
+- Consider adding manual IGDB link feature for unmatchable games
+- Remaining roadmap items: Stats dashboard, Background Sync Scheduler, CI/CD
 
 ## Conventions
 

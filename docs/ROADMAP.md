@@ -17,8 +17,8 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Structured Logging | ✅ All components, debugging guide |
 | Auth | ✅ API key middleware (JWT-ready) |
 | CI/CD | ❌ Not started |
-| Frontend | ❌ API-only |
-| Enrichment / metadata | ✅ IGDB Provider implemented |
+| Frontend | ✅ Next.js library UI, filters, sorting, game detail pages |
+| Enrichment / metadata | ✅ IGDB provider with caching, rate-limiting, smart search |
 
 ---
 
@@ -53,10 +53,11 @@ Simple API key middleware (`X-Api-Key` header) to protect ingest and sync endpoi
 ### 4. Web Frontend (Dashboard)
 
 A browsable UI for the unified library:
-- Cover art grid, search/filter by platform/genre, game detail pages
+- Cover art grid, search/filter by platform/genre/developer/publisher, game detail pages ✅
+- Sort by title/rating/releasedate ✅
 - Admin actions: merge/split UI, trigger sync, view sync history
 - Current Implementation: Next.js App Router
-- **Frontend Polish Needed**: Add "Sort By" dropdowns (Release Date, Rating, Title) to the LibraryController and UI, and add Developer/Publisher tag filtering.
+- **Remaining**: Stats dashboard (#10), background sync scheduler (#6)
 
 ### 6. Background Sync Scheduler
 
