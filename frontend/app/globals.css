@@ -127,3 +127,54 @@
     @apply font-sans;
   }
 }
+
+/* Landing page animated gradient orbs */
+.landing-gradient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  will-change: transform;
+}
+
+.landing-orb-1 {
+  width: 500px;
+  height: 500px;
+  background: oklch(0.55 0.20 270); /* indigo */
+  top: -10%;
+  left: -5%;
+  animation: orb-drift-1 12s ease-in-out infinite alternate;
+}
+
+.landing-orb-2 {
+  width: 400px;
+  height: 400px;
+  background: oklch(0.55 0.18 310); /* purple-pink */
+  bottom: -5%;
+  right: -5%;
+  animation: orb-drift-2 14s ease-in-out infinite alternate;
+}
+
+.landing-orb-3 {
+  width: 350px;
+  height: 350px;
+  background: oklch(0.50 0.15 250); /* blue */
+  top: 40%;
+  left: 50%;
+  animation: orb-drift-3 10s ease-in-out infinite alternate;
+}
+
+@keyframes orb-drift-1 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(80px, 60px) scale(1.15); }
+}
+
+@keyframes orb-drift-2 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-60px, -40px) scale(1.1); }
+}
+
+@keyframes orb-drift-3 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(40px, -50px) scale(1.2); }
+}

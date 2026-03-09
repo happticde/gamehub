@@ -23,6 +23,8 @@ export interface UnifiedGame {
     coverUrl?: string | null;
     summary?: string | null;
     genres?: string | null;
+    developers?: string | null;
+    publishers?: string | null;
     firstReleaseDate?: string | null;
     rating?: number | null;
     metadataProviderId?: number | null;

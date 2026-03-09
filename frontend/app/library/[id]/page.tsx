@@ -82,7 +82,7 @@ export default async function GameDetailPage({
                     <h3 className="font-semibold">Unable to load game details.</h3>
                     <p className="mt-2 text-sm">{error}</p>
                     <Link href="/library" className="mt-6 inline-flex items-center gap-2 border border-destructive/30 rounded-md px-4 py-2 text-sm hover:bg-destructive/20">
-                        <ArrowLeft className="h-4 w-4" /> Return to safely
+                        <ArrowLeft className="h-4 w-4" /> Return to Library
                     </Link>
                 </div>
             </div>

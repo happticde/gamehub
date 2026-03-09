@@ -51,15 +51,20 @@ public class LibraryController : ControllerBase
     }
 
     /// <summary>
-    /// GET: api/library?search=witcher&tag=RPG&page=1&pageSize=50
+    /// GET: api/library?search=witcher&amp;tags=RPG&amp;sortBy=rating&amp;sortOrder=desc&amp;page=1
     /// Returns a paginated list of unified games with their platform tags.
-    /// Optionally filter by title search or specific tag.
+    /// Supports filtering by search text, tags, platforms, developer, and publisher.
+    /// Supports sorting by title (default), rating, or releasedate.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetLibrary(
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
         [FromQuery] Platform[]? platforms,
+        [FromQuery] string? developer,
+        [FromQuery] string? publisher,
+        [FromQuery] string? sortBy,
+        [FromQuery] string sortOrder = "asc",
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -94,12 +99,34 @@ public class LibraryController : ControllerBase
             query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
         }
 
+        // Filter by developer (substring match on the comma-separated field)
+        if (!string.IsNullOrWhiteSpace(developer))
+        {
+            query = query.Where(g => g.Developers != null && g.Developers.ToLower().Contains(developer.ToLower()));
+        }
+
+        // Filter by publisher (substring match on the comma-separated field)
+        if (!string.IsNullOrWhiteSpace(publisher))
+        {
+            query = query.Where(g => g.Publishers != null && g.Publishers.ToLower().Contains(publisher.ToLower()));
+        }
+
         // Get total count for pagination metadata
         var totalCount = await query.CountAsync();
 
+        // Dynamic sorting — default to title ascending
+        query = (sortBy?.ToLower(), sortOrder.ToLower()) switch
+        {
+            ("rating", "desc")       => query.OrderByDescending(g => g.Rating),
+            ("rating", _)            => query.OrderBy(g => g.Rating),
+            ("releasedate", "desc")  => query.OrderByDescending(g => g.FirstReleaseDate),
+            ("releasedate", _)       => query.OrderBy(g => g.FirstReleaseDate),
+            ("title", "desc")        => query.OrderByDescending(g => g.Title),
+            _                        => query.OrderBy(g => g.Title), // default: title asc
+        };
+
         // Fetch the current page
         var games = await query
-            .OrderBy(g => g.Title)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
@@ -112,6 +139,8 @@ public class LibraryController : ControllerBase
             g.CoverUrl,
             g.Summary,
             g.Genres,
+            g.Developers,
+            g.Publishers,
             Tags = g.Tags.Select(t => t.Name).ToList(),
             g.FirstReleaseDate,
             g.Rating,
@@ -202,6 +231,54 @@ public class LibraryController : ControllerBase
             .ToListAsync();
 
         return Ok(tags);
+    }
+
+    /// <summary>
+    /// GET: api/library/developers
+    /// Returns a deduplicated, sorted list of all developer names across all games.
+    /// Parses the comma-separated Developers field.
+    /// </summary>
+    [HttpGet("developers")]
+    public async Task<IActionResult> GetDevelopers()
+    {
+        var rawValues = await _db.UnifiedGames
+            .Where(g => g.Developers != null && g.Developers != "")
+            .Select(g => g.Developers!)
+            .ToListAsync();
+
+        var developers = rawValues
+            .SelectMany(csv => csv.Split(", "))
+            .Where(d => !string.IsNullOrWhiteSpace(d))
+            .Select(d => d.Trim())
+            .Distinct()
+            .OrderBy(d => d)
+            .ToList();
+
+        return Ok(developers);
+    }
+
+    /// <summary>
+    /// GET: api/library/publishers
+    /// Returns a deduplicated, sorted list of all publisher names across all games.
+    /// Parses the comma-separated Publishers field.
+    /// </summary>
+    [HttpGet("publishers")]
+    public async Task<IActionResult> GetPublishers()
+    {
+        var rawValues = await _db.UnifiedGames
+            .Where(g => g.Publishers != null && g.Publishers != "")
+            .Select(g => g.Publishers!)
+            .ToListAsync();
+
+        var publishers = rawValues
+            .SelectMany(csv => csv.Split(", "))
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .Distinct()
+            .OrderBy(p => p)
+            .ToList();
+
+        return Ok(publishers);
     }
 
     // =========================================================================

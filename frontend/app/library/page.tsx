@@ -3,8 +3,13 @@ import GameCard from "@/components/GameCard";
 import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
 
-// Since this is a React Server Component (RSC), we can export an async function directly!
-// It will execute on the Next.js Node server before the page is sent to the browser.
+/**
+ * Library page — a React Server Component (RSC).
+ *
+ * This function runs on the Next.js Node server before the page is sent to the browser.
+ * All filter/sort state is stored in URL search params so it works with browser history,
+ * bookmarking, and server-side rendering.
+ */
 export default async function LibraryPage({
     searchParams,
 }: {
@@ -27,6 +32,14 @@ export default async function LibraryPage({
         platforms = Array.isArray(resolvedParams.platforms) ? resolvedParams.platforms : [resolvedParams.platforms];
     }
 
+    // Sort parameters
+    const sortBy = typeof resolvedParams.sortBy === 'string' ? resolvedParams.sortBy : undefined;
+    const sortOrder = typeof resolvedParams.sortOrder === 'string' ? resolvedParams.sortOrder : undefined;
+
+    // Developer / Publisher single-value filters
+    const developer = typeof resolvedParams.developer === 'string' ? resolvedParams.developer : undefined;
+    const publisher = typeof resolvedParams.publisher === 'string' ? resolvedParams.publisher : undefined;
+
     // Parse page number (default to 1, ensure it's a positive integer)
     const pageParam = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page, 10) : 1;
     const currentPage = !isNaN(pageParam) && pageParam > 0 ? pageParam : 1;
@@ -35,6 +48,8 @@ export default async function LibraryPage({
     // which is then proxied via next.config.ts down to the C# Core API.
     let games: UnifiedGame[] = [];
     let tagsList: string[] = [];
+    let developersList: string[] = [];
+    let publishersList: string[] = [];
     let totalCount = 0;
     let pageSize = 50;
     let error: string | null = null;
@@ -50,15 +65,25 @@ export default async function LibraryPage({
         // Append all platforms array values exactly as ASP.NET MVC expects them
         platforms.forEach(p => query.append("platforms", p));
 
+        // Sort params
+        if (sortBy) query.append("sortBy", sortBy);
+        if (sortOrder) query.append("sortOrder", sortOrder);
+
+        // Developer / Publisher filters
+        if (developer) query.append("developer", developer);
+        if (publisher) query.append("publisher", publisher);
+
         query.append("page", currentPage.toString());
 
         // We proxy it through Next.js
         const fetchUrl = `http://localhost:3000/api/core/library?${query.toString()}`;
 
-        // Fetch both pages in parallel for performance using Promise.all
-        const [res, tagsRes] = await Promise.all([
+        // Fetch all data in parallel for performance using Promise.all
+        const [res, tagsRes, devsRes, pubsRes] = await Promise.all([
             fetch(fetchUrl, { cache: "no-store" }),
-            fetch("http://localhost:3000/api/core/library/tags", { cache: "no-store", next: { revalidate: 300 } }) // Cache tags for 5 minutes
+            fetch("http://localhost:3000/api/core/library/tags", { cache: "no-store", next: { revalidate: 300 } }),
+            fetch("http://localhost:3000/api/core/library/developers", { cache: "no-store", next: { revalidate: 300 } }),
+            fetch("http://localhost:3000/api/core/library/publishers", { cache: "no-store", next: { revalidate: 300 } }),
         ]);
 
         if (!res.ok) {
@@ -70,9 +95,9 @@ export default async function LibraryPage({
         totalCount = result.totalCount || 0;
         pageSize = result.pageSize || 50;
 
-        if (tagsRes.ok) {
-            tagsList = await tagsRes.json();
-        }
+        if (tagsRes.ok) tagsList = await tagsRes.json();
+        if (devsRes.ok) developersList = await devsRes.json();
+        if (pubsRes.ok) publishersList = await pubsRes.json();
     } catch (e: any) {
         error = e.message || "An unexpected error occurred while fetching your library.";
         console.error("Fetch Library Error:", error);
@@ -87,11 +112,15 @@ export default async function LibraryPage({
                         Explore your aggregated collection of {totalCount > 0 ? totalCount : "0"} synchronized games.
                     </p>
                 </div>
+            </div>
 
-                {/* URL-state Filter Component */}
-                <div className="w-full md:w-auto">
-                    <LibraryFilters availableTags={tagsList} />
-                </div>
+            {/* Filter controls — sort, search, platform/tag/dev/pub dropdowns */}
+            <div className="mb-8">
+                <LibraryFilters
+                    availableTags={tagsList}
+                    availableDevelopers={developersList}
+                    availablePublishers={publishersList}
+                />
             </div>
 
             {error ? (

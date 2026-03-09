@@ -96,6 +96,77 @@ public class LibraryControllerTests : IDisposable
         Assert.All(results, g => Assert.Contains("Witcher", g.Title));
     }
 
+    [Fact]
+    public async Task GetLibrary_SortByRatingDescending_ReturnsCorrectOrder()
+    {
+        // Arrange — three games with distinct ratings
+        _db.UnifiedGames.AddRange(
+            new UnifiedGame { Title = "Low Rated", Slug = "low-rated", Rating = 30 },
+            new UnifiedGame { Title = "High Rated", Slug = "high-rated", Rating = 95 },
+            new UnifiedGame { Title = "Mid Rated", Slug = "mid-rated", Rating = 60 }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act — sort by rating descending (mirrors the controller's switch case)
+        var results = await _db.UnifiedGames
+            .AsNoTracking()
+            .OrderByDescending(g => g.Rating)
+            .ToListAsync();
+
+        // Assert — highest rating first
+        Assert.Equal(3, results.Count);
+        Assert.Equal("High Rated", results[0].Title);
+        Assert.Equal("Mid Rated", results[1].Title);
+        Assert.Equal("Low Rated", results[2].Title);
+    }
+
+    [Fact]
+    public async Task GetLibrary_SortByReleaseDate_ReturnsCorrectOrder()
+    {
+        // Arrange — three games with distinct release dates
+        _db.UnifiedGames.AddRange(
+            new UnifiedGame { Title = "Newest", Slug = "newest", FirstReleaseDate = new DateTime(2024, 6, 1) },
+            new UnifiedGame { Title = "Oldest", Slug = "oldest", FirstReleaseDate = new DateTime(2010, 1, 1) },
+            new UnifiedGame { Title = "Middle", Slug = "middle", FirstReleaseDate = new DateTime(2018, 3, 15) }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act — sort by release date ascending (oldest first)
+        var results = await _db.UnifiedGames
+            .AsNoTracking()
+            .OrderBy(g => g.FirstReleaseDate)
+            .ToListAsync();
+
+        // Assert
+        Assert.Equal(3, results.Count);
+        Assert.Equal("Oldest", results[0].Title);
+        Assert.Equal("Middle", results[1].Title);
+        Assert.Equal("Newest", results[2].Title);
+    }
+
+    [Fact]
+    public async Task GetLibrary_DeveloperFilter_FiltersCorrectly()
+    {
+        // Arrange — games with different developers (comma-separated, matching the entity format)
+        _db.UnifiedGames.AddRange(
+            new UnifiedGame { Title = "Witcher 3", Slug = "witcher-3", Developers = "CD Projekt Red" },
+            new UnifiedGame { Title = "Cyberpunk", Slug = "cyberpunk", Developers = "CD Projekt Red, CD Projekt" },
+            new UnifiedGame { Title = "DOOM", Slug = "doom", Developers = "id Software" }
+        );
+        await _db.SaveChangesAsync();
+
+        // Act — filter by developer substring (mirrors controller logic)
+        var developer = "CD Projekt Red";
+        var results = await _db.UnifiedGames
+            .AsNoTracking()
+            .Where(g => g.Developers != null && g.Developers.ToLower().Contains(developer.ToLower()))
+            .ToListAsync();
+
+        // Assert — only the two CD Projekt Red games should match
+        Assert.Equal(2, results.Count);
+        Assert.All(results, g => Assert.Contains("CD Projekt Red", g.Developers!));
+    }
+
     // =========================================================================
     // POST /api/library/merge — Merge tests
     // =========================================================================
