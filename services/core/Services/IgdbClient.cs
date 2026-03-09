@@ -54,8 +54,7 @@ public class IgdbClient : IGameMetadataProvider
 
         // Escape double quotes in the title for the IGDB query
         var escaped = title.Replace("\"", "\\\"");
-        // Limit to Main Game (0), Remake (8), Remaster (9), Expanded Game (10), Port (11)
-        var query = $"search \"{escaped}\"; fields {GameFields}; where category = (0,8,9,10,11); limit 1;";
+        var query = $"search \"{escaped}\"; fields {GameFields}; limit 1;";
 
         var results = await QueryGamesAsync(query, ct);
         return results.Count > 0 ? MapToMetadata(results[0]) : null;
@@ -106,8 +105,10 @@ public class IgdbClient : IGameMetadataProvider
         var json = await response.Content.ReadAsStringAsync(ct);
         var result = JsonSerializer.Deserialize<List<IgdbGame>>(json, JsonOptions) ?? [];
 
-        // Cache the successful result for 24 hours
-        _cache.Set(cacheKey, result, TimeSpan.FromHours(24));
+        // Cache non-empty results for 24 hours; skip caching empty results
+        // so the game can be retried on the next enrichment run
+        if (result.Count > 0)
+            _cache.Set(cacheKey, result, TimeSpan.FromHours(24));
 
         return result;
     }

@@ -147,6 +147,10 @@ public class EnrichmentService
 
             await EnrichGameAsync(id, force: false, ct);
             processed++;
+
+            // Rate-limit: ~3 req/sec to stay safely under IGDB's 4 req/sec limit
+            if (processed < gameIds.Count)
+                await Task.Delay(300, ct);
         }
 
         return processed;
@@ -160,6 +164,63 @@ public class EnrichmentService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
         return await db.UnifiedGames.CountAsync(g => g.EnrichedAt == null, ct);
+    }
+
+    /// <summary>
+    /// Finds games that have been marked as enriched but have no actual metadata
+    /// (CoverUrl and Summary are both null). Resets their EnrichedAt to null
+    /// so the normal batch enrichment pipeline picks them up again.
+    /// Returns the number of games reset.
+    /// </summary>
+    public async Task<int> ResetStaleEnrichmentsAsync(CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+
+        var staleGames = await db.UnifiedGames
+            .Where(g => g.EnrichedAt != null && g.CoverUrl == null && g.Summary == null)
+            .ToListAsync(ct);
+
+        if (staleGames.Count == 0)
+            return 0;
+
+        foreach (var game in staleGames)
+        {
+            game.EnrichedAt = null;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Reset {Count} stale enrichments for re-processing", staleGames.Count);
+        return staleGames.Count;
+    }
+
+    /// <summary>
+    /// Resets EnrichedAt to null for ALL games, so the batch pipeline
+    /// re-enriches everything. Useful during development after schema changes.
+    /// Returns the number of games reset.
+    /// </summary>
+    public async Task<int> ResetAllEnrichmentsAsync(CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+
+        var enrichedGames = await db.UnifiedGames
+            .Where(g => g.EnrichedAt != null)
+            .ToListAsync(ct);
+
+        if (enrichedGames.Count == 0)
+            return 0;
+
+        foreach (var game in enrichedGames)
+        {
+            game.EnrichedAt = null;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Reset ALL {Count} enrichments for full re-processing", enrichedGames.Count);
+        return enrichedGames.Count;
     }
 
     /// <summary>

@@ -286,18 +286,31 @@ public class LibraryController : ControllerBase
     // =========================================================================
 
     /// <summary>
-    /// POST: api/library/enrich
-    /// Triggers enrichment for all un-enriched games.
-    /// Returns the number of games processed.
+    /// POST: api/library/enrich?force=false
+    /// Triggers enrichment for un-enriched games.
+    /// Pass ?force=true to reset ALL games for re-enrichment (does NOT re-enrich immediately;
+    /// call this endpoint again without force to start the batch).
+    /// Rate-limited to ~3 req/sec.
     /// </summary>
     [HttpPost("enrich")]
-    public async Task<IActionResult> EnrichAll()
+    public async Task<IActionResult> EnrichAll([FromQuery] bool force = false)
     {
-        _logger.LogInformation("Starting bulk enrichment of un-enriched games");
+        if (force)
+        {
+            var resetCount = await _enrichment.ResetAllEnrichmentsAsync();
+            _logger.LogInformation("Force reset: {Count} games marked for re-enrichment", resetCount);
+            return Ok(new
+            {
+                Reset = resetCount,
+                Message = $"Reset {resetCount} games. Call POST /api/library/enrich to start batch enrichment."
+            });
+        }
 
         var unenrichedCount = await _enrichment.GetUnenrichedCountAsync();
         if (unenrichedCount == 0)
             return Ok(new { Processed = 0, Message = "All games are already enriched." });
+
+        _logger.LogInformation("Starting bulk enrichment of {Count} un-enriched games", unenrichedCount);
 
         // Process all un-enriched games in batches
         int totalProcessed = 0;
@@ -310,6 +323,27 @@ public class LibraryController : ControllerBase
 
         _logger.LogInformation("Bulk enrichment completed: {Count} games processed", totalProcessed);
         return Ok(new { Processed = totalProcessed, Message = $"Enriched {totalProcessed} games." });
+    }
+
+    /// <summary>
+    /// POST: api/library/enrich/stale
+    /// Finds games that were marked as enriched but received no metadata
+    /// (CoverUrl and Summary both null) and resets their EnrichedAt.
+    /// Call POST /api/library/enrich afterwards to re-process them.
+    /// </summary>
+    [HttpPost("enrich/stale")]
+    public async Task<IActionResult> EnrichStale()
+    {
+        var resetCount = await _enrichment.ResetStaleEnrichmentsAsync();
+
+        if (resetCount == 0)
+            return Ok(new { Reset = 0, Message = "No stale enrichments found — all enriched games have metadata." });
+
+        return Ok(new
+        {
+            Reset = resetCount,
+            Message = $"Reset {resetCount} stale games. Call POST /api/library/enrich to re-enrich them."
+        });
     }
 
     /// <summary>
@@ -349,11 +383,12 @@ public class LibraryController : ControllerBase
     /// <summary>
     /// GET: api/library/enrichment-history
     /// Returns the most recent enrichment audit logs.
-    /// Optionally filter by a specific gameId.
+    /// Optionally filter by gameId and/or status (e.g. "Error", "NotFound", "Success").
     /// </summary>
     [HttpGet("enrichment-history")]
     public async Task<IActionResult> GetEnrichmentHistory(
-        [FromQuery] int? gameId, 
+        [FromQuery] int? gameId,
+        [FromQuery] string? status,
         [FromQuery] int limit = 50)
     {
         var query = _db.EnrichmentAuditLogs
@@ -362,6 +397,9 @@ public class LibraryController : ControllerBase
 
         if (gameId.HasValue)
             query = query.Where(l => l.UnifiedGameId == gameId.Value);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(l => l.Status.ToLower() == status.ToLower());
 
         var logs = await query
             .OrderByDescending(l => l.Timestamp)
