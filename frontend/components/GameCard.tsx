@@ -1,25 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Platform, UnifiedGame } from "@/types/game";
+import { UnifiedGame } from "@/types/game";
+import { getPlatformColor } from "@/lib/platform-colors";
 
 interface GameCardProps {
     game: UnifiedGame;
-}
-
-// Helper to map platform enum string to a distinct brand color using Tailwind classes
-function getPlatformColor(platform: Platform): string {
-    switch (platform) {
-        case "Steam":
-            return "bg-blue-600 text-white";
-        case "Psn":
-            return "bg-indigo-600 text-white";
-        case "Gog":
-            return "bg-purple-600 text-white";
-        case "Epic":
-            return "bg-zinc-800 text-white dark:bg-zinc-300 dark:text-black";
-        default:
-            return "bg-zinc-500 text-white";
-    }
 }
 
 export default function GameCard({ game }: GameCardProps) {
@@ -27,6 +12,14 @@ export default function GameCard({ game }: GameCardProps) {
     const platforms = game.platforms
         ? Array.from(new Set(game.platforms.map(p => p.platform)))
         : [];
+
+    // Extract the first developer from the comma-separated string (if available)
+    const developer = game.developers?.split(",")[0]?.trim();
+
+    // Extract release year
+    const releaseYear = game.firstReleaseDate
+        ? new Date(game.firstReleaseDate).getFullYear()
+        : null;
 
     return (
         <Link href={`/library/${game.id}`} className="block h-full">
@@ -99,8 +92,15 @@ export default function GameCard({ game }: GameCardProps) {
                         {game.title}
                     </h3>
 
-                    {/* Tags / Genres */}
-                    <div className="mt-2 text-xs text-muted-foreground">
+                    {/* Developer + Year */}
+                    {(developer || releaseYear) && (
+                        <p className="mt-1.5 text-xs text-muted-foreground/80 line-clamp-1">
+                            {developer}{developer && releaseYear && " · "}{releaseYear}
+                        </p>
+                    )}
+
+                    {/* Genres */}
+                    <div className="mt-1 text-xs text-muted-foreground">
                         {game.genres ? (
                             <span className="line-clamp-1">{game.genres.split(",").slice(0, 3).join(" • ")}</span>
                         ) : (

@@ -89,8 +89,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.87 0.00 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.75 0.12 270);
+  --primary-foreground: oklch(0.15 0.02 270);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -120,9 +120,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
+
   html {
     @apply font-sans;
   }
@@ -140,7 +142,8 @@
 .landing-orb-1 {
   width: 500px;
   height: 500px;
-  background: oklch(0.55 0.20 270); /* indigo */
+  background: oklch(0.55 0.20 270);
+  /* indigo */
   top: -10%;
   left: -5%;
   animation: orb-drift-1 12s ease-in-out infinite alternate;
@@ -149,7 +152,8 @@
 .landing-orb-2 {
   width: 400px;
   height: 400px;
-  background: oklch(0.55 0.18 310); /* purple-pink */
+  background: oklch(0.55 0.18 310);
+  /* purple-pink */
   bottom: -5%;
   right: -5%;
   animation: orb-drift-2 14s ease-in-out infinite alternate;
@@ -158,23 +162,39 @@
 .landing-orb-3 {
   width: 350px;
   height: 350px;
-  background: oklch(0.50 0.15 250); /* blue */
+  background: oklch(0.50 0.15 250);
+  /* blue */
   top: 40%;
   left: 50%;
   animation: orb-drift-3 10s ease-in-out infinite alternate;
 }
 
 @keyframes orb-drift-1 {
-  0% { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(80px, 60px) scale(1.15); }
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  100% {
+    transform: translate(80px, 60px) scale(1.15);
+  }
 }
 
 @keyframes orb-drift-2 {
-  0% { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(-60px, -40px) scale(1.1); }
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  100% {
+    transform: translate(-60px, -40px) scale(1.1);
+  }
 }
 
 @keyframes orb-drift-3 {
-  0% { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(40px, -50px) scale(1.2); }
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  100% {
+    transform: translate(40px, -50px) scale(1.2);
+  }
 }
