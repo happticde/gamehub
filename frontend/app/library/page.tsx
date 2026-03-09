@@ -36,9 +36,15 @@ export default async function LibraryPage({
     const sortBy = typeof resolvedParams.sortBy === 'string' ? resolvedParams.sortBy : undefined;
     const sortOrder = typeof resolvedParams.sortOrder === 'string' ? resolvedParams.sortOrder : undefined;
 
-    // Developer / Publisher single-value filters
-    const developer = typeof resolvedParams.developer === 'string' ? resolvedParams.developer : undefined;
-    const publisher = typeof resolvedParams.publisher === 'string' ? resolvedParams.publisher : undefined;
+    // Developer / Publisher multi-value filters
+    let developers: string[] = [];
+    if (resolvedParams.developers) {
+        developers = Array.isArray(resolvedParams.developers) ? resolvedParams.developers : [resolvedParams.developers];
+    }
+    let publishers: string[] = [];
+    if (resolvedParams.publishers) {
+        publishers = Array.isArray(resolvedParams.publishers) ? resolvedParams.publishers : [resolvedParams.publishers];
+    }
 
     // Parse page number (default to 1, ensure it's a positive integer)
     const pageParam = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page, 10) : 1;
@@ -69,9 +75,9 @@ export default async function LibraryPage({
         if (sortBy) query.append("sortBy", sortBy);
         if (sortOrder) query.append("sortOrder", sortOrder);
 
-        // Developer / Publisher filters
-        if (developer) query.append("developer", developer);
-        if (publisher) query.append("publisher", publisher);
+        // Developer / Publisher multi-value filters
+        developers.forEach(d => query.append("developer", d));
+        publishers.forEach(p => query.append("publisher", p));
 
         query.append("page", currentPage.toString());
 

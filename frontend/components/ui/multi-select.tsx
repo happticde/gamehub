@@ -24,9 +24,11 @@ interface MultiSelectProps {
     selected: string[];
     onChange: (selected: string[]) => void;
     placeholder?: string;
+    searchPlaceholder?: string;
+    emptyMessage?: string;
 }
 
-export function MultiSelect({ options, selected, onChange, placeholder = "Select options..." }: MultiSelectProps) {
+export function MultiSelect({ options, selected, onChange, placeholder = "Select options...", searchPlaceholder = "Search...", emptyMessage = "No results found." }: MultiSelectProps) {
     const [open, setOpen] = React.useState(false);
 
     const toggleOption = (option: string) => {
@@ -90,9 +92,9 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
             </PopoverTrigger>
             <PopoverContent className="w-[300px] p-0" align="start">
                 <Command>
-                    <CommandInput placeholder="Search tags..." />
+                    <CommandInput placeholder={searchPlaceholder} />
                     <CommandList>
-                        <CommandEmpty>No tags found.</CommandEmpty>
+                        <CommandEmpty>{emptyMessage}</CommandEmpty>
                         <CommandGroup className="max-h-[300px] overflow-auto">
                             {options.map((option) => {
                                 const isSelected = selected.includes(option);

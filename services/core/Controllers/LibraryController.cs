@@ -61,8 +61,8 @@ public class LibraryController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
         [FromQuery] Platform[]? platforms,
-        [FromQuery] string? developer,
-        [FromQuery] string? publisher,
+        [FromQuery] string[]? developer,
+        [FromQuery] string[]? publisher,
         [FromQuery] string? sortBy,
         [FromQuery] string sortOrder = "asc",
         [FromQuery] int page = 1,
@@ -99,16 +99,24 @@ public class LibraryController : ControllerBase
             query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
         }
 
-        // Filter by developer (substring match on the comma-separated field)
-        if (!string.IsNullOrWhiteSpace(developer))
+        // Filter by developers (OR logic: game must match at least one selected developer)
+        if (developer != null && developer.Any(d => !string.IsNullOrWhiteSpace(d)))
         {
-            query = query.Where(g => g.Developers != null && g.Developers.ToLower().Contains(developer.ToLower()));
+            var lowerDevs = developer.Where(d => !string.IsNullOrWhiteSpace(d))
+                                     .Select(d => d.ToLower())
+                                     .ToList();
+            query = query.Where(g => g.Developers != null &&
+                lowerDevs.Any(d => g.Developers.ToLower().Contains(d)));
         }
 
-        // Filter by publisher (substring match on the comma-separated field)
-        if (!string.IsNullOrWhiteSpace(publisher))
+        // Filter by publishers (OR logic: game must match at least one selected publisher)
+        if (publisher != null && publisher.Any(p => !string.IsNullOrWhiteSpace(p)))
         {
-            query = query.Where(g => g.Publishers != null && g.Publishers.ToLower().Contains(publisher.ToLower()));
+            var lowerPubs = publisher.Where(p => !string.IsNullOrWhiteSpace(p))
+                                     .Select(p => p.ToLower())
+                                     .ToList();
+            query = query.Where(g => g.Publishers != null &&
+                lowerPubs.Any(p => g.Publishers.ToLower().Contains(p)));
         }
 
         // Get total count for pagination metadata

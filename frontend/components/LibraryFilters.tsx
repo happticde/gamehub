@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
@@ -12,18 +13,12 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 
-/**
- * Props for the LibraryFilters component.
- * All available filter options are passed down from the server component
- * so we don't need to fetch them client-side.
- */
 interface LibraryFiltersProps {
     availableTags: string[];
     availableDevelopers: string[];
     availablePublishers: string[];
 }
 
-/** Predefined sort options — each maps to a sortBy + sortOrder pair */
 const SORT_OPTIONS = [
     { label: "Title (A–Z)", value: "title_asc" },
     { label: "Title (Z–A)", value: "title_desc" },
@@ -39,31 +34,37 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
 
-    // Initialize local state from URL so it persists across refreshes
+    // Read current state from URL
     const defaultSearch = searchParams.get("search") || "";
-    // In Next.js URLSearchParams, `getAll` pulls every instance of `?tags=X` into an array
     const defaultTags = searchParams.getAll("tags");
     const defaultPlatforms = searchParams.getAll("platforms");
+    const defaultDevelopers = searchParams.getAll("developers");
+    const defaultPublishers = searchParams.getAll("publishers");
 
-    // Compose the current sort value from sortBy + sortOrder params
     const urlSortBy = searchParams.get("sortBy") || "title";
     const urlSortOrder = searchParams.get("sortOrder") || "asc";
     const defaultSort = `${urlSortBy}_${urlSortOrder}`;
 
-    const defaultDeveloper = searchParams.get("developer") || "";
-    const defaultPublisher = searchParams.get("publisher") || "";
-
-    // Hardcode platforms since the C# backend uses a fixed Platform enum
     const AVAILABLE_PLATFORMS = ["Steam", "Gog", "Psn", "Epic"];
 
     const [searchQuery, setSearchQuery] = useState(defaultSearch);
 
-    // Generic helper to push updated params to the URL via a React Transition
+    // Determine if extra filters are active (to auto-expand the section)
+    const hasActiveExtraFilters =
+        defaultDevelopers.length > 0 || defaultPublishers.length > 0;
+    const [showMore, setShowMore] = useState(hasActiveExtraFilters);
+
+    // Count how many extra filters are available
+    const extraFilterCount = [
+        availableDevelopers.length > 0,
+        availablePublishers.length > 0,
+    ].filter(Boolean).length;
+
+    // Generic URL push helper
     const pushParams = useCallback(
         (updater: (params: URLSearchParams) => void) => {
             const params = new URLSearchParams(searchParams.toString());
             updater(params);
-            // Reset to page 1 whenever any filter changes
             params.delete("page");
             startTransition(() => {
                 router.push(`${pathname}?${params.toString()}`);
@@ -72,7 +73,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         [pathname, router, searchParams]
     );
 
-    // --- Individual filter updaters ---
+    // --- Filter updaters ---
 
     const updateSearchUrl = useCallback(
         (value: string) => pushParams((p) => {
@@ -100,7 +101,6 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
 
     const updateSortUrl = useCallback(
         (composite: string) => pushParams((p) => {
-            // composite is e.g. "rating_desc" — split into sortBy + sortOrder
             const lastUnderscore = composite.lastIndexOf("_");
             const sortBy = composite.substring(0, lastUnderscore);
             const sortOrder = composite.substring(lastUnderscore + 1);
@@ -110,31 +110,29 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         [pushParams]
     );
 
-    const updateDeveloperUrl = useCallback(
-        (value: string) => pushParams((p) => {
-            if (value && value !== "__all__") p.set("developer", value);
-            else p.delete("developer");
+    const updateDevelopersUrl = useCallback(
+        (newDevs: string[]) => pushParams((p) => {
+            p.delete("developers");
+            newDevs.forEach(d => p.append("developers", d));
         }),
         [pushParams]
     );
 
-    const updatePublisherUrl = useCallback(
-        (value: string) => pushParams((p) => {
-            if (value && value !== "__all__") p.set("publisher", value);
-            else p.delete("publisher");
+    const updatePublishersUrl = useCallback(
+        (newPubs: string[]) => pushParams((p) => {
+            p.delete("publishers");
+            newPubs.forEach(pub => p.append("publishers", pub));
         }),
         [pushParams]
     );
 
-    // Debounce the text input to avoid spamming the API on every keystroke
+    // Debounce text search
     useEffect(() => {
         const timer = setTimeout(() => {
-            // Only push if it actually changed from what's in the URL
             if (searchQuery !== (searchParams.get("search") || "")) {
                 updateSearchUrl(searchQuery);
             }
         }, 400);
-
         return () => clearTimeout(timer);
     }, [searchQuery, searchParams, updateSearchUrl]);
 
@@ -164,7 +162,6 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                     />
                 </div>
 
-                {/* Sort By dropdown */}
                 <div className="w-full sm:w-[220px]">
                     <Select value={defaultSort} onValueChange={updateSortUrl}>
                         <SelectTrigger className="w-full">
@@ -180,7 +177,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                     </Select>
                 </div>
 
-                {/* Loading spinner when Next.js is fetching new server data */}
+                {/* Loading spinner */}
                 <div className={`flex h-9 w-9 items-center justify-center shrink-0 transition-opacity ${isPending ? 'opacity-100' : 'opacity-0'}`}>
                     <svg className="h-5 w-5 animate-spin text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -189,7 +186,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                 </div>
             </div>
 
-            {/* Row 2: Multi-select filters + Developer/Publisher dropdowns */}
+            {/* Row 2: Core filters (always visible) */}
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
                 <div className="w-full sm:w-[200px]">
                     <MultiSelect
@@ -197,6 +194,8 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                         selected={defaultPlatforms}
                         onChange={updatePlatformsUrl}
                         placeholder="Platforms..."
+                        searchPlaceholder="Search platforms..."
+                        emptyMessage="No platforms found."
                     />
                 </div>
 
@@ -206,47 +205,62 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                         selected={defaultTags}
                         onChange={updateTagsUrl}
                         placeholder="Tags..."
+                        searchPlaceholder="Search tags..."
+                        emptyMessage="No tags found."
                     />
                 </div>
 
-                {/* Developer filter (single select) */}
-                {availableDevelopers.length > 0 && (
-                    <div className="w-full sm:w-[200px]">
-                        <Select value={defaultDeveloper || "__all__"} onValueChange={updateDeveloperUrl}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Developer..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="__all__">All Developers</SelectItem>
-                                {availableDevelopers.map((dev) => (
-                                    <SelectItem key={dev} value={dev}>
-                                        {dev}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                )}
-
-                {/* Publisher filter (single select) */}
-                {availablePublishers.length > 0 && (
-                    <div className="w-full sm:w-[200px]">
-                        <Select value={defaultPublisher || "__all__"} onValueChange={updatePublisherUrl}>
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Publisher..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="__all__">All Publishers</SelectItem>
-                                {availablePublishers.map((pub) => (
-                                    <SelectItem key={pub} value={pub}>
-                                        {pub}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                {/* "More Filters" toggle — only shows when there are extra filters available */}
+                {extraFilterCount > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => setShowMore(!showMore)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 h-10 text-sm transition-colors ${showMore || hasActiveExtraFilters
+                                ? "border-primary/50 bg-primary/10 text-primary"
+                                : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            }`}
+                    >
+                        <Filter className="h-3.5 w-3.5" />
+                        More
+                        {hasActiveExtraFilters && (
+                            <span className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                                {defaultDevelopers.length + defaultPublishers.length}
+                            </span>
+                        )}
+                    </button>
                 )}
             </div>
+
+            {/* Row 3: Extra filters (collapsible) */}
+            {showMore && extraFilterCount > 0 && (
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap animate-in slide-in-from-top-2 fade-in duration-200">
+                    {availableDevelopers.length > 0 && (
+                        <div className="w-full sm:w-[220px]">
+                            <MultiSelect
+                                options={availableDevelopers}
+                                selected={defaultDevelopers}
+                                onChange={updateDevelopersUrl}
+                                placeholder="Developers..."
+                                searchPlaceholder="Search developers..."
+                                emptyMessage="No developers found."
+                            />
+                        </div>
+                    )}
+
+                    {availablePublishers.length > 0 && (
+                        <div className="w-full sm:w-[220px]">
+                            <MultiSelect
+                                options={availablePublishers}
+                                selected={defaultPublishers}
+                                onChange={updatePublishersUrl}
+                                placeholder="Publishers..."
+                                searchPlaceholder="Search publishers..."
+                                emptyMessage="No publishers found."
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
