@@ -47,8 +47,9 @@ public class IgdbClient : IGameMetadataProvider
     }
 
     /// <summary>
-    /// Patterns in game titles that indicate non-game items (tools, servers, soundtracks, betas).
+    /// Patterns in game titles that indicate non-game items (tools, servers, soundtracks).
     /// These are skipped entirely during enrichment since IGDB won't have entries for them.
+    /// Matched case-insensitively against the full title.
     /// </summary>
     private static readonly string[] NonGamePatterns =
     [
@@ -57,9 +58,20 @@ public class IgdbClient : IGameMetadataProvider
         "resource archiver",
         "pre-game editor",
         "modding tool",
-        "sdk",
+        "goodie pack",
+    ];
+
+    /// <summary>
+    /// Patterns that indicate non-game items when they appear as the LAST word(s) in a title.
+    /// These are more aggressive filters only matched at the end to avoid false positives
+    /// (e.g. "Tomb Raider Level Editor" is a tool, but "Editor's Choice" is not).
+    /// </summary>
+    private static readonly string[] NonGameEndPatterns =
+    [
         "editor",
+        "sdk",
         "tool",
+        "content",
     ];
 
     /// <summary>
@@ -99,6 +111,7 @@ public class IgdbClient : IGameMetadataProvider
         "director's cut",
         "remastered",
         "remake",
+        "classic",
         "goty",
     ];
 
@@ -108,7 +121,7 @@ public class IgdbClient : IGameMetadataProvider
         if (string.IsNullOrWhiteSpace(title))
             return null;
 
-        var lower = title.ToLowerInvariant();
+        var lower = title.ToLowerInvariant().Trim();
 
         // Skip non-game items entirely (servers, soundtracks, tools, editors)
         if (NonGamePatterns.Any(p => lower.Contains(p)))
@@ -117,11 +130,21 @@ public class IgdbClient : IGameMetadataProvider
             return null;
         }
 
+        // Check end-of-title patterns ("editor", "tool", "content", "sdk")
+        if (NonGameEndPatterns.Any(p => lower.EndsWith(p)))
+        {
+            _logger.LogDebug("Skipping non-game item (end pattern): '{Title}'", title);
+            return null;
+        }
+
         // Sanitize the title for a better IGDB match
         var cleaned = SanitizeSearchTitle(title);
 
+        if (string.IsNullOrWhiteSpace(cleaned) || cleaned.Length < 2)
+            return null;
+
         // Attempt 1: Search with the sanitized title
-        var result = await SearchIgdbAsync(cleaned, ct);
+        var result = await SearchIgdbBestMatchAsync(cleaned, ct);
         if (result != null)
             return result;
 
@@ -131,7 +154,7 @@ public class IgdbClient : IGameMetadataProvider
         if (separatorIdx > 3) // Ensure there's a meaningful base name (at least 3 chars)
         {
             var baseName = cleaned[..separatorIdx].Trim();
-            result = await SearchIgdbAsync(baseName, ct);
+            result = await SearchIgdbBestMatchAsync(baseName, ct);
             if (result != null)
                 return result;
         }
@@ -140,31 +163,76 @@ public class IgdbClient : IGameMetadataProvider
     }
 
     /// <summary>
-    /// Sends a single IGDB search query and returns the mapped metadata, or null.
+    /// Searches IGDB with limit 5, then picks the result whose name is the
+    /// closest match to the search title. This avoids cases where IGDB's
+    /// default top result is a different game with a similar name.
     /// </summary>
-    private async Task<GameMetadata?> SearchIgdbAsync(string title, CancellationToken ct)
+    private async Task<GameMetadata?> SearchIgdbBestMatchAsync(string title, CancellationToken ct)
     {
         var escaped = title.Replace("\"", "\\\"");
-        var query = $"search \"{escaped}\"; fields {GameFields}; limit 1;";
+        var query = $"search \"{escaped}\"; fields {GameFields}; limit 5;";
 
         var results = await QueryGamesAsync(query, ct);
-        return results.Count > 0 ? MapToMetadata(results[0]) : null;
+        if (results.Count == 0)
+            return null;
+
+        // Pick the result with the closest name match
+        var searchLower = title.ToLowerInvariant();
+        var best = results
+            .OrderByDescending(r => CalculateTitleSimilarity(searchLower, r.Name?.ToLowerInvariant() ?? ""))
+            .First();
+
+        return MapToMetadata(best);
+    }
+
+    /// <summary>
+    /// Calculates a simple word-overlap similarity score between two titles.
+    /// Returns a value between 0.0 (no shared words) and 1.0 (identical words).
+    /// Also gives a bonus for exact substring containment.
+    /// </summary>
+    private static double CalculateTitleSimilarity(string search, string candidate)
+    {
+        if (search == candidate) return 1.0;
+
+        var searchWords = search.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        var candidateWords = candidate.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+
+        if (searchWords.Count == 0 || candidateWords.Count == 0) return 0;
+
+        var intersection = searchWords.Intersect(candidateWords).Count();
+        var union = searchWords.Union(candidateWords).Count();
+
+        double jaccard = (double)intersection / union;
+
+        // Bonus if one contains the other as a substring
+        if (search.Contains(candidate) || candidate.Contains(search))
+            jaccard += 0.3;
+
+        return jaccard;
     }
 
     /// <summary>
     /// Cleans a game title for better IGDB matching:
     ///   1. Strip ™ ® © symbols
-    ///   2. Remove edition suffixes ("Standard Edition", "Complete Edition", etc.)
-    ///   3. Remove test/beta suffixes ("Tech Beta", "PTR", "Experimental", etc.)
-    ///   4. Remove parenthesized content like "(Test branch)"
-    ///   5. Clean up trailing separators
+    ///   2. Split CamelCase (KillingFloor2Beta → Killing Floor 2 Beta)
+    ///   3. Remove parenthesized content like "(Test branch)" or "(1992)"
+    ///   4. Remove edition suffixes ("Standard Edition", "Complete Edition", etc.)
+    ///   5. Remove test/beta suffixes ("Tech Beta", "PTR", "Experimental", etc.)
+    ///   6. Clean up trailing separators
     /// </summary>
     private static string SanitizeSearchTitle(string title)
     {
         // Strip trademark symbols
         var result = title.Replace("™", "").Replace("®", "").Replace("©", "");
 
-        // Remove parenthesized test/variant markers: "(Test branch)", "(Early Access)"
+        // Split CamelCase: "KillingFloor2Beta" → "Killing Floor 2 Beta"
+        // Insert space before uppercase letters that follow lowercase letters,
+        // and between letters and digits.
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"([a-z])([A-Z])", "$1 $2");
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"([a-zA-Z])(\d)", "$1 $2");
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"(\d)([a-zA-Z])", "$1 $2");
+
+        // Remove parenthesized content: "(Test branch)", "(1992)", "(Early Access)"
         result = System.Text.RegularExpressions.Regex.Replace(result, @"\([^)]*\)", "");
 
         var lower = result.ToLowerInvariant();
@@ -193,6 +261,9 @@ public class IgdbClient : IGameMetadataProvider
 
         // Clean trailing separators left after stripping: " - ", " : ", " – "
         result = System.Text.RegularExpressions.Regex.Replace(result, @"[\s]*[-–—:]+[\s]*$", "");
+
+        // Collapse multiple spaces into one
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"\s+", " ");
 
         return result.Trim();
     }
