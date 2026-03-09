@@ -72,6 +72,7 @@ public class IgdbClient : IGameMetadataProvider
     /// <summary>
     /// Sends a query to the IGDB /games endpoint and returns the raw response objects.
     /// Handles authentication automatically and caches responses to avoid rate limits.
+    /// Retries once with a fresh token on 401 Unauthorized.
     /// </summary>
     private async Task<List<IgdbGame>> QueryGamesAsync(string query, CancellationToken ct)
     {
@@ -83,34 +84,47 @@ public class IgdbClient : IGameMetadataProvider
             return cachedResult;
         }
 
-        await EnsureAuthenticatedAsync(ct);
-
-        var clientId = _config["Igdb:ClientId"] ?? "";
-        var request = new HttpRequestMessage(HttpMethod.Post, $"{IgdbBaseUrl}/games")
+        // Try up to 2 times: first with the current token, then with a fresh one on 401
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            Content = new StringContent(query, Encoding.UTF8, "text/plain")
-        };
-        request.Headers.Add("Client-ID", clientId);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+            await EnsureAuthenticatedAsync(ct);
 
-        var response = await _http.SendAsync(request, ct);
+            var clientId = _config["Igdb:ClientId"] ?? "";
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{IgdbBaseUrl}/games")
+            {
+                Content = new StringContent(query, Encoding.UTF8, "text/plain")
+            };
+            request.Headers.Add("Client-ID", clientId);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogWarning("IGDB API returned {StatusCode}: {Body}", response.StatusCode, body);
-            return [];
+            var response = await _http.SendAsync(request, ct);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt == 0)
+            {
+                _logger.LogWarning("IGDB returned 401 — forcing token refresh and retrying");
+                _accessToken = null; // Force re-auth on next loop iteration
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("IGDB API returned {StatusCode}: {Body}", response.StatusCode, body);
+                return [];
+            }
+
+            var json = await response.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<List<IgdbGame>>(json, JsonOptions) ?? [];
+
+            // Cache non-empty results for 24 hours; skip caching empty results
+            // so the game can be retried on the next enrichment run
+            if (result.Count > 0)
+                _cache.Set(cacheKey, result, TimeSpan.FromHours(24));
+
+            return result;
         }
 
-        var json = await response.Content.ReadAsStringAsync(ct);
-        var result = JsonSerializer.Deserialize<List<IgdbGame>>(json, JsonOptions) ?? [];
-
-        // Cache non-empty results for 24 hours; skip caching empty results
-        // so the game can be retried on the next enrichment run
-        if (result.Count > 0)
-            _cache.Set(cacheKey, result, TimeSpan.FromHours(24));
-
-        return result;
+        return [];
     }
 
     /// <summary>

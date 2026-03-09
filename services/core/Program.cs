@@ -45,13 +45,24 @@ builder.Services.AddHttpClient<IngestClient>(c =>
 builder.Services.AddScoped<UnificationService>();
 
 // --- IGDB Metadata Provider (ADR-003) ---
-// IgdbClient is registered as both the concrete type (for HttpClient injection)
-// and the IGameMetadataProvider interface (for EnrichmentService injection).
-// To swap providers, replace IgdbClient with another IGameMetadataProvider implementation.
-builder.Services.AddHttpClient<IgdbClient>()
+// IgdbClient is a singleton so there's only one OAuth token in memory.
+// Multiple instances would each manage their own token, causing races where
+// one refreshes and the other still uses the stale token → intermittent 401s.
+// We use IHttpClientFactory to get pooled HttpClient instances while keeping
+// the IgdbClient itself as a singleton.
+builder.Services.AddHttpClient("IgdbClient")
     .AddStandardResilienceHandler();
-builder.Services.AddScoped<IGameMetadataProvider>(sp => sp.GetRequiredService<IgdbClient>());
-builder.Services.AddScoped<EnrichmentService>();
+builder.Services.AddSingleton<IgdbClient>(sp =>
+{
+    var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var http = httpFactory.CreateClient("IgdbClient");
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<IgdbClient>>();
+    var cache = sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+    return new IgdbClient(http, config, logger, cache);
+});
+builder.Services.AddSingleton<IGameMetadataProvider>(sp => sp.GetRequiredService<IgdbClient>());
+builder.Services.AddSingleton<EnrichmentService>();
 
 // --- Background Enrichment ---
 if (builder.Configuration.GetValue("Igdb:EnableBackgroundEnrichment", true))
