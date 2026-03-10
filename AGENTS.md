@@ -81,44 +81,44 @@ docs/               # ROADMAP.md, DEBUGGING.md, adr/
 Stability path complete: Tests ✅, Migrations ✅, Logging ✅, Auth ✅.
 Frontend: Next.js library UI with filters, sorting, game detail pages ✅.
 Enrichment: IGDB metadata provider with caching, rate-limiting, smart search ✅.
+Admin Dashboard: Enrichment, ingestion, sync controls in tabbed UI ✅.
+Statistics page: Pure CSS charts with platform/genre/rating breakdowns ✅.
+CI/CD: GitHub Actions with 3 parallel jobs (backend, frontend, Docker) ✅.
 See `docs/ROADMAP.md` for full status and next steps.
 See `docs/adr/` for architecture decision records.
 
-## Last Session Summary (2026-03-09)
+## Last Session Summary (2026-03-10)
 
 > Context for the next agent. Read this instead of re-exploring files.
 
 ### What Changed
 
 **Backend (`services/core/`):**
-- `IgdbClient.cs` — Singleton registration (via `IHttpClientFactory` in `Program.cs`). Auto-retry on 401 with token refresh. Multi-step title sanitization (strip ™®©, CamelCase split, edition/beta suffixes, year-in-parens). Non-game filter (servers, soundtracks, editors, DLC). Best-match scoring (top 5 results, Jaccard similarity). Empty results NOT cached.
-- `EnrichmentService.cs` — 300ms rate-limit between batch calls. `ResetStaleEnrichmentsAsync()` (reset games with EnrichedAt but no CoverUrl/Summary). `ResetAllEnrichmentsAsync()` (reset all for full re-enrich).
-- `LibraryController.cs` — `POST enrich/stale` (instant reset), `POST enrich?force=true` (instant full reset), `GET enrichment-history?status=Error` filter. `developer`/`publisher` params now `string[]` with OR-logic. Sort by title/rating/releasedate.
-- `Program.cs` — `IgdbClient` + `EnrichmentService` registered as singletons.
+- `LibraryController.cs` — New `GET /api/library/enrichment-stats` (admin dashboard cards). New `GET /api/library/stats` (comprehensive analytics: platform counts, genre distribution, rating histogram, top-rated, recently added). Per-row re-enrich via `POST /api/library/enrich/{id}?force=true`.
 
 **Frontend (`frontend/`):**
-- `LibraryFilters.tsx` — Collapsible "More" toggle for Developer/Publisher (hidden by default). Searchable `MultiSelect` dropdowns. Active-count badge.
-- `multi-select.tsx` — `searchPlaceholder` and `emptyMessage` now configurable via props.
-- `library/page.tsx` — Multi-value `developers`/`publishers` URL params.
-- `GameCard.tsx` — Shows developer name + release year.
-- `app/page.tsx` — Landing page redesign with animated gradients, stats, feature cards.
-- `globals.css` — Indigo accent for dark theme.
-- `lib/platform-colors.ts` — Shared `getPlatformColor` utility.
+- `app/admin/page.tsx` — New Admin Dashboard with 3 tabs: Enrichment (stats, actions, audit log with re-enrich buttons), Ingestion (per-platform credential forms), Sync (trigger + history).
+- `app/stats/page.tsx` — New Statistics page with pure CSS charts: hero stat cards, platform/genre bar charts, rating histogram, top-rated list, recently enriched list.
+- `components/admin/` — `EnrichmentPanel.tsx`, `IngestionPanel.tsx`, `SyncPanel.tsx` (new panel components).
+- `components/ui/` — Manually added `tabs.tsx`, `card.tsx`, `alert-dialog.tsx` (shadcn primitives).
+- `components/Navbar.tsx` — Links: Home, Library, Stats, Admin.
+- `types/game.ts` — Added `LibraryStats` interface.
+- Deleted orphaned `/ingest` page, updated landing page link.
 
-### Enrichment API Surface
-```
-POST /api/library/enrich              → batch un-enriched (rate-limited, long-running)
-POST /api/library/enrich?force=true   → instant: resets ALL EnrichedAt
-POST /api/library/enrich/stale        → instant: resets only broken enrichments
-POST /api/library/enrich/{id}?force=true → single game re-enrich
-GET  /api/library/enrichment-history?status=Error&gameId=42&limit=50
-```
+**CI/CD:**
+- `.github/workflows/ci.yml` — GitHub Actions with 3 parallel jobs: backend build+test (.NET 10), frontend build (Node 24), Docker image build. Badge in README.
+
+**Agent Infrastructure:**
+- `AGENTS.md` — Updated with `docker exec` workflow (container: `game-library-backend_devcontainer-app-1`). npm/npx noted as unavailable on host.
+- `.agents/skills/` — Three new skills: `add-shadcn-component`, `add-api-endpoint`, `docker-exec-build`.
+- `README.md` — Full rewrite with architecture, API reference, frontend docs, CI badge.
 
 ### Known State / Pending
-- IGDB search improvements deployed but not yet verified with a full re-enrich run
-- Some games may still be NotFound (very short titles like "FATE", unusual naming)
-- Consider adding manual IGDB link feature for unmatchable games
-- Remaining roadmap items: Stats dashboard, Background Sync Scheduler, CI/CD
+- Repo is **private** — CI badge won't render publicly until repo is made public
+- Consider adding an AGPL-3.0 license before making public
+- IGDB search improvements verified working
+- All 68 tests pass, both builds clean
+- Remaining roadmap: Background Sync Scheduler (#6), MCP Server (#11), User Accounts (#8), Activity Feed (#9)
 
 ## Conventions
 
