@@ -110,10 +110,10 @@ export default async function Home() {
             Enter Library
           </Link>
           <Link
-            href="/ingest"
+            href="/admin"
             className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-border bg-background/80 backdrop-blur hover:bg-accent hover:text-accent-foreground h-11 px-8 py-2"
           >
-            Sync Providers
+            Admin Dashboard
           </Link>
         </div>
       </section>

@@ -37,6 +37,7 @@ import {
 import {
     Sparkles,
     RotateCcw,
+    RotateCw,
     AlertTriangle,
     Loader2,
     CheckCircle2,
@@ -57,6 +58,8 @@ export function EnrichmentPanel() {
     const [isLoadingLogs, setIsLoadingLogs] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [resultMsg, setResultMsg] = useState("");
+    // Tracks which game ID is currently being re-enriched (for the per-row button)
+    const [reEnrichingId, setReEnrichingId] = useState<number | null>(null);
 
     // -------------------------------------------------------
     // Data fetching — useCallback keeps the functions stable
@@ -115,6 +118,26 @@ export function EnrichmentPanel() {
             setResultMsg(`Error: ${err.message}`);
         } finally {
             setActionLoading(null);
+        }
+    };
+
+    /**
+     * Re-enrich a single game by its ID.
+     * Uses force=true so it re-fetches even if already enriched.
+     */
+    const handleReEnrich = async (gameId: number) => {
+        setReEnrichingId(gameId);
+        try {
+            const res = await fetch(`/api/core/library/enrich/${gameId}?force=true`, { method: "POST" });
+            const data = await res.json();
+            setResultMsg(data.Message || data.message || "Re-enriched.");
+            // Refresh stats and logs to reflect the update
+            fetchStats();
+            fetchLogs();
+        } catch (err: any) {
+            setResultMsg(`Error re-enriching game ${gameId}: ${err.message}`);
+        } finally {
+            setReEnrichingId(null);
         }
     };
 
@@ -269,6 +292,7 @@ export function EnrichmentPanel() {
                                         <th className="px-4 py-3 font-medium">Provider</th>
                                         <th className="px-4 py-3 font-medium">Matched Title</th>
                                         <th className="px-4 py-3 font-medium">Error</th>
+                                        <th className="px-4 py-3 font-medium w-20"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
@@ -294,6 +318,21 @@ export function EnrichmentPanel() {
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate" title={log.errorMessage || ""}>
                                                 {log.errorMessage || "—"}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon-sm"
+                                                    onClick={() => handleReEnrich(log.unifiedGameId)}
+                                                    disabled={reEnrichingId !== null}
+                                                    title={`Re-enrich "${log.gameTitle}"`}
+                                                >
+                                                    {reEnrichingId === log.unifiedGameId ? (
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                    ) : (
+                                                        <RotateCw className="h-3.5 w-3.5" />
+                                                    )}
+                                                </Button>
                                             </td>
                                         </tr>
                                     ))}
