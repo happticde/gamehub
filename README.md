@@ -1,115 +1,94 @@
 # GameHub Backend
 
-A unified game library aggregator that ingests data from **Steam**, **PSN**, and **GOG** into a single queryable library. It merges games across platforms using intelligent title matching and provides a REST API for your unified collection.
+A unified game library aggregator that ingests data from **Steam**, **PSN**, **GOG**, and **Epic** into a single queryable library. It merges games across platforms using intelligent title matching, enriches them with IGDB metadata, and provides a modern web interface along with REST APIs.
 
 ## Architecture
 
 ```
-+-------------------+                          +-------------------+
-|   gamehub-cli     |  POST /api/ingest/{p}    |                   |
-|   (Go CLI)        | -----------------------> |  Ingest Service   |
-+-------------------+                          |  :5000            |
-                                               |                   |
-  Any HTTP client      POST /api/retrieve/{p}  |  Fetches from     |
-  (curl, browser,   ----------------------->   |  Steam/GOG/PSN    |
-   future UI)                                  +--------+----------+
-                                                        |
-                       GET /api/export/{p}              |
-+-------------------+ <---------------------------------+
-|                   |
-|  Core Service     |
-|  :5001            | -->  Unified Library (slug matching + manual overrides)
-|                   |
-+-------------------+
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Ingest     │◄────│    Core      │◄────│   Frontend   │
+│  :5000       │     │   :5001      │     │   Next.js    │
+│              │     │              │     │   :3000      │
+│ • Raw game   │     │ • Unified    │     │ • Library UI │
+│   storage    │     │   library    │     │ • Admin      │
+│ • Platform   │     │ • Slug-based │     │   Dashboard  │
+│   fetchers   │     │   matching   │     │              │
+│ • Export API │     │ • Enrichment │     └──────────────┘
+└──────────────┘     └──────────────┘
+       ▲
+       │
+┌──────┴────────┐
+│   Go CLI      │
+│ gamehub-cli   │
+└───────────────┘
 ```
 
-**Three components:**
-- **Ingest Service** (.NET) — stores raw game data per platform, can also fetch directly from APIs
-- **Core Service** (.NET) — merges data into a unified library with cross-platform matching
+**Four components:**
+- **Ingest Service** (.NET) — stores raw game data per platform, fetches directly from platform APIs
+- **Core Service** (.NET) — merges data into a unified library with cross-platform matching, IGDB enrichment
+- **Frontend** (Next.js) — unified library browser, game detail pages, and admin dashboard
 - **CLI** (Go) — alternative client that fetches libraries and pushes to Ingest
+
+## Features
+
+- **Multi-platform ingestion** — Steam, GOG, PSN, Epic
+- **Cross-platform deduplication** — slug-based title matching with manual merge/split overrides
+- **IGDB metadata enrichment** — cover art, ratings, genres, screenshots, developers, publishers
+- **Modern web UI** — filterable/searchable library grid, cinematic game detail pages
+- **Admin dashboard** — enrichment controls, platform ingestion forms, sync management, audit logs
+- **API key authentication** — JWT-ready, configurable via env vars
 
 ## Quick Start
 
 ### 1. Configure Secrets
 
-GameHub uses an `.env` file to securely pass API keys into Docker:
-
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and configure your credentials. **For Game Metadata Enrichment (IGDB):**
+Open `.env` and configure your credentials:
+
+| Variable | Purpose |
+|----------|---------|
+| `API_KEY` | API key for authenticating requests (empty = auth disabled) |
+| `IGDB_CLIENT_ID` | Twitch Developer App Client ID (for IGDB enrichment) |
+| `IGDB_CLIENT_SECRET` | Twitch Developer App Client Secret |
+
+**To get IGDB credentials:**
 1. Log in to the [Twitch Developer Console](https://dev.twitch.tv/console) (requires 2FA)
 2. Register your application (OAuth redirect: `https://localhost`, Category: `Application Integration`, Client Type: `Confidential`)
 3. Copy your **Client ID** and generate a **Client Secret**
-4. Paste them into the `.env` file:
-   ```env
-   IGDB_CLIENT_ID=your-client-id
-   IGDB_CLIENT_SECRET=your-client-secret
-   ```
 
-### 2. Start the backend
+### 2. Start Everything
 
 ```bash
 docker compose up --build
 ```
 
-- Ingest API: `http://localhost:5000` (Swagger UI at root)
-- Core API: `http://localhost:5001/swagger`
-- Health checks: `/health` on both services
+| Service | URL |
+|---------|-----|
+| Frontend | `http://localhost:3000` |
+| Ingest API | `http://localhost:5000` (Swagger at `/swagger`) |
+| Core API | `http://localhost:5001/swagger` |
+| Health checks | `/health` on both services |
 
-### 2. Install the CLI
+### 3. Ingest Your Libraries
 
-```bash
-cd services/cli
-go build -o gamehub-cli .
-```
+**Option A: Admin Dashboard (recommended)**
 
-### 3. Create a config file (optional)
+Navigate to `http://localhost:3000/admin` → **Ingestion** tab. Enter your platform credentials and click "Fetch & Ingest".
 
-Save credentials in `~/.gamehub.yaml` so you don't need flags every time:
-
-```yaml
-backend-url: http://localhost:5000
-steam:
-  key: "YOUR_STEAM_API_KEY"
-  id: "YOUR_STEAM_ID_64"
-gog:
-  user: "your_gog_username"
-  token: "your_gog_al_cookie_value"
-psn:
-  cookies: '{"JSESSIONID":"abc","sb-cdn.session":"xyz"}'
-```
-
-### 4. Ingest your libraries
+**Option B: CLI**
 
 ```bash
-# Steam — requires API Key + Steam ID 64
-# Get key: https://steamcommunity.com/dev/apikey
-# Get ID:  https://steamdb.info/calculator/
+cd services/cli && go build -o gamehub-cli .
+
 gamehub-cli ingest steam --key YOUR_KEY --id YOUR_STEAM_ID
-
-# GOG — requires gog-al cookie + username
-# Log into gog.com → DevTools → Cookies → copy "gog-al" value
 gamehub-cli ingest gog --user YOUR_USERNAME --token YOUR_GOG_AL_COOKIE
-
-# PSN — requires browser cookies from store.playstation.com
-# Log into store.playstation.com → DevTools → Cookies → export as JSON
 gamehub-cli ingest psn --cookies '{"JSESSIONID":"...","sb-cdn.session":"..."}'
 ```
 
-Or with the config file, just:
-
-```bash
-gamehub-cli ingest steam
-gamehub-cli ingest gog
-gamehub-cli ingest psn
-```
-
-### Alternative: Server-Side Retrieval (no CLI needed)
-
-The Ingest service can also fetch game libraries directly — no CLI required.
-Just POST the credentials and the service handles both fetching and ingesting:
+**Option C: Direct API Calls**
 
 ```bash
 # Steam
@@ -128,21 +107,30 @@ curl -X POST http://localhost:5000/api/retrieve/psn \
   -d '{"cookies": {"JSESSIONID": "...", "sb-cdn.session": "..."}}'
 ```
 
-### 5. Trigger unification
+### 4. Sync & Enrich
 
 ```bash
+# Trigger unification sync
 curl -X POST http://localhost:5001/api/library/sync
+
+# Enrich all un-enriched games with IGDB metadata
+curl -X POST http://localhost:5001/api/library/enrich
 ```
 
-### 6. Query your library
+Or use the Admin Dashboard at `/admin` for a visual interface.
 
-```bash
-# List all games
-curl http://localhost:5001/api/library
+### 5. Browse Your Library
 
-# Search
-curl http://localhost:5001/api/library?search=witcher
-```
+Visit `http://localhost:3000/library` to see your unified collection with filters, sorting, and game detail pages.
+
+## Frontend Pages
+
+| Route | Description |
+|-------|-------------|
+| `/` | Landing page with quick stats and feature highlights |
+| `/library` | Unified library grid with search, filters (tags, platforms, developer, publisher), sorting |
+| `/library/[id]` | Cinematic game detail page with metadata, screenshots, artworks |
+| `/admin` | Admin dashboard with tabs for Enrichment, Ingestion, and Sync management |
 
 ## API Reference
 
@@ -154,67 +142,93 @@ curl http://localhost:5001/api/library?search=witcher
 | `GET` | `/api/ingest/{platform}?page=1&pageSize=20` | List ingested items |
 | `GET` | `/api/ingest/{platform}/{externalId}` | Get single item detail |
 | `GET` | `/api/export/{platform}?page=1&pageSize=200&updatedAfter=` | Paginated export for Core sync |
-| `POST` | `/api/retrieve/steam` | Fetch + ingest Steam library `{ apiKey, steamId }` |
-| `POST` | `/api/retrieve/gog` | Fetch + ingest GOG library `{ cookie, user }` |
-| `POST` | `/api/retrieve/psn` | Fetch + ingest PSN library `{ cookies: {...} }` |
+| `POST` | `/api/retrieve/steam` | Fetch + ingest Steam library |
+| `POST` | `/api/retrieve/gog` | Fetch + ingest GOG library |
+| `POST` | `/api/retrieve/psn` | Fetch + ingest PSN library |
+| `GET` | `/api/retrieve/history` | Ingest audit log |
 
 ### Core Service (`:5001`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/library/sync` | Trigger incremental sync from Ingest |
-| `GET` | `/api/library?search=` | Query unified library (includes metadata) |
-| `POST` | `/api/library/enrich` | Bulk enrich all un-enriched games |
-| `POST` | `/api/library/enrich/{id}` | Enrich/re-enrich a single game `{ ?force=true }` |
+| `GET` | `/api/library?search=&tags=&platforms=&sortBy=&page=` | Query unified library (paginated) |
+| `GET` | `/api/library/{id}` | Full game detail with media arrays |
+| `GET` | `/api/library/tags` | List all unique tags |
+| `GET` | `/api/library/developers` | List all developers |
+| `GET` | `/api/library/publishers` | List all publishers |
+| `POST` | `/api/library/enrich` | Bulk enrich un-enriched games (`?force=true` to reset all) |
+| `POST` | `/api/library/enrich/stale` | Reset stale enrichments (enriched but no metadata) |
+| `POST` | `/api/library/enrich/{id}` | Enrich/re-enrich a single game (`?force=true`) |
+| `GET` | `/api/library/enrichment-stats` | Aggregated enrichment counts for dashboard |
+| `GET` | `/api/library/enrichment-history` | Enrichment audit log (`?status=Error&gameId=&limit=`) |
+| `GET` | `/api/library/sync-history` | Unification sync audit log |
 | `POST` | `/api/library/merge` | Merge two games `{ sourceGameId, targetGameId }` |
 | `POST` | `/api/library/split` | Split a platform entry `{ libraryItemId }` |
 
 ## Tech Stack
 
-- **.NET 10** — Ingest + Core services (ASP.NET Core, EF Core)
-- **Go 1.24** — CLI (Cobra + Viper)
-- **SQLite** (dev) / **PostgreSQL** (prod)
-- **Docker Compose** — orchestration with health checks
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js (React), TypeScript, Tailwind CSS, shadcn/ui |
+| Services | ASP.NET Core (.NET 10), C# |
+| CLI | Go (Cobra + Viper) |
+| Database | SQLite (dev) / PostgreSQL (prod) via EF Core |
+| Auth | API key via `X-Api-Key` header (JWT-ready) |
+| Docker | Alpine-based images, Docker Compose |
+| Tests | xUnit with in-memory SQLite |
 
 ## Project Structure
 
 ```
+frontend/                   # Next.js web application
+├── app/
+│   ├── page.tsx            # Landing page
+│   ├── layout.tsx          # Root layout with Navbar
+│   ├── admin/page.tsx      # Admin dashboard (enrichment, ingestion, sync)
+│   └── library/
+│       ├── page.tsx        # Library grid
+│       └── [id]/page.tsx   # Game detail page
+├── components/
+│   ├── admin/              # EnrichmentPanel, IngestionPanel, SyncPanel
+│   ├── ui/                 # shadcn primitives (button, card, tabs, etc.)
+│   ├── Navbar.tsx
+│   ├── GameCard.tsx
+│   ├── LibraryFilters.tsx
+│   └── LibraryPagination.tsx
+├── types/game.ts           # TypeScript interfaces
+└── lib/                    # Utilities
+
 services/
 ├── ingest/                 # Raw data storage service
 │   ├── Controllers/
 │   │   ├── IngestControllerBase.cs   # Generic base (shared logic)
-│   │   ├── SteamIngestController.cs  # Platform-specific
-│   │   ├── PsnIngestController.cs
-│   │   ├── GogIngestController.cs
-│   │   ├── EpicIngestController.cs
-│   │   └── ExportController.cs      # Paginated export for Core
+│   │   ├── Steam/Gog/Psn/EpicIngestController.cs
+│   │   ├── RetrieveController.cs     # Server-side fetch + ingest
+│   │   └── ExportController.cs       # Paginated export for Core
+│   ├── Services/            # Platform fetchers
 │   └── Data/
 ├── core/                   # Unified library service
 │   ├── Controllers/
-│   │   └── LibraryController.cs      # Library + merge/split
+│   │   └── LibraryController.cs      # Library, enrichment, merge/split
 │   ├── Services/
 │   │   ├── UnificationService.cs     # Slug matching + manual links
+│   │   ├── EnrichmentService.cs      # IGDB enrichment orchestration
+│   │   ├── IgdbClient.cs             # IGDB API client with caching
 │   │   └── IngestClient.cs           # HTTP client for Ingest
 │   └── Data/
-├── shared/                 # Shared DTOs and interfaces
-│   ├── IRawItem.cs
-│   ├── RawGameDto.cs
-│   ├── PagedResult.cs
-│   └── Platform.cs
-└── cli/                    # Go CLI for data ingestion
-    ├── main.go
+├── shared/                 # Shared DTOs, enums, auth handler
+│   └── Authentication/     # ApiKeyAuthenticationHandler
+└── cli/                    # Go CLI
     └── cmd/
-        ├── root.go
-        ├── config.go         # ~/.gamehub.yaml support
-        ├── helpers.go        # Shared PostToBackend logic
-        ├── ingest.go         # Parent command
-        ├── ingest_steam.go
-        ├── ingest_gog.go
-        └── ingest_psn.go
+
+tests/GameHub.Tests/        # xUnit test suite
+docs/                       # ROADMAP.md, DEBUGGING.md, ADRs
 ```
 
 ## Notes
 
 - **Schema changes:** Run `dotnet ef migrations add <Name> --project services/<service>/<project>.csproj` and restart. Migrations are auto-applied on startup.
-- **Swagger:** Available at `/swagger` on both services (Ingest also serves it at `/`).
+- **Swagger:** Available at `/swagger` on both services.
 - **Health checks:** Both services expose `GET /health` with DB connectivity checks.
+- **Authentication:** Set `Authentication__ApiKey` env var. Leave empty to disable auth.
