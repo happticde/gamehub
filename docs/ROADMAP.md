@@ -16,7 +16,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | EF Core Migrations | ✅ Auto-applied on startup |
 | Structured Logging | ✅ All components, debugging guide |
 | Auth | ✅ API key middleware (JWT-ready) |
-| CI/CD | ❌ Not started |
+| CI/CD | ✅ GitHub Actions (build, test, Docker) |
 | Frontend | ✅ Next.js library UI, filters, sorting, game detail pages |
 | Enrichment / metadata | ✅ IGDB provider with caching, rate-limiting, smart search |
 

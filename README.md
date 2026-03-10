@@ -1,5 +1,7 @@
 # GameHub Backend
 
+![CI](https://github.com/happticde/game-library-backend/actions/workflows/ci.yml/badge.svg)
+
 A unified game library aggregator that ingests data from **Steam**, **PSN**, **GOG**, and **Epic** into a single queryable library. It merges games across platforms using intelligent title matching, enriches them with IGDB metadata, and provides a modern web interface along with REST APIs.
 
 ## Architecture
