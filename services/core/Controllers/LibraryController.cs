@@ -452,6 +452,49 @@ public class LibraryController : ControllerBase
         return Ok(logs);
     }
 
+    /// <summary>
+    /// GET: api/library/enrichment-stats
+    /// Returns aggregate counts for the admin dashboard:
+    /// total games, enriched, unenriched, error count, not-found count,
+    /// and the timestamp of the most recent enrichment.
+    /// </summary>
+    [HttpGet("enrichment-stats")]
+    public async Task<IActionResult> GetEnrichmentStats()
+    {
+        var totalGames = await _db.UnifiedGames.CountAsync();
+        var enrichedCount = await _db.UnifiedGames.CountAsync(g => g.EnrichedAt != null);
+        var unenrichedCount = totalGames - enrichedCount;
+
+        // Count distinct error and not-found games from the most recent audit log per game
+        var errorCount = await _db.EnrichmentAuditLogs
+            .Where(l => l.Status.ToLower() == "error")
+            .Select(l => l.UnifiedGameId)
+            .Distinct()
+            .CountAsync();
+
+        var notFoundCount = await _db.EnrichmentAuditLogs
+            .Where(l => l.Status.ToLower() == "notfound")
+            .Select(l => l.UnifiedGameId)
+            .Distinct()
+            .CountAsync();
+
+        var lastEnrichedAt = await _db.UnifiedGames
+            .Where(g => g.EnrichedAt != null)
+            .OrderByDescending(g => g.EnrichedAt)
+            .Select(g => g.EnrichedAt)
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            TotalGames = totalGames,
+            EnrichedCount = enrichedCount,
+            UnenrichedCount = unenrichedCount,
+            ErrorCount = errorCount,
+            NotFoundCount = notFoundCount,
+            LastEnrichedAt = lastEnrichedAt
+        });
+    }
+
     // =========================================================================
     // Manual Merge / Split Endpoints
     // =========================================================================

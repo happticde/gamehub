@@ -130,8 +130,9 @@ GET  /api/library/enrichment-history?status=Error&gameId=42&limit=50
 ## Development Environment
 
 - **dotnet is NOT installed on the host machine.** Do not attempt to run `dotnet build`, `dotnet test`, `dotnet ef`, or any other dotnet CLI commands directly.
-- All building, testing, and migrations are done inside a **devcontainer** opened in a separate VS Code editor.
-- The agent's role is to write and edit code; the user handles compilation and test execution in the devcontainer.
+- **npm / npx are NOT installed on the host machine.** Do not attempt to run `npm install`, `npm run`, `npx`, or any other Node.js CLI commands directly (including `npx shadcn`). To add shadcn components, create the files manually.
+- All building, testing, and dependency management are done inside a **devcontainer** opened in a separate VS Code editor.
+- The agent's role is to write and edit code; the user handles compilation, test execution, and package installation in the devcontainer.
 
 ## 🚨 Critical AI Agent Rules 🚨
 

@@ -39,3 +39,41 @@ export interface PagedResult<T> {
     page: number;
     pageSize: number;
 }
+
+// =========================================================================
+// Admin Dashboard Types
+// =========================================================================
+
+/** Aggregated enrichment counts returned by GET /api/library/enrichment-stats */
+export interface EnrichmentStats {
+    totalGames: number;
+    enrichedCount: number;
+    unenrichedCount: number;
+    errorCount: number;
+    notFoundCount: number;
+    lastEnrichedAt: string | null;
+}
+
+/** Single row from GET /api/library/enrichment-history */
+export interface EnrichmentAuditLog {
+    id: number;
+    unifiedGameId: number;
+    gameTitle: string;
+    timestamp: string;
+    providerName: string;
+    status: string;
+    errorMessage: string | null;
+    providerGameId: string | null;
+    matchedTitle: string | null;
+}
+
+/** Single row from GET /api/ingest/retrieve/history */
+export interface IngestAuditLog {
+    id: number;
+    timestamp: string;
+    platform: string;
+    status: string;
+    itemsProcessed: number;
+    errorMessage: string | null;
+}
+

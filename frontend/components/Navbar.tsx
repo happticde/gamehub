@@ -27,15 +27,15 @@ export default function Navbar() {
                             Unified Library
                         </Link>
                         <Link
-                            href="/ingest"
+                            href="/admin"
                             className={cn(
                                 "transition-colors hover:text-foreground",
-                                pathname.startsWith("/ingest")
+                                pathname.startsWith("/admin")
                                     ? "text-foreground"
                                     : "text-muted-foreground"
                             )}
                         >
-                            Ingest Sync
+                            Admin
                         </Link>
                     </div>
                 </div>
