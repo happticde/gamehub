@@ -129,10 +129,30 @@ GET  /api/library/enrichment-history?status=Error&gameId=42&limit=50
 
 ## Development Environment
 
-- **dotnet is NOT installed on the host machine.** Do not attempt to run `dotnet build`, `dotnet test`, `dotnet ef`, or any other dotnet CLI commands directly.
-- **npm / npx are NOT installed on the host machine.** Do not attempt to run `npm install`, `npm run`, `npx`, or any other Node.js CLI commands directly (including `npx shadcn`). To add shadcn components, create the files manually.
-- All building, testing, and dependency management are done inside a **devcontainer** opened in a separate VS Code editor.
-- The agent's role is to write and edit code; the user handles compilation, test execution, and package installation in the devcontainer.
+- **dotnet is NOT installed on the host machine.** Do not attempt to run `dotnet build`, `dotnet test`, `dotnet ef`, or any other dotnet CLI commands directly on the host.
+- **npm / npx are NOT installed on the host machine.** Do not attempt to run `npm install`, `npm run`, `npx`, or any other Node.js CLI commands directly on the host (including `npx shadcn`). To add shadcn components, create the files manually.
+- All building, testing, and dependency management are done inside a **devcontainer**.
+- The devcontainer container name is: **`game-library-backend_devcontainer-app-1`**
+
+### Running Commands via `docker exec`
+
+The AI agent CAN run build/test commands inside the devcontainer using `docker exec` (the devcontainer must already be running):
+
+```bash
+# Backend build
+docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 dotnet build services/core/GameHub.Core.csproj --verbosity quiet
+
+# Backend tests
+docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 dotnet test --verbosity quiet
+
+# Frontend build
+docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 npm run build
+
+# EF Core migrations
+docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 dotnet ef migrations add <Name> --project services/core/GameHub.Core.csproj
+```
+
+The workspace is mounted at `/workspaces/game-library-backend` inside the container.
 
 ## 🚨 Critical AI Agent Rules 🚨
 
