@@ -27,6 +27,17 @@ export default function Navbar() {
                             Unified Library
                         </Link>
                         <Link
+                            href="/stats"
+                            className={cn(
+                                "transition-colors hover:text-foreground",
+                                pathname.startsWith("/stats")
+                                    ? "text-foreground"
+                                    : "text-muted-foreground"
+                            )}
+                        >
+                            Stats
+                        </Link>
+                        <Link
                             href="/admin"
                             className={cn(
                                 "transition-colors hover:text-foreground",

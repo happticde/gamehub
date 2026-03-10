@@ -495,6 +495,117 @@ public class LibraryController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// GET: api/library/stats
+    /// Returns comprehensive library statistics for the analytics dashboard:
+    /// per-platform counts, genre distribution, rating histogram,
+    /// top-rated games, recently added games, and summary metrics.
+    /// </summary>
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetStats()
+    {
+        // --- Summary counts ---
+        var totalGames = await _db.UnifiedGames.CountAsync();
+        var enrichedCount = await _db.UnifiedGames.CountAsync(g => g.EnrichedAt != null);
+        var totalPlatformLinks = await _db.LibraryItems.CountAsync();
+
+        // Games that appear on more than one platform
+        var multiPlatformCount = await _db.UnifiedGames
+            .Where(g => g.Items.Count > 1)
+            .CountAsync();
+
+        // Average rating (only games that have one)
+        var averageRating = await _db.UnifiedGames
+            .Where(g => g.Rating != null)
+            .AverageAsync(g => (double?)g.Rating) ?? 0;
+
+        // --- Per-platform breakdown ---
+        var platformCounts = await _db.LibraryItems
+            .GroupBy(i => i.Platform)
+            .Select(g => new { Platform = g.Key.ToString(), Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        // --- Genre distribution (parse comma-separated Genres field) ---
+        var rawGenres = await _db.UnifiedGames
+            .Where(g => g.Genres != null && g.Genres != "")
+            .Select(g => g.Genres!)
+            .ToListAsync();
+
+        var genreCounts = rawGenres
+            .SelectMany(csv => csv.Split(", "))
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .GroupBy(g => g.Trim())
+            .Select(g => new { Name = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .Take(15)
+            .ToList();
+
+        // --- Rating distribution (10-point buckets) ---
+        var ratedGames = await _db.UnifiedGames
+            .Where(g => g.Rating != null)
+            .Select(g => g.Rating!.Value)
+            .ToListAsync();
+
+        var ratingDistribution = Enumerable.Range(0, 10)
+            .Select(i => new
+            {
+                Bucket = $"{i * 10}-{i * 10 + 9}",
+                Count = ratedGames.Count(r => r >= i * 10 && r < (i + 1) * 10)
+            })
+            // Add the 100 bucket (games rated exactly 100 fall into 90-100)
+            .Select(b => b.Bucket == "90-99"
+                ? new { Bucket = "90-100", Count = ratedGames.Count(r => r >= 90) }
+                : b)
+            .Where(b => b.Count > 0)
+            .ToList();
+
+        // --- Top-rated games (top 10) ---
+        var topRated = await _db.UnifiedGames
+            .Where(g => g.Rating != null && g.Rating > 0)
+            .OrderByDescending(g => g.Rating)
+            .Take(10)
+            .Select(g => new
+            {
+                g.Id,
+                g.Title,
+                g.CoverUrl,
+                g.Rating,
+                g.Genres
+            })
+            .ToListAsync();
+
+        // --- Recently added (last 10 enriched) ---
+        var recentlyAdded = await _db.UnifiedGames
+            .Include(g => g.Items)
+            .Where(g => g.EnrichedAt != null)
+            .OrderByDescending(g => g.EnrichedAt)
+            .Take(10)
+            .Select(g => new
+            {
+                g.Id,
+                g.Title,
+                g.CoverUrl,
+                g.EnrichedAt,
+                Platforms = g.Items.Select(i => i.Platform.ToString()).ToList()
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            TotalGames = totalGames,
+            EnrichedCount = enrichedCount,
+            TotalPlatformLinks = totalPlatformLinks,
+            MultiPlatformCount = multiPlatformCount,
+            AverageRating = Math.Round(averageRating, 1),
+            PlatformCounts = platformCounts,
+            GenreCounts = genreCounts,
+            RatingDistribution = ratingDistribution,
+            TopRated = topRated,
+            RecentlyAdded = recentlyAdded
+        });
+    }
+
     // =========================================================================
     // Manual Merge / Split Endpoints
     // =========================================================================

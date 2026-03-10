@@ -77,3 +77,28 @@ export interface IngestAuditLog {
     errorMessage: string | null;
 }
 
+/** Comprehensive stats payload from GET /api/library/stats */
+export interface LibraryStats {
+    totalGames: number;
+    enrichedCount: number;
+    totalPlatformLinks: number;
+    multiPlatformCount: number;
+    averageRating: number;
+    platformCounts: { platform: string; count: number }[];
+    genreCounts: { name: string; count: number }[];
+    ratingDistribution: { bucket: string; count: number }[];
+    topRated: {
+        id: number;
+        title: string;
+        coverUrl: string | null;
+        rating: number;
+        genres: string | null;
+    }[];
+    recentlyAdded: {
+        id: number;
+        title: string;
+        coverUrl: string | null;
+        enrichedAt: string;
+        platforms: string[];
+    }[];
+}
