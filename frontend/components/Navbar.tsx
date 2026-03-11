@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/components/ThemeProvider";
 
 /** Navigation links shared between desktop and mobile menus */
 const NAV_LINKS = [
@@ -15,6 +16,7 @@ const NAV_LINKS = [
 
 export default function Navbar() {
     const pathname = usePathname();
+    const { theme, setTheme } = useTheme();
     const [mobileOpen, setMobileOpen] = useState(false);
 
     // Auto-close mobile menu on route change
@@ -43,7 +45,7 @@ export default function Navbar() {
                 </div>
 
                 {/* Desktop nav links — hidden on mobile */}
-                <div className="hidden md:flex gap-6 text-sm font-medium">
+                <div className="hidden md:flex items-center gap-6 text-sm font-medium">
                     {NAV_LINKS.map((link) => (
                         <Link
                             key={link.href}
@@ -58,18 +60,41 @@ export default function Navbar() {
                             {link.label}
                         </Link>
                     ))}
+
+                    {/* Desktop theme toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                        className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+                    >
+                        {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                    </button>
                 </div>
 
-                {/* Mobile hamburger button — visible on small screens */}
-                <button
-                    type="button"
-                    className="md:hidden flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                    onClick={() => setMobileOpen(!mobileOpen)}
-                    aria-label={mobileOpen ? "Close menu" : "Open menu"}
-                    aria-expanded={mobileOpen}
-                >
-                    {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-                </button>
+                {/* Mobile right-side controls */}
+                <div className="flex md:hidden items-center gap-1">
+                    {/* Mobile theme toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                        className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+                    >
+                        {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                    </button>
+
+                    {/* Mobile hamburger button */}
+                    <button
+                        type="button"
+                        className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        onClick={() => setMobileOpen(!mobileOpen)}
+                        aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                        aria-expanded={mobileOpen}
+                    >
+                        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                    </button>
+                </div>
             </div>
 
             {/* Mobile menu overlay */}
