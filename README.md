@@ -154,8 +154,9 @@ Visit `http://localhost:3000/library` to see your unified collection with filter
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/library/sync` | Trigger incremental sync from Ingest |
-| `GET` | `/api/library?search=&tags=&platforms=&sortBy=&page=` | Query unified library (paginated) |
+| `GET` | `/api/library?search=&tags=&platforms=&sortBy=&page=&includeIgnored=false` | Query unified library (paginated) |
 | `GET` | `/api/library/{id}` | Full game detail with media arrays |
+| `PATCH` | `/api/library/{id}/personal` | Update status, rating, or ignore status |
 | `GET` | `/api/library/tags` | List all unique tags |
 | `GET` | `/api/library/developers` | List all developers |
 | `GET` | `/api/library/publishers` | List all publishers |
@@ -165,6 +166,7 @@ Visit `http://localhost:3000/library` to see your unified collection with filter
 | `GET` | `/api/library/enrichment-stats` | Aggregated enrichment counts for dashboard |
 | `GET` | `/api/library/enrichment-history` | Enrichment audit log (`?status=Error&gameId=&limit=`) |
 | `GET` | `/api/library/sync-history` | Unification sync audit log |
+| `POST` | `/api/library/retroactive-ignore` | Retroactively hide junk/demo games matching keywords |
 | `POST` | `/api/library/merge` | Merge two games `{ sourceGameId, targetGameId }` |
 | `POST` | `/api/library/split` | Split a platform entry `{ libraryItemId }` |
 

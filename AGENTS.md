@@ -87,37 +87,28 @@ CI/CD: GitHub Actions with 3 parallel jobs (backend, frontend, Docker) ✅.
 See `docs/ROADMAP.md` for full status and next steps.
 See `docs/adr/` for architecture decision records.
 
-## Last Session Summary (2026-03-10)
+## Last Session Summary (2026-03-11)
 
 > Context for the next agent. Read this instead of re-exploring files.
 
 ### What Changed
 
-**Backend (`services/core/`):**
-- `LibraryController.cs` — New `GET /api/library/enrichment-stats` (admin dashboard cards). New `GET /api/library/stats` (comprehensive analytics: platform counts, genre distribution, rating histogram, top-rated, recently added). Per-row re-enrich via `POST /api/library/enrich/{id}?force=true`.
-
 **Frontend (`frontend/`):**
-- `app/admin/page.tsx` — New Admin Dashboard with 3 tabs: Enrichment (stats, actions, audit log with re-enrich buttons), Ingestion (per-platform credential forms), Sync (trigger + history).
-- `app/stats/page.tsx` — New Statistics page with pure CSS charts: hero stat cards, platform/genre bar charts, rating histogram, top-rated list, recently enriched list.
-- `components/admin/` — `EnrichmentPanel.tsx`, `IngestionPanel.tsx`, `SyncPanel.tsx` (new panel components).
-- `components/ui/` — Manually added `tabs.tsx`, `card.tsx`, `alert-dialog.tsx` (shadcn primitives).
-- `components/Navbar.tsx` — Links: Home, Library, Stats, Admin.
-- `types/game.ts` — Added `LibraryStats` interface.
-- Deleted orphaned `/ingest` page, updated landing page link.
+- **Library View Modes**: Added Grid, Compact, and List layouts. High-performance client-side switching via `localStorage`. Compact mode uses hover overlays for a dense UI. List mode uses horizontal rows for data scanning.
+- **Improved Layout**: Fixed vertical alignment between filter buttons and view toggles on the library page.
+- **Network Exposure**: Updated `package.json` and `.devcontainer/docker-compose.yml` to expose the Next.js server on `0.0.0.0:3000`, allowing access via the host's actual IP address.
 
-**CI/CD:**
-- `.github/workflows/ci.yml` — GitHub Actions with 3 parallel jobs: backend build+test (.NET 10), frontend build (Node 24), Docker image build. Badge in README.
-
-**Agent Infrastructure:**
-- `AGENTS.md` — Updated with `docker exec` workflow (container: `game-library-backend_devcontainer-app-1`). npm/npx noted as unavailable on host.
-- `.agents/skills/` — Three new skills: `add-shadcn-component`, `add-api-endpoint`, `docker-exec-build`.
-- `README.md` — Full rewrite with architecture, API reference, frontend docs, CI badge.
+**Backend (`services/core/`):**
+- **Auto-Hide & Ignore**: Implemented `IsIgnored` flag on `UnifiedGame`. Added keyword-based filtering in `UnificationService` (demo, beta, server, etc.).
+- **Retroactive Ignore Service**: New `POST /api/library/retroactive-ignore` endpoint to scan existing library and hide junk games matching the filter list.
+- **Admin Dashboard Integration**: Added a "Run Keyword Filter" button to the Sync Panel to trigger retroactive ignore.
+- **Personal Game Tracking**: Added 5-star rating (1-10 scale) and Play Status (`Unplayed`, `Playing`, `Completed`, etc.) with manual overrides and automatic playtime detection.
 
 ### Known State / Pending
-- Repo is **private** — CI badge won't render publicly until repo is made public
-- Consider adding an AGPL-3.0 license before making public
-- IGDB search improvements verified working
-- All 68 tests pass, both builds clean
+- **Network Access**: Frontend is now accessible at `http://<your-ip>:3000` but requires the devcontainer to be rebuilt if port mapping changes.
+- **Retroactive Ignore**: Verified working on 2400+ games.
+- **IGDB improvements**: Stable and tested.
+- All tests pass, both builds clean.
 - Remaining roadmap: Background Sync Scheduler (#6), MCP Server (#11), User Accounts (#8), Activity Feed (#9)
 
 ## Conventions
