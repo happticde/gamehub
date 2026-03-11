@@ -84,7 +84,7 @@ export default async function GameDetailPage({
     return (
         <div className="min-h-screen bg-background pb-16 animate-in fade-in duration-700">
             {/* Cinematic Hero Banner Area */}
-            <div className="relative h-[50vh] min-h-[400px] w-full bg-zinc-950 overflow-hidden">
+            <div className="relative h-[40vh] md:h-[50vh] min-h-[280px] md:min-h-[400px] w-full bg-zinc-950 overflow-hidden">
                 {heroImage ? (
                     <>
                         <Image
@@ -133,7 +133,7 @@ export default async function GameDetailPage({
                                 </Link>
                             </div>
 
-                            <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-7xl">
+                            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl md:text-5xl lg:text-7xl">
                                 {game.title}
                             </h1>
 

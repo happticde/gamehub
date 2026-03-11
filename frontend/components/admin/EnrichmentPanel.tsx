@@ -281,65 +281,114 @@ export function EnrichmentPanel() {
                         <p className="text-sm mt-1">Trigger an enrichment run to populate the audit log.</p>
                     </div>
                 ) : (
-                    <div className="rounded-xl border border-border bg-card overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-muted/50 text-muted-foreground">
-                                    <tr>
-                                        <th className="px-4 py-3 font-medium">Timestamp</th>
-                                        <th className="px-4 py-3 font-medium">Game</th>
-                                        <th className="px-4 py-3 font-medium">Status</th>
-                                        <th className="px-4 py-3 font-medium">Provider</th>
-                                        <th className="px-4 py-3 font-medium">Matched Title</th>
-                                        <th className="px-4 py-3 font-medium">Error</th>
-                                        <th className="px-4 py-3 font-medium w-20"></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-border">
-                                    {logs.map((log) => (
-                                        <tr key={log.id} className="hover:bg-muted/30 transition-colors">
-                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                    <>
+                        {/* Mobile: Card layout */}
+                        <div className="md:hidden space-y-3">
+                            {logs.map((log) => (
+                                <div key={log.id} className="rounded-xl border border-border bg-card p-4 space-y-2.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-medium text-sm truncate" title={log.gameTitle}>{log.gameTitle}</p>
+                                            <p className="text-xs text-muted-foreground mt-0.5">
                                                 {new Date(log.timestamp).toLocaleString(undefined, {
                                                     month: "short", day: "numeric",
                                                     hour: "2-digit", minute: "2-digit",
                                                 })}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium max-w-[200px] truncate" title={log.gameTitle}>
-                                                {log.gameTitle}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <EnrichmentStatusBadge status={log.status} />
-                                            </td>
-                                            <td className="px-4 py-3 text-muted-foreground">
-                                                {log.providerName}
-                                            </td>
-                                            <td className="px-4 py-3 text-muted-foreground max-w-[180px] truncate" title={log.matchedTitle || ""}>
-                                                {log.matchedTitle || "—"}
-                                            </td>
-                                            <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate" title={log.errorMessage || ""}>
-                                                {log.errorMessage || "—"}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon-sm"
-                                                    onClick={() => handleReEnrich(log.unifiedGameId)}
-                                                    disabled={reEnrichingId !== null}
-                                                    title={`Re-enrich "${log.gameTitle}"`}
-                                                >
-                                                    {reEnrichingId === log.unifiedGameId ? (
-                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                    ) : (
-                                                        <RotateCw className="h-3.5 w-3.5" />
-                                                    )}
-                                                </Button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <EnrichmentStatusBadge status={log.status} />
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                onClick={() => handleReEnrich(log.unifiedGameId)}
+                                                disabled={reEnrichingId !== null}
+                                                title={`Re-enrich "${log.gameTitle}"`}
+                                            >
+                                                {reEnrichingId === log.unifiedGameId ? (
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                ) : (
+                                                    <RotateCw className="h-3.5 w-3.5" />
+                                                )}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                        <span>Provider: <span className="text-foreground">{log.providerName}</span></span>
+                                        {log.matchedTitle && (
+                                            <span>Match: <span className="text-foreground">{log.matchedTitle}</span></span>
+                                        )}
+                                    </div>
+                                    {log.errorMessage && (
+                                        <p className="text-xs text-destructive bg-destructive/10 rounded-md px-2.5 py-1.5 break-words">
+                                            {log.errorMessage}
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
                         </div>
-                    </div>
+
+                        {/* Desktop: Table layout */}
+                        <div className="hidden md:block rounded-xl border border-border bg-card overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-muted/50 text-muted-foreground">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Timestamp</th>
+                                            <th className="px-4 py-3 font-medium">Game</th>
+                                            <th className="px-4 py-3 font-medium">Status</th>
+                                            <th className="px-4 py-3 font-medium">Provider</th>
+                                            <th className="px-4 py-3 font-medium">Matched Title</th>
+                                            <th className="px-4 py-3 font-medium">Error</th>
+                                            <th className="px-4 py-3 font-medium w-20"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {logs.map((log) => (
+                                            <tr key={log.id} className="hover:bg-muted/30 transition-colors">
+                                                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                                                    {new Date(log.timestamp).toLocaleString(undefined, {
+                                                        month: "short", day: "numeric",
+                                                        hour: "2-digit", minute: "2-digit",
+                                                    })}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium max-w-[200px] truncate" title={log.gameTitle}>
+                                                    {log.gameTitle}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <EnrichmentStatusBadge status={log.status} />
+                                                </td>
+                                                <td className="px-4 py-3 text-muted-foreground">
+                                                    {log.providerName}
+                                                </td>
+                                                <td className="px-4 py-3 text-muted-foreground max-w-[180px] truncate" title={log.matchedTitle || ""}>
+                                                    {log.matchedTitle || "—"}
+                                                </td>
+                                                <td className="px-4 py-3 text-muted-foreground max-w-[200px] truncate" title={log.errorMessage || ""}>
+                                                    {log.errorMessage || "—"}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon-sm"
+                                                        onClick={() => handleReEnrich(log.unifiedGameId)}
+                                                        disabled={reEnrichingId !== null}
+                                                        title={`Re-enrich "${log.gameTitle}"`}
+                                                    >
+                                                        {reEnrichingId === log.unifiedGameId ? (
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                        ) : (
+                                                            <RotateCw className="h-3.5 w-3.5" />
+                                                        )}
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </>
                 )}
             </div>
         </div>

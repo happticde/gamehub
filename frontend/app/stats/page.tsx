@@ -73,7 +73,7 @@ export default function StatsPage() {
     if (error || !stats) {
         return (
             <div className="min-h-screen bg-background">
-                <main className="container mx-auto px-8 py-12 max-w-screen-xl">
+                <main className="container mx-auto px-4 md:px-8 py-12 max-w-screen-xl">
                     <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-6 text-destructive">
                         <h3 className="font-semibold mb-2">Failed to load statistics</h3>
                         <p className="text-sm font-mono">{error}</p>
@@ -93,11 +93,11 @@ export default function StatsPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            <main className="container mx-auto px-8 py-12 max-w-screen-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <main className="container mx-auto px-4 md:px-8 py-8 md:py-12 max-w-screen-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Page header */}
                 <header className="mb-10 border-b pb-8">
-                    <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl flex items-center gap-4">
-                        <BarChart3 className="h-10 w-10 text-primary" />
+                    <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight lg:text-5xl flex items-center gap-3 md:gap-4">
+                        <BarChart3 className="h-7 w-7 md:h-10 md:w-10 text-primary shrink-0" />
                         Library Statistics
                     </h1>
                     <p className="mt-4 text-lg text-muted-foreground max-w-2xl">
@@ -205,7 +205,7 @@ export default function StatsPage() {
                         {stats.ratingDistribution.length === 0 ? (
                             <p className="text-sm text-muted-foreground">No rated games yet.</p>
                         ) : (
-                            <div className="flex items-end gap-2 h-40">
+                            <div className="flex items-end gap-1 sm:gap-2 h-32 sm:h-40 overflow-x-auto">
                                 {stats.ratingDistribution.map((r) => (
                                     <div key={r.bucket} className="flex-1 flex flex-col items-center gap-1">
                                         <span className="text-xs text-muted-foreground tabular-nums">{r.count}</span>

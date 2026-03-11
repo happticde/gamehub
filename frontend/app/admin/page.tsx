@@ -22,11 +22,11 @@ import { Settings, Sparkles, Download, RefreshCw } from "lucide-react";
 export default function AdminPage() {
     return (
         <div className="min-h-screen bg-background">
-            <main className="container mx-auto px-8 py-12 max-w-screen-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <main className="container mx-auto px-4 md:px-8 py-8 md:py-12 max-w-screen-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Page header */}
                 <header className="mb-10 border-b pb-8">
-                    <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl flex items-center gap-4">
-                        <Settings className="h-10 w-10 text-primary" />
+                    <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight lg:text-5xl flex items-center gap-3 md:gap-4">
+                        <Settings className="h-7 w-7 md:h-10 md:w-10 text-primary shrink-0" />
                         Admin Dashboard
                     </h1>
                     <p className="mt-4 text-lg text-muted-foreground max-w-2xl">

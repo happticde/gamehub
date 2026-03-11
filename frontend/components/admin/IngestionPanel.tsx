@@ -62,7 +62,7 @@ export function IngestionPanel() {
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             {/* ---- Platform Ingest Cards ---- */}
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <SteamIngestCard onSuccess={fetchLogs} />
                 <GogIngestCard onSuccess={fetchLogs} />
                 <PsnIngestCard onSuccess={fetchLogs} />
@@ -97,47 +97,81 @@ export function IngestionPanel() {
                         <p className="text-sm mt-1">Trigger a platform retrieval to populate the audit log.</p>
                     </div>
                 ) : (
-                    <div className="rounded-xl border border-border bg-card overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-muted/50 text-muted-foreground">
-                                    <tr>
-                                        <th className="px-4 py-3 font-medium">Timestamp</th>
-                                        <th className="px-4 py-3 font-medium">Platform</th>
-                                        <th className="px-4 py-3 font-medium">Status</th>
-                                        <th className="px-4 py-3 font-medium">Items</th>
-                                        <th className="px-4 py-3 font-medium">Error</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-border">
-                                    {logs.map((log) => (
-                                        <tr key={log.id} className="hover:bg-muted/30 transition-colors">
-                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                                                {new Date(log.timestamp).toLocaleString(undefined, {
-                                                    month: "short", day: "numeric",
-                                                    hour: "2-digit", minute: "2-digit",
-                                                })}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
-                                                    {log.platform}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <IngestStatusBadge status={log.status} />
-                                            </td>
-                                            <td className="px-4 py-3 whitespace-nowrap tabular-nums font-medium">
-                                                {log.itemsProcessed}
-                                            </td>
-                                            <td className="px-4 py-3 text-muted-foreground max-w-[250px] truncate" title={log.errorMessage || ""}>
-                                                {log.errorMessage || "—"}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                    <>
+                        {/* Mobile: Card layout */}
+                        <div className="md:hidden space-y-3">
+                            {logs.map((log) => (
+                                <div key={log.id} className="rounded-xl border border-border bg-card p-4 space-y-2.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
+                                                {log.platform}
+                                            </span>
+                                            <IngestStatusBadge status={log.status} />
+                                        </div>
+                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                            {new Date(log.timestamp).toLocaleString(undefined, {
+                                                month: "short", day: "numeric",
+                                                hour: "2-digit", minute: "2-digit",
+                                            })}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <span className="text-muted-foreground">Items:</span>
+                                        <span className="font-medium tabular-nums">{log.itemsProcessed}</span>
+                                    </div>
+                                    {log.errorMessage && (
+                                        <p className="text-xs text-destructive bg-destructive/10 rounded-md px-2.5 py-1.5 break-words">
+                                            {log.errorMessage}
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
                         </div>
-                    </div>
+
+                        {/* Desktop: Table layout */}
+                        <div className="hidden md:block rounded-xl border border-border bg-card overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-muted/50 text-muted-foreground">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Timestamp</th>
+                                            <th className="px-4 py-3 font-medium">Platform</th>
+                                            <th className="px-4 py-3 font-medium">Status</th>
+                                            <th className="px-4 py-3 font-medium">Items</th>
+                                            <th className="px-4 py-3 font-medium">Error</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {logs.map((log) => (
+                                            <tr key={log.id} className="hover:bg-muted/30 transition-colors">
+                                                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                                                    {new Date(log.timestamp).toLocaleString(undefined, {
+                                                        month: "short", day: "numeric",
+                                                        hour: "2-digit", minute: "2-digit",
+                                                    })}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
+                                                        {log.platform}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <IngestStatusBadge status={log.status} />
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap tabular-nums font-medium">
+                                                    {log.itemsProcessed}
+                                                </td>
+                                                <td className="px-4 py-3 text-muted-foreground max-w-[250px] truncate" title={log.errorMessage || ""}>
+                                                    {log.errorMessage || "—"}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </>
                 )}
             </div>
         </div>

@@ -198,3 +198,21 @@
     transform: translate(40px, -50px) scale(1.2);
   }
 }
+
+/* Scale down landing page orbs on small screens to prevent horizontal overflow */
+@media (max-width: 640px) {
+  .landing-orb-1 {
+    width: 250px;
+    height: 250px;
+  }
+
+  .landing-orb-2 {
+    width: 200px;
+    height: 200px;
+  }
+
+  .landing-orb-3 {
+    width: 180px;
+    height: 180px;
+  }
+}
