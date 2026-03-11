@@ -25,6 +25,7 @@ public class UnifiedGame
     public PlayStatus PlayStatus { get; set; } = PlayStatus.Unplayed;
     public int? UserRating { get; set; }
     public bool IsPlayStatusManual { get; set; } = false;
+    public bool IsIgnored { get; set; } = false;
 
     // --- Metadata (populated by EnrichmentService via IGameMetadataProvider) ---
 

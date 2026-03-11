@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { Filter } from "lucide-react";
+import { Filter, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
@@ -45,6 +45,8 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const urlSortBy = searchParams.get("sortBy") || "title";
     const urlSortOrder = searchParams.get("sortOrder") || "asc";
     const defaultSort = `${urlSortBy}_${urlSortOrder}`;
+
+    const defaultIncludeIgnored = searchParams.get("includeIgnored") === "true";
 
     const AVAILABLE_PLATFORMS = ["Steam", "Gog", "Psn", "Epic"];
     const AVAILABLE_PLAY_STATUSES = ["Unplayed", "Played", "Playing", "Completed", "Abandoned"];
@@ -132,6 +134,14 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         (newPubs: string[]) => pushParams((p) => {
             p.delete("publishers");
             newPubs.forEach(pub => p.append("publishers", pub));
+        }),
+        [pushParams]
+    );
+
+    const updateIncludeIgnoredUrl = useCallback(
+        (include: boolean) => pushParams((p) => {
+            if (include) p.set("includeIgnored", "true");
+            else p.delete("includeIgnored");
         }),
         [pushParams]
     );
@@ -250,6 +260,19 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                         )}
                     </button>
                 )}
+
+                {/* "Show Hidden Games" toggle */}
+                <button
+                    type="button"
+                    onClick={() => updateIncludeIgnoredUrl(!defaultIncludeIgnored)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 h-10 text-sm transition-colors ${defaultIncludeIgnored
+                            ? "border-primary/50 bg-primary/10 text-primary"
+                            : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        }`}
+                >
+                    {defaultIncludeIgnored ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                    {defaultIncludeIgnored ? "Hide ignored" : "Show ignored"}
+                </button>
             </div>
 
             {/* Row 3: Extra filters (collapsible) */}

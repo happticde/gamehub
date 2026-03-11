@@ -57,6 +57,21 @@ public class UnificationService
         "goty",
     ];
 
+    /// <summary>
+    /// Keywords that indicate a game is likely a demo, beta, test server, or soundtrack.
+    /// Games containing these keywords will be automatically hidden (IsIgnored = true).
+    /// </summary>
+    private static readonly string[] IgnoredKeywords =
+    [
+        "demo",
+        "beta",
+        "test server",
+        "dedicated server",
+        "soundtrack",
+        "playtest",
+        "bonus content"
+    ];
+
     public UnificationService(IServiceScopeFactory scopeFactory, IngestClient client, ILogger<UnificationService> logger)
     {
         _scopeFactory = scopeFactory;
@@ -222,6 +237,14 @@ public class UnificationService
                 {
                     // No match found — create a new UnifiedGame
                     game = new UnifiedGame { Title = item.Name!, Slug = slug };
+                    
+                    // Auto-ignore if the title contains junk keywords
+                    var lowerTitle = item.Name!.ToLowerInvariant();
+                    if (IgnoredKeywords.Any(k => lowerTitle.Contains(k)))
+                    {
+                        game.IsIgnored = true;
+                    }
+
                     existingGames[slug] = game;
                     db.UnifiedGames.Add(game);
                     created++;

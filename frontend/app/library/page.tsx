@@ -51,9 +51,10 @@ export default async function LibraryPage({
         publishers = Array.isArray(resolvedParams.publishers) ? resolvedParams.publishers : [resolvedParams.publishers];
     }
 
-    // Parse page number (default to 1, ensure it's a positive integer)
     const pageParam = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page, 10) : 1;
     const currentPage = !isNaN(pageParam) && pageParam > 0 ? pageParam : 1;
+
+    const includeIgnored = resolvedParams.includeIgnored === 'true';
 
     // We use standard fetch syntax. The URL hits our own Next.js server route, 
     // which is then proxied via next.config.ts down to the C# Core API.
@@ -88,6 +89,7 @@ export default async function LibraryPage({
         publishers.forEach(p => query.append("publisher", p));
 
         query.append("page", currentPage.toString());
+        if (includeIgnored) query.append("includeIgnored", "true");
 
         // We proxy it through Next.js
         const fetchUrl = `http://localhost:3000/api/core/library?${query.toString()}`;

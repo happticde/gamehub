@@ -127,7 +127,7 @@ public class EnrichmentService
         {
             var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
             gameIds = await db.UnifiedGames
-                .Where(g => g.EnrichedAt == null)
+                .Where(g => g.EnrichedAt == null && !g.IsIgnored)
                 .OrderBy(g => g.Id)
                 .Take(batchSize)
                 .Select(g => g.Id)
@@ -163,7 +163,7 @@ public class EnrichmentService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
-        return await db.UnifiedGames.CountAsync(g => g.EnrichedAt == null, ct);
+        return await db.UnifiedGames.CountAsync(g => g.EnrichedAt == null && !g.IsIgnored, ct);
     }
 
     /// <summary>

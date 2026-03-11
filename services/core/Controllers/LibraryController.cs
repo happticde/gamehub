@@ -66,6 +66,7 @@ public class LibraryController : ControllerBase
         [FromQuery] string[]? publisher,
         [FromQuery] string? sortBy,
         [FromQuery] string sortOrder = "asc",
+        [FromQuery] bool includeIgnored = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -77,6 +78,11 @@ public class LibraryController : ControllerBase
             .Include(g => g.Items)
             .Include(g => g.Tags)
             .AsNoTracking();
+
+        if (!includeIgnored)
+        {
+            query = query.Where(g => !g.IsIgnored);
+        }
 
         // Filter by search term if provided
         if (!string.IsNullOrWhiteSpace(search))
@@ -516,22 +522,23 @@ public class LibraryController : ControllerBase
     public async Task<IActionResult> GetStats()
     {
         // --- Summary counts ---
-        var totalGames = await _db.UnifiedGames.CountAsync();
-        var enrichedCount = await _db.UnifiedGames.CountAsync(g => g.EnrichedAt != null);
-        var totalPlatformLinks = await _db.LibraryItems.CountAsync();
+        var totalGames = await _db.UnifiedGames.CountAsync(g => !g.IsIgnored);
+        var enrichedCount = await _db.UnifiedGames.CountAsync(g => g.EnrichedAt != null && !g.IsIgnored);
+        var totalPlatformLinks = await _db.LibraryItems.CountAsync(i => i.UnifiedGame != null && !i.UnifiedGame.IsIgnored);
 
         // Games that appear on more than one platform
         var multiPlatformCount = await _db.UnifiedGames
-            .Where(g => g.Items.Count > 1)
+            .Where(g => g.Items.Count > 1 && !g.IsIgnored)
             .CountAsync();
 
         // Average rating (only games that have one)
         var averageRating = await _db.UnifiedGames
-            .Where(g => g.Rating != null)
+            .Where(g => g.Rating != null && !g.IsIgnored)
             .AverageAsync(g => (double?)g.Rating) ?? 0;
 
         // --- Per-platform breakdown ---
         var platformCounts = await _db.LibraryItems
+            .Where(i => i.UnifiedGame != null && !i.UnifiedGame.IsIgnored)
             .GroupBy(i => i.Platform)
             .Select(g => new { Platform = g.Key.ToString(), Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -539,7 +546,7 @@ public class LibraryController : ControllerBase
 
         // --- Genre distribution (parse comma-separated Genres field) ---
         var rawGenres = await _db.UnifiedGames
-            .Where(g => g.Genres != null && g.Genres != "")
+            .Where(g => g.Genres != null && g.Genres != "" && !g.IsIgnored)
             .Select(g => g.Genres!)
             .ToListAsync();
 
@@ -554,7 +561,7 @@ public class LibraryController : ControllerBase
 
         // --- Rating distribution (10-point buckets) ---
         var ratedGames = await _db.UnifiedGames
-            .Where(g => g.Rating != null)
+            .Where(g => g.Rating != null && !g.IsIgnored)
             .Select(g => g.Rating!.Value)
             .ToListAsync();
 
@@ -573,7 +580,7 @@ public class LibraryController : ControllerBase
 
         // --- Top-rated games (top 10) ---
         var topRated = await _db.UnifiedGames
-            .Where(g => g.Rating != null && g.Rating > 0)
+            .Where(g => g.Rating != null && g.Rating > 0 && !g.IsIgnored)
             .OrderByDescending(g => g.Rating)
             .Take(10)
             .Select(g => new
@@ -588,6 +595,7 @@ public class LibraryController : ControllerBase
 
         // --- Play status distribution ---
         var playStatusCounts = await _db.UnifiedGames
+            .Where(g => !g.IsIgnored)
             .GroupBy(g => g.PlayStatus)
             .Select(g => new { Status = g.Key.ToString(), Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -596,7 +604,7 @@ public class LibraryController : ControllerBase
         // --- Recently added (last 10 enriched) ---
         var recentlyAdded = await _db.UnifiedGames
             .Include(g => g.Items)
-            .Where(g => g.EnrichedAt != null)
+            .Where(g => g.EnrichedAt != null && !g.IsIgnored)
             .OrderByDescending(g => g.EnrichedAt)
             .Take(10)
             .Select(g => new
@@ -821,12 +829,13 @@ public class LibraryController : ControllerBase
 
         game.PlayStatus = request.PlayStatus;
         game.UserRating = request.UserRating;
+        if (request.IsIgnored.HasValue) game.IsIgnored = request.IsIgnored.Value;
         game.IsPlayStatusManual = true; // Lock it so syncs don't overwrite
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Updated personal tracking for game {Id}: Status={Status}, Rating={Rating}",
-            id, request.PlayStatus, request.UserRating?.ToString() ?? "none");
+        _logger.LogInformation("Updated personal tracking for game {Id}: Status={Status}, Rating={Rating}, IsIgnored={IsIgnored}",
+            id, request.PlayStatus, request.UserRating?.ToString() ?? "none", game.IsIgnored);
 
         return Ok(new
         {
@@ -863,4 +872,5 @@ public class PersonalUpdateRequest
 {
     public PlayStatus PlayStatus { get; set; }
     public int? UserRating { get; set; }
+    public bool? IsIgnored { get; set; }
 }

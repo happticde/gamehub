@@ -23,6 +23,7 @@ interface ExpandedGame {
     rating: number | null;
     playStatus: PlayStatus;
     userRating: number | null;
+    isIgnored: boolean;
     metadataSource: string | null;
     enrichedAt: string | null;
     items: {
@@ -214,6 +215,7 @@ export default async function GameDetailPage({
                         gameId={game.id} 
                         initialStatus={game.playStatus} 
                         initialRating={game.userRating} 
+                        initialIsIgnored={game.isIgnored}
                     />
 
                     {/* Your Library Status */}

@@ -198,6 +198,9 @@ namespace GameHub.Core.Migrations
                     b.Property<string>("Genres")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsIgnored")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsPlayStatusManual")
                         .HasColumnType("INTEGER");
 

@@ -8,19 +8,22 @@ interface PersonalTrackingProps {
     gameId: number;
     initialStatus: PlayStatus;
     initialRating: number | null;
+    initialIsIgnored: boolean;
 }
 
 export default function PersonalTrackingClient({
     gameId,
     initialStatus,
-    initialRating
+    initialRating,
+    initialIsIgnored
 }: PersonalTrackingProps) {
     const [status, setStatus] = useState<PlayStatus>(initialStatus);
     const [rating, setRating] = useState<number | null>(initialRating);
+    const [isIgnored, setIsIgnored] = useState<boolean>(initialIsIgnored);
     const [isSaving, setIsSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
 
-    const handleSave = async (newStatus: PlayStatus, newRating: number | null) => {
+    const handleSave = async (newStatus: PlayStatus, newRating: number | null, newIsIgnored: boolean) => {
         setIsSaving(true);
         setSaveSuccess(false);
 
@@ -30,7 +33,8 @@ export default function PersonalTrackingClient({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     playStatus: newStatus,
-                    userRating: newRating
+                    userRating: newRating,
+                    isIgnored: newIsIgnored
                 })
             });
 
@@ -38,6 +42,7 @@ export default function PersonalTrackingClient({
             
             setStatus(newStatus);
             setRating(newRating);
+            setIsIgnored(newIsIgnored);
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 2000);
         } catch (error) {
@@ -50,9 +55,22 @@ export default function PersonalTrackingClient({
 
     return (
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-6 shadow-sm mb-8">
-            <h3 className="flex items-center gap-2 font-semibold text-lg border-b border-primary/20 pb-3 mb-4 text-primary">
-                <Star className="h-5 w-5 fill-primary" />
-                Personal Tracking
+            <h3 className="flex items-center justify-between font-semibold text-lg border-b border-primary/20 pb-3 mb-4 text-primary">
+                <div className="flex items-center gap-2">
+                    <Star className="h-5 w-5 fill-primary" />
+                    Personal Tracking
+                </div>
+                <button
+                    onClick={() => handleSave(status, rating, !isIgnored)}
+                    disabled={isSaving}
+                    className={`text-xs px-2 py-1 rounded-md border font-normal transition-colors ${
+                        isIgnored 
+                            ? "bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20" 
+                            : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                    }`}
+                >
+                    {isIgnored ? "Hidden from Library" : "Hide Game"}
+                </button>
             </h3>
 
             <div className="space-y-6">
@@ -61,7 +79,7 @@ export default function PersonalTrackingClient({
                     <label className="text-sm font-medium text-muted-foreground block mb-2">Play Status</label>
                     <select
                         value={status}
-                        onChange={(e) => handleSave(e.target.value as PlayStatus, rating)}
+                        onChange={(e) => handleSave(e.target.value as PlayStatus, rating, isIgnored)}
                         disabled={isSaving}
                         className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent cursor-pointer disabled:opacity-50"
                     >
@@ -79,7 +97,7 @@ export default function PersonalTrackingClient({
                         <span>Your Rating</span>
                         {rating !== null && (
                             <button
-                                onClick={() => handleSave(status, null)}
+                                onClick={() => handleSave(status, null, isIgnored)}
                                 className="text-xs text-muted-foreground hover:text-destructive transition-colors"
                             >
                                 Clear
@@ -90,7 +108,7 @@ export default function PersonalTrackingClient({
                         {[1, 2, 3, 4, 5].map((star) => (
                             <button
                                 key={star}
-                                onClick={() => handleSave(status, star)}
+                                onClick={() => handleSave(status, star, isIgnored)}
                                 disabled={isSaving}
                                 className={`p-1 rounded-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all hover:scale-110 disabled:opacity-50 disabled:hover:scale-100 ${
                                     (rating || 0) >= star
