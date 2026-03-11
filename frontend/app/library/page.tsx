@@ -2,6 +2,7 @@ import { PagedResult, UnifiedGame } from "@/types/game";
 import GameCard from "@/components/GameCard";
 import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
+import LibraryViewControls from "@/components/LibraryViewControls";
 
 /**
  * Library page — a React Server Component (RSC).
@@ -130,39 +131,25 @@ export default async function LibraryPage({
                 </div>
             </div>
 
-            {/* Filter controls — sort, search, platform/tag/dev/pub dropdowns */}
-            <div className="mb-8">
-                <LibraryFilters
-                    availableTags={tagsList}
-                    availableDevelopers={developersList}
-                    availablePublishers={publishersList}
-                />
-            </div>
-
             {error ? (
-                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center text-destructive">
+                <div className="mb-8 rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center text-destructive">
                     <h3 className="font-semibold">Unable to connect to GameHub Core API.</h3>
                     <p className="mt-2 text-sm">{error}</p>
                     <p className="mt-4 text-xs opacity-70">Hint: Ensure your Docker Compose backend is running and the proxy in next.config.ts is correctly pointing to the host machine.</p>
                 </div>
-            ) : games.length === 0 ? (
-                <div className="flex min-h-[400px] flex-col items-center justify-center rounded-lg border border-border bg-card p-10 text-center animate-in fade-in duration-700 shadow-sm">
-                    <div className="rounded-full bg-muted p-4">
-                        <svg className="h-8 w-8 text-muted-foreground" fill="none" strokeWidth="1.5" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </div>
-                    <h3 className="mt-4 text-lg font-semibold">Your library is empty</h3>
-                    <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-                        It looks like you haven&apos;t synchronized any games yet. Head over to the Ingest Sync panel to pull from your external providers.
-                    </p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:gap-6 lg:grid-cols-4 xl:grid-cols-5 animate-in slide-in-from-bottom-4 fade-in duration-500">
-                    {games.map((game) => (
-                        <GameCard key={game.id} game={game} />
-                    ))}
-                </div>
+            ) : null}
+            
+            {!error && (
+                <LibraryViewControls 
+                    games={games} 
+                    filters={
+                        <LibraryFilters
+                            availableTags={tagsList}
+                            availableDevelopers={developersList}
+                            availablePublishers={publishersList}
+                        />
+                    }
+                />
             )}
 
             {/* Server component handles total page calculation blindly for the client */}
