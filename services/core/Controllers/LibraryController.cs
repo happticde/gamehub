@@ -61,6 +61,7 @@ public class LibraryController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
         [FromQuery] Platform[]? platforms,
+        [FromQuery] PlayStatus[]? playStatus,
         [FromQuery] string[]? developer,
         [FromQuery] string[]? publisher,
         [FromQuery] string? sortBy,
@@ -97,6 +98,12 @@ public class LibraryController : ControllerBase
         if (platforms != null && platforms.Length > 0)
         {
             query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
+        }
+
+        // Filter by PlayStatus if any are provided
+        if (playStatus != null && playStatus.Length > 0)
+        {
+            query = query.Where(g => playStatus.Contains(g.PlayStatus));
         }
 
         // Filter by developers (OR logic: game must match at least one selected developer)
@@ -579,6 +586,13 @@ public class LibraryController : ControllerBase
             })
             .ToListAsync();
 
+        // --- Play status distribution ---
+        var playStatusCounts = await _db.UnifiedGames
+            .GroupBy(g => g.PlayStatus)
+            .Select(g => new { Status = g.Key.ToString(), Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
         // --- Recently added (last 10 enriched) ---
         var recentlyAdded = await _db.UnifiedGames
             .Include(g => g.Items)
@@ -604,6 +618,7 @@ public class LibraryController : ControllerBase
             AverageRating = Math.Round(averageRating, 1),
             PlatformCounts = platformCounts,
             GenreCounts = genreCounts,
+            PlayStatusCounts = playStatusCounts,
             RatingDistribution = ratingDistribution,
             TopRated = topRated,
             RecentlyAdded = recentlyAdded

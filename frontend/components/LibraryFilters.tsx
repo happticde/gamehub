@@ -38,6 +38,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const defaultSearch = searchParams.get("search") || "";
     const defaultTags = searchParams.getAll("tags");
     const defaultPlatforms = searchParams.getAll("platforms");
+    const defaultPlayStatuses = searchParams.getAll("playStatus");
     const defaultDevelopers = searchParams.getAll("developers");
     const defaultPublishers = searchParams.getAll("publishers");
 
@@ -46,6 +47,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const defaultSort = `${urlSortBy}_${urlSortOrder}`;
 
     const AVAILABLE_PLATFORMS = ["Steam", "Gog", "Psn", "Epic"];
+    const AVAILABLE_PLAY_STATUSES = ["Unplayed", "Played", "Playing", "Completed", "Abandoned"];
 
     const [searchQuery, setSearchQuery] = useState(defaultSearch);
 
@@ -95,6 +97,14 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         (newPlatforms: string[]) => pushParams((p) => {
             p.delete("platforms");
             newPlatforms.forEach(pl => p.append("platforms", pl));
+        }),
+        [pushParams]
+    );
+
+    const updatePlayStatusUrl = useCallback(
+        (newStatuses: string[]) => pushParams((p) => {
+            p.delete("playStatus");
+            newStatuses.forEach(s => p.append("playStatus", s));
         }),
         [pushParams]
     );
@@ -196,6 +206,17 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                         placeholder="Platforms..."
                         searchPlaceholder="Search platforms..."
                         emptyMessage="No platforms found."
+                    />
+                </div>
+
+                <div className="w-full sm:w-[200px]">
+                    <MultiSelect
+                        options={AVAILABLE_PLAY_STATUSES}
+                        selected={defaultPlayStatuses}
+                        onChange={updatePlayStatusUrl}
+                        placeholder="Play Status..."
+                        searchPlaceholder="Search statuses..."
+                        emptyMessage="No statuses found."
                     />
                 </div>
 

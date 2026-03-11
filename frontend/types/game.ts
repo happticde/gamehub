@@ -92,6 +92,7 @@ export interface LibraryStats {
     averageRating: number;
     platformCounts: { platform: string; count: number }[];
     genreCounts: { name: string; count: number }[];
+    playStatusCounts: { status: PlayStatus; count: number }[];
     ratingDistribution: { bucket: string; count: number }[];
     topRated: {
         id: number;

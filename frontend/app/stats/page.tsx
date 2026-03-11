@@ -23,8 +23,9 @@ import {
     BarChart3,
     Loader2,
     TrendingUp,
+    PlayCircle,
 } from "lucide-react";
-import type { LibraryStats } from "@/types/game";
+import type { LibraryStats, PlayStatus } from "@/types/game";
 
 /** Maps a platform name to a distinct hex color for chart bars */
 function getPlatformHex(platform: string): string {
@@ -89,6 +90,7 @@ export default function StatsPage() {
     // Find the max values for scaling chart bars
     const maxPlatformCount = Math.max(...stats.platformCounts.map(p => p.count), 1);
     const maxGenreCount = Math.max(...stats.genreCounts.map(g => g.count), 1);
+    const maxPlayStatusCount = Math.max(...(stats.playStatusCounts || []).map(p => p.count), 1);
     const maxRatingCount = Math.max(...stats.ratingDistribution.map(r => r.count), 1);
 
     return (
@@ -133,7 +135,7 @@ export default function StatsPage() {
                 </div>
 
                 {/* ---- Charts Grid ---- */}
-                <div className="grid gap-8 lg:grid-cols-2 mb-10">
+                <div className="grid gap-8 lg:grid-cols-3 mb-10">
                     {/* Platform Distribution */}
                     <Card>
                         <CardHeader>
@@ -186,6 +188,43 @@ export default function StatsPage() {
                                                     width: `${(g.count / maxGenreCount) * 100}%`,
                                                     // Gradient from indigo to purple based on index
                                                     backgroundColor: `oklch(0.65 0.18 ${270 + i * 8})`,
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Play Status */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <PlayCircle className="h-4 w-4" />
+                                Play Status
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {!stats.playStatusCounts || stats.playStatusCounts.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No play status data yet.</p>
+                            ) : (
+                                stats.playStatusCounts.map((p, i) => (
+                                    <div key={p.status} className="space-y-1">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="font-medium">{p.status}</span>
+                                            <span className="text-muted-foreground tabular-nums">{p.count}</span>
+                                        </div>
+                                        <div className="h-3 w-full rounded-full bg-muted overflow-hidden">
+                                            <div
+                                                className="h-full rounded-full transition-all duration-700 ease-out"
+                                                style={{
+                                                    width: `${(p.count / maxPlayStatusCount) * 100}%`,
+                                                    // Distinct colors per status
+                                                    backgroundColor: p.status === 'Completed' ? '#10b981' : 
+                                                                   p.status === 'Playing' ? '#3b82f6' :
+                                                                   p.status === 'Played' ? '#6366f1' :
+                                                                   p.status === 'Abandoned' ? '#ef4444' : '#71717a',
                                                 }}
                                             />
                                         </div>

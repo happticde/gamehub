@@ -32,6 +32,11 @@ export default async function LibraryPage({
         platforms = Array.isArray(resolvedParams.platforms) ? resolvedParams.platforms : [resolvedParams.platforms];
     }
 
+    let playStatus: string[] = [];
+    if (resolvedParams.playStatus) {
+        playStatus = Array.isArray(resolvedParams.playStatus) ? resolvedParams.playStatus : [resolvedParams.playStatus];
+    }
+
     // Sort parameters
     const sortBy = typeof resolvedParams.sortBy === 'string' ? resolvedParams.sortBy : undefined;
     const sortOrder = typeof resolvedParams.sortOrder === 'string' ? resolvedParams.sortOrder : undefined;
@@ -70,6 +75,9 @@ export default async function LibraryPage({
 
         // Append all platforms array values exactly as ASP.NET MVC expects them
         platforms.forEach(p => query.append("platforms", p));
+
+        // Append play statuses exactly as ASP.NET MVC expects them
+        playStatus.forEach(s => query.append("playStatus", s));
 
         // Sort params
         if (sortBy) query.append("sortBy", sortBy);

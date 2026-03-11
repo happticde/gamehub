@@ -59,13 +59,13 @@ public class ExportController : ControllerBase
         IQueryable<RawGameDto>? query = platform.ToLowerInvariant() switch
         {
             "steam" => BuildQuery(_db.SteamRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.AppId.ToString(), Name = x.Name, LastUpdated = x.LastUpdated }),
+                x => new RawGameDto { Id = x.AppId.ToString(), Name = x.Name, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
             "psn" => BuildQuery(_db.PsnRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.TitleId, Name = x.TitleName, LastUpdated = x.LastUpdated }),
+                x => new RawGameDto { Id = x.TitleId, Name = x.TitleName, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
             "gog" => BuildQuery(_db.GogRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.GameId.ToString(), Name = x.Title, LastUpdated = x.LastUpdated }),
+                x => new RawGameDto { Id = x.GameId.ToString(), Name = x.Title, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
             "epic" => BuildQuery(_db.EpicRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.AppName, Name = x.Title, LastUpdated = x.LastUpdated }),
+                x => new RawGameDto { Id = x.AppName, Name = x.Title, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
             _ => null
         };
 
