@@ -39,18 +39,22 @@ public class PsnIngestController : IngestControllerBase<PsnRawItem>
         return (titleId, name);
     }
 
-    protected override PsnRawItem CreateEntity(string externalId, string? name, string rawJson) => new()
+    protected override int? ExtractPlaytime(JsonElement json) => null; // PSN API doesn't provide playtime here
+
+    protected override PsnRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson) => new()
     {
         TitleId = externalId,
         TitleName = name,
+        PlaytimeMinutes = playtimeMinutes,
         RawJson = rawJson,
         LastUpdated = DateTime.UtcNow
     };
 
-    protected override void UpdateEntity(PsnRawItem existing, string? name, string rawJson)
+    protected override void UpdateEntity(PsnRawItem existing, string? name, int? playtimeMinutes, string rawJson)
     {
         existing.RawJson = rawJson;
         existing.TitleName = name ?? existing.TitleName;
+        existing.PlaytimeMinutes = playtimeMinutes ?? existing.PlaytimeMinutes;
         existing.LastUpdated = DateTime.UtcNow;
     }
 

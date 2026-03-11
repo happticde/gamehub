@@ -245,6 +245,12 @@ public class UnificationService
                 platformLink.LastSynced = DateTime.UtcNow;
             }
 
+            // Sync playtime into the unified record (if game has playtime and isn't manually overridden yet)
+            if (item.PlaytimeMinutes > 0 && !game.IsPlayStatusManual && game.PlayStatus == PlayStatus.Unplayed)
+            {
+                game.PlayStatus = PlayStatus.Played;
+            }
+
             processed++;
         }
 

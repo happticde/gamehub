@@ -32,18 +32,30 @@ public class SteamIngestController : IngestControllerBase<SteamRawItem>
         return (id, name);
     }
 
-    protected override SteamRawItem CreateEntity(string externalId, string? name, string rawJson) => new()
+    /// <summary>Steam provides 'playtime_forever' in minutes.</summary>
+    protected override int? ExtractPlaytime(JsonElement json)
+    {
+        if (json.TryGetProperty("playtime_forever", out var playtimeProp) && playtimeProp.ValueKind == JsonValueKind.Number)
+        {
+            return playtimeProp.GetInt32();
+        }
+        return null;
+    }
+
+    protected override SteamRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson) => new()
     {
         AppId = int.Parse(externalId), // Convert string back to int for the DB column
         Name = name,
+        PlaytimeMinutes = playtimeMinutes,
         RawJson = rawJson,
         LastUpdated = DateTime.UtcNow
     };
 
-    protected override void UpdateEntity(SteamRawItem existing, string? name, string rawJson)
+    protected override void UpdateEntity(SteamRawItem existing, string? name, int? playtimeMinutes, string rawJson)
     {
         existing.RawJson = rawJson;
         existing.Name = name ?? existing.Name; // Keep old name if new one is null
+        existing.PlaytimeMinutes = playtimeMinutes ?? existing.PlaytimeMinutes;
         existing.LastUpdated = DateTime.UtcNow;
     }
 

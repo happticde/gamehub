@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import { UnifiedGame } from "@/types/game";
+import { UnifiedGame, PlayStatus } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
+import { Star } from "lucide-react";
 
 interface GameCardProps {
     game: UnifiedGame;
@@ -76,12 +77,19 @@ export default function GameCard({ game }: GameCardProps) {
                         </div>
                     )}
 
-                    {/* Optional Rating Badge */}
+                    {/* Optional Critic Rating Badge */}
                     {game.rating && (
                         <div className="absolute left-2 top-2 z-10 flex h-7 items-center justify-center rounded-full bg-background/90 px-2 text-xs font-bold text-foreground shadow-sm backdrop-blur">
                             <span className={game.rating >= 75 ? "text-green-500" : game.rating >= 50 ? "text-yellow-500" : "text-red-500"}>
                                 {Math.round(game.rating)}
                             </span>
+                        </div>
+                    )}
+
+                    {/* Play Status Badge */}
+                    {game.playStatus && game.playStatus !== "Unplayed" && (
+                        <div className="absolute bottom-2 left-2 z-10 flex h-6 items-center justify-center rounded-sm bg-primary/90 px-2 text-xs font-bold text-primary-foreground shadow-sm backdrop-blur uppercase tracking-wider">
+                            {game.playStatus}
                         </div>
                     )}
                 </div>
@@ -99,12 +107,26 @@ export default function GameCard({ game }: GameCardProps) {
                         </p>
                     )}
 
-                    {/* Genres */}
-                    <div className="mt-1 text-xs text-muted-foreground">
-                        {game.genres ? (
-                            <span className="line-clamp-1">{game.genres.split(",").slice(0, 3).join(" • ")}</span>
-                        ) : (
-                            <span>Unknown Genre</span>
+                    {/* Genres & Personal Rating */}
+                    <div className="mt-2 flex items-center justify-between">
+                        <div className="text-xs text-muted-foreground flex-1 pr-2">
+                            {game.genres ? (
+                                <span className="line-clamp-1">{game.genres.split(",").slice(0, 2).join(" • ")}</span>
+                            ) : (
+                                <span>Unknown Genre</span>
+                            )}
+                        </div>
+
+                        {/* Personal 5-Star Rating */}
+                        {game.userRating !== null && game.userRating !== undefined && (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                                {[1, 2, 3, 4, 5].map(star => (
+                                    <Star 
+                                        key={star} 
+                                        className={`w-3 h-3 ${game.userRating! >= star ? "fill-yellow-400 text-yellow-400" : "fill-none text-muted-foreground/30"}`} 
+                                    />
+                                ))}
+                            </div>
                         )}
                     </div>
                 </div>

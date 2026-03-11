@@ -1,8 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Building2, Star, Tag, Layers } from "lucide-react";
-import { Platform } from "@/types/game";
+import { Platform, PlayStatus } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
+import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 
 // Extended payload type for the game detail view
 interface ExpandedGame {
@@ -20,6 +21,8 @@ interface ExpandedGame {
     tags: string[];
     firstReleaseDate: string | null;
     rating: number | null;
+    playStatus: PlayStatus;
+    userRating: number | null;
     metadataSource: string | null;
     enrichedAt: string | null;
     items: {
@@ -205,6 +208,13 @@ export default async function GameDetailPage({
 
                 {/* Right Column (Sidebar Details) */}
                 <div className="w-full lg:w-80 shrink-0 space-y-8">
+
+                    {/* Personal Tracking Client */}
+                    <PersonalTrackingClient 
+                        gameId={game.id} 
+                        initialStatus={game.playStatus} 
+                        initialRating={game.userRating} 
+                    />
 
                     {/* Your Library Status */}
                     <div className="rounded-xl border border-border bg-card p-6 shadow-sm">

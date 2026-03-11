@@ -25,6 +25,7 @@ public class SteamRawItem : IRawItem
     public string? Name { get; set; }
     public string RawJson { get; set; } = "{}";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
+    public int? PlaytimeMinutes { get; set; }
 
     // IRawItem mappings — these are NOT stored in the database
     [NotMapped] public string? DisplayName => Name;
@@ -42,6 +43,7 @@ public class PsnRawItem : IRawItem
     public string? TitleName { get; set; }
     public string RawJson { get; set; } = "{}";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
+    public int? PlaytimeMinutes { get; set; }
 
     // IRawItem mappings
     [NotMapped] public string? DisplayName => TitleName;
@@ -59,6 +61,7 @@ public class GogRawItem : IRawItem
     public string? Title { get; set; }
     public string RawJson { get; set; } = "{}";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
+    public int? PlaytimeMinutes { get; set; }
 
     // IRawItem mappings
     [NotMapped] public string? DisplayName => Title;
@@ -76,6 +79,7 @@ public class EpicRawItem : IRawItem
     public string? Title { get; set; }
     public string RawJson { get; set; } = "{}";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
+    public int? PlaytimeMinutes { get; set; }
 
     // IRawItem mappings
     [NotMapped] public string? DisplayName => Title;

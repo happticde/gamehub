@@ -57,17 +57,22 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
     protected abstract (string? Id, string? Name) ExtractIdAndName(JsonElement json);
 
     /// <summary>
+    /// Extract the total playtime in minutes (if available).
+    /// </summary>
+    protected abstract int? ExtractPlaytime(JsonElement json);
+
+    /// <summary>
     /// Create a new entity instance from the extracted values.
     /// The subclass maps the generic externalId/name back to its specific fields
     /// (e.g. SteamRawItem.AppId = int.Parse(externalId)).
     /// </summary>
-    protected abstract TEntity CreateEntity(string externalId, string? name, string rawJson);
+    protected abstract TEntity CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson);
 
     /// <summary>
     /// Update an existing entity with fresh data from a re-import.
     /// Typically updates RawJson, the name (if provided), and LastUpdated timestamp.
     /// </summary>
-    protected abstract void UpdateEntity(TEntity existing, string? name, string rawJson);
+    protected abstract void UpdateEntity(TEntity existing, string? name, int? playtimeMinutes, string rawJson);
 
     /// <summary>
     /// Build an Expression predicate to find an entity by its external ID.
@@ -112,6 +117,9 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
                 continue;
             }
 
+            // Extract playtime
+            var playtimeMinutes = ExtractPlaytime(gameJson);
+
             // Step 2: Check if this game is already in the database (idempotency check)
             var existing = await DbSet.FirstOrDefaultAsync(FindByExternalId(id));
             string jsonString = gameJson.ToString();
@@ -119,13 +127,13 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
             if (existing != null)
             {
                 // Step 3a: Record exists → update it with fresh data
-                UpdateEntity(existing, name, jsonString);
+                UpdateEntity(existing, name, playtimeMinutes, jsonString);
                 updated++;
             }
             else
             {
                 // Step 3b: New record → create and add it
-                DbSet.Add(CreateEntity(id, name, jsonString));
+                DbSet.Add(CreateEntity(id, name, playtimeMinutes, jsonString));
                 added++;
                 Logger.LogDebug("{Platform}: new game '{Name}' (ID: {Id})", PlatformName, name, id);
             }
@@ -165,7 +173,8 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
                 x.Id,
                 ExternalId = x.ExternalId,
                 Name = x.DisplayName,
-                x.LastUpdated
+                x.LastUpdated,
+                x.PlaytimeMinutes
             })
             .ToListAsync();
 

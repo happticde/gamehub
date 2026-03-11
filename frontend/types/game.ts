@@ -13,11 +13,17 @@ export interface LibraryItem {
     lastSynced: string; // ISO 8601 string
 }
 
+export type PlayStatus = "Unplayed" | "Played" | "Playing" | "Completed" | "Abandoned";
+
 export interface UnifiedGame {
     id: number;
     title: string;
     slug: string;
     platforms: LibraryItem[];
+
+    // Personal Tracking
+    playStatus: PlayStatus;
+    userRating?: number | null;
 
     // Metadata (may be null if not yet enriched)
     coverUrl?: string | null;

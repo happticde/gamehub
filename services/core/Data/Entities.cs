@@ -4,6 +4,15 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GameHub.Core.Data;
 
+public enum PlayStatus
+{
+    Unplayed,
+    Played,
+    Playing,
+    Completed,
+    Abandoned
+}
+
 [Index(nameof(Slug), IsUnique = true)]
 public class UnifiedGame
 {
@@ -11,6 +20,11 @@ public class UnifiedGame
     public string Title { get; set; } = "";
     public string Slug { get; set; } = "";
     public List<LibraryItem> Items { get; set; } = [];
+
+    // --- Personal Tracking ---
+    public PlayStatus PlayStatus { get; set; } = PlayStatus.Unplayed;
+    public int? UserRating { get; set; }
+    public bool IsPlayStatusManual { get; set; } = false;
 
     // --- Metadata (populated by EnrichmentService via IGameMetadataProvider) ---
 

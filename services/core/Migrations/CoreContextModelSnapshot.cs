@@ -198,6 +198,9 @@ namespace GameHub.Core.Migrations
                     b.Property<string>("Genres")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsPlayStatusManual")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("MetadataProviderId")
                         .HasColumnType("INTEGER");
 
@@ -206,6 +209,9 @@ namespace GameHub.Core.Migrations
 
                     b.Property<string>("Platforms")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("PlayStatus")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Publishers")
                         .HasColumnType("TEXT");
@@ -226,6 +232,9 @@ namespace GameHub.Core.Migrations
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("UserRating")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

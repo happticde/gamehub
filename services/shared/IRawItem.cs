@@ -32,4 +32,7 @@ public interface IRawItem
 
     /// <summary>Timestamp of when this record was last ingested or updated.</summary>
     DateTime LastUpdated { get; set; }
+
+    /// <summary>Total playtime in minutes recorded by the platform (if available).</summary>
+    int? PlaytimeMinutes { get; set; }
 }

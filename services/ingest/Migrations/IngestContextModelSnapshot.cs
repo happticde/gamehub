@@ -30,6 +30,9 @@ namespace GameHub.Ingest.Migrations
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("PlaytimeMinutes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("RawJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -56,6 +59,9 @@ namespace GameHub.Ingest.Migrations
 
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("PlaytimeMinutes")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("RawJson")
                         .IsRequired()
@@ -109,6 +115,9 @@ namespace GameHub.Ingest.Migrations
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("PlaytimeMinutes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("RawJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -142,6 +151,9 @@ namespace GameHub.Ingest.Migrations
 
                     b.Property<string>("Name")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("PlaytimeMinutes")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("RawJson")
                         .IsRequired()

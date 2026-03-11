@@ -152,6 +152,8 @@ public class LibraryController : ControllerBase
             Tags = g.Tags.Select(t => t.Name).ToList(),
             g.FirstReleaseDate,
             g.Rating,
+            g.PlayStatus,
+            g.UserRating,
             g.MetadataSource,
             g.EnrichedAt,
             Platforms = g.Items.Select(i => new
@@ -211,6 +213,8 @@ public class LibraryController : ControllerBase
 
             game.FirstReleaseDate,
             game.Rating,
+            game.PlayStatus,
+            game.UserRating,
             game.MetadataSource,
             game.EnrichedAt,
             
@@ -782,6 +786,40 @@ public class LibraryController : ControllerBase
             OriginalGameId = item.UnifiedGame.Id
         });
     }
+
+    // =========================================================================
+    // Personal Tracking Endpoints
+    // =========================================================================
+
+    /// <summary>
+    /// PATCH: api/library/{id}/personal
+    /// Updates the personal play status and user rating for a game.
+    /// This also sets `IsPlayStatusManual = true` so future syncs don't override the user's decision.
+    /// </summary>
+    [HttpPatch("{id}/personal")]
+    public async Task<IActionResult> UpdatePersonalTracking(int id, [FromBody] PersonalUpdateRequest request)
+    {
+        var game = await _db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == id);
+
+        if (game == null)
+            return NotFound(new { Message = $"Game with ID {id} not found" });
+
+        game.PlayStatus = request.PlayStatus;
+        game.UserRating = request.UserRating;
+        game.IsPlayStatusManual = true; // Lock it so syncs don't overwrite
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Updated personal tracking for game {Id}: Status={Status}, Rating={Rating}",
+            id, request.PlayStatus, request.UserRating?.ToString() ?? "none");
+
+        return Ok(new
+        {
+            Message = "Personal tracking updated successfully.",
+            game.PlayStatus,
+            game.UserRating
+        });
+    }
 }
 
 // =========================================================================
@@ -803,4 +841,11 @@ public class SplitRequest
 {
     /// <summary>ID of the LibraryItem to detach into its own UnifiedGame.</summary>
     public int LibraryItemId { get; set; }
+}
+
+/// <summary>Request body for the personal tracking update endpoint.</summary>
+public class PersonalUpdateRequest
+{
+    public PlayStatus PlayStatus { get; set; }
+    public int? UserRating { get; set; }
 }

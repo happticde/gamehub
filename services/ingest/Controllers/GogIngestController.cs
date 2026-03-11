@@ -38,18 +38,33 @@ public class GogIngestController : IngestControllerBase<GogRawItem>
         return (id, title);
     }
 
-    protected override GogRawItem CreateEntity(string externalId, string? name, string rawJson) => new()
+    /// <summary>GOG provides playtime in minutes under `stats.playtime` (for games with stats).</summary>
+    protected override int? ExtractPlaytime(JsonElement json)
+    {
+        if (json.TryGetProperty("stats", out var statsProp) && statsProp.ValueKind == JsonValueKind.Object)
+        {
+            if (statsProp.TryGetProperty("playtime", out var playtimeProp) && playtimeProp.ValueKind == JsonValueKind.Number)
+            {
+                return playtimeProp.GetInt32();
+            }
+        }
+        return null;
+    }
+
+    protected override GogRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson) => new()
     {
         GameId = long.Parse(externalId), // Convert string back to long for the DB column
         Title = name,
+        PlaytimeMinutes = playtimeMinutes,
         RawJson = rawJson,
         LastUpdated = DateTime.UtcNow
     };
 
-    protected override void UpdateEntity(GogRawItem existing, string? name, string rawJson)
+    protected override void UpdateEntity(GogRawItem existing, string? name, int? playtimeMinutes, string rawJson)
     {
         existing.RawJson = rawJson;
         existing.Title = name ?? existing.Title;
+        existing.PlaytimeMinutes = playtimeMinutes ?? existing.PlaytimeMinutes;
         existing.LastUpdated = DateTime.UtcNow;
     }
 

@@ -19,4 +19,7 @@ public class RawGameDto
     /// after the last sync timestamp are fetched.
     /// </summary>
     public DateTime LastUpdated { get; set; }
+
+    /// <summary>Total playtime in minutes recorded by the platform (if available).</summary>
+    public int? PlaytimeMinutes { get; set; }
 }
