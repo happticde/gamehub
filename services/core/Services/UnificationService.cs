@@ -61,7 +61,7 @@ public class UnificationService
     /// Keywords that indicate a game is likely a demo, beta, test server, or soundtrack.
     /// Games containing these keywords will be automatically hidden (IsIgnored = true).
     /// </summary>
-    private static readonly string[] IgnoredKeywords =
+    public static readonly string[] IgnoredKeywords =
     [
         "demo",
         "beta",

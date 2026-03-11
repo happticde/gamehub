@@ -633,6 +633,57 @@ public class LibraryController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// POST: api/library/retroactive-ignore
+    /// Scans all currently visible (IsIgnored = false) games and flags them as
+    /// ignored if their title contains any of the predefined IgnoredKeywords.
+    /// Used for retroactive cleanup after the auto-ignore logic was introduced.
+    /// </summary>
+    [HttpPost("retroactive-ignore")]
+    public async Task<IActionResult> RunRetroactiveIgnore()
+    {
+        _logger.LogInformation("Starting retroactive ignore scan...");
+
+        // Fetch all games that are not currently ignored
+        var activeGames = await _db.UnifiedGames
+            .Where(g => !g.IsIgnored)
+            .ToListAsync();
+
+        int newlyIgnoredCount = 0;
+        var ignoredTitles = new List<string>();
+
+        foreach (var game in activeGames)
+        {
+            var lowerTitle = game.Title.ToLowerInvariant();
+            
+            // If the title contains any of the ignored keywords, flag it
+            if (UnificationService.IgnoredKeywords.Any(k => lowerTitle.Contains(k)))
+            {
+                game.IsIgnored = true;
+                newlyIgnoredCount++;
+                ignoredTitles.Add(game.Title);
+            }
+        }
+
+        if (newlyIgnoredCount > 0)
+        {
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Retroactive scan complete: Ignored {Count} additional games", newlyIgnoredCount);
+        }
+        else
+        {
+            _logger.LogInformation("Retroactive scan complete: No additional games matched the ignore criteria.");
+        }
+
+        return Ok(new
+        {
+            Processed = activeGames.Count,
+            NewlyIgnoredCount = newlyIgnoredCount,
+            IgnoredTitles = ignoredTitles,
+            Message = $"Scanned {activeGames.Count} games and hid {newlyIgnoredCount} matching the ignore criteria."
+        });
+    }
+
     // =========================================================================
     // Manual Merge / Split Endpoints
     // =========================================================================

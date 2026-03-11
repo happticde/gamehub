@@ -14,5 +14,12 @@
             "version": "1.26"
         }
     },
+    "forwardPorts": [3000],
+    "portsAttributes": {
+        "3000": {
+            "label": "Next.js Frontend",
+            "onAutoForward": "notify"
+        }
+    },
     "postCreateCommand": "dotnet tool install -g dotnet-ef"
 }

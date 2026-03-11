@@ -54,6 +54,36 @@ export function SyncPanel() {
                 <SyncTriggerButton />
             </div>
 
+            {/* Retroactive Maintenance */}
+            <div className="flex items-center justify-between border-b pb-6">
+                <div>
+                    <h3 className="text-lg font-semibold tracking-tight">Retroactive Maintenance</h3>
+                    <p className="text-sm text-muted-foreground mt-1 text-balance">
+                        Scans your existing library and automatically hides games matching the ignore keywords (e.g. demos, betas). 
+                        This does not delete data or enrichment status.
+                    </p>
+                </div>
+                <button 
+                    onClick={async () => {
+                        try {
+                            const res = await fetch("/api/core/library/retroactive-ignore", { method: "POST" });
+                            if (res.ok) {
+                                const data = await res.json();
+                                alert(`Success: Found and hid ${data.newlyIgnoredCount} games.`);
+                                fetchLogs(); // just to refresh UI if needed
+                            } else {
+                                alert("Failed to run retroactive ignore script.");
+                            }
+                        } catch (e: any) {
+                            alert(e.message);
+                        }
+                    }}
+                    className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2"
+                >
+                    Run Keyword Filter
+                </button>
+            </div>
+
             {/* Sync history */}
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
