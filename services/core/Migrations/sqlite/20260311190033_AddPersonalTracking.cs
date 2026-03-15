@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     /// <inheritdoc />
     public partial class AddPersonalTracking : Migration

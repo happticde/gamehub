@@ -8,11 +8,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
-    [Migration("20260308111129_AddEnrichmentAuditLog")]
-    partial class AddEnrichmentAuditLog
+    [Migration("20260308114709_AddSyncAuditLog")]
+    partial class AddSyncAuditLog
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -107,6 +107,36 @@ namespace GameHub.Core.Migrations
                         .IsUnique();
 
                     b.ToTable("ManualLinks");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.SyncAuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ItemsProcessed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("NewGamesCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Platform")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SyncAuditLogs");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.SyncMetadata", b =>

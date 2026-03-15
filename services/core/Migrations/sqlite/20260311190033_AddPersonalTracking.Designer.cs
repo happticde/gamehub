@@ -8,11 +8,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
-    [Migration("20260308211841_ExpandMetadata")]
-    partial class ExpandMetadata
+    [Migration("20260311190033_AddPersonalTracking")]
+    partial class AddPersonalTracking
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -201,6 +201,9 @@ namespace GameHub.Core.Migrations
                     b.Property<string>("Genres")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsPlayStatusManual")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("MetadataProviderId")
                         .HasColumnType("INTEGER");
 
@@ -209,6 +212,9 @@ namespace GameHub.Core.Migrations
 
                     b.Property<string>("Platforms")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("PlayStatus")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Publishers")
                         .HasColumnType("TEXT");
@@ -229,6 +235,9 @@ namespace GameHub.Core.Migrations
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("UserRating")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     /// <inheritdoc />
     public partial class AddGameMetadata : Migration

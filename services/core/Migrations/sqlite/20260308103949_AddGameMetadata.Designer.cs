@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
     [Migration("20260308103949_AddGameMetadata")]
