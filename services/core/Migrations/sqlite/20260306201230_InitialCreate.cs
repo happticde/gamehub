@@ -11,6 +11,7 @@ namespace GameHub.Core.Migrations.sqlite
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.CreateTable(
                 name: "SyncMetadata",
                 columns: table => new
@@ -115,6 +116,7 @@ namespace GameHub.Core.Migrations.sqlite
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.DropTable(
                 name: "LibraryItems");
 

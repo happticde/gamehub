@@ -10,6 +10,7 @@ namespace GameHub.Core.Migrations.sqlite
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.AddColumn<bool>(
                 name: "IsIgnored",
                 table: "UnifiedGames",
@@ -21,6 +22,7 @@ namespace GameHub.Core.Migrations.sqlite
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.DropColumn(
                 name: "IsIgnored",
                 table: "UnifiedGames");

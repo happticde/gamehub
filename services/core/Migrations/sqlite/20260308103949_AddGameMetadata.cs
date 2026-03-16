@@ -11,6 +11,7 @@ namespace GameHub.Core.Migrations.sqlite
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.AddColumn<string>(
                 name: "CoverUrl",
                 table: "UnifiedGames",
@@ -63,6 +64,7 @@ namespace GameHub.Core.Migrations.sqlite
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.DropColumn(
                 name: "CoverUrl",
                 table: "UnifiedGames");
