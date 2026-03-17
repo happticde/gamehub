@@ -9,17 +9,69 @@
  * Why client-side? Because this panel lives inside a tab that's controlled by
  * client-side state — the tab content is only rendered when the tab is active,
  * so we can't rely on server-side rendering for data freshness.
+ *
+ * Sections:
+ *   1. Sync Scheduler Status  — live status card for the background scheduler
+ *   2. Library Unification    — manual sync trigger
+ *   3. Retroactive Maintenance — keyword-based game hiding
+ *   4. Unification Sync Logs  — audit history table
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { SyncTriggerButton } from "@/components/SyncTriggerButton";
 import { SyncHistoryTable } from "@/components/SyncHistoryTable";
-import { Loader2 } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Clock, Activity, CalendarClock, CheckCircle2, XCircle, Timer } from "lucide-react";
+
+/** Shape returned by GET /api/library/sync/status */
+interface SyncSchedulerStatus {
+    isEnabled: boolean;
+    isRunning: boolean;
+    lastRunAt: string | null;
+    nextRunAt: string | null;
+    lastResult: string | null;
+    itemsProcessed: number;
+}
+
+/**
+ * Formats a UTC ISO timestamp into a user-friendly local string.
+ * Returns "Never" if the timestamp is null.
+ */
+function formatTimestamp(iso: string | null): string {
+    if (!iso) return "Never";
+    const date = new Date(iso);
+    return date.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
+
+/**
+ * Calculates a human-friendly "time until" string (e.g., "in 2h 34m").
+ * Returns null if the date is in the past or input is null.
+ */
+function timeUntil(iso: string | null): string | null {
+    if (!iso) return null;
+    const diff = new Date(iso).getTime() - Date.now();
+    if (diff <= 0) return "soon";
+    const hours = Math.floor(diff / 3_600_000);
+    const minutes = Math.floor((diff % 3_600_000) / 60_000);
+    if (hours > 0) return `in ${hours}h ${minutes}m`;
+    return `in ${minutes}m`;
+}
 
 export function SyncPanel() {
     const [logs, setLogs] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Scheduler status state
+    const [status, setStatus] = useState<SyncSchedulerStatus | null>(null);
+    const [statusError, setStatusError] = useState<string | null>(null);
 
     const fetchLogs = useCallback(async () => {
         setIsLoading(true);
@@ -39,10 +91,141 @@ export function SyncPanel() {
         }
     }, []);
 
-    useEffect(() => { fetchLogs(); }, [fetchLogs]);
+    const fetchStatus = useCallback(async () => {
+        try {
+            const res = await fetch("/api/core/library/sync/status");
+            if (res.ok) {
+                setStatus(await res.json());
+                setStatusError(null);
+            } else {
+                setStatusError(`Status ${res.status}`);
+            }
+        } catch (err: any) {
+            setStatusError(err.message || "Unknown error");
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchLogs();
+        fetchStatus();
+
+        // Auto-refresh scheduler status every 30 seconds
+        const interval = setInterval(fetchStatus, 30_000);
+        return () => clearInterval(interval);
+    }, [fetchLogs, fetchStatus]);
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {/* Sync Scheduler Status Card */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                            <Timer className="h-5 w-5 text-primary" />
+                            Background Sync Scheduler
+                        </CardTitle>
+                        {status && (
+                            <Badge variant={status.isEnabled ? "default" : "secondary"}>
+                                {status.isEnabled ? "Enabled" : "Disabled"}
+                            </Badge>
+                        )}
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    {statusError ? (
+                        <p className="text-sm text-destructive">
+                            Could not load scheduler status: {statusError}
+                        </p>
+                    ) : !status ? (
+                        <div className="flex items-center text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Loading status...
+                        </div>
+                    ) : !status.isEnabled ? (
+                        <p className="text-sm text-muted-foreground">
+                            The background sync scheduler is disabled. Set{" "}
+                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                                Sync:EnableScheduler=true
+                            </code>{" "}
+                            in your configuration to activate automatic periodic syncing.
+                        </p>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {/* Running State */}
+                            <div className="flex items-start gap-2">
+                                <Activity className={`h-4 w-4 mt-0.5 shrink-0 ${status.isRunning ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</p>
+                                    <p className="text-sm font-semibold mt-0.5">
+                                        {status.isRunning ? (
+                                            <span className="text-primary">Syncing…</span>
+                                        ) : (
+                                            <span className="text-foreground">Idle</span>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Last Run */}
+                            <div className="flex items-start gap-2">
+                                <Clock className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Run</p>
+                                    <p className="text-sm font-semibold mt-0.5">{formatTimestamp(status.lastRunAt)}</p>
+                                </div>
+                            </div>
+
+                            {/* Next Run */}
+                            <div className="flex items-start gap-2">
+                                <CalendarClock className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Next Run</p>
+                                    <p className="text-sm font-semibold mt-0.5">
+                                        {status.nextRunAt ? (
+                                            <>
+                                                {formatTimestamp(status.nextRunAt)}
+                                                <span className="text-xs font-normal text-muted-foreground ml-1">
+                                                    ({timeUntil(status.nextRunAt)})
+                                                </span>
+                                            </>
+                                        ) : (
+                                            "—"
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Last Result */}
+                            <div className="flex items-start gap-2">
+                                {status.lastResult === "Success" ? (
+                                    <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
+                                ) : status.lastResult ? (
+                                    <XCircle className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+                                ) : (
+                                    <CheckCircle2 className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                                )}
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Result</p>
+                                    <p className={`text-sm font-semibold mt-0.5 ${
+                                        status.lastResult === "Success"
+                                            ? "text-green-500"
+                                            : status.lastResult
+                                            ? "text-destructive"
+                                            : ""
+                                    }`}>
+                                        {status.lastResult
+                                            ? status.lastResult === "Success"
+                                                ? `${status.itemsProcessed} items`
+                                                : status.lastResult
+                                            : "—"}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
             {/* Sync trigger — reuses the existing component */}
             <div className="flex items-center justify-between border-b pb-6">
                 <div>
@@ -111,3 +294,4 @@ export function SyncPanel() {
         </div>
     );
 }
+
