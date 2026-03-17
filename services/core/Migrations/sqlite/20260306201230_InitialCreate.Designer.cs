@@ -8,11 +8,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
-    [Migration("20260308103949_AddGameMetadata")]
-    partial class AddGameMetadata
+    [Migration("20260306201230_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -99,32 +99,8 @@ namespace GameHub.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("CoverUrl")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("EnrichedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("FirstReleaseDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Genres")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("MetadataProviderId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("MetadataSource")
-                        .HasColumnType("TEXT");
-
-                    b.Property<double?>("Rating")
-                        .HasColumnType("REAL");
-
                     b.Property<string>("Slug")
                         .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Summary")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Title")

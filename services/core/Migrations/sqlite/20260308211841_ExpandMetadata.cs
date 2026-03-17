@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     /// <inheritdoc />
     public partial class ExpandMetadata : Migration
@@ -10,6 +10,7 @@ namespace GameHub.Core.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.AddColumn<string>(
                 name: "Artworks",
                 table: "UnifiedGames",
@@ -44,6 +45,7 @@ namespace GameHub.Core.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Microsoft.EntityFrameworkCore.Sqlite") return;
             migrationBuilder.DropColumn(
                 name: "Artworks",
                 table: "UnifiedGames");

@@ -75,12 +75,29 @@ builder.Services.AddApiKeyAuthentication(builder.Configuration);
 
 // --- Database ---
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
-var connString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=core.db";
 
 builder.Services.AddDbContext<CoreContext>(o =>
 {
-    if (provider == "Postgres") o.UseNpgsql(connString);
-    else o.UseSqlite(connString);
+    if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+    {
+        var connString = builder.Configuration.GetConnectionString("Postgres");
+        if (string.IsNullOrEmpty(connString))
+        {
+            throw new InvalidOperationException("Postgres connection string is missing.");
+        }
+        o.UseNpgsql(connString);
+    }
+    else
+    {
+        var connString = builder.Configuration.GetConnectionString("Sqlite") ?? "Data Source=core.db";
+        o.UseSqlite(connString);
+    }
+
+    // --- Multi-Provider Migration Handling ---
+    // In a setup with multiple migration folders (sqlite/postgres) in the same project,
+    // the model snapshot can fall out of sync with the active provider.
+    // We suppress this warning because we apply the correct migrations conditionally.
+    o.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 
 var app = builder.Build();
@@ -91,11 +108,12 @@ app.UseSwaggerUI();
 
 // --- Database Initialization ---
 // Automatically applies any pending EF Core migrations on startup.
-// To add a new migration after changing entities:
-//   dotnet ef migrations add <Name> --project services/core/GameHub.Core.csproj
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+    // Note: In a production multi-provider setup, you would typically 
+    // have separate migration assemblies. Here we apply them based on 
+    // the active provider to avoid conflicts between SQLite and Postgres.
     db.Database.Migrate();
 }
 

@@ -8,53 +8,17 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
-    [Migration("20260308124606_AddTagSystem")]
-    partial class AddTagSystem
+    [Migration("20260308103949_AddGameMetadata")]
+    partial class AddGameMetadata
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.2");
-
-            modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MatchedTitle")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ProviderGameId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ProviderName")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("UnifiedGameId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UnifiedGameId");
-
-                    b.ToTable("EnrichmentAuditLogs");
-                });
 
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>
                 {
@@ -109,36 +73,6 @@ namespace GameHub.Core.Migrations
                     b.ToTable("ManualLinks");
                 });
 
-            modelBuilder.Entity("GameHub.Core.Data.SyncAuditLog", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("ItemsProcessed")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("NewGamesCreated")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Platform")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("SyncAuditLogs");
-                });
-
             modelBuilder.Entity("GameHub.Core.Data.SyncMetadata", b =>
                 {
                     b.Property<int>("Id")
@@ -157,24 +91,6 @@ namespace GameHub.Core.Migrations
                         .IsUnique();
 
                     b.ToTable("SyncMetadata");
-                });
-
-            modelBuilder.Entity("GameHub.Core.Data.Tag", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("Tags");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
@@ -223,32 +139,6 @@ namespace GameHub.Core.Migrations
                     b.ToTable("UnifiedGames");
                 });
 
-            modelBuilder.Entity("TagUnifiedGame", b =>
-                {
-                    b.Property<int>("GamesId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("TagsId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("GamesId", "TagsId");
-
-                    b.HasIndex("TagsId");
-
-                    b.ToTable("TagUnifiedGame");
-                });
-
-            modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
-                {
-                    b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
-                        .WithMany()
-                        .HasForeignKey("UnifiedGameId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("UnifiedGame");
-                });
-
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>
                 {
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
@@ -269,21 +159,6 @@ namespace GameHub.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("UnifiedGame");
-                });
-
-            modelBuilder.Entity("TagUnifiedGame", b =>
-                {
-                    b.HasOne("GameHub.Core.Data.UnifiedGame", null)
-                        .WithMany()
-                        .HasForeignKey("GamesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("GameHub.Core.Data.Tag", null)
-                        .WithMany()
-                        .HasForeignKey("TagsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>

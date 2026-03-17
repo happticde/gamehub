@@ -8,11 +8,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
-    [Migration("20260308114709_AddSyncAuditLog")]
-    partial class AddSyncAuditLog
+    [Migration("20260308124606_AddTagSystem")]
+    partial class AddTagSystem
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -159,6 +159,24 @@ namespace GameHub.Core.Migrations
                     b.ToTable("SyncMetadata");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.Tag", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Tags");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
                 {
                     b.Property<int>("Id")
@@ -205,6 +223,21 @@ namespace GameHub.Core.Migrations
                     b.ToTable("UnifiedGames");
                 });
 
+            modelBuilder.Entity("TagUnifiedGame", b =>
+                {
+                    b.Property<int>("GamesId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TagsId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("GamesId", "TagsId");
+
+                    b.HasIndex("TagsId");
+
+                    b.ToTable("TagUnifiedGame");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
                 {
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
@@ -236,6 +269,21 @@ namespace GameHub.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("UnifiedGame");
+                });
+
+            modelBuilder.Entity("TagUnifiedGame", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.UnifiedGame", null)
+                        .WithMany()
+                        .HasForeignKey("GamesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GameHub.Core.Data.Tag", null)
+                        .WithMany()
+                        .HasForeignKey("TagsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>

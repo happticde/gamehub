@@ -8,17 +8,53 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
-    [Migration("20260306201230_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260308111129_AddEnrichmentAuditLog")]
+    partial class AddEnrichmentAuditLog
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.2");
+
+            modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MatchedTitle")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ProviderGameId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ProviderName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UnifiedGameId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UnifiedGameId");
+
+                    b.ToTable("EnrichmentAuditLogs");
+                });
 
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>
                 {
@@ -99,8 +135,32 @@ namespace GameHub.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CoverUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EnrichedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FirstReleaseDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Genres")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MetadataProviderId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("MetadataSource")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Rating")
+                        .HasColumnType("REAL");
+
                     b.Property<string>("Slug")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Summary")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Title")
@@ -113,6 +173,17 @@ namespace GameHub.Core.Migrations
                         .IsUnique();
 
                     b.ToTable("UnifiedGames");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
+                        .WithMany()
+                        .HasForeignKey("UnifiedGameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("UnifiedGame");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>

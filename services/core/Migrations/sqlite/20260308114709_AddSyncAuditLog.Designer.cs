@@ -8,11 +8,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GameHub.Core.Migrations
+namespace GameHub.Core.Migrations.sqlite
 {
     [DbContext(typeof(CoreContext))]
-    [Migration("20260311190033_AddPersonalTracking")]
-    partial class AddPersonalTracking
+    [Migration("20260308114709_AddSyncAuditLog")]
+    partial class AddSyncAuditLog
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -159,37 +159,13 @@ namespace GameHub.Core.Migrations
                     b.ToTable("SyncMetadata");
                 });
 
-            modelBuilder.Entity("GameHub.Core.Data.Tag", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("Tags");
-                });
-
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("Artworks")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("CoverUrl")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Developers")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("EnrichedAt")
@@ -201,29 +177,14 @@ namespace GameHub.Core.Migrations
                     b.Property<string>("Genres")
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("IsPlayStatusManual")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int?>("MetadataProviderId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("MetadataSource")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Platforms")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("PlayStatus")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Publishers")
-                        .HasColumnType("TEXT");
-
                     b.Property<double?>("Rating")
                         .HasColumnType("REAL");
-
-                    b.Property<string>("Screenshots")
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("Slug")
                         .IsRequired()
@@ -236,30 +197,12 @@ namespace GameHub.Core.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("UserRating")
-                        .HasColumnType("INTEGER");
-
                     b.HasKey("Id");
 
                     b.HasIndex("Slug")
                         .IsUnique();
 
                     b.ToTable("UnifiedGames");
-                });
-
-            modelBuilder.Entity("TagUnifiedGame", b =>
-                {
-                    b.Property<int>("GamesId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("TagsId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("GamesId", "TagsId");
-
-                    b.HasIndex("TagsId");
-
-                    b.ToTable("TagUnifiedGame");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
@@ -293,21 +236,6 @@ namespace GameHub.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("UnifiedGame");
-                });
-
-            modelBuilder.Entity("TagUnifiedGame", b =>
-                {
-                    b.HasOne("GameHub.Core.Data.UnifiedGame", null)
-                        .WithMany()
-                        .HasForeignKey("GamesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("GameHub.Core.Data.Tag", null)
-                        .WithMany()
-                        .HasForeignKey("TagsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
