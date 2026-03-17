@@ -23,17 +23,20 @@ public class LibraryController : ControllerBase
     private readonly EnrichmentService _enrichment;
     private readonly CoreContext _db;
     private readonly ILogger<LibraryController> _logger;
+    private readonly SyncSchedulerStatus _syncStatus;
 
     public LibraryController(
         UnificationService unifier,
         EnrichmentService enrichment,
         CoreContext db,
-        ILogger<LibraryController> logger)
+        ILogger<LibraryController> logger,
+        SyncSchedulerStatus syncStatus)
     {
         _unifier = unifier;
         _enrichment = enrichment;
         _db = db;
         _logger = logger;
+        _syncStatus = syncStatus;
     }
 
     /// <summary>
@@ -48,6 +51,26 @@ public class LibraryController : ControllerBase
         var count = await _unifier.RunFullSyncAsync();
         _logger.LogInformation("Library sync completed: {Count} items processed", count);
         return Ok(new { Processed = count, Message = "Sync completed successfully." });
+    }
+
+    /// <summary>
+    /// GET: api/library/sync/status
+    /// Returns the current state of the background sync scheduler:
+    /// whether it's enabled, currently running, when the last run completed,
+    /// when the next run is scheduled, and the result of the last run.
+    /// </summary>
+    [HttpGet("sync/status")]
+    public IActionResult GetSyncStatus()
+    {
+        return Ok(new
+        {
+            _syncStatus.IsEnabled,
+            _syncStatus.IsRunning,
+            _syncStatus.LastRunAt,
+            _syncStatus.NextRunAt,
+            _syncStatus.LastResult,
+            _syncStatus.ItemsProcessed
+        });
     }
 
     /// <summary>

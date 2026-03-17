@@ -70,6 +70,19 @@ if (builder.Configuration.GetValue("Igdb:EnableBackgroundEnrichment", true))
     builder.Services.AddHostedService<EnrichmentBackgroundService>();
 }
 
+// --- Background Sync Scheduler (#6) ---
+// Runs RunFullSyncAsync() on a configurable interval.
+// Disabled by default — set Sync:EnableScheduler=true to activate.
+var syncStatus = new SyncSchedulerStatus
+{
+    IsEnabled = builder.Configuration.GetValue("Sync:EnableScheduler", false)
+};
+builder.Services.AddSingleton(syncStatus);
+if (syncStatus.IsEnabled)
+{
+    builder.Services.AddHostedService<SyncSchedulerService>();
+}
+
 // --- Authentication (ADR-002) ---
 builder.Services.AddApiKeyAuthentication(builder.Configuration);
 
