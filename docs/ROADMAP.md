@@ -21,6 +21,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Enrichment / metadata | ✅ IGDB provider with caching, rate-limiting, smart search |
 | Statistics / Analytics | ✅ Complete board with charts and histograms |
 | Sync / Ignore logic | ✅ Auto-hide keywords + retroactive ignore |
+| Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
 
 ---
 
@@ -45,8 +46,8 @@ A browsable UI for the unified library with cover grid, search/filter, game deta
 ### 5. Personal Tracking & Ignore ✅
 Added 5-star ratings, Play Status tracking, and "Auto-Hide & Ignore" keyword logic for junk entries.
 
-### 6. Background Sync Scheduler
-`IHostedService` or Quartz.NET job that runs `RunFullSyncAsync()` on a configurable interval. Add a `GET /api/library/sync/status` endpoint.
+### 6. Background Sync Scheduler ✅
+`SyncSchedulerService` (`BackgroundService`) runs `RunFullSyncAsync()` on a configurable interval (default 6h). `GET /api/library/sync/status` endpoint exposes scheduler state. Admin UI card with live status and auto-refresh. Disabled by default via `Sync:EnableScheduler`.
 
 ---
 
@@ -75,6 +76,6 @@ AI agent integration layer — let assistants interact with the library via natu
 |------|------|
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
-| **Production readiness** | #7 CI/CD ✅ → #6 Scheduler |
+| **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Fun features** | #9 Activity Feed |

@@ -53,8 +53,8 @@ services/
     Services/       # PlatformFetchers (Steam, GOG, PSN)
     Data/           # EF Core context + entities
   core/             # Core service (unified library)
-    Controllers/    # LibraryController (sync, merge, split, enrich, enrichment-history)
-    Services/       # UnificationService, IngestClient, EnrichmentService, IgdbClient
+    Controllers/    # LibraryController (sync, sync/status, merge, split, enrich, enrichment-history)
+    Services/       # UnificationService, IngestClient, EnrichmentService, IgdbClient, SyncSchedulerService
     Data/           # EF Core context + entities
   shared/           # Shared DTOs, enums, auth handler
     Authentication/ # ApiKeyAuthenticationHandler (AuthenticationHandler<T>)
@@ -75,6 +75,7 @@ docs/               # ROADMAP.md, DEBUGGING.md, adr/
 - Auth: `Authentication:ApiKey` in appsettings.json or `Authentication__ApiKey` env var. Empty = auth disabled.
 - DB: `Database:Provider` (`Sqlite`/`Postgres`), connection strings in `ConnectionStrings` section
 - Core→Ingest URL: `Services:IngestUrl` (default `http://localhost:5000`)
+- Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`)
 
 ## Current Status
 
@@ -84,32 +85,29 @@ Enrichment: IGDB metadata provider with caching, rate-limiting, smart search ✅
 Admin Dashboard: Enrichment, ingestion, sync controls in tabbed UI ✅.
 Statistics page: Pure CSS charts with platform/genre/rating breakdowns ✅.
 CI/CD: GitHub Actions with 3 parallel jobs (backend, frontend, Docker) ✅.
+Background Sync Scheduler: Configurable `BackgroundService` with status endpoint and admin UI ✅.
 See `docs/ROADMAP.md` for full status and next steps.
 See `docs/adr/` for architecture decision records.
 
-## Last Session Summary (2026-03-11)
+## Last Session Summary (2026-03-17)
 
 > Context for the next agent. Read this instead of re-exploring files.
 
 ### What Changed
 
-**Frontend (`frontend/`):**
-- **Library View Modes**: Added Grid, Compact, and List layouts. High-performance client-side switching via `localStorage`. Compact mode uses hover overlays for a dense UI. List mode uses horizontal rows for data scanning.
-- **Improved Layout**: Fixed vertical alignment between filter buttons and view toggles on the library page.
-- **Network Exposure**: Updated `package.json` and `.devcontainer/docker-compose.yml` to expose the Next.js server on `0.0.0.0:3000`, allowing access via the host's actual IP address.
-
 **Backend (`services/core/`):**
-- **Auto-Hide & Ignore**: Implemented `IsIgnored` flag on `UnifiedGame`. Added keyword-based filtering in `UnificationService` (demo, beta, server, etc.).
-- **Retroactive Ignore Service**: New `POST /api/library/retroactive-ignore` endpoint to scan existing library and hide junk games matching the filter list.
-- **Admin Dashboard Integration**: Added a "Run Keyword Filter" button to the Sync Panel to trigger retroactive ignore.
-- **Personal Game Tracking**: Added 5-star rating (1-10 scale) and Play Status (`Unplayed`, `Playing`, `Completed`, etc.) with manual overrides and automatic playtime detection.
+- **Background Sync Scheduler (#6)**: New `SyncSchedulerService` (`BackgroundService`) that runs `RunFullSyncAsync()` on a configurable interval. Disabled by default (`Sync:EnableScheduler=false`). Tracks state via thread-safe `SyncSchedulerStatus` singleton.
+- **Sync Status Endpoint**: New `GET /api/library/sync/status` returns scheduler state (isEnabled, isRunning, lastRunAt, nextRunAt, lastResult, itemsProcessed).
+- **Configuration**: New `Sync` section in `appsettings.json` (`EnableScheduler`, `IntervalMinutes`).
+- **Docker Compose**: Improved with Postgres health checks, provider-specific EF Core migrations.
+
+**Frontend (`frontend/`):**
+- **Scheduler Status Card**: New card in the Admin Dashboard Sync tab showing live scheduler status with auto-refresh (30s), enabled/disabled badge, running state with pulse animation, last/next run timestamps with relative countdowns, and last result with item count.
 
 ### Known State / Pending
-- **Network Access**: Frontend is now accessible at `http://<your-ip>:3000` but requires the devcontainer to be rebuilt if port mapping changes.
-- **Retroactive Ignore**: Verified working on 2400+ games.
-- **IGDB improvements**: Stable and tested.
-- All tests pass, both builds clean.
-- Remaining roadmap: Background Sync Scheduler (#6), MCP Server (#11), User Accounts (#8), Activity Feed (#9)
+- All tests pass (68/68), both builds clean.
+- Sync scheduler defaults to disabled — set `Sync:EnableScheduler=true` to activate.
+- Remaining roadmap: MCP Server (#11), User Accounts (#8), Activity Feed (#9)
 
 ## Conventions
 
