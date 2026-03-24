@@ -137,26 +137,30 @@ public class IgdbClient : IGameMetadataProvider
             return null;
         }
 
-        // Sanitize the title for a better IGDB match
-        var cleaned = SanitizeSearchTitle(title);
+        // Generate candidates for fallback search
+        var candidates = GetSearchCandidates(title, _logger);
 
-        if (string.IsNullOrWhiteSpace(cleaned) || cleaned.Length < 2)
-            return null;
-
-        // Attempt 1: Search with the sanitized title
-        var result = await SearchIgdbBestMatchAsync(cleaned, ct);
-        if (result != null)
-            return result;
-
-        // Attempt 2: Strip everything after the first separator (- or :)
-        // "Warhammer 40,000: Mechanicus" → "Warhammer 40,000"
-        var separatorIdx = cleaned.IndexOfAny(['-', ':']);
-        if (separatorIdx > 3) // Ensure there's a meaningful base name (at least 3 chars)
+        foreach (var candidate in candidates)
         {
-            var baseName = cleaned[..separatorIdx].Trim();
-            result = await SearchIgdbBestMatchAsync(baseName, ct);
+            if (string.IsNullOrWhiteSpace(candidate) || candidate.Length < 2)
+                continue;
+
+            _logger.LogDebug("Searching IGDB for candidate: '{Candidate}'", candidate);
+            var result = await SearchIgdbBestMatchAsync(candidate, ct);
             if (result != null)
                 return result;
+
+            // Optional last-resort fallback: Strip everything after the first separator (- or :)
+            // "Warhammer 40,000: Mechanicus" → "Warhammer 40,000"
+            var separatorIdx = candidate.IndexOfAny(['-', ':']);
+            if (separatorIdx > 3) // Ensure there's a meaningful base name (at least 3 chars)
+            {
+                var baseName = candidate[..separatorIdx].Trim();
+                _logger.LogDebug("Searching IGDB for base name fallback: '{BaseName}'", baseName);
+                result = await SearchIgdbBestMatchAsync(baseName, ct);
+                if (result != null)
+                    return result;
+            }
         }
 
         return null;
@@ -212,60 +216,52 @@ public class IgdbClient : IGameMetadataProvider
     }
 
     /// <summary>
-    /// Cleans a game title for better IGDB matching:
-    ///   1. Strip ™ ® © symbols
-    ///   2. Split CamelCase (KillingFloor2Beta → Killing Floor 2 Beta)
-    ///   3. Remove parenthesized content like "(Test branch)" or "(1992)"
-    ///   4. Remove edition suffixes ("Standard Edition", "Complete Edition", etc.)
-    ///   5. Remove test/beta suffixes ("Tech Beta", "PTR", "Experimental", etc.)
-    ///   6. Clean up trailing separators
+    /// Generates a list of title candidates for IGDB search, from most specific to most general.
+    /// Used as sequential fallbacks to improve matching stability.
     /// </summary>
-    private static string SanitizeSearchTitle(string title)
+    private static List<string> GetSearchCandidates(string title, ILogger? logger = null)
     {
-        // Strip trademark symbols
-        var result = title.Replace("™", "").Replace("®", "").Replace("©", "");
+        var candidates = new List<string> { title.Trim() };
 
-        // Split CamelCase: "KillingFloor2Beta" → "Killing Floor 2 Beta"
-        // Insert space before uppercase letters that follow lowercase letters,
-        // and between letters and digits.
-        result = System.Text.RegularExpressions.Regex.Replace(result, @"([a-z])([A-Z])", "$1 $2");
-        result = System.Text.RegularExpressions.Regex.Replace(result, @"([a-zA-Z])(\d)", "$1 $2");
-        result = System.Text.RegularExpressions.Regex.Replace(result, @"(\d)([a-zA-Z])", "$1 $2");
+        // 1. Strip trademark symbols
+        var current = title.Replace("™", "").Replace("®", "").Replace("©", "").Trim();
+        if (!candidates.Contains(current)) candidates.Add(current);
 
-        // Remove parenthesized content: "(Test branch)", "(1992)", "(Early Access)"
-        result = System.Text.RegularExpressions.Regex.Replace(result, @"\([^)]*\)", "");
+        // 2. Remove parenthesized content: "(Test branch)", "(1992)", "(Early Access)"
+        current = System.Text.RegularExpressions.Regex.Replace(current, @"\([^)]*\)", "").Trim();
+        if (!candidates.Contains(current)) candidates.Add(current);
 
-        var lower = result.ToLowerInvariant();
-
-        // Strip edition suffixes
-        foreach (var suffix in EditionSuffixes)
+        // 3. Remove edition and beta suffixes
+        var lower = current.ToLowerInvariant();
+        bool changed = false;
+        foreach (var suffix in EditionSuffixes.Concat(TestVariantSuffixes))
         {
             var idx = lower.IndexOf(suffix, StringComparison.Ordinal);
             if (idx >= 0)
             {
-                result = result[..idx];
-                lower = result.ToLowerInvariant();
+                current = current[..idx].Trim();
+                lower = current.ToLowerInvariant();
+                changed = true;
             }
         }
+        if (changed && !candidates.Contains(current)) candidates.Add(current);
 
-        // Strip test/beta suffixes
-        foreach (var suffix in TestVariantSuffixes)
-        {
-            var idx = lower.IndexOf(suffix, StringComparison.Ordinal);
-            if (idx >= 0)
-            {
-                result = result[..idx];
-                lower = result.ToLowerInvariant();
-            }
-        }
+        // 4. Clean trailing separators and collapse spaces
+        current = System.Text.RegularExpressions.Regex.Replace(current, @"[\s]*[-–—:]+[\s]*$", "");
+        current = System.Text.RegularExpressions.Regex.Replace(current, @"\s+", " ").Trim();
+        if (!candidates.Contains(current)) candidates.Add(current);
 
-        // Clean trailing separators left after stripping: " - ", " : ", " – "
-        result = System.Text.RegularExpressions.Regex.Replace(result, @"[\s]*[-–—:]+[\s]*$", "");
+        // 5. Final aggressive sanitization (CamelCase split)
+        var aggressive = System.Text.RegularExpressions.Regex.Replace(current, @"([a-z])([A-Z])", "$1 $2");
+        aggressive = System.Text.RegularExpressions.Regex.Replace(aggressive, @"([a-zA-Z])(\d)", "$1 $2");
+        aggressive = System.Text.RegularExpressions.Regex.Replace(aggressive, @"(\d)([a-zA-Z])", "$1 $2");
+        aggressive = System.Text.RegularExpressions.Regex.Replace(aggressive, @"\s+", " ").Trim();
+        if (!candidates.Contains(aggressive)) candidates.Add(aggressive);
 
-        // Collapse multiple spaces into one
-        result = System.Text.RegularExpressions.Regex.Replace(result, @"\s+", " ");
+        logger?.LogDebug("Generated {Count} search candidates: {Candidates}",
+            candidates.Count, string.Join(" | ", candidates));
 
-        return result.Trim();
+        return candidates;
     }
 
     /// <inheritdoc />
@@ -285,7 +281,7 @@ public class IgdbClient : IGameMetadataProvider
     private async Task<List<IgdbGame>> QueryGamesAsync(string query, CancellationToken ct)
     {
         var cacheKey = $"igdb_query_{Convert.ToBase64String(Encoding.UTF8.GetBytes(query))}";
-        
+
         if (_cache.TryGetValue(cacheKey, out List<IgdbGame>? cachedResult) && cachedResult != null)
         {
             _logger.LogDebug("IGDB cache hit for query: {Query}", query);
@@ -497,10 +493,10 @@ public class IgdbClient : IGameMetadataProvider
     {
         [JsonPropertyName("company")]
         public IgdbCompany? Company { get; set; }
-        
+
         [JsonPropertyName("developer")]
         public bool? Developer { get; set; }
-        
+
         [JsonPropertyName("publisher")]
         public bool? Publisher { get; set; }
     }

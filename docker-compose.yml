@@ -33,6 +33,7 @@ services:
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
       - Igdb__ClientId=${IGDB_CLIENT_ID:-}
       - Igdb__ClientSecret=${IGDB_CLIENT_SECRET:-}
+      - Logging__LogLevel__GameHub.Core.Services.IgdbClient=Debug
     depends_on:
       ingest:
         condition: service_healthy
