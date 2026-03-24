@@ -25,5 +25,8 @@ public class CoreContext : DbContext
     
     /// <summary>History of ingestion syncs from platform sources.</summary>
     public DbSet<SyncAuditLog> SyncAuditLogs => Set<SyncAuditLog>();
+
+    /// <summary>System activity events for the admin activity feed.</summary>
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
 }
 

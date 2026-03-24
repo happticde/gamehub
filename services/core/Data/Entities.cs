@@ -116,3 +116,24 @@ public class Tag
     
     public ICollection<UnifiedGame> Games { get; set; } = new List<UnifiedGame>();
 }
+
+/// <summary>
+/// Tracks system events (sync cycles, manual merge/split actions, game count changes)
+/// for display in the admin dashboard's activity feed.
+/// </summary>
+public class ActivityLog
+{
+    public int Id { get; set; }
+
+    /// <summary>UTC timestamp when the event occurred.</summary>
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Category of event, e.g. "SyncStarted", "SyncFinished", "Merge", "Split".</summary>
+    public string EventType { get; set; } = "";
+
+    /// <summary>Human-readable description, e.g. "Synced 42 items from Steam".</summary>
+    public string Message { get; set; } = "";
+
+    /// <summary>Optional extra payload (JSON or text) for additional context.</summary>
+    public string? Details { get; set; }
+}

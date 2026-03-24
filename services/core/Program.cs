@@ -43,6 +43,7 @@ builder.Services.AddHttpClient<IngestClient>(c =>
 })
     .AddStandardResilienceHandler();
 builder.Services.AddScoped<UnificationService>();
+builder.Services.AddScoped<ActivityLogService>();
 
 // --- IGDB Metadata Provider (ADR-003) ---
 // IgdbClient is a singleton so there's only one OAuth token in memory.

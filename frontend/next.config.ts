@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
         destination: `http://${backendHost}:5001/api/:path*`, // Proxy to Core Service
       },
       {
+        source: "/api/activity",
+        destination: `http://${backendHost}:5001/api/activity`, // Proxy Activity Feed to Core
+      },
+      {
         source: "/api/ingest/:path*",
         destination: `http://${backendHost}:5000/api/:path*`, // Proxy to Ingest Service
       },

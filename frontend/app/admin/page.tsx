@@ -7,17 +7,19 @@
  * needs to live in the browser — the user clicks tabs and the component
  * re-renders to show the right panel without a full page reload.
  *
- * Three tabs:
+ * Four tabs:
  *   1. Enrichment — manage IGDB metadata enrichment (stats, actions, audit)
  *   2. Ingestion  — trigger platform data fetches (Steam, GOG, PSN)
  *   3. Sync       — trigger and review unification syncs
+ *   4. Activity   — recent system activity feed
  */
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EnrichmentPanel } from "@/components/admin/EnrichmentPanel";
 import { IngestionPanel } from "@/components/admin/IngestionPanel";
 import { SyncPanel } from "@/components/admin/SyncPanel";
-import { Settings, Sparkles, Download, RefreshCw } from "lucide-react";
+import { ActivityPanel } from "@/components/admin/ActivityPanel";
+import { Settings, Sparkles, Download, RefreshCw, Bell } from "lucide-react";
 
 export default function AdminPage() {
     return (
@@ -49,6 +51,10 @@ export default function AdminPage() {
                             <RefreshCw className="h-4 w-4" />
                             Sync
                         </TabsTrigger>
+                        <TabsTrigger value="activity" className="gap-1.5">
+                            <Bell className="h-4 w-4" />
+                            Activity
+                        </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="enrichment">
@@ -62,8 +68,13 @@ export default function AdminPage() {
                     <TabsContent value="sync">
                         <SyncPanel />
                     </TabsContent>
+
+                    <TabsContent value="activity">
+                        <ActivityPanel />
+                    </TabsContent>
                 </Tabs>
             </main>
         </div>
     );
 }
+

@@ -24,19 +24,22 @@ public class LibraryController : ControllerBase
     private readonly CoreContext _db;
     private readonly ILogger<LibraryController> _logger;
     private readonly SyncSchedulerStatus _syncStatus;
+    private readonly ActivityLogService _activityLog;
 
     public LibraryController(
         UnificationService unifier,
         EnrichmentService enrichment,
         CoreContext db,
         ILogger<LibraryController> logger,
-        SyncSchedulerStatus syncStatus)
+        SyncSchedulerStatus syncStatus,
+        ActivityLogService activityLog)
     {
         _unifier = unifier;
         _enrichment = enrichment;
         _db = db;
         _logger = logger;
         _syncStatus = syncStatus;
+        _activityLog = activityLog;
     }
 
     /// <summary>
@@ -48,8 +51,12 @@ public class LibraryController : ControllerBase
     public async Task<IActionResult> Sync()
     {
         _logger.LogInformation("Starting full library sync");
+        await _activityLog.LogAsync("SyncStarted", "Manual sync triggered from admin dashboard");
+
         var count = await _unifier.RunFullSyncAsync();
+
         _logger.LogInformation("Library sync completed: {Count} items processed", count);
+        await _activityLog.LogAsync("SyncFinished", $"Manual sync completed — {count} items processed");
         return Ok(new { Processed = count, Message = "Sync completed successfully." });
     }
 
@@ -795,6 +802,7 @@ public class LibraryController : ControllerBase
         await transaction.CommitAsync();
 
         _logger.LogInformation("Merge completed: '{Source}' → '{Target}'", source.Title, target.Title);
+        await _activityLog.LogAsync("Merge", $"Merged '{source.Title}' into '{target.Title}'");
 
         return Ok(new
         {
@@ -875,6 +883,7 @@ public class LibraryController : ControllerBase
         await transaction.CommitAsync();
 
         _logger.LogInformation("Split completed: new game '{Title}' (ID: {Id})", newTitle, newGame.Id);
+        await _activityLog.LogAsync("Split", $"Split '{item.Platform}' entry into new game '{newTitle}'");
 
         return Ok(new
         {
@@ -917,6 +926,29 @@ public class LibraryController : ControllerBase
             game.PlayStatus,
             game.UserRating
         });
+    }
+
+    // =========================================================================
+    // Activity Feed Endpoint
+    // =========================================================================
+
+    /// <summary>
+    /// GET: /api/activity
+    /// Returns the latest 20 activity log entries for the admin dashboard feed.
+    /// Uses an absolute route so the URL is /api/activity (not /api/library/activity).
+    /// </summary>
+    [HttpGet("/api/activity")]
+    public async Task<IActionResult> GetActivity()
+    {
+        var entries = await _activityLog.GetRecentAsync();
+        return Ok(entries.Select(a => new
+        {
+            a.Id,
+            a.Timestamp,
+            a.EventType,
+            a.Message,
+            a.Details
+        }));
     }
 }
 
