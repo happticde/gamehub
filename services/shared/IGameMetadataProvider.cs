@@ -16,6 +16,11 @@ public interface IGameMetadataProvider
     /// no reasonable match is found.
     /// </summary>
     Task<GameMetadata?> SearchAsync(string title, CancellationToken ct = default);
+    /// <summary>
+    /// Searches for games by title and returns up to the specified limit.
+    /// Used for manual matching and override scenarios.
+    /// </summary>
+    Task<List<GameMetadata>> SearchManyAsync(string title, int limit = 10, CancellationToken ct = default);
 
     /// <summary>
     /// Fetches metadata by the provider-specific ID. Used for re-enrichment

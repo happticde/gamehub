@@ -5,17 +5,14 @@
 ### What Changed
 
 **Backend (`services/core/`):**
-- **Activity Feed (#9)**: New `ActivityLog` entity tracking system events (sync start/finish, merge, split). New `ActivityLogService` (scoped) for centralized event logging. New `GET /api/activity` endpoint returning latest 20 entries.
-- **Event Integration**: `SyncSchedulerService` logs `SyncStarted`/`SyncFinished` events. `LibraryController` logs events for manual sync, merge, and split actions.
-- **Migration**: `AddActivityLog` migration generated for the new table.
+- **IGDB Search Robustness**: `IgdbClient` now generates multiple candidate variations (specific to general) and uses them sequentially as fallbacks if the primary search fails. Base-name fallback retained.
+- **Manual Metadata Override (ADR-007)**: Added `SearchManyAsync` to `IGameMetadataProvider` for retrieving raw search results from providers. Added `GET /api/library/enrichment/search` and `POST /api/library/{id}/enrichment/override` endpoints to `LibraryController` to support manual matching.
 
 **Frontend (`frontend/`):**
-- **Activity Panel**: New `ActivityPanel.tsx` component in the admin dashboard showing recent activity with relative timestamps ("5 mins ago"), event-type icons/badges (sync, merge, split), auto-refresh (30s), and empty/loading/error states.
-- **Admin Dashboard**: Fourth tab "Activity" added with Bell icon.
-- **Proxy**: `/api/activity` route added to `next.config.ts`.
+- **Fix Match Dialog**: Created `FixMatchDialog.tsx` component to allow users to search IGDB from the Game Detail page, pick the correct result, and forcefully override the game's metadata.
+- **UI Enhancements**: Resolved UI scrolling issues for long search result lists within `DialogContent` by enforcing flexbox constraints.
 
 ### Known State / Pending
-- All tests pass (71/71, up from 68), both builds clean.
-- Sync scheduler defaults to disabled — set `Sync:EnableScheduler=true` to activate.
-- Remaining roadmap: MCP Server (#11), User Accounts (#8)
-
+- Manual override dialog is fully functional and overrides `MetadataProviderId`.
+- Search fallbacks significantly reduce mismatches from editions or beta tags.
+- Remaining roadmap: MCP Server (#11), User Accounts (#8).

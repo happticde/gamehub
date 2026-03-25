@@ -4,6 +4,7 @@ import { ArrowLeft, Calendar, Building2, Star, Tag, Layers } from "lucide-react"
 import { Platform, PlayStatus } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import PersonalTrackingClient from "@/components/PersonalTrackingClient";
+import FixMatchDialog from "@/components/library/FixMatchDialog";
 
 // Extended payload type for the game detail view
 interface ExpandedGame {
@@ -220,10 +221,13 @@ export default async function GameDetailPage({
 
                     {/* Your Library Status */}
                     <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                        <h3 className="flex items-center gap-2 font-semibold text-lg border-b border-border pb-3 mb-4">
-                            <Layers className="h-5 w-5 text-primary" />
-                            Library
-                        </h3>
+                        <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                            <h3 className="flex items-center gap-2 font-semibold text-lg">
+                                <Layers className="h-5 w-5 text-primary" />
+                                Library
+                            </h3>
+                            <FixMatchDialog gameId={game.id} initialTitle={game.title} />
+                        </div>
                         {game.items.length > 0 ? (
                             <ul className="space-y-3">
                                 {game.items.map((item, i) => (

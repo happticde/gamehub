@@ -166,6 +166,22 @@ public class IgdbClient : IGameMetadataProvider
         return null;
     }
 
+    /// <inheritdoc />
+    public async Task<List<GameMetadata>> SearchManyAsync(string title, int limit = 10, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return [];
+
+        // For manual search, we don't aggressively sanitize, just clean it up slightly
+        var cleaned = title.Trim();
+        var escaped = cleaned.Replace("\"", "\\\"");
+        var query = $"search \"{escaped}\"; fields {GameFields}; limit {limit};";
+
+        var results = await QueryGamesAsync(query, ct);
+
+        return results.Select(MapToMetadata).ToList();
+    }
+
     /// <summary>
     /// Searches IGDB with limit 5, then picks the result whose name is the
     /// closest match to the search title. This avoids cases where IGDB's

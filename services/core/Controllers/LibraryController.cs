@@ -25,6 +25,7 @@ public class LibraryController : ControllerBase
     private readonly ILogger<LibraryController> _logger;
     private readonly SyncSchedulerStatus _syncStatus;
     private readonly ActivityLogService _activityLog;
+    private readonly IGameMetadataProvider _metadataProvider;
 
     public LibraryController(
         UnificationService unifier,
@@ -32,7 +33,8 @@ public class LibraryController : ControllerBase
         CoreContext db,
         ILogger<LibraryController> logger,
         SyncSchedulerStatus syncStatus,
-        ActivityLogService activityLog)
+        ActivityLogService activityLog,
+        IGameMetadataProvider metadataProvider)
     {
         _unifier = unifier;
         _enrichment = enrichment;
@@ -40,6 +42,7 @@ public class LibraryController : ControllerBase
         _logger = logger;
         _syncStatus = syncStatus;
         _activityLog = activityLog;
+        _metadataProvider = metadataProvider;
     }
 
     /// <summary>
@@ -432,6 +435,64 @@ public class LibraryController : ControllerBase
             game?.Rating,
             game?.MetadataSource,
             game?.EnrichedAt
+        });
+    }
+
+    /// <summary>
+    /// GET: api/library/enrichment/search?title=...
+    /// Searches the configured metadata provider for potential matches.
+    /// Used for the manual enrichment override feature.
+    /// </summary>
+    [HttpGet("enrichment/search")]
+    public async Task<IActionResult> SearchEnrichment([FromQuery] string title, [FromQuery] int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return BadRequest(new { Message = "Title is required" });
+
+        var results = await _metadataProvider.SearchManyAsync(title, limit);
+        return Ok(results);
+    }
+
+    /// <summary>
+    /// POST: api/library/{id}/enrichment/override
+    /// Body: { "providerId": 1234 }
+    /// Manually overrides the metadata provider ID for a game and re-enriches it.
+    /// </summary>
+    [HttpPost("{id}/enrichment/override")]
+    public async Task<IActionResult> OverrideEnrichment(int id, [FromBody] OverrideRequest request)
+    {
+        var game = await _db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == id);
+        if (game == null)
+            return NotFound(new { Message = $"Game with ID {id} not found." });
+
+        if (!request.ProviderId.HasValue)
+            return BadRequest(new { Message = "ProviderId is required." });
+
+        game.MetadataProviderId = request.ProviderId.Value;
+        game.MetadataSource = _metadataProvider.ProviderName;
+        await _db.SaveChangesAsync();
+
+        // Re-enrich immediately using the forcefully updated provider ID
+        var success = await _enrichment.EnrichGameAsync(id, force: true);
+        if (!success)
+            return StatusCode(500, new { Message = "Failed to enrich game with the new provider ID." });
+
+        var updatedGame = await _db.UnifiedGames
+            .Include(g => g.Tags)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        return Ok(new
+        {
+            Message = $"Game '{updatedGame?.Title}' manually matched and enriched.",
+            updatedGame?.CoverUrl,
+            updatedGame?.Summary,
+            updatedGame?.Genres,
+            Tags = updatedGame?.Tags.Select(t => t.Name).ToList(),
+            updatedGame?.FirstReleaseDate,
+            updatedGame?.Rating,
+            updatedGame?.MetadataSource,
+            updatedGame?.EnrichedAt
         });
     }
 
@@ -979,4 +1040,10 @@ public class PersonalUpdateRequest
     public PlayStatus PlayStatus { get; set; }
     public int? UserRating { get; set; }
     public bool? IsIgnored { get; set; }
+}
+
+/// <summary>Request body for the manual enrichment override endpoint.</summary>
+public class OverrideRequest
+{
+    public int? ProviderId { get; set; }
 }
