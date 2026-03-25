@@ -317,5 +317,12 @@ public class EnrichmentServiceTests : IDisposable
             if (ThrowsException) throw new Exception("Simulated provider error");
             return Task.FromResult(GetByIdResult);
         }
+
+        public Task<List<GameMetadata>> SearchManyAsync(string title, int limit = 10, CancellationToken ct = default)
+        {
+            SearchCallCount++;
+            if (ThrowsException) throw new Exception("Simulated provider error");
+            return Task.FromResult(SearchResult != null ? new List<GameMetadata> { SearchResult } : new List<GameMetadata>());
+        }
     }
 }
