@@ -16,6 +16,7 @@ COPY --from=build /app/publish .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
+RUN mkdir -p /app/data && chown -R $APP_UID /app/data
 USER $APP_UID
 
 ENTRYPOINT ["dotnet", "GameHub.Ingest.dll"]

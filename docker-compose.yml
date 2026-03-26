@@ -28,7 +28,7 @@ services:
       dockerfile: services/ingest/Dockerfile
     restart: unless-stopped
     ports: [ "5000:8080" ]
-    volumes: [ "./data:/app/data" ]
+    volumes: [ "gamehub_data:/app/data" ]
     environment:
       - Database__Provider=${INGEST_DB_PROVIDER:-Sqlite}
       - ConnectionStrings__DefaultConnection=${INGEST_DB_CONN:-Data Source=/app/data/ingest.db}
@@ -46,7 +46,7 @@ services:
       dockerfile: services/core/Dockerfile
     restart: unless-stopped
     ports: [ "5001:8080" ]
-    volumes: [ "./data:/app/data" ]
+    volumes: [ "gamehub_data:/app/data" ]
     environment:
       - Database__Provider=${CORE_DB_PROVIDER:-Postgres}
       - ConnectionStrings__Postgres=Host=db;Port=5432;Database=${POSTGRES_DB:-gamehub_core};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres_password}
@@ -89,3 +89,4 @@ services:
 
 volumes:
   postgres_data:
+  gamehub_data:
