@@ -9,7 +9,7 @@ COPY . .
 WORKDIR "/src/services/ingest"
 RUN dotnet publish "GameHub.Ingest.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app/publish .
 

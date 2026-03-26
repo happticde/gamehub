@@ -71,7 +71,6 @@ services:
   db:
     image: postgres:18-alpine
     restart: unless-stopped
-    user: "postgres"
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-gamehub_core}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
