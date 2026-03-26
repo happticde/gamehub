@@ -11,7 +11,8 @@ services:
       - "3000:3000"
     environment:
       # Use the internal docker service name to connect to the backend
-      - BACKEND_HOST=core
+      - CORE_URL=http://core:8080
+      - INGEST_URL=http://ingest:8080
     depends_on:
       core:
         condition: service_healthy

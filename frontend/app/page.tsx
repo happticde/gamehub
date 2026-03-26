@@ -15,8 +15,8 @@ import { Gamepad2, Library, Globe, Sparkles } from "lucide-react";
 async function getLibraryStats(): Promise<{ totalGames: number; totalPlatforms: number }> {
   try {
     // Fetch a minimal page just to get totalCount
-    const backendHost = process.env.BACKEND_HOST || "host.docker.internal";
-    const res = await fetch(`http://${backendHost}:5001/api/library?pageSize=1`, {
+    const coreUrl = process.env.CORE_URL || "http://host.docker.internal:5001";
+    const res = await fetch(`${coreUrl}/api/library?pageSize=1`, {
       cache: "no-store",
     });
     if (res.ok) {
