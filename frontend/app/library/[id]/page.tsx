@@ -5,6 +5,7 @@ import { Platform, PlayStatus } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 import FixMatchDialog from "@/components/library/FixMatchDialog";
+import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
 
 // Extended payload type for the game detail view
 interface ExpandedGame {
@@ -188,24 +189,7 @@ export default async function GameDetailPage({
                     </section>
 
                     {/* Screenshots Gallery */}
-                    {game.screenshots?.length > 0 && (
-                        <section>
-                            <h2 className="text-2xl font-bold tracking-tight mb-4">Gallery</h2>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {game.screenshots.map((url, idx) => (
-                                    <div key={idx} className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted border border-border group">
-                                        <Image
-                                            src={url}
-                                            alt={`Screenshot ${idx + 1}`}
-                                            fill
-                                            className="object-cover transition-transform duration-500 group-hover:scale-110"
-                                            unoptimized
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    )}
+                    <ScreenshotCarousel screenshots={game.screenshots} />
                 </div>
 
                 {/* Right Column (Sidebar Details) */}
