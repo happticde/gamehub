@@ -38,7 +38,7 @@ export default function AdminPage() {
 
                 {/* Tabbed interface — defaulting to the Enrichment tab */}
                 <Tabs defaultValue="enrichment" className="space-y-6">
-                    <TabsList>
+                    <TabsList className="flex-wrap h-auto justify-start gap-1">
                         <TabsTrigger value="enrichment" className="gap-1.5">
                             <Sparkles className="h-4 w-4" />
                             Enrichment

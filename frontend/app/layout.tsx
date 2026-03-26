@@ -21,6 +21,13 @@ export const metadata: Metadata = {
   description: "Aggregate your Steam, GOG, and PlayStation game libraries into one unified collection, enriched with IGDB metadata.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false, // Prevents zooming on input focus in iOS
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
