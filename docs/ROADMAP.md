@@ -17,7 +17,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Structured Logging | ✅ All components, debugging guide |
 | Auth | ✅ API key middleware (JWT-ready) |
 | CI/CD | ✅ GitHub Actions (build, test, Docker) |
-| Frontend | ✅ Grid/List Views, filters, sorting, game detail pages |
+| Frontend | ✅ Mobile-First: Grid/List, Filters Dialog, Screenshot Carousel |
 | Enrichment / metadata | ✅ IGDB provider with caching, rate-limiting, smart search |
 | Statistics / Analytics | ✅ Complete board with charts and histograms |
 | Sync / Ignore logic | ✅ Auto-hide keywords + retroactive ignore |
@@ -41,7 +41,8 @@ Simple API key middleware protecting ingest and sync endpoints.
 ## 🎮 Tier 2 — Feature Enrichment
 
 ### 4. Web Frontend (Dashboard) ✅
-A browsable UI for the unified library with cover grid, search/filter, game detail pages, and admin actions (merge/split UI, sync history).
+A browsable UI for the unified library with cover grid, search/filter, game detail pages, and admin actions.
+**Enhanced (2026-03-26)**: Fully mobile-optimized with responsive filtering dialogs and touch-native screenshot carousels.
 
 ### 5. Personal Tracking & Ignore ✅
 Added 5-star ratings, Play Status tracking, and "Auto-Hide & Ignore" keyword logic for junk entries.

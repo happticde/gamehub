@@ -14,3 +14,9 @@
 - Use functional components and hooks.
 - Prefer Server Components (`'use server'`) where possible; use Client Components (`'use client'`) only when interaction is needed.
 - Follow shadcn/ui patterns (manual file creation, no `npx`).
+
+## Mobile-First Conventions (2026-03-26)
+- **Viewport**: Always use `userScalable: false` in `layout.tsx` to prevent iOS input zoom.
+- **Filtering**: On mobile, use a `Dialog` (modal) for dense filtering options to maximize vertical screen space.
+- **Media**: Prefer lazy-loaded, touch-native carousels (`ScreenshotCarousel.tsx`) with CSS scroll-snap over long vertical lists of images.
+- **Breakpoints**: Use `md:` for desktop/tablet switches. Mobile is the default (hidden elements are `hidden md:block`).

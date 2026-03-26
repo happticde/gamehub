@@ -1,6 +1,25 @@
 # Session History
 
-## Last Session Summary (2026-03-24)
+## Last Session Summary (2026-03-26)
+
+### What Changed
+
+**Frontend & Mobile UX:**
+- **Mobile-First Refactor**: Implemented `LibraryFilters` as a responsive `Dialog` on mobile, freeing up screen space for game covers.
+- **Screenshot Carousel**: Replaced static vertical screenshot lists with a touch-native horizontal carousel (`ScreenshotCarousel.tsx`) using CSS scroll-snap.
+- **Admin Dashboard**: Enabled tab wrapping for the statistics and management dashboard on narrow screens.
+- **iOS Viewport Fix**: Added `userScalable: false` to the global layout to prevent unwanted browser zooming on mobile inputs.
+- **Build Recovery**: Rescued the frontend build after a PWA-related dependency corruption by performing a clean `npm ci` natively inside the Linux devcontainer.
+
+**Backend & Integration:**
+- **Manual Match Override**: Finalized integration of the "Fix Match" UI with the `SearchManyAsync` provider logic, allowing users to manually correct IGDB mismatches.
+
+### Known State / Pending
+- Mobile UI is now fully responsive and tested with a production build.
+- PWA implementation was deferred/reverted to prioritize build stability and mobile layout quality.
+- Next steps: Implement User Authentication (#8) or the MCP Server integration (#11).
+
+## Previous Session Summary (2026-03-24)
 
 ### What Changed
 
