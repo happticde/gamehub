@@ -16,4 +16,6 @@ COPY --from=build /app/publish .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
+USER $APP_UID
+
 ENTRYPOINT ["dotnet", "GameHub.Ingest.dll"]

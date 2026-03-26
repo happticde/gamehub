@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async rewrites() {
     // In a Devcontainer on Mac/Windows, 'localhost' is the devcontainer itself.
     // We use host.docker.internal to break out of the container and hit the host ports

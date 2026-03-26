@@ -63,6 +63,7 @@ Open `.env` and configure your credentials:
 
 ### 2. Start Everything
 
+For local development or testing:
 ```bash
 docker compose up --build
 ```
@@ -73,6 +74,21 @@ docker compose up --build
 | Ingest API | `http://localhost:5000` (Swagger at `/swagger`) |
 | Core API | `http://localhost:5001/swagger` |
 | Health checks | `/health` on both services |
+
+## Production Deployment
+
+The provided `docker-compose.yml` is secure, production-ready, and Kubernetes-friendly:
+- **Next.js Standalone**: The frontend builds a minimal `standalone` image for optimal size and caching.
+- **Non-Root Security**: All Dockerfiles drop root privileges (e.g., `USER $APP_UID` in .NET, `nextjs:nodejs` in Next.js).
+- **Resilient Orchestration**: Services feature `restart: unless-stopped` policies and strict `healthcheck` startup dependencies.
+- **PostgreSQL Ready**: The Compose setup defaults the Core service to use a bundled PostgreSQL container dynamically configurable via environment variables in `.env`.
+
+To run in production:
+1. Populate your `.env` file with secure real-world values (`POSTGRES_PASSWORD`, `GAMEHUB_API_KEY`, etc.).
+2. Launch in detached mode:
+   ```bash
+   docker compose up -d --build
+   ```
 
 ### 3. Ingest Your Libraries
 

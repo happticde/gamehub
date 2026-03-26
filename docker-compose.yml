@@ -1,28 +1,50 @@
-# Docker Compose for local development
-# Run: docker compose up --build
+# Production-Ready Docker Compose
+# To deploy: docker compose up -d --build
 
 services:
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Use the internal docker service name to connect to the backend
+      - BACKEND_HOST=core
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   ingest:
     build:
       context: .
       dockerfile: services/ingest/Dockerfile
+    restart: unless-stopped
     ports: [ "5000:8080" ]
     volumes: [ "./data:/app/data" ]
     environment:
-      - Database__Provider=Sqlite
-      - ConnectionStrings__DefaultConnection=Data Source=/app/data/ingest.db
+      - Database__Provider=${INGEST_DB_PROVIDER:-Sqlite}
+      - ConnectionStrings__DefaultConnection=${INGEST_DB_CONN:-Data Source=/app/data/ingest.db}
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8080/health" ]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 10s
 
   core:
     build:
       context: .
       dockerfile: services/core/Dockerfile
+    restart: unless-stopped
     ports: [ "5001:8080" ]
     volumes: [ "./data:/app/data" ]
     environment:
@@ -33,7 +55,7 @@ services:
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
       - Igdb__ClientId=${IGDB_CLIENT_ID:-}
       - Igdb__ClientSecret=${IGDB_CLIENT_SECRET:-}
-      - Logging__LogLevel__GameHub.Core.Services.IgdbClient=Debug
+      - Logging__LogLevel__GameHub.Core.Services.IgdbClient=Warning
     depends_on:
       ingest:
         condition: service_healthy
@@ -41,14 +63,15 @@ services:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8080/health" ]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 10s
 
   db:
     image: postgres:18-alpine
-    restart: always
+    restart: unless-stopped
+    user: "postgres"
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-gamehub_core}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -59,7 +82,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
