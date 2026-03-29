@@ -13,11 +13,13 @@ services:
       # Use the internal docker service name to connect to the backend
       - CORE_URL=http://core:8080
       - INGEST_URL=http://ingest:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3000" ]
       interval: 10s
       timeout: 5s
       retries: 5
