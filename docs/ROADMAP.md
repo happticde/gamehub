@@ -71,6 +71,29 @@ AI agent integration layer — let assistants interact with the library via natu
 
 ---
 
+## 🚀 Tier 4 — Advanced Features & Portability
+
+### 12. Data Portability (Backup & Restore)
+- **Feature**: GameHub-specific import/export via JSON/CSV.
+- **Goal**: Full manual backup of entire unified library (metadata, ratings, play status).
+
+### 13. Physical Collection (Barcode Scanning)
+- **Scanner**: Web-based barcode scanner (MediaDevices API) for physical game cases.
+- **Platforms**: Support for PS3, PS4, and PS5 as distinct physical platforms.
+- **Lookup**: Resolve barcodes to titles and automatically enrich via IGDB.
+
+### 14. Discovery: "Surprise Me" (Random Pick)
+- **Feature**: Random game selection button that respects active filters (e.g., "Random RPG I haven't finished").
+- **Goal**: Help users conquer their backlog by removing decision paralysis.
+
+### 15. Power-User Maintenance Tools
+- **Direct Enrichment**: Allow manual input of IGDB ID for instant, accurate matching.
+- **Advanced Pagination**: Customizable page sizes, FIRST/LAST navigation, and direct page jumping.
+- **Manual Split**: Ability to separate platform entries from a unified game into their own records.
+- **Robust Sorting**: Logic to gracefully handle missing years or ratings (coalesce nulls).
+
+---
+
 ## Suggested Next Steps
 
 | Goal | Path |
@@ -79,4 +102,5 @@ AI agent integration layer — let assistants interact with the library via natu
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
 | **AI integration** | #11 MCP Server (High Value) |
-| **Fun features** | #9 Activity Feed |
+| **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
+| **Maintenance & UI** | #15 Power-User Tools → #14 Random Pick |
