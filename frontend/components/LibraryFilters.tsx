@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { Filter, Eye, EyeOff } from "lucide-react";
+import { Filter, Eye, EyeOff, Shuffle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
@@ -41,6 +41,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
+    const [isPickingRandom, setIsPickingRandom] = useState(false);
 
     // Read current state from URL
     const defaultSearch = searchParams.get("search") || "";
@@ -163,6 +164,30 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         }, 400);
         return () => clearTimeout(timer);
     }, [searchQuery, searchParams, updateSearchUrl]);
+
+    const handleSurpriseMe = async () => {
+        setIsPickingRandom(true);
+        try {
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("sortBy");
+            params.delete("sortOrder");
+            params.delete("page");
+            
+            const res = await fetch(`/api/core/library/random?${params.toString()}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.id) {
+                    router.push(`/library/${data.id}`);
+                }
+            } else if (res.status === 404) {
+                alert("No games found matching your current filters.");
+            }
+        } catch (e) {
+            console.error("Error picking random game:", e);
+        } finally {
+            setIsPickingRandom(false);
+        }
+    };
 
     const FilterControls = (
         <>
@@ -291,6 +316,24 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
             </div>
+
+            <Button
+                variant="default"
+                onClick={handleSurpriseMe}
+                disabled={isPickingRandom}
+                className="h-10 px-3 md:px-4 shrink-0 gap-2 whitespace-nowrap bg-primary/90 hover:bg-primary shadow-sm"
+                title="Pick a random game based on current filters"
+            >
+                {isPickingRandom ? (
+                    <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                ) : (
+                    <Shuffle className="h-4 w-4" />
+                )}
+                <span className="hidden sm:inline">Surprise Me</span>
+            </Button>
 
             {/* Desktop sort */}
             <div className="hidden md:block w-[220px]">

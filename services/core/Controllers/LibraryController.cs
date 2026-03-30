@@ -107,63 +107,11 @@ public class LibraryController : ControllerBase
         if (pageSize > 500) pageSize = 500;
         if (page < 1) page = 1;
 
-        var query = _db.UnifiedGames
-            .Include(g => g.Items)
-            .Include(g => g.Tags)
-            .AsNoTracking();
-
-        if (!includeIgnored)
-        {
-            query = query.Where(g => !g.IsIgnored);
-        }
-
-        // Filter by search term if provided
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            query = query.Where(g => g.Title.ToLower().Contains(search.ToLower()));
-        }
-
-        // Filter by tags if any are provided
-        if (tags != null && tags.Any(t => !string.IsNullOrWhiteSpace(t)))
-        {
-            var lowerTags = tags.Where(t => !string.IsNullOrWhiteSpace(t))
-                                .Select(t => t.ToLower())
-                                .ToList();
-            
-            query = query.Where(g => g.Tags.Any(t => lowerTags.Contains(t.Name.ToLower())));
-        }
-
-        // Filter by platforms if any are provided
-        if (platforms != null && platforms.Length > 0)
-        {
-            query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
-        }
-
-        // Filter by PlayStatus if any are provided
-        if (playStatus != null && playStatus.Length > 0)
-        {
-            query = query.Where(g => playStatus.Contains(g.PlayStatus));
-        }
-
-        // Filter by developers (OR logic: game must match at least one selected developer)
-        if (developer != null && developer.Any(d => !string.IsNullOrWhiteSpace(d)))
-        {
-            var lowerDevs = developer.Where(d => !string.IsNullOrWhiteSpace(d))
-                                     .Select(d => d.ToLower())
-                                     .ToList();
-            query = query.Where(g => g.Developers != null &&
-                lowerDevs.Any(d => g.Developers.ToLower().Contains(d)));
-        }
-
-        // Filter by publishers (OR logic: game must match at least one selected publisher)
-        if (publisher != null && publisher.Any(p => !string.IsNullOrWhiteSpace(p)))
-        {
-            var lowerPubs = publisher.Where(p => !string.IsNullOrWhiteSpace(p))
-                                     .Select(p => p.ToLower())
-                                     .ToList();
-            query = query.Where(g => g.Publishers != null &&
-                lowerPubs.Any(p => g.Publishers.ToLower().Contains(p)));
-        }
+        var query = BuildLibraryQuery(search, tags, platforms, playStatus, developer, publisher, includeIgnored);
+        
+        // Includes are needed for the returned shape
+        query = query.Include(g => g.Items)
+                     .Include(g => g.Tags);
 
         // Get total count for pagination metadata
         var totalCount = await query.CountAsync();
@@ -219,6 +167,104 @@ public class LibraryController : ControllerBase
             PageSize = pageSize
         });
     }
+
+    /// <summary>
+    /// GET: api/library/random
+    /// Returns a single random game ID that matches the given filters.
+    /// Used for the "Surprise Me" functionality.
+    /// </summary>
+    [HttpGet("random")]
+    public async Task<IActionResult> GetRandom(
+        [FromQuery] string? search,
+        [FromQuery] string[]? tags,
+        [FromQuery] Platform[]? platforms,
+        [FromQuery] PlayStatus[]? playStatus,
+        [FromQuery] string[]? developer,
+        [FromQuery] string[]? publisher,
+        [FromQuery] bool includeIgnored = false)
+    {
+        var query = BuildLibraryQuery(search, tags, platforms, playStatus, developer, publisher, includeIgnored);
+
+        var randomGameId = await query
+            .OrderBy(g => Guid.NewGuid())
+            .Select(g => g.Id)
+            .FirstOrDefaultAsync();
+
+        if (randomGameId == 0)
+        {
+            return NotFound(new { Message = "No games found matching the current filters." });
+        }
+
+        return Ok(new { Id = randomGameId });
+    }
+
+    private IQueryable<UnifiedGame> BuildLibraryQuery(
+        string? search,
+        string[]? tags,
+        Platform[]? platforms,
+        PlayStatus[]? playStatus,
+        string[]? developer,
+        string[]? publisher,
+        bool includeIgnored)
+    {
+        var query = _db.UnifiedGames.AsNoTracking();
+
+        if (!includeIgnored)
+        {
+            query = query.Where(g => !g.IsIgnored);
+        }
+
+        // Filter by search term if provided
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(g => g.Title.ToLower().Contains(search.ToLower()));
+        }
+
+        // Filter by tags if any are provided
+        if (tags != null && tags.Any(t => !string.IsNullOrWhiteSpace(t)))
+        {
+            var lowerTags = tags.Where(t => !string.IsNullOrWhiteSpace(t))
+                                .Select(t => t.ToLower())
+                                .ToList();
+            
+            query = query.Where(g => g.Tags.Any(t => lowerTags.Contains(t.Name.ToLower())));
+        }
+
+        // Filter by platforms if any are provided
+        if (platforms != null && platforms.Length > 0)
+        {
+            query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
+        }
+
+        // Filter by PlayStatus if any are provided
+        if (playStatus != null && playStatus.Length > 0)
+        {
+            query = query.Where(g => playStatus.Contains(g.PlayStatus));
+        }
+
+        // Filter by developers (OR logic: game must match at least one selected developer)
+        if (developer != null && developer.Any(d => !string.IsNullOrWhiteSpace(d)))
+        {
+            var lowerDevs = developer.Where(d => !string.IsNullOrWhiteSpace(d))
+                                     .Select(d => d.ToLower())
+                                     .ToList();
+            query = query.Where(g => g.Developers != null &&
+                lowerDevs.Any(d => g.Developers.ToLower().Contains(d)));
+        }
+
+        // Filter by publishers (OR logic: game must match at least one selected publisher)
+        if (publisher != null && publisher.Any(p => !string.IsNullOrWhiteSpace(p)))
+        {
+            var lowerPubs = publisher.Where(p => !string.IsNullOrWhiteSpace(p))
+                                     .Select(p => p.ToLower())
+                                     .ToList();
+            query = query.Where(g => g.Publishers != null &&
+                lowerPubs.Any(p => g.Publishers.ToLower().Contains(p)));
+        }
+
+        return query;
+    }
+
 
     /// <summary>
     /// GET: api/library/{id}
