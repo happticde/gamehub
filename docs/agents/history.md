@@ -4,27 +4,40 @@
 
 > **Context for AI Agents**: The features below have been added to the roadmap and prioritized. Refer to these technical notes instead of browsing the conversation history to save tokens.
 
-### 1. "Surprise Me" (Random Pick) - Quick Win
-- **Backend**: Add a new `GET /api/library/random` endpoint to `LibraryController.cs`. It must accept the *exact same filters* as `GetLibrary` (tags, platforms, playStatus).
-- **Logic**: Apply filters to the `IQueryable` then use `.OrderBy(g => Guid.NewGuid()).FirstOrDefaultAsync()`. 
-- **Frontend**: Add a "Surprise Me" button in the `LibraryViewControls` or `LibraryFilters` component. Clicking it fetches the random ID and redirects the user to `/library/[id]`.
+### 1. Manual Split (Deferred from Power-User Tools)
+- **Backend API**: Create `POST /api/library/split` accepting `SourceGameId`, `Platform`, and `ExternalId`. Moves the `LibraryItem` to a newly generated `UnifiedGame` and creates a `ManualLink`.
+- **Frontend**: In the game detail page, add a "Split" button next to each platform pill in the Admin Actions section.
 
-### 2. Power-User Maintenance Tools - Quick Win
-- **Direct IGDB Match**: Update the existing `override` dialog/endpoint to allow power-users to paste an exact IGDB ID, bypassing the search API completely.
-- **Advanced Pagination**: Update `LibraryPagination.tsx` to include "First" and "Last" page jumps. Update `GetLibrary` endpoint if `pageSize` parameter is not fully utilized.
-- **Robust Sorting**: Update EF Core sorting (e.g. `OrderByDescending(g => g.Rating ?? -1)`) to handle null ratings / missing years correctly.
-- **Manual Split**: Create an endpoint to remove a specific `LibraryItem` (Platform + ExternalId) from a `UnifiedGame` and create a new isolated `UnifiedGame` for it.
-
-### 3. Data Portability (Phase 1: Export)
+### 2. Data Portability (Phase 1: Export)
 - **Backend API**: Create `ExportController.cs`. Add `GET /api/export/library` returning a full JSON dump of the DB (`UnifiedGames` + `LibraryItems` + `Tags`). Keep it simple, exclude audit logs.
 - **Frontend**: Add an "Export / Backup" card to the Admin dashboard invoking the endpoint and triggering a file download.
 
-### 4. Physical Collection & Importer (Phase 2 & 3)
+### 3. Physical Collection & Importer (Phase 2 & 3)
 - **Blocked**: Barcode scanning requires a research spike on a reliable `Barcode -> Game Title` API (as IGDB lacks native EAN support) and testing of browser camera permissions on `http://192.x` contexts.
 
 ---
 
-## Last Session Summary (2026-03-26)
+## Last Session Summary (2026-03-31)
+
+### What Changed
+
+**"Surprise Me" (Random Pick):**
+- **Backend**: Added `GET /api/library/random` to `LibraryController.cs`. Reused `BuildLibraryQuery` to ensure filters are respected.
+- **Frontend**: Added a "Surprise Me" (Shuffle) button to `LibraryFilters.tsx` that fetches a random game ID and redirects the user.
+
+**Power-User Maintenance Tools:**
+- **Robust Sorting**: Updated `LibraryController.cs` to coalesce null ratings/dates to the bottom of the list.
+- **Direct IGDB Match**: Updated `IgdbClient.cs` to support direct ID queries when a numeric string is entered in the "Fix Match" dialog.
+- **Advanced Navigation**: 
+    - Added "First" and "Last" page jumps to `LibraryPagination.tsx`.
+    - Added a direct page selection dropdown (HTML `<select>`) for instant jumping.
+    - Implemented a **floating bubble** pagination UI (sticky, compact pill) at the bottom-center of the library view.
+
+### Known State / Pending
+- Manual Split was deferred to its own task.
+- Build verified (Backend 0 errors, Frontend TypeChecks pass).
+
+## Previous Session Summary (2026-03-26)
 
 ### What Changed
 
