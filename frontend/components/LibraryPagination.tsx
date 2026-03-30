@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useTransition, useState, useEffect } from "react";
 import {
     Pagination,
     PaginationContent,
@@ -9,18 +9,27 @@ import {
     PaginationLink,
     PaginationNext,
     PaginationPrevious,
+    PaginationFirst,
+    PaginationLast,
 } from "@/components/ui/pagination";
 
 interface LibraryPaginationProps {
     currentPage: number;
     totalPages: number;
+    className?: string;
 }
 
-export default function LibraryPagination({ currentPage, totalPages }: LibraryPaginationProps) {
+export default function LibraryPagination({ currentPage, totalPages, className = "mt-8" }: LibraryPaginationProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
+    const [pageInputValue, setPageInputValue] = useState(currentPage.toString());
+
+    // Update local input if external page changes
+    useEffect(() => {
+        setPageInputValue(currentPage.toString());
+    }, [currentPage]);
 
     // Helper to generate the new URL string for a specific page
     const createPageURL = (pageNumber: number) => {
@@ -41,6 +50,18 @@ export default function LibraryPagination({ currentPage, totalPages }: LibraryPa
         startTransition(() => {
             router.push(createPageURL(pageNumber));
         });
+    };
+
+    const handleInputSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const page = parseInt(pageInputValue, 10);
+        if (!isNaN(page) && page >= 1 && page <= totalPages && page !== currentPage) {
+            startTransition(() => {
+                router.push(createPageURL(page));
+            });
+        } else {
+            setPageInputValue(currentPage.toString()); // reset on invalid
+        }
     };
 
     if (totalPages <= 1) return null;
@@ -67,9 +88,19 @@ export default function LibraryPagination({ currentPage, totalPages }: LibraryPa
     const visiblePages = getVisiblePages();
 
     return (
-        <div className={`mt-8 ${isPending ? "opacity-50 pointer-events-none" : ""}`}>
+        <div className={`${className} ${isPending ? "opacity-50 pointer-events-none" : ""}`}>
             <Pagination>
                 <PaginationContent>
+                    <PaginationItem>
+                        <PaginationFirst
+                            href={createPageURL(1)}
+                            onClick={(e) => handleNavigation(e, 1)}
+                            className={currentPage <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                            aria-disabled={currentPage <= 1}
+                            tabIndex={currentPage <= 1 ? -1 : undefined}
+                        />
+                    </PaginationItem>
+                    
                     <PaginationItem>
                         <PaginationPrevious
                             href={createPageURL(currentPage - 1)}
@@ -94,10 +125,44 @@ export default function LibraryPagination({ currentPage, totalPages }: LibraryPa
                         </PaginationItem>
                     ))}
 
+                    <PaginationItem className="hidden sm:flex items-center gap-1 mx-2">
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">Page</span>
+                            <select
+                                value={pageInputValue}
+                                onChange={(e) => {
+                                    setPageInputValue(e.target.value);
+                                    const page = parseInt(e.target.value, 10);
+                                    if (!isNaN(page) && page >= 1 && page <= totalPages && page !== currentPage) {
+                                        startTransition(() => {
+                                            router.push(createPageURL(page));
+                                        });
+                                    }
+                                }}
+                                className="flex h-8 rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                            >
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                                    <option key={p} value={p}>{p}</option>
+                                ))}
+                            </select>
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">of {totalPages}</span>
+                        </div>
+                    </PaginationItem>
+
                     <PaginationItem>
                         <PaginationNext
                             href={createPageURL(currentPage + 1)}
                             onClick={(e) => handleNavigation(e, currentPage + 1)}
+                            className={currentPage >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                            aria-disabled={currentPage >= totalPages}
+                            tabIndex={currentPage >= totalPages ? -1 : undefined}
+                        />
+                    </PaginationItem>
+
+                    <PaginationItem>
+                        <PaginationLast
+                            href={createPageURL(totalPages)}
+                            onClick={(e) => handleNavigation(e, totalPages)}
                             className={currentPage >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
                             aria-disabled={currentPage >= totalPages}
                             tabIndex={currentPage >= totalPages ? -1 : undefined}

@@ -172,10 +172,19 @@ public class IgdbClient : IGameMetadataProvider
         if (string.IsNullOrWhiteSpace(title))
             return [];
 
-        // For manual search, we don't aggressively sanitize, just clean it up slightly
+        string query;
         var cleaned = title.Trim();
-        var escaped = cleaned.Replace("\"", "\\\"");
-        var query = $"search \"{escaped}\"; fields {GameFields}; limit {limit};";
+        
+        // If the query is purely numeric, perform a direct GET by ID instead of a text search
+        if (int.TryParse(cleaned, out int directId))
+        {
+            query = $"where id = {directId}; fields {GameFields}; limit 1;";
+        }
+        else
+        {
+            var escaped = cleaned.Replace("\"", "\\\"");
+            query = $"search \"{escaped}\"; fields {GameFields}; limit {limit};";
+        }
 
         var results = await QueryGamesAsync(query, ct);
 

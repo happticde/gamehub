@@ -154,10 +154,15 @@ export default async function LibraryPage({
 
             {/* Server component handles total page calculation blindly for the client */}
             {totalCount > 0 && (
-                <LibraryPagination
-                    currentPage={currentPage}
-                    totalPages={Math.ceil(totalCount / pageSize)}
-                />
+                <div className="sticky bottom-6 z-40 flex justify-center pointer-events-none mt-8">
+                    <div className="pointer-events-auto rounded-full border border-border bg-background/95 backdrop-blur-md px-4 py-2 shadow-lg">
+                        <LibraryPagination
+                            currentPage={currentPage}
+                            totalPages={Math.ceil(totalCount / pageSize)}
+                            className="m-0"
+                        />
+                    </div>
+                </div>
             )}
         </div>
     );

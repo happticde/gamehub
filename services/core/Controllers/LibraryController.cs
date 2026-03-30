@@ -119,10 +119,10 @@ public class LibraryController : ControllerBase
         // Dynamic sorting — default to title ascending
         query = (sortBy?.ToLower(), sortOrder.ToLower()) switch
         {
-            ("rating", "desc")       => query.OrderByDescending(g => g.Rating),
-            ("rating", _)            => query.OrderBy(g => g.Rating),
-            ("releasedate", "desc")  => query.OrderByDescending(g => g.FirstReleaseDate),
-            ("releasedate", _)       => query.OrderBy(g => g.FirstReleaseDate),
+            ("rating", "desc")       => query.OrderByDescending(g => g.Rating ?? -1),
+            ("rating", _)            => query.OrderBy(g => g.Rating ?? 999),
+            ("releasedate", "desc")  => query.OrderByDescending(g => g.FirstReleaseDate ?? DateTime.MinValue),
+            ("releasedate", _)       => query.OrderBy(g => g.FirstReleaseDate ?? DateTime.MaxValue),
             ("title", "desc")        => query.OrderByDescending(g => g.Title),
             _                        => query.OrderBy(g => g.Title), // default: title asc
         };

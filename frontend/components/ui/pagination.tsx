@@ -2,7 +2,7 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
+import { ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, MoreHorizontalIcon } from "lucide-react"
 
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
@@ -97,6 +97,42 @@ function PaginationNext({
   )
 }
 
+function PaginationFirst({
+  className,
+  text = "First",
+  ...props
+}: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  return (
+    <PaginationLink
+      aria-label="Go to first page"
+      size="default"
+      className={cn("pl-1.5!", className)}
+      {...props}
+    >
+      <ChevronsLeftIcon data-icon="inline-start" />
+      <span className="hidden lg:block">{text}</span>
+    </PaginationLink>
+  )
+}
+
+function PaginationLast({
+  className,
+  text = "Last",
+  ...props
+}: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
+  return (
+    <PaginationLink
+      aria-label="Go to last page"
+      size="default"
+      className={cn("pr-1.5!", className)}
+      {...props}
+    >
+      <span className="hidden lg:block">{text}</span>
+      <ChevronsRightIcon data-icon="inline-end" />
+    </PaginationLink>
+  )
+}
+
 function PaginationEllipsis({
   className,
   ...props
@@ -126,4 +162,6 @@ export {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
+  PaginationFirst,
+  PaginationLast,
 }

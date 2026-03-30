@@ -91,7 +91,7 @@ export default function FixMatchDialog({ gameId, initialTitle }: { gameId: numbe
                 <form onSubmit={handleSearch} className="flex flex-col gap-4 mt-2 flex-1 overflow-hidden">
                     <div className="flex gap-2 shrink-0">
                         <Input
-                            placeholder="Enter game title..."
+                            placeholder="Enter game title or IGDB ID..."
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                         />
