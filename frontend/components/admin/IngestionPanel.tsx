@@ -230,12 +230,12 @@ function SteamIngestCard({ onSuccess }: { onSuccess: () => void }) {
             {expanded && (
                 <CardContent className="space-y-3">
                     <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Steam Web API Key</label>
-                        <Input type="password" placeholder="Your Steam API key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-                    </div>
-                    <div>
                         <label className="text-xs font-medium text-muted-foreground mb-1 block">Steam ID (64-bit)</label>
                         <Input placeholder="e.g. 76561198012345678" value={steamId} onChange={(e) => setSteamId(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Steam Web API Key</label>
+                        <Input type="password" placeholder="Your Steam API key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     </div>
                     <Button onClick={handleSubmit} disabled={loading || !apiKey || !steamId} className="w-full">
                         {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -296,12 +296,12 @@ function GogIngestCard({ onSuccess }: { onSuccess: () => void }) {
             {expanded && (
                 <CardContent className="space-y-3">
                     <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">GOG Cookie (gog-al)</label>
-                        <Input type="password" placeholder="gog-al cookie value" value={cookie} onChange={(e) => setCookie(e.target.value)} />
-                    </div>
-                    <div>
                         <label className="text-xs font-medium text-muted-foreground mb-1 block">GOG Username</label>
                         <Input placeholder="Your GOG username" value={user} onChange={(e) => setUser(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">GOG Cookie (gog-al)</label>
+                        <Input type="password" placeholder="gog-al cookie value" value={cookie} onChange={(e) => setCookie(e.target.value)} />
                     </div>
                     <Button onClick={handleSubmit} disabled={loading || !cookie || !user} className="w-full">
                         {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
