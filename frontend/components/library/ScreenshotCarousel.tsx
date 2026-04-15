@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
+import { ImageLightbox } from "./ImageLightbox";
 
 interface ScreenshotCarouselProps {
     screenshots: string[];
@@ -11,6 +12,8 @@ interface ScreenshotCarouselProps {
 export default function ScreenshotCarousel({ screenshots }: ScreenshotCarouselProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [activeIndex, setActiveIndex] = useState(0);
+    const [lightboxOpen, setLightboxOpen] = useState(false);
+    const [lightboxIndex, setLightboxIndex] = useState(0);
 
     if (!screenshots || screenshots.length === 0) return null;
 
@@ -20,6 +23,11 @@ export default function ScreenshotCarousel({ screenshots }: ScreenshotCarouselPr
         const scrollLeft = scrollRef.current.scrollLeft;
         const index = Math.round(scrollLeft / scrollWidth);
         setActiveIndex(index);
+    };
+
+    const openLightbox = (index: number) => {
+        setLightboxIndex(index);
+        setLightboxOpen(true);
     };
 
     return (
@@ -36,8 +44,9 @@ export default function ScreenshotCarousel({ screenshots }: ScreenshotCarouselPr
                 >
                     {screenshots.map((url, idx) => (
                         <div 
-                            key={idx} 
-                            className="relative aspect-video w-full flex-shrink-0 snap-center overflow-hidden"
+                            key={url} 
+                            onClick={() => openLightbox(idx)}
+                            className="relative aspect-video w-full flex-shrink-0 snap-center overflow-hidden active:opacity-90"
                         >
                             <Image
                                 src={url}
@@ -71,7 +80,11 @@ export default function ScreenshotCarousel({ screenshots }: ScreenshotCarouselPr
             {/* Desktop Grid View (hidden md:grid) */}
             <div className="hidden md:grid grid-cols-2 lg:grid-cols-3 gap-4">
                 {screenshots.map((url, idx) => (
-                    <div key={idx} className="relative aspect-video w-full overflow-hidden rounded-xl bg-muted border border-border group/item shadow-sm">
+                    <div 
+                        key={url} 
+                        onClick={() => openLightbox(idx)}
+                        className="relative aspect-video w-full overflow-hidden rounded-xl bg-muted border border-border group/item shadow-sm cursor-zoom-in group"
+                    >
                         <Image
                             src={url}
                             alt={`Screenshot ${idx + 1}`}
@@ -79,10 +92,23 @@ export default function ScreenshotCarousel({ screenshots }: ScreenshotCarouselPr
                             className="object-cover transition-transform duration-700 group-hover/item:scale-110"
                             unoptimized
                         />
-                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/item:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                        {/* Hover Overlay */}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/item:opacity-100 transition-all duration-300 flex items-center justify-center">
+                            <div className="bg-white/10 backdrop-blur-md p-3 rounded-full border border-white/20 transform translate-y-4 group-hover/item:translate-y-0 transition-transform duration-300">
+                                <Maximize2 className="h-6 w-6 text-white" />
+                            </div>
+                        </div>
                     </div>
                 ))}
             </div>
+
+            {/* Lightbox Component */}
+            <ImageLightbox 
+                images={screenshots} 
+                initialIndex={lightboxIndex} 
+                open={lightboxOpen} 
+                onOpenChange={setLightboxOpen} 
+            />
         </section>
     );
 }

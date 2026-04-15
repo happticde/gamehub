@@ -6,6 +6,7 @@ import { getPlatformColor } from "@/lib/platform-colors";
 import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 import FixMatchDialog from "@/components/library/FixMatchDialog";
 import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
+import CoverImageClient from "@/components/library/CoverImageClient";
 
 // Extended payload type for the game detail view
 interface ExpandedGame {
@@ -114,19 +115,7 @@ export default async function GameDetailPage({
                     <div className="container mx-auto flex items-end gap-6 px-4 pb-8 md:px-8">
 
                         {/* Floating Cover Art */}
-                        <div className="hidden shrink-0 overflow-hidden rounded-lg border-2 border-border/50 bg-muted shadow-2xl md:block relative aspect-[3/4] w-48 lg:w-56 translate-y-12">
-                            {game.coverUrl ? (
-                                <Image
-                                    src={game.coverUrl}
-                                    alt={`${game.title} cover`}
-                                    fill
-                                    className="object-cover"
-                                    unoptimized
-                                />
-                            ) : (
-                                <div className="flex h-full items-center justify-center bg-zinc-800 text-zinc-500">No Cover</div>
-                            )}
-                        </div>
+                        <CoverImageClient coverUrl={game.coverUrl} title={game.title} />
 
                         {/* Title and Key Metrics */}
                         <div className="flex-1 space-y-3 drop-shadow-md">
