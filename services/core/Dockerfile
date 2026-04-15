@@ -9,15 +9,15 @@ COPY . .
 WORKDIR "/src/services/core"
 RUN dotnet publish "GameHub.Core.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# aspnet:alpine is ~100-115 MB (vs ~220 MB full aspnet) and has wget + sh built in.
+# Avoids all chiseled-image ABI/shell compatibility issues.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 WORKDIR /app
 COPY --from=build /app/publish .
 
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
-USER root
-RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /app/data && chown -R $APP_UID /app/data
 USER $APP_UID
 

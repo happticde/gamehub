@@ -1,0 +1,17 @@
+# Frontend .dockerignore — keeps build context lean for the Next.js image build
+
+# Dependencies (reinstalled via npm ci inside Docker)
+node_modules/
+
+# Build output (rebuilt inside Docker)
+.next/
+out/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+*.md
+.env
+.env.*

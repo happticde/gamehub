@@ -1,0 +1,36 @@
+# Root .dockerignore — applies to services/core and services/ingest builds
+# (docker-compose uses repo root as build context for both .NET services)
+
+# Version control
+.git
+.github
+
+# IDE / editor
+.vscode
+.devcontainer
+*.code-workspace
+.DS_Store
+
+# Documentation
+docs
+README.md
+AGENTS.md
+
+# Frontend (not needed for .NET service builds)
+frontend/
+
+# Test projects
+tests/
+
+# SQLite artefacts
+*.db
+*.db-shm
+*.db-wal
+
+# .NET build output (built inside Docker)
+**/bin/
+**/obj/
+
+# Environment files (secrets should be passed via env vars at runtime)
+.env
+.env.*
