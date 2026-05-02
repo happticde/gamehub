@@ -66,8 +66,9 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
 ### 10. Statistics & Analytics ✅
 Comprehensive dashboard with charts for platform distribution, genre breakdown, rating histograms, and play status tracking.
 
-### 11. MCP Server (Model Context Protocol) 🚀
+### 11. MCP Server (Model Context Protocol) ✅
 AI agent integration layer — let assistants interact with the library via natural language.
+See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 
 ---
 

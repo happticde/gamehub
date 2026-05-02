@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      Allow stdout to be used cleanly for MCP stdio transport.
+      All application logs must go to stderr so they don't corrupt the JSON-RPC stream.
+    -->
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core MCP SDK with DI/hosting extensions -->
+    <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
+    <!-- Generic host for DI, configuration, and lifetime management -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <!-- Typed HttpClient for Core API calls -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

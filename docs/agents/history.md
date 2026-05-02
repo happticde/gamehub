@@ -1,23 +1,32 @@
 # Session History
 
-## Upcoming Objectives (Sprint 1 & 2)
+## Last Session Summary (2026-05-02)
 
-> **Context for AI Agents**: The features below have been added to the roadmap and prioritized. Refer to these technical notes instead of browsing the conversation history to save tokens.
+### What Changed
 
-### 1. Manual Split (Deferred from Power-User Tools)
-- **Backend API**: Create `POST /api/library/split` accepting `SourceGameId`, `Platform`, and `ExternalId`. Moves the `LibraryItem` to a newly generated `UnifiedGame` and creates a `ManualLink`.
-- **Frontend**: In the game detail page, add a "Split" button next to each platform pill in the Admin Actions section.
+**MCP Server (#11 — ✅ Complete):**
+- **New project**: `services/mcp/GameHub.Mcp.csproj` — stdio MCP server console app using `ModelContextProtocol` v1.2.0.
+- **CoreApiClient**: Typed HTTP client proxying calls to the Core REST API (`http://localhost:5001`).
+- **LibraryTools**: 7 MCP tools with rich descriptions for AI model understanding:
+  - `search_library` — paginated, filterable search
+  - `get_game` — full game details by ID
+  - `get_random_game` — random pick with optional filters
+  - `get_statistics` — comprehensive library stats
+  - `list_tags` — genre tag list
+  - `set_play_status` — update play status (with validation)
+  - `set_rating` — set personal star rating (1–5)
+- **`.vscode/mcp.json`**: Auto-detected VS Code MCP config for GitHub Copilot.
+- **`docs/mcp.md`**: Client setup guide for VS Code, Claude Desktop, and Cursor.
+- **Roadmap**: Marked #11 as ✅.
 
-### 2. Data Portability (Phase 1: Export)
-- **Backend API**: Create `ExportController.cs`. Add `GET /api/export/library` returning a full JSON dump of the DB (`UnifiedGames` + `LibraryItems` + `Tags`). Keep it simple, exclude audit logs.
-- **Frontend**: Add an "Export / Backup" card to the Admin dashboard invoking the endpoint and triggering a file download.
-
-### 3. Physical Collection & Importer (Phase 2 & 3)
-- **Blocked**: Barcode scanning requires a research spike on a reliable `Barcode -> Game Title` API (as IGDB lacks native EAN support) and testing of browser camera permissions on `http://192.x` contexts.
+### Known State / Pending
+- Build pending (devcontainer was offline during session — verify with `dotnet build services/mcp/GameHub.Mcp.csproj`).
+- No DB migrations needed (MCP proxies Core, no direct DB access).
+- Next steps: User Accounts (#8) or Data Portability (#12).
 
 ---
 
-## Last Session Summary (2026-03-31)
+## Previous Session Summary (2026-03-31)
 
 ### What Changed
 
@@ -36,6 +45,10 @@
 ### Known State / Pending
 - Manual Split was deferred to its own task.
 - Build verified (Backend 0 errors, Frontend TypeChecks pass).
+
+---
+
+
 
 ## Previous Session Summary (2026-03-26)
 
