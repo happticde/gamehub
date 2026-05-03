@@ -17,19 +17,21 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, **G
 │   fetchers   │     │   matching   │     │              │
 │ • Export API │     │ • Enrichment │     └──────────────┘
 └──────────────┘     └──────────────┘
-       ▲
-       │
-┌──────┴────────┐
-│   Go CLI      │
-│ gamehub-cli   │
-└───────────────┘
+       ▲                    ▲
+       │                    │ HTTP
+┌──────┴────────┐   ┌───────┴────────┐
+│   Go CLI      │   │   MCP Server   │◄── AI Clients
+│ gamehub-cli   │   │  (stdio/JSON-  │    (Claude, Copilot,
+└───────────────┘   │   RPC 2.0)     │     Cursor, etc.)
+                    └────────────────┘
 ```
 
-**Four components:**
+**Five components:**
 - **Ingest Service** (.NET) — stores raw game data per platform, fetches directly from platform APIs
 - **Core Service** (.NET) — merges data into a unified library with cross-platform matching, IGDB enrichment
 - **Frontend** (Next.js) — unified library browser, game detail pages, and admin dashboard
 - **CLI** (Go) — alternative client that fetches libraries and pushes to Ingest
+- **MCP Server** (.NET console) — Model Context Protocol server; lets AI assistants query and manage your library
 
 ## Features
 
@@ -39,6 +41,56 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, **G
 - **Modern web UI** — filterable/searchable library grid, cinematic game detail pages
 - **Admin dashboard** — enrichment controls, platform ingestion forms, sync management, audit logs
 - **API key authentication** — JWT-ready, configurable via env vars
+- **MCP Server** — AI assistant integration via the [Model Context Protocol](https://modelcontextprotocol.io/)
+
+---
+
+## MCP Server (AI Integration)
+
+GameHub ships a **Model Context Protocol server** that lets AI assistants (Claude Desktop, VS Code Copilot, Cursor, etc.) interact with your library using natural language.
+
+### Available Tools
+
+| Tool | Description |
+|---|---|
+| `search_library` | Search by title, genre, platform, or play status |
+| `get_game` | Full details for a game by ID |
+| `get_random_game` | Random pick — supports platform/genre/status filters |
+| `get_statistics` | Platform breakdown, genre distribution, rating histogram |
+| `list_tags` | All genre tags in the library |
+| `set_play_status` | Update a game's play status (Unplayed/Playing/Completed/…) |
+| `set_rating` | Set a personal star rating (1–5) |
+
+### Quick Connect
+
+The Core service must be running (`docker compose up core`) before starting the MCP server.
+
+**VS Code / GitHub Copilot** — a `.vscode/mcp.json` is included; VS Code auto-detects it.
+
+**Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "gamehub": {
+      "command": "dotnet",
+      "args": ["run", "--project", "/path/to/services/mcp/GameHub.Mcp.csproj", "--no-launch-profile"],
+      "env": { "Core__BaseUrl": "http://localhost:5001", "Core__ApiKey": "" }
+    }
+  }
+}
+```
+
+**Configuration** — the server reads two values:
+
+| Variable | Default | Description |
+|---|---|---|
+| `Core__BaseUrl` | `http://localhost:5001` | URL of the Core service |
+| `Core__ApiKey` | *(empty)* | Must match `Authentication__ApiKey` in Core if auth is enabled |
+
+> See [`docs/mcp.md`](docs/mcp.md) for full setup instructions for VS Code, Claude Desktop, and Cursor.
+
+---
 
 ## Quick Start
 
@@ -237,6 +289,12 @@ services/
 │   │   ├── IgdbClient.cs             # IGDB API client with caching
 │   │   └── IngestClient.cs           # HTTP client for Ingest
 │   └── Data/
+├── mcp/                    # MCP server (AI assistant integration)
+│   ├── Program.cs           # Generic host + stdio transport
+│   ├── CoreApiClient.cs     # Typed HTTP client → Core REST API
+│   ├── appsettings.json     # Default config (Core:BaseUrl, Core:ApiKey)
+│   └── Tools/
+│       └── LibraryTools.cs  # 7 MCP tools (search, get, rate, etc.)
 ├── shared/                 # Shared DTOs, enums, auth handler
 │   └── Authentication/     # ApiKeyAuthenticationHandler
 └── cli/                    # Go CLI
