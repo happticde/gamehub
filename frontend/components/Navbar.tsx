@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Menu, X, Sun, Moon } from "lucide-react";
+import { Menu, X, Sun, Moon, Terminal } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
 
@@ -19,6 +19,8 @@ export default function Navbar() {
     const pathname = usePathname();
     const { theme, setTheme } = useTheme();
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [desktopThemeOpen, setDesktopThemeOpen] = useState(false);
+    const [mobileThemeOpen, setMobileThemeOpen] = useState(false);
 
     // Auto-close mobile menu on route change
     useEffect(() => {
@@ -34,6 +36,12 @@ export default function Navbar() {
         }
         return () => { document.body.style.overflow = ""; };
     }, [mobileOpen]);
+
+    const getThemeIcon = (t: string, sizeClass = "h-4 w-4") => {
+        if (t === "retro-terminal") return <Terminal className={sizeClass} />;
+        if (t === "light") return <Sun className={sizeClass} />;
+        return <Moon className={sizeClass} />;
+    };
 
     return (
         <nav className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -67,15 +75,41 @@ export default function Navbar() {
                         </Link>
                     ))}
 
-                    {/* Desktop theme toggle */}
-                    <button
-                        type="button"
-                        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                        className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                        aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-                    >
-                        {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                    </button>
+                    {/* Desktop Theme Switcher */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setDesktopThemeOpen(!desktopThemeOpen)}
+                            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                            aria-label="Toggle theme selection"
+                        >
+                            {getThemeIcon(theme)}
+                        </button>
+                        {desktopThemeOpen && (
+                            <>
+                                <div className="fixed inset-0 z-30" onClick={() => setDesktopThemeOpen(false)} />
+                                <div className="absolute right-0 mt-2 w-44 z-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in duration-100">
+                                    {(["light", "dark", "retro-terminal"] as const).map((t) => (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            onClick={() => {
+                                                setTheme(t);
+                                                setDesktopThemeOpen(false);
+                                            }}
+                                            className={cn(
+                                                "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors text-left",
+                                                theme === t ? "text-primary font-semibold" : "text-muted-foreground"
+                                            )}
+                                        >
+                                            {getThemeIcon(t, "h-3.5 w-3.5")}
+                                            <span className="capitalize">{t === "retro-terminal" ? "Retro Terminal" : t + " Mode"}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 {/* Mobile right-side controls */}
@@ -83,15 +117,41 @@ export default function Navbar() {
                     {/* Mobile Global Search Button */}
                     <GlobalSearchBar />
 
-                    {/* Mobile theme toggle */}
-                    <button
-                        type="button"
-                        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                        className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                        aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-                    >
-                        {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-                    </button>
+                    {/* Mobile Theme Switcher */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setMobileThemeOpen(!mobileThemeOpen)}
+                            className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                            aria-label="Toggle theme selection"
+                        >
+                            {getThemeIcon(theme, "h-5 w-5")}
+                        </button>
+                        {mobileThemeOpen && (
+                            <>
+                                <div className="fixed inset-0 z-30" onClick={() => setMobileThemeOpen(false)} />
+                                <div className="absolute right-0 mt-2 w-44 z-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in duration-100">
+                                    {(["light", "dark", "retro-terminal"] as const).map((t) => (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            onClick={() => {
+                                                setTheme(t);
+                                                setMobileThemeOpen(false);
+                                            }}
+                                            className={cn(
+                                                "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors text-left",
+                                                theme === t ? "text-primary font-semibold" : "text-muted-foreground"
+                                            )}
+                                        >
+                                            {getThemeIcon(t, "h-4 w-4")}
+                                            <span className="capitalize">{t === "retro-terminal" ? "Retro Terminal" : t + " Mode"}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
 
                     {/* Mobile hamburger button */}
                     <button

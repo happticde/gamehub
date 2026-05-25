@@ -309,7 +309,7 @@ export default function GlobalSearchBar() {
                             <X className="h-3 w-3" />
                         </button>
                     ) : (
-                        <kbd className="hidden sm:inline-flex select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground/80 shadow-sm shrink-0">
+                        <kbd className="hidden sm:inline-flex select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 ml-2 font-mono text-[10px] font-medium text-muted-foreground/80 shadow-sm shrink-0">
                             <span className="text-[9px]">⌘</span>K
                         </kbd>
                     )}
@@ -335,7 +335,7 @@ export default function GlobalSearchBar() {
                             <Search className="h-4 w-4" />
                         </button>
                     </DialogTrigger>
-                    <DialogContent className="max-h-[85vh] flex flex-col max-w-[calc(100%-2rem)] p-0 overflow-hidden bg-background/98 backdrop-blur-md border border-border rounded-xl">
+                    <DialogContent showCloseButton={false} className="max-h-[85vh] flex flex-col max-w-[calc(100%-2rem)] p-0 overflow-hidden bg-background/98 backdrop-blur-md border border-border rounded-xl">
                         <div className="flex items-center border-b border-border px-4 py-3 gap-3">
                             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                             <input
@@ -358,11 +358,18 @@ export default function GlobalSearchBar() {
                             {query && (
                                 <button
                                     onClick={() => setQuery("")}
-                                    className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                                    className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
                                 >
                                     <X className="h-3.5 w-3.5" />
                                 </button>
                             )}
+                            <button
+                                type="button"
+                                onClick={() => setIsMobileOpen(false)}
+                                className="text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors shrink-0 pl-2 border-l border-border/40"
+                            >
+                                ESC
+                            </button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-2 min-h-[250px] max-h-[60vh]">
                             {renderResultsList(() => setIsMobileOpen(false), -1)}
