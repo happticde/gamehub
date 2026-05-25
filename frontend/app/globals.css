@@ -116,6 +116,279 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+.retro-terminal {
+  --background: oklch(0.08 0.01 140);
+  --foreground: oklch(0.86 0.23 142);
+  --card: oklch(0.12 0.01 140);
+  --card-foreground: oklch(0.86 0.23 142);
+  --popover: oklch(0.12 0.01 140);
+  --popover-foreground: oklch(0.86 0.23 142);
+  --primary: oklch(0.86 0.23 142);
+  --primary-foreground: oklch(0.08 0.01 140);
+  --secondary: oklch(0.16 0.01 140);
+  --secondary-foreground: oklch(0.78 0.18 70);
+  --muted: oklch(0.14 0.01 140);
+  --muted-foreground: oklch(0.60 0.12 140);
+  --accent: oklch(0.16 0.01 140);
+  --accent-foreground: oklch(0.78 0.18 70);
+  --destructive: oklch(0.60 0.20 27);
+  --border: oklch(0.40 0.15 140 / 40%);
+  --input: oklch(0.14 0.01 140);
+  --ring: oklch(0.86 0.23 142);
+  --radius: 0rem;
+  
+  /* Font override: swap in Geist Mono */
+  --font-sans: var(--font-geist-mono), monospace;
+  --font-geist-sans: var(--font-geist-mono), monospace;
+}
+
+/* Subtle CRT screen scanlines overlay for retro terminal theme */
+.retro-terminal::before {
+  content: " ";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.12) 50%);
+  z-index: 9999;
+  background-size: 100% 3px;
+  pointer-events: none;
+  opacity: 0.15;
+}
+
+/* Global Grid background and scrollbars for retro-terminal */
+.retro-terminal body {
+  background-image: radial-gradient(rgba(51, 255, 51, 0.04) 1px, transparent 1px) !important;
+  background-size: 24px 24px !important;
+}
+
+/* Scrollbar override for authentic retro look */
+.retro-terminal ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.retro-terminal ::-webkit-scrollbar-track {
+  background: var(--background);
+  border-left: 1px solid var(--border);
+}
+.retro-terminal ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid var(--background);
+}
+.retro-terminal ::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Make standard shadcn components look like part of the retro terminal grid */
+.retro-terminal input,
+.retro-terminal select,
+.retro-terminal textarea,
+.retro-terminal [data-slot="input"],
+.retro-terminal [data-slot="select"],
+.retro-terminal [data-slot="select-trigger"],
+.retro-terminal [data-slot="select-content"] {
+  border: 1px solid var(--primary) !important;
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+  border-radius: 0px !important;
+}
+
+.retro-terminal input:focus,
+.retro-terminal select:focus,
+.retro-terminal textarea:focus {
+  outline: none !important;
+  box-shadow: 0 0 8px rgba(51, 255, 51, 0.3) !important;
+}
+
+/* Badges styling: transparent with borders */
+.retro-terminal [data-slot="badge"] {
+  border: 1px solid var(--primary) !important;
+  background: transparent !important;
+  color: var(--primary) !important;
+  text-transform: uppercase;
+  font-weight: bold;
+  border-radius: 0px !important;
+}
+
+/* Keyboard shortcut kbd hints spacing & colors */
+.retro-terminal kbd {
+  border: 1px solid var(--primary) !important;
+  color: var(--primary) !important;
+  background-color: var(--background) !important;
+  padding-left: 0.4rem !important;
+  padding-right: 0.4rem !important;
+  border-radius: 0px !important;
+}
+
+/* Global search container border override to match green terminal inputs */
+.retro-terminal .relative div[class*="bg-muted"],
+.retro-terminal .relative div[class*="border-border"] {
+  border: 1px solid var(--border) !important;
+  background-color: var(--background) !important;
+}
+
+/* Make global search placeholder/input text larger and shift it to the right */
+.retro-terminal .relative input[placeholder*="Search"],
+.retro-terminal [role="dialog"] input[placeholder*="Search"] {
+  padding-left: 0.75rem !important;
+  font-size: 1.05rem !important;
+  border: 0px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.retro-terminal .relative input[placeholder*="Search"]::placeholder,
+.retro-terminal [role="dialog"] input[placeholder*="Search"]::placeholder {
+  font-size: 1.05rem !important;
+  letter-spacing: 0.04em;
+}
+
+/* Strip modern glass backdrop blurs behind search dropdown */
+.retro-terminal div[class*="bg-popover"] {
+  backdrop-filter: none !important;
+  background-color: var(--popover) !important;
+}
+
+/* Move the dialog close button in mobile dialogs more to the left */
+button[data-slot="dialog-close"],
+.retro-terminal button[data-slot="dialog-close"] {
+  right: 1.5rem !important; /* Shift left from right-2 (8px) to 24px */
+}
+
+/* Cards styling */
+.retro-terminal [data-slot="card"],
+.retro-terminal .rounded-xl.border {
+  border: 1px solid var(--border) !important;
+  background-color: var(--card) !important;
+  box-shadow: none !important;
+  border-radius: 0px !important;
+}
+
+/* Tables styling */
+.retro-terminal table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
+.retro-terminal th {
+  background-color: var(--secondary) !important;
+  border-bottom: 2px solid var(--primary) !important;
+  color: var(--secondary-foreground) !important;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.retro-terminal td {
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.retro-terminal tr:hover {
+  background-color: var(--secondary) !important;
+}
+
+/* Force blocky buttons, inputs and borders in retro-terminal */
+.retro-terminal * {
+  border-radius: 0px !important;
+}
+
+/* Hide modern gradients under retro terminal */
+.retro-terminal .landing-gradient-orb {
+  display: none !important;
+}
+
+/* Override text gradients on landing page */
+.retro-terminal h1 span {
+  background: none !important;
+  color: var(--secondary-foreground) !important;
+  -webkit-text-fill-color: var(--secondary-foreground) !important;
+  font-weight: 700;
+}
+
+/* Override primary button gradient */
+.retro-terminal .bg-gradient-to-r {
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--primary) !important;
+}
+
+.retro-terminal .bg-gradient-to-r:hover {
+  background: transparent !important;
+  color: var(--primary) !important;
+  box-shadow: none !important;
+}
+
+/* Override feature cards icon container gradient */
+.retro-terminal .bg-gradient-to-br {
+  background: var(--secondary) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border) !important;
+}
+
+/* Clean up shadows and card translations in terminal mode */
+.retro-terminal .group {
+  box-shadow: none !important;
+  border: 1px solid var(--border) !important;
+  transform: none !important;
+  background: var(--card) !important;
+}
+
+.retro-terminal .group:hover {
+  border-color: var(--secondary-foreground) !important;
+  background: var(--secondary) !important;
+}
+
+/* Custom show/hide utility classes for retro-terminal theme switching */
+html.retro-terminal .retro-terminal\:hidden {
+  display: none !important;
+}
+
+html:not(.retro-terminal) .retro-terminal\:block {
+  display: none !important;
+}
+
+html:not(.retro-terminal) .retro-terminal\:flex {
+  display: none !important;
+}
+
+html.retro-terminal .retro-terminal\:block {
+  display: block !important;
+}
+
+html.retro-terminal .retro-terminal\:flex {
+  display: flex !important;
+}
+
+/* Custom CRT terminal vignette glow */
+.retro-terminal-vignette {
+  display: none;
+}
+html.retro-terminal .retro-terminal-vignette {
+  display: block;
+  position: fixed;
+  inset: 0;
+  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.75), inset 0 0 25px rgba(57, 255, 20, 0.04);
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* Terminal Scrolling Marquee */
+@keyframes marquee-scroll {
+  0% {
+    transform: translate3d(100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(-100%, 0, 0);
+  }
+}
+
+.animate-marquee {
+  display: inline-block;
+  animation: marquee-scroll 24s linear infinite;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -215,4 +488,19 @@
     width: 180px;
     height: 180px;
   }
+}
+
+/* Grid overlay visible ONLY under retro terminal */
+.retro-terminal-grid {
+  display: none;
+}
+.retro-terminal .retro-terminal-grid {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to right, rgba(57, 255, 20, 0.035) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(57, 255, 20, 0.035) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: -5;
 }

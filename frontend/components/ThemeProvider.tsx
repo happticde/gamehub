@@ -16,7 +16,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "light" | "dark";
+export type Theme = "light" | "dark" | "retro-terminal";
 
 interface ThemeContextType {
     theme: Theme;
@@ -41,7 +41,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Read saved preference on first mount
     useEffect(() => {
         const saved = localStorage.getItem("gamehub-theme") as Theme | null;
-        if (saved === "light" || saved === "dark") {
+        if (saved === "light" || saved === "dark" || saved === "retro-terminal") {
             setThemeState(saved);
         }
         setMounted(true);
@@ -51,11 +51,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         if (!mounted) return;
         const root = document.documentElement;
-        if (theme === "dark") {
-            root.classList.add("dark");
-        } else {
-            root.classList.remove("dark");
-        }
+        
+        // Clean up previous theme classes
+        root.classList.remove("light", "dark", "retro-terminal");
+        
+        // Add the current theme class
+        root.classList.add(theme);
+        
         localStorage.setItem("gamehub-theme", theme);
     }, [theme, mounted]);
 
