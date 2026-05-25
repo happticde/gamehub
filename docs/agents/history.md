@@ -1,6 +1,22 @@
 # Session History
 
-## Last Session Summary (2026-05-02)
+## Last Session Summary (2026-05-25)
+
+### What Changed
+
+**Global Navigation Live Search:**
+- **New Component**: `frontend/components/GlobalSearchBar.tsx` — SLEEK glassmorphic live autocomplete input that queries the unified game library debounced by 300ms. Shows cover art, rating, release year, and colored platform badges.
+- **Navbar Integration**: Placed in the top-middle for desktop view (`md:`), taking up centered space.
+- **Mobile Responsive Dialog**: Collapses into a touch-friendly search icon button next to the theme toggle. Tapping it opens a clean, modern full-screen `Dialog` to perform live search.
+- **Keyboard Power-User Navigation**: Supported global keyboard hotkeys (`/` and `⌘K` / `Ctrl+K`) to focus, arrow keys (`ArrowUp`/`ArrowDown`) to select, and `Enter` to navigate to detail pages or full search page.
+- **Always Present**: Search bar remains visible on all pages (landing page `/`, library list `/library`, stats `/stats`, admin dashboard `/admin`, and game details page `/library/[id]`).
+
+### Known State / Pending
+- Fully compiled and typechecked locally on host Mac architecture with zero errors.
+
+---
+
+## Previous Session Summary (2026-05-02)
 
 ### What Changed
 

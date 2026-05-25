@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Menu, X, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
+import GlobalSearchBar from "@/components/GlobalSearchBar";
 
 /** Navigation links shared between desktop and mobile menus */
 const NAV_LINKS = [
@@ -44,6 +45,11 @@ export default function Navbar() {
                     </Link>
                 </div>
 
+                {/* Desktop Global Search Bar - Top Middle */}
+                <div className="hidden md:flex flex-1 justify-center max-w-md mx-4">
+                    <GlobalSearchBar />
+                </div>
+
                 {/* Desktop nav links — hidden on mobile */}
                 <div className="hidden md:flex items-center gap-6 text-sm font-medium">
                     {NAV_LINKS.map((link) => (
@@ -74,6 +80,9 @@ export default function Navbar() {
 
                 {/* Mobile right-side controls */}
                 <div className="flex md:hidden items-center gap-1">
+                    {/* Mobile Global Search Button */}
+                    <GlobalSearchBar />
+
                     {/* Mobile theme toggle */}
                     <button
                         type="button"
