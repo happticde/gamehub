@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using GameHub.Core.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,9 +12,8 @@ namespace GameHub.Core.Controllers;
 [Authorize]
 public sealed class BackupController : ControllerBase
 {
-    private static readonly JsonSerializerOptions BackupJsonOptions = CreateJsonOptions();
-
     private readonly BackupExportService _backupExport;
+    private readonly BackupJsonSerializer _backupJson;
     private readonly ILogger<BackupController> _logger;
 
     /// <summary>
@@ -24,9 +21,11 @@ public sealed class BackupController : ControllerBase
     /// </summary>
     public BackupController(
         BackupExportService backupExport,
+        BackupJsonSerializer backupJson,
         ILogger<BackupController> logger)
     {
         _backupExport = backupExport;
+        _backupJson = backupJson;
         _logger = logger;
     }
 
@@ -41,7 +40,7 @@ public sealed class BackupController : ControllerBase
         _logger.LogInformation("Creating GameHub library backup");
 
         var backup = await _backupExport.CreateBackupAsync(cancellationToken);
-        var content = JsonSerializer.SerializeToUtf8Bytes(backup, BackupJsonOptions);
+        var content = _backupJson.Serialize(backup);
         var fileName = $"gamehub-backup-v{backup.FormatVersion}-{backup.ExportedAtUtc:yyyyMMdd-HHmmss}.json";
 
         _logger.LogInformation(
@@ -50,15 +49,5 @@ public sealed class BackupController : ControllerBase
             backup.Games.Sum(game => game.Items.Count));
 
         return File(content, "application/json; charset=utf-8", fileName);
-    }
-
-    private static JsonSerializerOptions CreateJsonOptions()
-    {
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
-        {
-            WriteIndented = true
-        };
-        options.Converters.Add(new JsonStringEnumConverter());
-        return options;
     }
 }

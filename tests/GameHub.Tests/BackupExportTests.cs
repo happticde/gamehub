@@ -20,6 +20,7 @@ public sealed class BackupExportTests : IDisposable
     private readonly Microsoft.Data.Sqlite.SqliteConnection _connection;
     private readonly CoreContext _db;
     private readonly BackupExportService _service;
+    private readonly BackupJsonSerializer _serializer = new();
 
     public BackupExportTests()
     {
@@ -161,6 +162,7 @@ public sealed class BackupExportTests : IDisposable
 
         var controller = new BackupController(
             _service,
+            _serializer,
             NullLogger<BackupController>.Instance);
 
         var result = await controller.Export(CancellationToken.None);

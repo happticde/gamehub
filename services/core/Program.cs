@@ -45,6 +45,8 @@ builder.Services.AddHttpClient<IngestClient>(c =>
 builder.Services.AddScoped<UnificationService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<BackupExportService>();
+builder.Services.AddScoped<BackupImportService>();
+builder.Services.AddSingleton<BackupJsonSerializer>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
 // --- IGDB Metadata Provider (ADR-003) ---
