@@ -1,3 +1,5 @@
+name: game-library-backend_devcontainer
+
 services:
   app:
     build:
