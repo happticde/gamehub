@@ -32,6 +32,7 @@ public class UnificationServiceTests : IDisposable
 
         // Build a minimal DI container with our in-memory DB
         var services = new ServiceCollection();
+        services.AddScoped<ITenantContext, DefaultTenantContext>();
         services.AddDbContext<CoreContext>(o => o.UseSqlite(_connection));
         _serviceProvider = services.BuildServiceProvider();
         _scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();

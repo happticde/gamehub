@@ -17,16 +17,18 @@ namespace GameHub.Core.Migrations.sqlite
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn)
                 .HasAnnotation("ProductVersion", "10.0.2")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
+
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("GameHub.Core.Data.ActivityLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Details")
                         .HasColumnType("text");
@@ -39,20 +41,28 @@ namespace GameHub.Core.Migrations.sqlite
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.ToTable("ActivityLogs", (string)null);
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("ActivityLogs");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("text");
@@ -71,6 +81,11 @@ namespace GameHub.Core.Migrations.sqlite
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp with time zone");
 
@@ -79,17 +94,20 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("TenantId");
+
                     b.HasIndex("UnifiedGameId");
 
-                    b.ToTable("EnrichmentAuditLogs", (string)null);
+                    b.ToTable("EnrichmentAuditLogs");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ExternalId")
                         .IsRequired()
@@ -101,30 +119,10 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<int>("Platform")
                         .HasColumnType("integer");
 
-                    b.Property<int>("UnifiedGameId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UnifiedGameId", "Platform")
-                        .IsUnique();
-
-                    b.ToTable("LibraryItems", (string)null);
-                });
-
-            modelBuilder.Entity("GameHub.Core.Data.ManualLink", b =>
-                {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("TenantId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
-
-                    b.Property<string>("ExternalId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("Platform")
-                        .HasColumnType("integer");
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
 
                     b.Property<int>("UnifiedGameId")
                         .HasColumnType("integer");
@@ -133,18 +131,52 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasIndex("UnifiedGameId");
 
-                    b.HasIndex("Platform", "ExternalId")
+                    b.HasIndex("TenantId", "UnifiedGameId", "Platform")
                         .IsUnique();
 
-                    b.ToTable("ManualLinks", (string)null);
+                    b.ToTable("LibraryItems");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.ManualLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Platform")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
+                    b.Property<int>("UnifiedGameId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UnifiedGameId");
+
+                    b.HasIndex("TenantId", "Platform", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("ManualLinks");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.SyncAuditLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("text");
@@ -162,20 +194,28 @@ namespace GameHub.Core.Migrations.sqlite
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.ToTable("SyncAuditLogs", (string)null);
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("SyncAuditLogs");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.SyncMetadata", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("LastSyncedAt")
                         .HasColumnType("timestamp with time zone");
@@ -183,39 +223,78 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<int>("Platform")
                         .HasColumnType("integer");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Platform")
+                    b.HasIndex("TenantId", "Platform")
                         .IsUnique();
 
-                    b.ToTable("SyncMetadata", (string)null);
+                    b.ToTable("SyncMetadata");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.Tag", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Name")
+                    b.HasIndex("TenantId", "Name")
                         .IsUnique();
 
-                    b.ToTable("Tags", (string)null);
+                    b.ToTable("Tags");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.Tenant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Tenants");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            CreatedAtUtc = new DateTime(2026, 6, 19, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Name = "Default"
+                        });
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Artworks")
                         .HasColumnType("text");
@@ -269,6 +348,11 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<string>("Summary")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");
@@ -278,10 +362,10 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Slug")
+                    b.HasIndex("TenantId", "Slug")
                         .IsUnique();
 
-                    b.ToTable("UnifiedGames", (string)null);
+                    b.ToTable("UnifiedGames");
                 });
 
             modelBuilder.Entity("TagUnifiedGame", b =>
@@ -296,11 +380,26 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasIndex("TagsId");
 
-                    b.ToTable("TagUnifiedGame", (string)null);
+                    b.ToTable("TagUnifiedGame");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.ActivityLog", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.EnrichmentAuditLog", b =>
                 {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
                         .WithMany()
                         .HasForeignKey("UnifiedGameId")
@@ -312,6 +411,12 @@ namespace GameHub.Core.Migrations.sqlite
 
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>
                 {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
                         .WithMany("Items")
                         .HasForeignKey("UnifiedGameId")
@@ -323,6 +428,12 @@ namespace GameHub.Core.Migrations.sqlite
 
             modelBuilder.Entity("GameHub.Core.Data.ManualLink", b =>
                 {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
                         .WithMany()
                         .HasForeignKey("UnifiedGameId")
@@ -330,6 +441,42 @@ namespace GameHub.Core.Migrations.sqlite
                         .IsRequired();
 
                     b.Navigation("UnifiedGame");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.SyncAuditLog", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.SyncMetadata", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.Tag", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TagUnifiedGame", b =>

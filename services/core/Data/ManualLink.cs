@@ -1,5 +1,4 @@
 using GameHub.Shared;
-using Microsoft.EntityFrameworkCore;
 
 namespace GameHub.Core.Data;
 
@@ -17,10 +16,10 @@ namespace GameHub.Core.Data;
 /// falling back to slug-based matching. Once a ManualLink exists, automatic
 /// matching will never override it.
 /// </summary>
-[Index(nameof(Platform), nameof(ExternalId), IsUnique = true)]
-public class ManualLink
+public class ManualLink : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
 
     /// <summary>Which platform this override applies to (Steam, PSN, GOG, Epic).</summary>
     public Platform Platform { get; set; }

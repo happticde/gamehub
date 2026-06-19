@@ -30,6 +30,7 @@ public class EnrichmentServiceTests : IDisposable
         _mockProvider = new MockProvider();
 
         var services = new ServiceCollection();
+        services.AddScoped<ITenantContext, DefaultTenantContext>();
         services.AddDbContext<CoreContext>(o => o.UseSqlite(_connection));
         services.AddSingleton<IGameMetadataProvider>(_mockProvider);
         services.AddScoped<EnrichmentService>(sp => new EnrichmentService(

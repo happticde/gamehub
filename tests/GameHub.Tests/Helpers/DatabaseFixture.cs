@@ -18,7 +18,8 @@ public static class DatabaseFixture
     /// Creates a fresh CoreContext backed by an in-memory SQLite database.
     /// The caller must dispose both the context and the connection when done.
     /// </summary>
-    public static (CoreContext Db, SqliteConnection Connection) CreateCoreContext()
+    public static (CoreContext Db, SqliteConnection Connection) CreateCoreContext(
+        ITenantContext? tenantContext = null)
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
@@ -27,7 +28,7 @@ public static class DatabaseFixture
             .UseSqlite(connection)
             .Options;
 
-        var db = new CoreContext(options);
+        var db = new CoreContext(options, tenantContext ?? new DefaultTenantContext());
         db.Database.EnsureCreated();
         return (db, connection);
     }
