@@ -86,4 +86,4 @@ No backup format change is required if only ownership semantics change. A new fo
 1. **Completed:** Add `GET /api/backup` for a downloadable V1 JSON document.
 2. **Completed:** Add validation and transactional restore into an empty library.
 3. **Completed:** Add an Admin UI for download, validation preview, and restore.
-4. Add a separate flat CSV export for spreadsheet use.
+4. **Completed:** Add a separate flat CSV export for spreadsheet use.

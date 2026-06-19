@@ -7,6 +7,7 @@ import {
     CheckCircle2,
     Download,
     FileJson,
+    FileSpreadsheet,
     Loader2,
     Upload,
     X,
@@ -32,7 +33,8 @@ import type {
 
 const maxBackupSizeBytes = 25 * 1024 * 1024;
 
-type Operation = "idle" | "downloading" | "validating" | "restoring";
+type Operation = "idle" | "downloading-json" | "downloading-csv" | "validating" | "restoring";
+type DownloadFormat = "json" | "csv";
 type Notice = { kind: "success" | "error"; message: string };
 
 function formatFileSize(bytes: number): string {
@@ -72,27 +74,33 @@ export function BackupRestorePanel() {
     const [restoreResult, setRestoreResult] = useState<BackupRestoreResult | null>(null);
     const [notice, setNotice] = useState<Notice | null>(null);
 
-    const handleDownload = async () => {
-        setOperation("downloading");
+    const handleDownload = async (format: DownloadFormat) => {
+        const isJson = format === "json";
+        const label = isJson ? "JSON backup" : "CSV export";
+        const endpoint = isJson ? "/api/core/backup" : "/api/core/backup/csv";
+
+        setOperation(isJson ? "downloading-json" : "downloading-csv");
         setNotice(null);
 
         try {
-            const response = await fetch("/api/core/backup");
+            const response = await fetch(endpoint);
             if (!response.ok) {
-                throw new Error(`Backup download failed (Status ${response.status}).`);
+                throw new Error(`${label} failed (Status ${response.status}).`);
             }
 
             const blob = await response.blob();
             const objectUrl = URL.createObjectURL(blob);
             const anchor = document.createElement("a");
             anchor.href = objectUrl;
-            anchor.download = `gamehub-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            anchor.download = isJson
+                ? `gamehub-backup-${new Date().toISOString().slice(0, 10)}.json`
+                : `gamehub-library-${new Date().toISOString().slice(0, 10)}.csv`;
             document.body.appendChild(anchor);
             anchor.click();
             anchor.remove();
             URL.revokeObjectURL(objectUrl);
 
-            setNotice({ kind: "success", message: "Backup downloaded." });
+            setNotice({ kind: "success", message: `${label} downloaded.` });
         } catch (error) {
             setNotice({ kind: "error", message: errorMessage(error) });
         } finally {
@@ -187,20 +195,39 @@ export function BackupRestorePanel() {
                     <div className="flex items-start gap-3">
                         <Download className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                         <div>
-                            <h2 className="text-lg font-semibold">JSON Backup</h2>
+                            <h2 className="text-lg font-semibold">Library exports</h2>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Versioned snapshot of library data and manual matching overrides.
+                                Restorable JSON backup or spreadsheet-ready CSV.
                             </p>
                         </div>
                     </div>
-                    <Button onClick={handleDownload} disabled={isBusy} className="w-full sm:w-auto">
-                        {operation === "downloading" ? (
-                            <Loader2 className="animate-spin" />
-                        ) : (
-                            <Download />
-                        )}
-                        Download backup
-                    </Button>
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                        <Button
+                            onClick={() => void handleDownload("json")}
+                            disabled={isBusy}
+                            className="w-full sm:w-auto"
+                        >
+                            {operation === "downloading-json" ? (
+                                <Loader2 className="animate-spin" />
+                            ) : (
+                                <Download />
+                            )}
+                            Download JSON
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => void handleDownload("csv")}
+                            disabled={isBusy}
+                            className="w-full sm:w-auto"
+                        >
+                            {operation === "downloading-csv" ? (
+                                <Loader2 className="animate-spin" />
+                            ) : (
+                                <FileSpreadsheet />
+                            )}
+                            Download CSV
+                        </Button>
+                    </div>
                 </div>
             </section>
 
