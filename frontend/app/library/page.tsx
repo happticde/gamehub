@@ -3,6 +3,7 @@ import GameCard from "@/components/GameCard";
 import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
 import LibraryViewControls from "@/components/LibraryViewControls";
+import { getCoreApiUrl } from "@/lib/core-api";
 
 /**
  * Library page — a React Server Component (RSC).
@@ -57,8 +58,6 @@ export default async function LibraryPage({
 
     const includeIgnored = resolvedParams.includeIgnored === 'true';
 
-    // We use standard fetch syntax. The URL hits our own Next.js server route, 
-    // which is then proxied via next.config.ts down to the C# Core API.
     let games: UnifiedGame[] = [];
     let tagsList: string[] = [];
     let developersList: string[] = [];
@@ -92,15 +91,14 @@ export default async function LibraryPage({
         query.append("page", currentPage.toString());
         if (includeIgnored) query.append("includeIgnored", "true");
 
-        // We proxy it through Next.js
-        const fetchUrl = `http://localhost:3000/api/core/library?${query.toString()}`;
+        const fetchUrl = getCoreApiUrl(`/library?${query.toString()}`);
 
         // Fetch all data in parallel for performance using Promise.all
         const [res, tagsRes, devsRes, pubsRes] = await Promise.all([
             fetch(fetchUrl, { cache: "no-store" }),
-            fetch("http://localhost:3000/api/core/library/tags", { cache: "no-store", next: { revalidate: 300 } }),
-            fetch("http://localhost:3000/api/core/library/developers", { cache: "no-store", next: { revalidate: 300 } }),
-            fetch("http://localhost:3000/api/core/library/publishers", { cache: "no-store", next: { revalidate: 300 } }),
+            fetch(getCoreApiUrl("/library/tags"), { cache: "no-store", next: { revalidate: 300 } }),
+            fetch(getCoreApiUrl("/library/developers"), { cache: "no-store", next: { revalidate: 300 } }),
+            fetch(getCoreApiUrl("/library/publishers"), { cache: "no-store", next: { revalidate: 300 } }),
         ]);
 
         if (!res.ok) {

@@ -52,3 +52,4 @@ Before starting work, use `view_file` on the relevant file(s):
 3. **No sweeping assumptions.** Do not tell the user a feature is complete until you have verified the code exists.
 4. **Research latest stable versions.** Before adding dependencies, check the current latest stable release date/version.
 5. **Contextual Awareness.** Check `docs/agents/` files before making architectural changes.
+6. **Protected main branch.** NEVER commit or push directly to `main`. Before changing any file, verify the current branch and create a new task-specific branch when on `main`. Changes may reach `main` only through a pull request.

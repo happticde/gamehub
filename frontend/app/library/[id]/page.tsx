@@ -7,6 +7,7 @@ import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 import FixMatchDialog from "@/components/library/FixMatchDialog";
 import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
 import CoverImageClient from "@/components/library/CoverImageClient";
+import { getCoreApiUrl } from "@/lib/core-api";
 
 // Extended payload type for the game detail view
 interface ExpandedGame {
@@ -48,9 +49,7 @@ export default async function GameDetailPage({
     let error: string | null = null;
 
     try {
-        // Fetch from our local proxy. We use localhost:3000 to hit the Next.js Node server,
-        // which then rewrites it to the internal Docker C# application.
-        const res = await fetch(`http://localhost:3000/api/core/library/${id}`, { cache: "no-store" });
+        const res = await fetch(getCoreApiUrl(`/library/${id}`), { cache: "no-store" });
         if (!res.ok) {
             if (res.status === 404) {
                 return (

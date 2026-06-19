@@ -5,6 +5,11 @@
 - **npm / npx are NOT installed on the host machine.**
 - Use **Docker Exec** for all building, testing, and dependency management.
 
+## Git Workflow
+- The `main` branch is protected. **Never commit or push directly to `main`.**
+- Before editing files, verify the current branch. If it is `main`, create and switch to a new task-specific branch first.
+- Push only the task branch and integrate changes into `main` through a pull request.
+
 ## Docker Shortcuts (via `docker exec`)
 The devcontainer name is: **`game-library-backend_devcontainer-app-1`**. 
 The workspace is mounted at `/workspaces/game-library-backend`.
