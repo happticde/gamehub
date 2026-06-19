@@ -104,7 +104,7 @@ Open `.env` and configure your credentials:
 
 | Variable | Purpose |
 |----------|---------|
-| `API_KEY` | API key for authenticating requests (empty = auth disabled) |
+| `GAMEHUB_API_KEY` | API key for authenticating requests (empty = auth disabled) |
 | `IGDB_CLIENT_ID` | Twitch Developer App Client ID (for IGDB enrichment) |
 | `IGDB_CLIENT_SECRET` | Twitch Developer App Client Secret |
 
