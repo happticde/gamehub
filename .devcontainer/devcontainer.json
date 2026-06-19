@@ -1,22 +1,13 @@
 {
     "name": "Game Lib Backend",
-    // Official Microsoft .NET 8 Dev Image (Bookworm/Debian)
+    // .NET, Node.js, and Go are installed by the Dockerfile so plain Docker Compose
+    // and VS Code Dev Containers use the same toolchain.
     "dockerComposeFile": "docker-compose.yml",
     "service": "app",
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-    "features": {
-        "ghcr.io/devcontainers/features/node:1": {
-            "version": "24",
-            "pnpmVersion": "latest",
-            "nvmVersion": "latest"
-        },
-        "ghcr.io/devcontainers/features/go:1": {
-            "version": "1.26"
-        }
-    },
-    "forwardPorts": [3000],
+    "forwardPorts": [3005],
     "portsAttributes": {
-        "3000": {
+        "3005": {
             "label": "Next.js Frontend",
             "onAutoForward": "notify"
         }
