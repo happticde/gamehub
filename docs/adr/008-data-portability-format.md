@@ -41,6 +41,23 @@ Version 1 deliberately excludes:
 
 Export order is deterministic to make backups reviewable and diff-friendly. Restore will validate both `format` and `formatVersion`, run transactionally, and initially accept only an empty target library. CSV will be offered later as a human-readable export, not as a full-fidelity restore format.
 
+## Multi-Tenancy Compatibility
+
+The current implementation is intentionally single-tenant. Export queries the instance-wide unified library, and restore requires the instance-wide durable library tables to be empty. These endpoints must not be treated as multi-user safe merely because authentication is later added.
+
+The V1 document remains tenant-neutral by design: it contains library data but no tenant or user identifier. This allows a backup to be restored into a different account without carrying source ownership or database identity across deployments.
+
+Before multi-user operation is enabled, Roadmap item #8 must include all of the following:
+
+1. Resolve the active tenant from trusted authentication claims through a central tenant context; never accept tenant identity from the backup or request payload.
+2. Migrate existing user-owned records to a default tenant.
+3. Scope export, validation context, restore, sync, background jobs, and all other user-owned reads and writes to the active tenant.
+4. Replace global unique constraints for slugs, tags, and manual platform links with tenant-scoped constraints where appropriate.
+5. Change the restore precondition from an empty database to an empty library for the active tenant. Other tenants must neither block nor be affected by the restore.
+6. Add isolation tests proving that Tenant A cannot export, overwrite, or infer Tenant B's data and that equivalent slugs and platform identifiers can coexist across tenants.
+
+No backup format change is required if only ownership semantics change. A new format version is required when the JSON document shape or restored data meaning changes incompatibly.
+
 ## Rationale
 
 - JSON preserves nested relationships without database-specific identifiers.
@@ -62,10 +79,11 @@ Export order is deterministic to make backups reviewable and diff-friendly. Rest
 - Format migrations will be required when breaking changes are introduced.
 - CSV cannot be used for complete restoration.
 - Audit history and raw platform payloads are not restored.
+- Export and restore remain instance-wide administrative operations until tenant scoping is implemented.
 
 ## Delivery Plan
 
-1. Add `GET /api/backup` for a downloadable V1 JSON document.
-2. Add validation and transactional restore into an empty library.
-3. Add an Admin UI for download, validation preview, and restore.
+1. **Completed:** Add `GET /api/backup` for a downloadable V1 JSON document.
+2. **Completed:** Add validation and transactional restore into an empty library.
+3. **Completed:** Add an Admin UI for download, validation preview, and restore.
 4. Add a separate flat CSV export for spreadsheet use.

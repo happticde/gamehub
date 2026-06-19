@@ -7,11 +7,12 @@
  * needs to live in the browser — the user clicks tabs and the component
  * re-renders to show the right panel without a full page reload.
  *
- * Four tabs:
+ * Five tabs:
  *   1. Enrichment — manage IGDB metadata enrichment (stats, actions, audit)
  *   2. Ingestion  — trigger platform data fetches (Steam, GOG, PSN)
  *   3. Sync       — trigger and review unification syncs
  *   4. Activity   — recent system activity feed
+ *   5. Backup     — export, validate, and restore portable backups
  */
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -19,7 +20,8 @@ import { EnrichmentPanel } from "@/components/admin/EnrichmentPanel";
 import { IngestionPanel } from "@/components/admin/IngestionPanel";
 import { SyncPanel } from "@/components/admin/SyncPanel";
 import { ActivityPanel } from "@/components/admin/ActivityPanel";
-import { Settings, Sparkles, Download, RefreshCw, Bell } from "lucide-react";
+import { BackupRestorePanel } from "@/components/admin/BackupRestorePanel";
+import { Settings, Sparkles, Download, RefreshCw, Bell, ArchiveRestore } from "lucide-react";
 
 export default function AdminPage() {
     return (
@@ -32,7 +34,7 @@ export default function AdminPage() {
                         Admin Dashboard
                     </h1>
                     <p className="mt-4 text-lg text-muted-foreground max-w-2xl">
-                        Manage enrichment, ingest platform libraries, and monitor sync operations for your unified game collection.
+                        Manage enrichment, platform ingestion, sync operations, and portable backups for your unified game collection.
                     </p>
                 </header>
 
@@ -55,6 +57,10 @@ export default function AdminPage() {
                             <Bell className="h-4 w-4" />
                             Activity
                         </TabsTrigger>
+                        <TabsTrigger value="backup" className="gap-1.5">
+                            <ArchiveRestore className="h-4 w-4" />
+                            Backup
+                        </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="enrichment">
@@ -72,9 +78,12 @@ export default function AdminPage() {
                     <TabsContent value="activity">
                         <ActivityPanel />
                     </TabsContent>
+
+                    <TabsContent value="backup">
+                        <BackupRestorePanel />
+                    </TabsContent>
                 </Tabs>
             </main>
         </div>
     );
 }
-

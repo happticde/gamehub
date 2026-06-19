@@ -109,3 +109,34 @@ export interface LibraryStats {
         platforms: string[];
     }[];
 }
+
+/** Record counts returned by the backup validation and restore APIs. */
+export interface BackupSummary {
+    gameCount: number;
+    platformItemCount: number;
+    manualLinkCount: number;
+    tagCount: number;
+}
+
+/** Machine-readable issue returned for an invalid backup upload. */
+export interface BackupValidationError {
+    code: string;
+    message: string;
+    path: string | null;
+}
+
+/** Response from POST /api/backup/validate. */
+export interface BackupValidationResult {
+    isValid: boolean;
+    format: string | null;
+    formatVersion: number | null;
+    summary: BackupSummary;
+    errors: BackupValidationError[];
+}
+
+/** Response from POST /api/backup/restore. */
+export interface BackupRestoreResult {
+    restored: boolean;
+    message: string;
+    summary: BackupSummary;
+}

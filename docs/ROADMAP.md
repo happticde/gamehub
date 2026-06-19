@@ -59,6 +59,11 @@ GitHub Actions: build → test → Docker build → push to registry.
 
 ### 8. User Accounts & Multi-Tenancy
 Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth (Steam/PSN/GOG login).
+- **Ownership migration**: Assign existing records to a default tenant, then make user-owned entities and background jobs tenant-aware.
+- **Isolation**: Scope library queries, sync, export, validation, and restore to the authenticated tenant. Tenant identity must come from trusted authentication claims, never request payloads.
+- **Constraints**: Replace global uniqueness for slugs, tags, and manual platform links with tenant-scoped composite indexes where appropriate.
+- **Portability**: Keep the JSON backup tenant-neutral. The current empty-library restore rule must become "the authenticated tenant's library is empty" before multi-user operation is enabled.
+- **Verification**: Add cross-tenant tests proving exports cannot leak data, restores cannot modify another tenant, and identical slugs/platform IDs can coexist across tenants.
 
 ### 9. Notifications & Activity Feed
 `ActivityLog` table + activity endpoint for social sharing/feed.
@@ -77,6 +82,8 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 ### 12. Data Portability (Backup & Restore)
 - **Feature**: GameHub-specific import/export via JSON/CSV.
 - **Goal**: Full manual backup of entire unified library (metadata, ratings, play status).
+- **Current scope**: JSON V1 export, validation, transactional empty-library restore, and Admin UI are implemented for the single-user deployment model. CSV export remains pending.
+- **Multi-tenancy dependency**: Data portability must be tenant-scoped as part of item #8 before multi-user operation is enabled. See [ADR-008](adr/008-data-portability-format.md).
 
 ### 13. Physical Collection (Barcode Scanning)
 - **Scanner**: Web-based barcode scanner (MediaDevices API) for physical game cases.
