@@ -14,16 +14,16 @@ namespace GameHub.Core.Services;
 /// </summary>
 public class EnrichmentBackgroundService : BackgroundService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ITenantJobRunner _tenantJobs;
     private readonly IConfiguration _config;
     private readonly ILogger<EnrichmentBackgroundService> _logger;
 
     public EnrichmentBackgroundService(
-        IServiceScopeFactory scopeFactory,
+        ITenantJobRunner tenantJobs,
         IConfiguration config,
         ILogger<EnrichmentBackgroundService> logger)
     {
-        _scopeFactory = scopeFactory;
+        _tenantJobs = tenantJobs;
         _config = config;
         _logger = logger;
     }
@@ -44,10 +44,34 @@ public class EnrichmentBackgroundService : BackgroundService
         {
             try
             {
-                using var scope = _scopeFactory.CreateScope();
-                var enrichment = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+                var remaining = 0;
+                var processed = 0;
+                await _tenantJobs.RunForEachTenantAsync(async (services, tenantId, cancellationToken) =>
+                {
+                    var enrichment = services.GetRequiredService<EnrichmentService>();
+                    var tenantRemaining = await enrichment.GetUnenrichedCountAsync(cancellationToken);
+                    remaining += tenantRemaining;
 
-                var remaining = await enrichment.GetUnenrichedCountAsync(stoppingToken);
+                    if (tenantRemaining == 0)
+                    {
+                        return;
+                    }
+
+                    _logger.LogInformation(
+                        "Enrichment progress for tenant {TenantId}: {Remaining} games remaining",
+                        tenantId,
+                        tenantRemaining);
+
+                    var tenantProcessed = await enrichment.EnrichUnenrichedAsync(batchSize, cancellationToken);
+                    processed += tenantProcessed;
+                    if (tenantProcessed > 0)
+                    {
+                        _logger.LogInformation(
+                            "Enrichment batch complete for tenant {TenantId}: {Count} games processed",
+                            tenantId,
+                            tenantProcessed);
+                    }
+                }, stoppingToken);
 
                 if (remaining == 0)
                 {
@@ -57,13 +81,8 @@ public class EnrichmentBackgroundService : BackgroundService
                     continue;
                 }
 
-                _logger.LogInformation("Enrichment progress: {Remaining} games remaining in the queue", remaining);
-
-                var processed = await enrichment.EnrichUnenrichedAsync(batchSize, stoppingToken);
-
                 if (processed > 0)
                 {
-                    _logger.LogInformation("Enrichment batch complete: {Count} games processed", processed);
                     await Task.Delay(TimeSpan.FromMilliseconds(delayMs), stoppingToken);
                 }
             }

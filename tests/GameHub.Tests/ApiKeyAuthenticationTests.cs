@@ -168,4 +168,59 @@ public class ApiKeyAuthenticationTests
         Assert.NotNull(authMethodClaim);
         Assert.Equal("ApiKey", authMethodClaim.Value);
     }
+
+    [Fact]
+    public async Task KeyConfigured_CorrectKey_HasDefaultTenantClaim()
+    {
+        var context = CreateHttpContext(TestApiKey);
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", TestApiKey } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            GameHubTenantDefaults.DefaultTenantId.ToString("D"),
+            result.Principal?.FindFirst(GameHubClaimTypes.TenantId)?.Value);
+    }
+
+    [Fact]
+    public async Task TenantConfigured_CorrectKey_HasConfiguredTenantClaim()
+    {
+        var tenantId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var context = CreateHttpContext(TestApiKey);
+        var handler = await CreateHandler(
+            new Dictionary<string, string?>
+            {
+                { "Authentication:ApiKey", TestApiKey },
+                { "Authentication:TenantId", tenantId.ToString("D") }
+            },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            tenantId.ToString("D"),
+            result.Principal?.FindFirst(GameHubClaimTypes.TenantId)?.Value);
+    }
+
+    [Fact]
+    public async Task InvalidTenantConfigured_AuthenticationFails()
+    {
+        var context = CreateHttpContext(TestApiKey);
+        var handler = await CreateHandler(
+            new Dictionary<string, string?>
+            {
+                { "Authentication:ApiKey", TestApiKey },
+                { "Authentication:TenantId", "not-a-guid" }
+            },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("non-empty GUID", result.Failure?.Message);
+    }
 }
