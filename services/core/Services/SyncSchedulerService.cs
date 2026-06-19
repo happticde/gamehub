@@ -77,7 +77,7 @@ public class SyncSchedulerStatus
 /// Background worker that runs a full library sync on a configurable interval.
 ///
 /// Mirrors the pattern from <see cref="EnrichmentBackgroundService"/>:
-///   - Uses IServiceScopeFactory to resolve scoped services (UnificationService)
+///   - Uses ITenantJobRunner to isolate scoped work for every configured tenant
 ///   - Respects CancellationToken for graceful shutdown
 ///   - Logs progress and errors with structured logging
 ///
@@ -87,18 +87,18 @@ public class SyncSchedulerStatus
 /// </summary>
 public class SyncSchedulerService : BackgroundService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ITenantJobRunner _tenantJobs;
     private readonly IConfiguration _config;
     private readonly ILogger<SyncSchedulerService> _logger;
     private readonly SyncSchedulerStatus _status;
 
     public SyncSchedulerService(
-        IServiceScopeFactory scopeFactory,
+        ITenantJobRunner tenantJobs,
         IConfiguration config,
         ILogger<SyncSchedulerService> logger,
         SyncSchedulerStatus status)
     {
-        _scopeFactory = scopeFactory;
+        _tenantJobs = tenantJobs;
         _config = config;
         _logger = logger;
         _status = status;
@@ -123,18 +123,48 @@ public class SyncSchedulerService : BackgroundService
 
             try
             {
-                using var scope = _scopeFactory.CreateScope();
-                var unifier = scope.ServiceProvider.GetRequiredService<UnificationService>();
-                var activityLog = scope.ServiceProvider.GetRequiredService<ActivityLogService>();
+                var count = 0;
+                await _tenantJobs.RunForEachTenantAsync(async (services, tenantId, cancellationToken) =>
+                {
+                    var unifier = services.GetRequiredService<UnificationService>();
+                    var activityLog = services.GetRequiredService<ActivityLogService>();
 
-                await activityLog.LogAsync("SyncStarted", "Scheduled sync cycle started");
+                    await activityLog.LogAsync("SyncStarted", "Scheduled sync cycle started");
+                    try
+                    {
+                        var tenantCount = await unifier.RunFullSyncAsync();
+                        count += tenantCount;
+                        await activityLog.LogAsync(
+                            "SyncFinished",
+                            $"Scheduled sync completed — {tenantCount} items processed");
 
-                var count = await unifier.RunFullSyncAsync();
+                        _logger.LogInformation(
+                            "Sync scheduler completed tenant {TenantId} with {Count} items processed",
+                            tenantId,
+                            tenantCount);
+                    }
+                    catch (Exception exception)
+                    {
+                        try
+                        {
+                            await activityLog.LogAsync(
+                                "SyncFinished",
+                                $"Scheduled sync failed: {exception.Message}");
+                        }
+                        catch (Exception activityException)
+                        {
+                            _logger.LogWarning(
+                                activityException,
+                                "Could not record sync failure for tenant {TenantId}",
+                                tenantId);
+                        }
+
+                        throw;
+                    }
+                }, stoppingToken);
 
                 var nextRun = DateTime.UtcNow.Add(interval);
                 _status.MarkCompleted(count, nextRun);
-
-                await activityLog.LogAsync("SyncFinished", $"Scheduled sync completed — {count} items processed");
 
                 _logger.LogInformation(
                     "Sync scheduler: cycle complete — {Count} items processed. Next run at {NextRun}",
@@ -149,15 +179,6 @@ public class SyncSchedulerService : BackgroundService
             {
                 var nextRun = DateTime.UtcNow.Add(interval);
                 _status.MarkFailed(ex.Message, nextRun);
-
-                // Log the failure to activity feed (in a fresh scope since the previous one may be broken)
-                try
-                {
-                    using var errorScope = _scopeFactory.CreateScope();
-                    var activityLog = errorScope.ServiceProvider.GetRequiredService<ActivityLogService>();
-                    await activityLog.LogAsync("SyncFinished", $"Scheduled sync failed: {ex.Message}");
-                }
-                catch { /* Don't let activity logging failures mask the original error */ }
 
                 _logger.LogError(ex,
                     "Sync scheduler: cycle failed. Next retry at {NextRun}",

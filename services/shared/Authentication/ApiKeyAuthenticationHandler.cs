@@ -18,6 +18,7 @@ namespace GameHub.Shared.Authentication;
 /// Behavior:
 ///   - If no API key is configured → auth is disabled (all requests succeed)
 ///   - If API key is configured → X-Api-Key header must match
+///   - Assigns the configured server-side tenant, or the legacy default tenant
 ///   - Creates a ClaimsPrincipal with "ApiKeyUser" identity (ready for role claims)
 /// </summary>
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
@@ -30,6 +31,9 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
 
     /// <summary>Configuration key for the API key value.</summary>
     private const string ConfigKey = "Authentication:ApiKey";
+
+    /// <summary>Optional trusted tenant assignment for the configured API key.</summary>
+    private const string TenantConfigKey = "Authentication:TenantId";
 
     private readonly IConfiguration _configuration;
 
@@ -45,13 +49,32 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        var tenantId = _configuration[TenantConfigKey];
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            tenantId = GameHubTenantDefaults.DefaultTenantId.ToString("D");
+        }
+        else if (!Guid.TryParse(tenantId, out var configuredTenantId) || configuredTenantId == Guid.Empty)
+        {
+            return Task.FromResult(AuthenticateResult.Fail(
+                $"Configuration value '{TenantConfigKey}' must be a non-empty GUID"));
+        }
+        else
+        {
+            tenantId = configuredTenantId.ToString("D");
+        }
+
         // If no API key is configured, auth is disabled — let everything through.
         // This preserves backward compatibility for local dev.
         var configuredKey = _configuration[ConfigKey];
         if (string.IsNullOrEmpty(configuredKey))
         {
             Logger.LogDebug("No API key configured — authentication disabled");
-            var anonymousClaims = new[] { new Claim(ClaimTypes.Name, "anonymous") };
+            var anonymousClaims = new[]
+            {
+                new Claim(ClaimTypes.Name, "anonymous"),
+                new Claim(GameHubClaimTypes.TenantId, tenantId)
+            };
             var anonymousIdentity = new ClaimsIdentity(anonymousClaims, SchemeName);
             return Task.FromResult(AuthenticateResult.Success(
                 new AuthenticationTicket(new ClaimsPrincipal(anonymousIdentity), SchemeName)));
@@ -74,7 +97,8 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
         var claims = new[]
         {
             new Claim(ClaimTypes.Name, "ApiKeyUser"),
-            new Claim(ClaimTypes.AuthenticationMethod, SchemeName)
+            new Claim(ClaimTypes.AuthenticationMethod, SchemeName),
+            new Claim(GameHubClaimTypes.TenantId, tenantId)
         };
         var identity = new ClaimsIdentity(claims, SchemeName);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);
