@@ -1,6 +1,4 @@
 using GameHub.Shared;
-using Microsoft.EntityFrameworkCore;
-using System.ComponentModel.DataAnnotations;
 
 namespace GameHub.Core.Data;
 
@@ -13,10 +11,10 @@ public enum PlayStatus
     Abandoned
 }
 
-[Index(nameof(Slug), IsUnique = true)]
-public class UnifiedGame
+public class UnifiedGame : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
     public string Title { get; set; } = "";
     public string Slug { get; set; } = "";
     public List<LibraryItem> Items { get; set; } = [];
@@ -72,10 +70,10 @@ public class UnifiedGame
     public DateTime? EnrichedAt { get; set; }
 }
 
-[Index(nameof(UnifiedGameId), nameof(Platform), IsUnique = true)]
-public class LibraryItem
+public class LibraryItem : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
     public int UnifiedGameId { get; set; }
     public UnifiedGame? UnifiedGame { get; set; }
     public Platform Platform { get; set; }
@@ -83,9 +81,10 @@ public class LibraryItem
     public DateTime LastSynced { get; set; } = DateTime.UtcNow;
 }
 
-public class EnrichmentAuditLog
+public class EnrichmentAuditLog : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
     public int UnifiedGameId { get; set; }
     public UnifiedGame? UnifiedGame { get; set; }
     
@@ -97,9 +96,10 @@ public class EnrichmentAuditLog
     public string? MatchedTitle { get; set; }
 }
 
-public class SyncAuditLog
+public class SyncAuditLog : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public Platform Platform { get; set; }
     public string Status { get; set; } = ""; // "Success", "Error"
@@ -108,10 +108,10 @@ public class SyncAuditLog
     public string? ErrorMessage { get; set; }
 }
 
-[Index(nameof(Name), IsUnique = true)]
-public class Tag
+public class Tag : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
     public string Name { get; set; } = "";
     
     public ICollection<UnifiedGame> Games { get; set; } = new List<UnifiedGame>();
@@ -121,9 +121,10 @@ public class Tag
 /// Tracks system events (sync cycles, manual merge/split actions, game count changes)
 /// for display in the admin dashboard's activity feed.
 /// </summary>
-public class ActivityLog
+public class ActivityLog : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
 
     /// <summary>UTC timestamp when the event occurred.</summary>
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;

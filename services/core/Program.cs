@@ -49,6 +49,7 @@ builder.Services.AddScoped<BackupImportService>();
 builder.Services.AddSingleton<BackupCsvSerializer>();
 builder.Services.AddSingleton<BackupJsonSerializer>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.AddScoped<ITenantContext, DefaultTenantContext>();
 
 // --- IGDB Metadata Provider (ADR-003) ---
 // IgdbClient is a singleton so there's only one OAuth token in memory.

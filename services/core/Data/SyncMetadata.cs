@@ -1,5 +1,4 @@
 using GameHub.Shared;
-using Microsoft.EntityFrameworkCore;
 
 namespace GameHub.Core.Data;
 
@@ -9,10 +8,10 @@ namespace GameHub.Core.Data;
 /// only requests records from Ingest that were updated after this timestamp,
 /// avoiding re-processing the entire dataset every time.
 /// </summary>
-[Index(nameof(Platform), IsUnique = true)]
-public class SyncMetadata
+public class SyncMetadata : ITenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
 
     /// <summary>Which platform this sync record is for (Steam, PSN, GOG, Epic).</summary>
     public Platform Platform { get; set; }
