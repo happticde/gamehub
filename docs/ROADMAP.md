@@ -79,10 +79,10 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 
 ## 🚀 Tier 4 — Advanced Features & Portability
 
-### 12. Data Portability (Backup & Restore)
+### 12. Data Portability (Backup & Restore) ✅
 - **Feature**: GameHub-specific import/export via JSON/CSV.
 - **Goal**: Full manual backup of entire unified library (metadata, ratings, play status).
-- **Current scope**: JSON V1 export, validation, transactional empty-library restore, and Admin UI are implemented for the single-user deployment model. CSV export remains pending.
+- **Current scope**: JSON V1 export, validation, transactional empty-library restore, Admin UI, and spreadsheet-safe CSV export are implemented for the single-user deployment model.
 - **Multi-tenancy dependency**: Data portability must be tenant-scoped as part of item #8 before multi-user operation is enabled. See [ADR-008](adr/008-data-portability-format.md).
 
 ### 13. Physical Collection (Barcode Scanning)

@@ -14,6 +14,7 @@ public sealed class BackupController : ControllerBase
 {
     private readonly BackupExportService _backupExport;
     private readonly BackupJsonSerializer _backupJson;
+    private readonly BackupCsvSerializer _backupCsv;
     private readonly ILogger<BackupController> _logger;
 
     /// <summary>
@@ -22,10 +23,12 @@ public sealed class BackupController : ControllerBase
     public BackupController(
         BackupExportService backupExport,
         BackupJsonSerializer backupJson,
+        BackupCsvSerializer backupCsv,
         ILogger<BackupController> logger)
     {
         _backupExport = backupExport;
         _backupJson = backupJson;
+        _backupCsv = backupCsv;
         _logger = logger;
     }
 
@@ -49,5 +52,26 @@ public sealed class BackupController : ControllerBase
             backup.Games.Sum(game => game.Items.Count));
 
         return File(content, "application/json; charset=utf-8", fileName);
+    }
+
+    /// <summary>
+    /// GET: api/backup/csv
+    /// Downloads a flat, spreadsheet-friendly view of the unified library.
+    /// </summary>
+    [HttpGet("csv")]
+    [Produces("text/csv")]
+    public async Task<IActionResult> ExportCsv(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Creating GameHub library CSV export");
+
+        var backup = await _backupExport.CreateBackupAsync(cancellationToken);
+        var content = _backupCsv.Serialize(backup);
+        var fileName = $"gamehub-library-{backup.ExportedAtUtc:yyyyMMdd-HHmmss}.csv";
+
+        _logger.LogInformation(
+            "Created GameHub CSV export with {GameCount} games",
+            backup.Games.Count);
+
+        return File(content, "text/csv; charset=utf-8", fileName);
     }
 }

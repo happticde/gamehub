@@ -40,6 +40,7 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, **G
 - **IGDB metadata enrichment** — cover art, ratings, genres, screenshots, developers, publishers
 - **Modern web UI** — filterable/searchable library grid, cinematic game detail pages
 - **Admin dashboard** — enrichment controls, platform ingestion forms, sync management, audit logs
+- **Data portability** — versioned JSON backup/restore and spreadsheet-safe CSV export
 - **API key authentication** — JWT-ready, configurable via env vars
 - **MCP Server** — AI assistant integration via the [Model Context Protocol](https://modelcontextprotocol.io/)
 

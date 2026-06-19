@@ -1,6 +1,8 @@
+using System.Text;
 using System.Text.Json;
 using GameHub.Core.Controllers;
 using GameHub.Core.Data;
+using GameHub.Core.Models.Backup;
 using GameHub.Core.Services;
 using GameHub.Shared;
 using GameHub.Tests.Helpers;
@@ -21,6 +23,7 @@ public sealed class BackupExportTests : IDisposable
     private readonly CoreContext _db;
     private readonly BackupExportService _service;
     private readonly BackupJsonSerializer _serializer = new();
+    private readonly BackupCsvSerializer _csvSerializer = new();
 
     public BackupExportTests()
     {
@@ -163,6 +166,7 @@ public sealed class BackupExportTests : IDisposable
         var controller = new BackupController(
             _service,
             _serializer,
+            _csvSerializer,
             NullLogger<BackupController>.Instance);
 
         var result = await controller.Export(CancellationToken.None);
@@ -181,6 +185,81 @@ public sealed class BackupExportTests : IDisposable
         Assert.Equal("Steam", exportedGame.GetProperty("items")[0].GetProperty("platform").GetString());
         Assert.False(exportedGame.TryGetProperty("id", out _));
         Assert.False(exportedGame.GetProperty("items")[0].TryGetProperty("id", out _));
+    }
+
+    [Fact]
+    public void SerializeCsv_WithSpecialCharacters_ProducesSafeSpreadsheetOutput()
+    {
+        var backup = new GameHubBackupV1(
+            BackupExportService.FormatName,
+            BackupExportService.CurrentFormatVersion,
+            ExportedAt,
+            [
+                new BackupGameV1(
+                    "=2+2",
+                    "formula-game",
+                    new BackupPersonalTrackingV1(
+                        PlayStatus.Completed,
+                        5,
+                        true,
+                        false),
+                    new BackupMetadataV1(
+                        "https://images.example/cover.jpg",
+                        "Line 1, \"quoted\"\nLine 2",
+                        "RPG, Adventure",
+                        "PC",
+                        null,
+                        null,
+                        "Studio",
+                        "Publisher",
+                        new DateTime(2020, 1, 2),
+                        92.5,
+                        123,
+                        "IGDB",
+                        new DateTime(2026, 6, 19, 9, 30, 0, DateTimeKind.Utc)),
+                    ["RPG", "Adventure"],
+                    [
+                        new BackupLibraryItemV1(
+                            Platform.Steam,
+                            "42",
+                            new DateTime(2026, 6, 18, 8, 0, 0, DateTimeKind.Utc))
+                    ],
+                    [new BackupManualLinkV1(Platform.Steam, "42")])
+            ]);
+
+        var bytes = _csvSerializer.Serialize(backup);
+        var csv = Encoding.UTF8.GetString(bytes.AsSpan(3));
+
+        Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);
+        Assert.StartsWith("Title,Slug,Play Status,User Rating", csv);
+        Assert.Contains("\r\n'=2+2,formula-game,Completed,5,True,False", csv);
+        Assert.Contains("Steam:42", csv);
+        Assert.Contains("92.5,IGDB,123", csv);
+        Assert.Contains("\"Line 1, \"\"quoted\"\"\nLine 2\"\r\n", csv);
+    }
+
+    [Fact]
+    public async Task ExportCsv_WithGame_ReturnsDownloadableUtf8Csv()
+    {
+        _db.UnifiedGames.Add(new UnifiedGame
+        {
+            Title = "DOOM",
+            Slug = "doom",
+            Items = [new LibraryItem { Platform = Platform.Steam, ExternalId = "379720" }]
+        });
+        await _db.SaveChangesAsync();
+        var controller = new BackupController(
+            _service,
+            _serializer,
+            _csvSerializer,
+            NullLogger<BackupController>.Instance);
+
+        var result = await controller.ExportCsv(CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("text/csv; charset=utf-8", file.ContentType);
+        Assert.Equal("gamehub-library-20260619-103000.csv", file.FileDownloadName);
+        Assert.Equal([0xEF, 0xBB, 0xBF], file.FileContents[..3]);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
