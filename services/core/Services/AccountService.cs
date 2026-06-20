@@ -123,6 +123,81 @@ public sealed class AccountService
     }
 
     /// <summary>
+    /// Creates a new tenant boundary and its first owner account in one SaveChanges call.
+    /// EF wraps that call in a transaction, so a foreign-key or uniqueness failure persists
+    /// neither object. The caller cannot choose TenantId or enable unsafe platform sync.
+    /// </summary>
+    public async Task<TenantProvisioningResult> ProvisionTenantAsync(
+        string? tenantName,
+        string? email,
+        string? password,
+        string? displayName,
+        CancellationToken cancellationToken = default)
+    {
+        var canonicalTenantName = tenantName?.Trim();
+        if (string.IsNullOrEmpty(canonicalTenantName) || canonicalTenantName.Length > 200)
+        {
+            return TenantProvisioningResult.Failed(
+                "invalid_tenant_name",
+                "Tenant name length must be between 1 and 200 characters.");
+        }
+
+        var validation = ValidateAccountInput(email, password, displayName);
+        if (validation.ErrorCode is not null)
+        {
+            return TenantProvisioningResult.Failed(validation.ErrorCode, validation.ErrorMessage!);
+        }
+
+        if (await _db.UserAccounts.AnyAsync(
+                account => account.NormalizedEmail == validation.NormalizedEmail,
+                cancellationToken))
+        {
+            return TenantProvisioningResult.Failed(
+                "email_exists",
+                "An account already exists for this email address.");
+        }
+
+        var createdAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        var tenant = new Tenant
+        {
+            Id = Guid.NewGuid(),
+            Name = canonicalTenantName,
+            // Ingest currently stores one shared set of platform records. Enabling sync here
+            // would copy the default owner's data into this new tenant, so the server—not the
+            // request—keeps it off until tenant-scoped Ingest storage is implemented.
+            PlatformSyncEnabled = false,
+            CreatedAtUtc = createdAtUtc
+        };
+        var account = new UserAccount
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant.Id,
+            Tenant = tenant,
+            Email = validation.CanonicalEmail!,
+            NormalizedEmail = validation.NormalizedEmail!,
+            DisplayName = validation.CanonicalDisplayName!,
+            CreatedAtUtc = createdAtUtc
+        };
+        account.PasswordHash = _passwordHasher.HashPassword(account, password!);
+
+        // Adding the account also tracks its new Tenant navigation. A single SaveChanges is
+        // the transaction boundary: both rows commit together or both are rolled back.
+        _db.UserAccounts.Add(account);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return TenantProvisioningResult.Failed(
+                "account_conflict",
+                "The tenant could not be provisioned because the account already exists.");
+        }
+
+        return TenantProvisioningResult.Succeeded(tenant, account);
+    }
+
+    /// <summary>
     /// Validates local credentials and records a successful login. Null is deliberately used
     /// for every failure so the controller returns the same response for an unknown email and
     /// a wrong password, avoiding easy account enumeration.
@@ -196,6 +271,50 @@ public sealed class AccountService
         normalizedEmail = canonicalEmail.ToUpperInvariant();
         return true;
     }
+
+    private static AccountInputValidation ValidateAccountInput(
+        string? email,
+        string? password,
+        string? displayName)
+    {
+        if (!TryNormalizeEmail(email, out var canonicalEmail, out var normalizedEmail))
+        {
+            return AccountInputValidation.Failed("invalid_email", "A valid email address is required.");
+        }
+
+        if (password is null || password.Length is < MinimumPasswordLength or > MaximumPasswordLength)
+        {
+            return AccountInputValidation.Failed(
+                "invalid_password",
+                $"Password length must be between {MinimumPasswordLength} and {MaximumPasswordLength} characters.");
+        }
+
+        var canonicalDisplayName = displayName?.Trim();
+        if (string.IsNullOrEmpty(canonicalDisplayName) || canonicalDisplayName.Length > 100)
+        {
+            return AccountInputValidation.Failed(
+                "invalid_display_name",
+                "Display name length must be between 1 and 100 characters.");
+        }
+
+        return new AccountInputValidation(
+            canonicalEmail,
+            normalizedEmail,
+            canonicalDisplayName,
+            null,
+            null);
+    }
+
+    private sealed record AccountInputValidation(
+        string? CanonicalEmail,
+        string? NormalizedEmail,
+        string? CanonicalDisplayName,
+        string? ErrorCode,
+        string? ErrorMessage)
+    {
+        public static AccountInputValidation Failed(string code, string message) =>
+            new(null, null, null, code, message);
+    }
 }
 
 /// <summary>
@@ -215,4 +334,20 @@ public sealed record AccountCreationResult(
 
     /// <summary>Creates an expected failure result safe for controller mapping.</summary>
     public static AccountCreationResult Failed(string code, string message) => new(null, code, message);
+}
+
+/// <summary>Result of atomically creating a tenant and its first owner account.</summary>
+public sealed record TenantProvisioningResult(
+    Tenant? Tenant,
+    UserAccount? Account,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public bool Created => Tenant is not null && Account is not null;
+
+    public static TenantProvisioningResult Succeeded(Tenant tenant, UserAccount account) =>
+        new(tenant, account, null, null);
+
+    public static TenantProvisioningResult Failed(string code, string message) =>
+        new(null, null, code, message);
 }

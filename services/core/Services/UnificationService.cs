@@ -85,6 +85,23 @@ public class UnificationService
     /// </summary>
     public async Task<int> RunFullSyncAsync()
     {
+        // Core's tenant filters protect writes, but Ingest still exposes one shared raw-game
+        // catalogue. Before making any Ingest request, verify that this server-selected tenant
+        // is explicitly allowed to consume it. Newly provisioned tenants are disabled.
+        using (var policyScope = _scopeFactory.CreateScope())
+        {
+            var tenantContext = policyScope.ServiceProvider.GetRequiredService<ITenantContext>();
+            var db = policyScope.ServiceProvider.GetRequiredService<CoreContext>();
+            var platformSyncEnabled = await db.Tenants
+                .Where(tenant => tenant.Id == tenantContext.TenantId)
+                .Select(tenant => tenant.PlatformSyncEnabled)
+                .SingleOrDefaultAsync();
+            if (!platformSyncEnabled)
+            {
+                throw new TenantPlatformSyncDisabledException(tenantContext.TenantId);
+            }
+        }
+
         int totalProcessed = 0;
 
         foreach (var platform in Enum.GetValues<Platform>())
@@ -380,4 +397,16 @@ public class UnificationService
 
         return result.Trim();
     }
+}
+
+/// <summary>
+/// Raised before contacting Ingest when a tenant cannot safely consume shared platform data.
+/// Controllers and background jobs use the typed exception to distinguish a policy skip from
+/// an operational sync failure.
+/// </summary>
+public sealed class TenantPlatformSyncDisabledException(Guid tenantId)
+    : InvalidOperationException(
+        $"Platform sync is disabled for tenant '{tenantId}' until Ingest data is tenant-scoped.")
+{
+    public Guid TenantId { get; } = tenantId;
 }

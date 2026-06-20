@@ -157,7 +157,9 @@ public sealed class TenantIsolationTests : IDisposable
 
         var game = await db.UnifiedGames.SingleAsync();
         Assert.Equal(TenantA, game.TenantId);
-        Assert.Equal("Default", (await db.Tenants.SingleAsync()).Name);
+        var defaultTenant = await db.Tenants.SingleAsync();
+        Assert.Equal("Default", defaultTenant.Name);
+        Assert.True(defaultTenant.PlatformSyncEnabled);
         Assert.Empty(db.UserAccounts);
     }
 

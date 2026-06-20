@@ -143,6 +143,18 @@ public class SyncSchedulerService : BackgroundService
                             tenantId,
                             tenantCount);
                     }
+                    catch (TenantPlatformSyncDisabledException)
+                    {
+                        // A provisioned tenant is intentionally non-syncable while Ingest is
+                        // shared. Treat that policy as a normal skip so it neither fails the
+                        // scheduler cycle nor prevents later tenants from being visited.
+                        await activityLog.LogAsync(
+                            "SyncSkipped",
+                            "Scheduled sync skipped until Ingest data is tenant-scoped");
+                        _logger.LogInformation(
+                            "Sync scheduler skipped tenant {TenantId}: platform sync disabled",
+                            tenantId);
+                    }
                     catch (Exception exception)
                     {
                         try

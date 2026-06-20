@@ -19,6 +19,11 @@ public sealed class Tenant
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
+    /// <summary>
+    /// Whether Core may copy the shared raw Ingest catalogue into this tenant's library.
+    /// New tenants remain disabled until Ingest credentials and raw data are tenant-scoped.
+    /// </summary>
+    public bool PlatformSyncEnabled { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }
 
