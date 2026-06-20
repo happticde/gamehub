@@ -123,6 +123,58 @@ namespace GameHub.Ingest.Migrations
                     b.ToTable("IngestAuditLogs");
                 });
 
+            modelBuilder.Entity("GameHub.Ingest.Data.PlatformCredential", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("AuthenticationTag")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("BLOB");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CredentialSchemaVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("EncryptedPayload")
+                        .IsRequired()
+                        .HasMaxLength(16384)
+                        .HasColumnType("BLOB");
+
+                    b.Property<int>("EncryptionFormatVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("EncryptionKeyVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Nonce")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("BLOB");
+
+                    b.Property<int>("Platform")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Platform")
+                        .IsUnique();
+
+                    b.ToTable("PlatformCredentials");
+                });
+
             modelBuilder.Entity("GameHub.Ingest.Data.PsnRawItem", b =>
                 {
                     b.Property<int>("Id")

@@ -21,6 +21,21 @@ local mode without a login screen.
 external API key. Only requests authenticated with this service key may supply
 `X-GameHub-Tenant-Id`; normal API-key requests carrying that header are rejected.
 
+## Configure Platform Credential Encryption
+
+Generate a separate 32-byte key and store only its Base64 representation in the deployment
+environment:
+
+```bash
+openssl rand -base64 32
+```
+
+Assign the result to `GAMEHUB_CREDENTIAL_KEY_1` and keep
+`GAMEHUB_CREDENTIAL_KEY_VERSION=1`. Credential writes return HTTP 503 while no key is configured.
+For rotation, retain the old version under `Credentials__Keys__<old-version>`, add the new key,
+and change `Credentials__ActiveKeyVersion`; old keys cannot be removed until their rows are
+re-encrypted or deleted. See ADR-009 for the storage and trust-boundary decision.
+
 ## Bootstrap the Tenant Account
 
 Bootstrap is accepted only once per tenant and requires the configured API key:
