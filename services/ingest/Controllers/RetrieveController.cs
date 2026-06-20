@@ -1,5 +1,8 @@
 using GameHub.Ingest.Data;
+using GameHub.Ingest.Models;
 using GameHub.Ingest.Services;
+using GameHub.Shared;
+using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,8 +18,10 @@ namespace GameHub.Ingest.Controllers;
 /// This eliminates the need for the CLI — a single HTTP call
 /// does both the fetch and the ingest.
 ///
+/// Compatibility endpoints receive credentials in the request body. The internal stored route
+/// instead decrypts the delegated tenant's vault record immediately before fetching.
 /// Each endpoint:
-///   1. Receives credentials (API key, cookie, etc.) in the request body
+///   1. Resolves credentials from its authorized input path
 ///   2. Calls the external platform API to fetch the game library
 ///   3. Passes the raw JSON through the same upsert logic as IngestBatch
 ///   4. Returns the count of added/updated records
@@ -27,9 +32,10 @@ namespace GameHub.Ingest.Controllers;
 public class RetrieveController : ControllerBase
 {
     private readonly IngestContext _db;
-    private readonly SteamFetcher _steamFetcher;
-    private readonly GogFetcher _gogFetcher;
-    private readonly PsnFetcher _psnFetcher;
+    private readonly ISteamFetcher _steamFetcher;
+    private readonly IGogFetcher _gogFetcher;
+    private readonly IPsnFetcher _psnFetcher;
+    private readonly PlatformCredentialService _credentials;
     private readonly ILogger<RetrieveController> _logger;
 
     // Reuse the existing platform controllers to process the fetched data.
@@ -40,9 +46,10 @@ public class RetrieveController : ControllerBase
 
     public RetrieveController(
         IngestContext db,
-        SteamFetcher steamFetcher,
-        GogFetcher gogFetcher,
-        PsnFetcher psnFetcher,
+        ISteamFetcher steamFetcher,
+        IGogFetcher gogFetcher,
+        IPsnFetcher psnFetcher,
+        PlatformCredentialService credentials,
         ILogger<RetrieveController> logger,
         ILoggerFactory loggerFactory)
     {
@@ -50,12 +57,105 @@ public class RetrieveController : ControllerBase
         _steamFetcher = steamFetcher;
         _gogFetcher = gogFetcher;
         _psnFetcher = psnFetcher;
+        _credentials = credentials;
         _logger = logger;
 
         // Create controller instances to reuse their IngestBatch logic
         _steamIngest = new SteamIngestController(db, loggerFactory.CreateLogger<SteamIngestController>());
         _gogIngest = new GogIngestController(db, loggerFactory.CreateLogger<GogIngestController>());
         _psnIngest = new PsnIngestController(db, loggerFactory.CreateLogger<PsnIngestController>());
+    }
+
+    /// <summary>
+    /// POST: api/retrieve/{platform}/stored
+    /// Uses the delegated tenant's encrypted vault credential. Only Core's internal
+    /// service-key scheme may call this endpoint; compatibility API keys cannot select it.
+    /// </summary>
+    [HttpPost("{platform}/stored")]
+    [Authorize(AuthenticationSchemes = TenantDelegationAuthenticationHandler.SchemeName)]
+    public async Task<IActionResult> RetrieveStored(
+        Platform platform,
+        CancellationToken cancellationToken)
+    {
+        if (platform == Platform.Epic || !Enum.IsDefined(platform))
+        {
+            return BadRequest(new PlatformCredentialErrorResponse(
+                "Stored retrieval is unsupported for this platform."));
+        }
+
+        try
+        {
+            IActionResult? result = platform switch
+            {
+                Platform.Steam => await RetrieveStoredSteam(cancellationToken),
+                Platform.Gog => await RetrieveStoredGog(cancellationToken),
+                Platform.Psn => await RetrieveStoredPsn(cancellationToken),
+                _ => null
+            };
+            return result ?? NotFound(new PlatformCredentialErrorResponse(
+                $"No credential is configured for {platform}."));
+        }
+        catch (PlatformCredentialVaultNotConfiguredException)
+        {
+            _logger.LogWarning("Stored retrieval rejected because the credential vault is unavailable");
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new PlatformCredentialErrorResponse("Platform credential storage is unavailable."));
+        }
+        catch (PlatformCredentialReadException)
+        {
+            _logger.LogWarning("Stored credential for {Platform} could not be decoded", platform);
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new PlatformCredentialErrorResponse("Stored platform credential is unavailable."));
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException or JsonException or InvalidOperationException)
+        {
+            _logger.LogWarning("Stored retrieval failed for upstream platform {Platform}", platform);
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                new PlatformCredentialErrorResponse("Platform retrieval failed."));
+        }
+    }
+
+    private async Task<IActionResult?> RetrieveStoredSteam(CancellationToken cancellationToken)
+    {
+        var credential = await _credentials.GetSteamAsync(cancellationToken);
+        if (credential is null)
+        {
+            return null;
+        }
+
+        var games = await _steamFetcher.FetchGamesAsync(credential.ApiKey, credential.SteamId);
+        _logger.LogInformation("Stored Steam retrieve completed: {Count} games processed", games.Count);
+        return await _steamIngest.IngestBatch(games);
+    }
+
+    private async Task<IActionResult?> RetrieveStoredGog(CancellationToken cancellationToken)
+    {
+        var credential = await _credentials.GetGogAsync(cancellationToken);
+        if (credential is null)
+        {
+            return null;
+        }
+
+        var games = await _gogFetcher.FetchGamesAsync(credential.Cookie, credential.User);
+        _logger.LogInformation("Stored GOG retrieve completed: {Count} games processed", games.Count);
+        return await _gogIngest.IngestBatch(games);
+    }
+
+    private async Task<IActionResult?> RetrieveStoredPsn(CancellationToken cancellationToken)
+    {
+        var credential = await _credentials.GetPsnAsync(cancellationToken);
+        if (credential is null)
+        {
+            return null;
+        }
+
+        var games = await _psnFetcher.FetchGamesAsync(credential.Cookies);
+        _logger.LogInformation("Stored PSN retrieve completed: {Count} games processed", games.Count);
+        return await _psnIngest.IngestBatch(games);
     }
 
     /// <summary>
@@ -78,20 +178,20 @@ public class RetrieveController : ControllerBase
             _logger.LogInformation("Steam retrieve completed: {Count} games processed", games.Count);
             return result;
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            _logger.LogError(ex, "Steam API request failed for user {SteamId}", request.SteamId);
-            return StatusCode(502, new { Message = $"Failed to fetch from Steam API: {ex.Message}" });
+            _logger.LogWarning("Steam API request failed for user {SteamId}", request.SteamId);
+            return StatusCode(502, new { Message = "Failed to fetch from Steam API." });
         }
         catch (JsonException ex)
         {
             _logger.LogError(ex, "Failed to parse Steam API response for user {SteamId}", request.SteamId);
-            return StatusCode(502, new { Message = $"Steam API returned unexpected data: {ex.Message}" });
+            return StatusCode(502, new { Message = "Steam API returned unexpected data." });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during Steam retrieve for user {SteamId}", request.SteamId);
-            return StatusCode(500, new { Message = $"Internal error: {ex.Message}" });
+            return StatusCode(500, new { Message = "Internal retrieval error." });
         }
     }
 
@@ -115,20 +215,20 @@ public class RetrieveController : ControllerBase
             _logger.LogInformation("GOG retrieve completed: {Count} games processed", games.Count);
             return result;
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            _logger.LogError(ex, "GOG API request failed for user {Username}", request.User);
-            return StatusCode(502, new { Message = $"Failed to fetch from GOG API: {ex.Message}" });
+            _logger.LogWarning("GOG API request failed for user {Username}", request.User);
+            return StatusCode(502, new { Message = "Failed to fetch from GOG API." });
         }
         catch (JsonException ex)
         {
             _logger.LogError(ex, "Failed to parse GOG API response for user {Username}", request.User);
-            return StatusCode(502, new { Message = $"GOG API returned unexpected data: {ex.Message}" });
+            return StatusCode(502, new { Message = "GOG API returned unexpected data." });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during GOG retrieve for user {Username}", request.User);
-            return StatusCode(500, new { Message = $"Internal error: {ex.Message}" });
+            return StatusCode(500, new { Message = "Internal retrieval error." });
         }
     }
 
@@ -152,20 +252,20 @@ public class RetrieveController : ControllerBase
             _logger.LogInformation("PSN retrieve completed: {Count} games processed", games.Count);
             return result;
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            _logger.LogError(ex, "PSN API request failed");
-            return StatusCode(502, new { Message = $"Failed to fetch from PSN API: {ex.Message}" });
+            _logger.LogWarning("PSN API request failed");
+            return StatusCode(502, new { Message = "Failed to fetch from PSN API." });
         }
         catch (JsonException ex)
         {
             _logger.LogError(ex, "Failed to parse PSN API response");
-            return StatusCode(502, new { Message = $"PSN API returned unexpected data: {ex.Message}" });
+            return StatusCode(502, new { Message = "PSN API returned unexpected data." });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during PSN retrieve");
-            return StatusCode(500, new { Message = $"Internal error: {ex.Message}" });
+            return StatusCode(500, new { Message = "Internal retrieval error." });
         }
     }
 

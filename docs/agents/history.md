@@ -13,11 +13,19 @@
 - SQLite/PostgreSQL-compatible migration and encryption, spoofing, validation, and cross-tenant
   isolation tests were added.
 
+**Vault-backed Platform Retrieval:**
+- Steam, GOG, and PSN credentials now use strict schema-v1 payloads and are decrypted only for
+  immediate fetcher use; Epic stored retrieval remains unsupported.
+- Core asks Ingest to refresh each supported platform through an internal service-key-only route
+  before exporting the tenant's raw catalogue. Missing credentials preserve existing raw-data sync.
+- Steam's secret-bearing query URL is excluded from default HttpClient logging, and upstream
+  errors/responses no longer expose secret-bearing details.
+- Stored retrieval has service-key authorization, spoofing, schema, and cross-tenant tests.
+
 ### Known State / Pending
 
-- Fetchers do not consume stored credentials yet.
-- Core/frontend credential management remains pending.
-- Provisioned tenants remain `PlatformSyncEnabled = false` until those integrations are complete.
+- Core/frontend credential management and the explicit sync-activation policy remain pending.
+- Provisioned tenants remain `PlatformSyncEnabled = false` until that management flow is complete.
 
 ## Last Session Summary (2026-05-25)
 
