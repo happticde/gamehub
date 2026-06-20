@@ -43,7 +43,9 @@ public sealed class BackupImportController : ControllerBase
     [ProducesResponseType<BackupValidationResult>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<BackupValidationResult>(StatusCodes.Status413PayloadTooLarge)]
     public async Task<IActionResult> Validate(
-        [FromForm] IFormFile? file,
+        // ASP.NET Core infers multipart binding from IFormFile. Adding [FromForm] here is
+        // redundant and makes Swashbuckle treat the file as an unsupported form parameter.
+        IFormFile? file,
         CancellationToken cancellationToken)
     {
         var uploadError = ValidateUpload(file);
@@ -84,7 +86,9 @@ public sealed class BackupImportController : ControllerBase
     [ProducesResponseType<BackupRestoreResult>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<BackupValidationResult>(StatusCodes.Status413PayloadTooLarge)]
     public async Task<IActionResult> Restore(
-        [FromForm] IFormFile? file,
+        // Keep this identical to Validate: inferred IFormFile binding produces the correct
+        // multipart requestBody schema in OpenAPI without confusing Swagger generation.
+        IFormFile? file,
         CancellationToken cancellationToken)
     {
         var uploadError = ValidateUpload(file);

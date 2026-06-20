@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,7 +25,42 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    const string apiKeyScheme = ApiKeyAuthenticationHandler.SchemeName;
+    const string bearerScheme = JwtBearerDefaults.AuthenticationScheme;
+
+    // Security definitions create Swagger UI's "Authorize" dialog. The API key value entered
+    // there is sent verbatim in X-Api-Key; it is never copied into the generated document.
+    options.AddSecurityDefinition(apiKeyScheme, new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Name = ApiKeyAuthenticationHandler.HeaderName,
+        Description = "GameHub server API key. Enter the value configured as Authentication:ApiKey."
+    });
+
+    // JWT clients paste only the compact token, without manually prefixing "Bearer ". Swagger
+    // UI derives the Authorization header format from the HTTP bearer scheme.
+    options.AddSecurityDefinition(bearerScheme, new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "JWT access token returned by POST /api/auth/token or /api/auth/refresh."
+    });
+
+    // Each requirement object is one alternative in OpenAPI's top-level security array. Keeping
+    // them separate documents the composite handler correctly as API key OR bearer token.
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference(apiKeyScheme, document)] = []
+    });
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference(bearerScheme, document)] = []
+    });
+});
 
 // Login endpoints are attractive brute-force targets. This named policy limits each
 // remote IP address independently, so one noisy client does not consume the allowance
