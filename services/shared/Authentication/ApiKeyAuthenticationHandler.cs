@@ -49,6 +49,15 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        // Tenant delegation is a separate service-to-service credential flow. Rejecting the
+        // header here ensures that a normal API key can never select a tenant, even if this
+        // handler is invoked directly instead of through Ingest's policy scheme.
+        if (Request.Headers.ContainsKey(TenantDelegationAuthenticationHandler.TenantHeaderName))
+        {
+            return Task.FromResult(AuthenticateResult.Fail(
+                $"Header '{TenantDelegationAuthenticationHandler.TenantHeaderName}' requires internal service authentication"));
+        }
+
         var tenantId = _configuration[TenantConfigKey];
         if (string.IsNullOrWhiteSpace(tenantId))
         {

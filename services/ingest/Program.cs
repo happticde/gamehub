@@ -1,6 +1,7 @@
 using GameHub.Ingest.Data;
 using GameHub.Ingest.Services;
 using GameHub.Shared.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,9 +30,27 @@ builder.Services.AddTransient<GogFetcher>();     // Creates its own cookie-based
 builder.Services.AddTransient<PsnFetcher>();     // Creates its own cookie-based client
 
 // --- Authentication (ADR-002) ---
-// API key auth via X-Api-Key header. If no key is configured, auth is disabled.
-// Uses ASP.NET's AuthenticationHandler pipeline — ready for JWT addition later.
+// External callers use the compatibility API key, which always maps to one server-configured
+// tenant. Core uses a separate internal key plus tenant header. Selecting the delegation
+// scheme whenever either internal header is present makes spoofed partial requests fail closed.
 builder.Services.AddApiKeyAuthentication(builder.Configuration);
+const string ingestAuthenticationScheme = "GameHubIngest";
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = ingestAuthenticationScheme;
+        options.DefaultChallengeScheme = ingestAuthenticationScheme;
+    })
+    .AddPolicyScheme(ingestAuthenticationScheme, null, options =>
+    {
+        options.ForwardDefaultSelector = context =>
+            context.Request.Headers.ContainsKey(TenantDelegationAuthenticationHandler.ServiceKeyHeaderName) ||
+            context.Request.Headers.ContainsKey(TenantDelegationAuthenticationHandler.TenantHeaderName)
+                ? TenantDelegationAuthenticationHandler.SchemeName
+                : ApiKeyAuthenticationHandler.SchemeName;
+    })
+    .AddScheme<AuthenticationSchemeOptions, TenantDelegationAuthenticationHandler>(
+        TenantDelegationAuthenticationHandler.SchemeName,
+        null);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IIngestTenantContext, AuthenticatedIngestTenantContext>();
 

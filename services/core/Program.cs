@@ -94,15 +94,9 @@ builder.Services.AddHealthChecks()
 //   - Request timeout (prevents hanging forever on slow responses)
 //   - Total request timeout (caps the total time including all retries)
 var ingestUrl = builder.Configuration["Services:IngestUrl"] ?? "http://localhost:5000";
-var ingestApiKey = builder.Configuration["Authentication:ApiKey"] ?? "";
 builder.Services.AddHttpClient<IngestClient>(c =>
 {
     c.BaseAddress = new Uri(ingestUrl);
-    // Forward the API key to the Ingest service for service-to-service auth
-    if (!string.IsNullOrEmpty(ingestApiKey))
-    {
-        c.DefaultRequestHeaders.Add("X-Api-Key", ingestApiKey);
-    }
 })
     .AddStandardResilienceHandler();
 builder.Services.AddScoped<UnificationService>();

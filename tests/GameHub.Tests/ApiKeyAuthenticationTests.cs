@@ -207,6 +207,22 @@ public class ApiKeyAuthenticationTests
     }
 
     [Fact]
+    public async Task CorrectApiKey_TenantDelegationHeader_IsRejected()
+    {
+        var context = CreateHttpContext(TestApiKey);
+        context.Request.Headers[TenantDelegationAuthenticationHandler.TenantHeaderName] =
+            Guid.NewGuid().ToString("D");
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", TestApiKey } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("requires internal service authentication", result.Failure?.Message);
+    }
+
+    [Fact]
     public async Task InvalidTenantConfigured_AuthenticationFails()
     {
         var context = CreateHttpContext(TestApiKey);

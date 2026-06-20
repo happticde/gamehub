@@ -85,9 +85,9 @@ public class UnificationService
     /// </summary>
     public async Task<int> RunFullSyncAsync()
     {
-        // Core's tenant filters protect writes, but Ingest still exposes one shared raw-game
-        // catalogue. Before making any Ingest request, verify that this server-selected tenant
-        // is explicitly allowed to consume it. Newly provisioned tenants are disabled.
+        // Core delegates its authenticated tenant to Ingest, but newly provisioned tenants
+        // still lack encrypted platform credentials. Keep their sync path disabled until those
+        // credentials can populate a tenant-owned raw catalogue.
         using (var policyScope = _scopeFactory.CreateScope())
         {
             var tenantContext = policyScope.ServiceProvider.GetRequiredService<ITenantContext>();
