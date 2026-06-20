@@ -3,7 +3,7 @@ import GameCard from "@/components/GameCard";
 import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
 import LibraryViewControls from "@/components/LibraryViewControls";
-import { getCoreApiUrl } from "@/lib/core-api";
+import { fetchCoreApi } from "@/lib/core-api";
 
 /**
  * Library page — a React Server Component (RSC).
@@ -91,14 +91,14 @@ export default async function LibraryPage({
         query.append("page", currentPage.toString());
         if (includeIgnored) query.append("includeIgnored", "true");
 
-        const fetchUrl = getCoreApiUrl(`/library?${query.toString()}`);
-
         // Fetch all data in parallel for performance using Promise.all
         const [res, tagsRes, devsRes, pubsRes] = await Promise.all([
-            fetch(fetchUrl, { cache: "no-store" }),
-            fetch(getCoreApiUrl("/library/tags"), { cache: "no-store", next: { revalidate: 300 } }),
-            fetch(getCoreApiUrl("/library/developers"), { cache: "no-store", next: { revalidate: 300 } }),
-            fetch(getCoreApiUrl("/library/publishers"), { cache: "no-store", next: { revalidate: 300 } }),
+            fetchCoreApi(`/library?${query.toString()}`, { cache: "no-store" }),
+            // These lists are tenant-owned too. no-store prevents a shared Next.js data cache
+            // from ever reusing one tenant's filters for another authenticated session.
+            fetchCoreApi("/library/tags", { cache: "no-store" }),
+            fetchCoreApi("/library/developers", { cache: "no-store" }),
+            fetchCoreApi("/library/publishers", { cache: "no-store" }),
         ]);
 
         if (!res.ok) {

@@ -5,6 +5,8 @@ import Navbar from "@/components/Navbar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { Footer } from "@/components/Footer";
+import { cookies } from "next/headers";
+import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-session";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,11 +30,15 @@ export const viewport = {
   userScalable: false, // Prevents zooming on input focus in iOS
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Reading the HttpOnly cookie on the server controls whether the client Navbar renders a
+  // logout action. The token value itself is never passed into the React component tree.
+  const showLogout = Boolean((await cookies()).get(ACCESS_TOKEN_COOKIE)?.value);
+
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
@@ -41,7 +47,7 @@ export default function RootLayout({
         <ThemeProvider>
           <div className="retro-terminal-vignette" />
           <div className="relative flex min-h-screen flex-col">
-            <Navbar />
+            <Navbar showLogout={showLogout} />
             <main className="flex-1">{children}</main>
             <Footer />
           </div>

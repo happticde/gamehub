@@ -7,7 +7,7 @@ import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 import FixMatchDialog from "@/components/library/FixMatchDialog";
 import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
 import CoverImageClient from "@/components/library/CoverImageClient";
-import { getCoreApiUrl } from "@/lib/core-api";
+import { fetchCoreApi } from "@/lib/core-api";
 
 // Extended payload type for the game detail view
 interface ExpandedGame {
@@ -49,7 +49,7 @@ export default async function GameDetailPage({
     let error: string | null = null;
 
     try {
-        const res = await fetch(getCoreApiUrl(`/library/${id}`), { cache: "no-store" });
+        const res = await fetchCoreApi(`/library/${id}`, { cache: "no-store" });
         if (!res.ok) {
             if (res.status === 404) {
                 return (

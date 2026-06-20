@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Gamepad2, Library, Globe, Sparkles } from "lucide-react";
+import { fetchCoreApi } from "@/lib/core-api";
 
 /** Fetches basic library stats for the landing page counters */
 async function getLibraryStats(): Promise<{ totalGames: number; totalPlatforms: number }> {
   try {
     // Fetch a minimal page just to get totalCount
-    const coreUrl = process.env.CORE_URL || "http://host.docker.internal:5001";
-    const res = await fetch(`${coreUrl}/api/library?pageSize=1`, {
+    const res = await fetchCoreApi("/library?pageSize=1", {
       cache: "no-store",
     });
     if (res.ok) {
