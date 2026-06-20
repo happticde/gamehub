@@ -37,7 +37,8 @@ public static class DatabaseFixture
     /// Creates a fresh IngestContext backed by an in-memory SQLite database.
     /// The caller must dispose both the context and the connection when done.
     /// </summary>
-    public static (IngestContext Db, SqliteConnection Connection) CreateIngestContext()
+    public static (IngestContext Db, SqliteConnection Connection) CreateIngestContext(
+        IIngestTenantContext? tenantContext = null)
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
@@ -46,7 +47,7 @@ public static class DatabaseFixture
             .UseSqlite(connection)
             .Options;
 
-        var db = new IngestContext(options);
+        var db = new IngestContext(options, tenantContext ?? new DefaultIngestTenantContext());
         db.Database.EnsureCreated();
         return (db, connection);
     }

@@ -32,6 +32,8 @@ builder.Services.AddTransient<PsnFetcher>();     // Creates its own cookie-based
 // API key auth via X-Api-Key header. If no key is configured, auth is disabled.
 // Uses ASP.NET's AuthenticationHandler pipeline — ready for JWT addition later.
 builder.Services.AddApiKeyAuthentication(builder.Configuration);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IIngestTenantContext, AuthenticatedIngestTenantContext>();
 
 // --- Database ---
 var dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";

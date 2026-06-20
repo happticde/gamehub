@@ -37,12 +37,17 @@ namespace GameHub.Ingest.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<string>("Title")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AppName")
+                    b.HasIndex("TenantId", "AppName")
                         .IsUnique();
 
                     b.ToTable("EpicRawItems");
@@ -67,12 +72,17 @@ namespace GameHub.Ingest.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<string>("Title")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("GameId")
+                    b.HasIndex("TenantId", "GameId")
                         .IsUnique();
 
                     b.ToTable("GogRawItems");
@@ -98,10 +108,17 @@ namespace GameHub.Ingest.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("IngestAuditLogs");
                 });
@@ -122,6 +139,11 @@ namespace GameHub.Ingest.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.Property<string>("TitleId")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -131,7 +153,7 @@ namespace GameHub.Ingest.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TitleId")
+                    b.HasIndex("TenantId", "TitleId")
                         .IsUnique();
 
                     b.ToTable("PsnRawItems");
@@ -159,9 +181,14 @@ namespace GameHub.Ingest.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
                     b.HasKey("Id");
 
-                    b.HasIndex("AppId")
+                    b.HasIndex("TenantId", "AppId")
                         .IsUnique();
 
                     b.ToTable("SteamRawItems");
