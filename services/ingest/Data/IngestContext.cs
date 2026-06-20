@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using GameHub.Ingest.Services;
 
 namespace GameHub.Ingest.Data;
 
@@ -17,6 +18,7 @@ public class IngestContext : DbContext
     public DbSet<SteamRawItem> SteamRawItems => Set<SteamRawItem>();
     public DbSet<GogRawItem> GogRawItems => Set<GogRawItem>();
     public DbSet<EpicRawItem> EpicRawItems => Set<EpicRawItem>();
+    public DbSet<PlatformCredential> PlatformCredentials => Set<PlatformCredential>();
     
     // --- Audit Logs ---
     public DbSet<IngestAuditLog> IngestAuditLogs => Set<IngestAuditLog>();
@@ -30,6 +32,7 @@ public class IngestContext : DbContext
         ConfigureTenantOwned(modelBuilder.Entity<GogRawItem>());
         ConfigureTenantOwned(modelBuilder.Entity<EpicRawItem>());
         ConfigureTenantOwned(modelBuilder.Entity<IngestAuditLog>());
+        ConfigureTenantOwned(modelBuilder.Entity<PlatformCredential>());
 
         // Platform identifiers are unique only inside one user's source library. Equivalent
         // store IDs may safely coexist for different tenants in the shared Ingest database.
@@ -47,6 +50,21 @@ public class IngestContext : DbContext
             .IsUnique();
         modelBuilder.Entity<IngestAuditLog>()
             .HasIndex(log => log.TenantId);
+        modelBuilder.Entity<PlatformCredential>()
+            .HasIndex(credential => new { credential.TenantId, credential.Platform })
+            .IsUnique();
+        modelBuilder.Entity<PlatformCredential>()
+            .Property(credential => credential.EncryptedPayload)
+            .HasMaxLength(PlatformCredentialService.MaximumPayloadSizeBytes)
+            .IsRequired();
+        modelBuilder.Entity<PlatformCredential>()
+            .Property(credential => credential.Nonce)
+            .HasMaxLength(PlatformCredentialProtector.NonceSizeBytes)
+            .IsRequired();
+        modelBuilder.Entity<PlatformCredential>()
+            .Property(credential => credential.AuthenticationTag)
+            .HasMaxLength(PlatformCredentialProtector.AuthenticationTagSizeBytes)
+            .IsRequired();
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

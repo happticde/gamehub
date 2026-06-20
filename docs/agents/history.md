@@ -1,5 +1,24 @@
 # Session History
 
+## Current Session Summary (2026-06-20)
+
+### What Changed
+
+**Tenant Platform Credential Vault:**
+- Ingest owns tenant-scoped encrypted platform credentials with a unique `(TenantId, Platform)`
+  boundary.
+- AES-256-GCM uses a fresh 96-bit nonce, full 128-bit tag, tenant/platform-bound associated data,
+  and versioned external keys for rotation.
+- Internal service-key-only endpoints provide secret-free status, encrypted upsert, and deletion.
+- SQLite/PostgreSQL-compatible migration and encryption, spoofing, validation, and cross-tenant
+  isolation tests were added.
+
+### Known State / Pending
+
+- Fetchers do not consume stored credentials yet.
+- Core/frontend credential management remains pending.
+- Provisioned tenants remain `PlatformSyncEnabled = false` until those integrations are complete.
+
 ## Last Session Summary (2026-05-25)
 
 ### What Changed

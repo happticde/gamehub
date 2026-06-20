@@ -54,6 +54,15 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IIngestTenantContext, AuthenticatedIngestTenantContext>();
 
+// --- Tenant Platform Credential Vault ---
+// Empty key configuration keeps the API running but makes credential writes fail closed with
+// HTTP 503. Invalid or incomplete key-ring configuration fails during startup.
+var platformCredentialKeyRing = PlatformCredentialKeyRing.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(platformCredentialKeyRing);
+builder.Services.AddSingleton<PlatformCredentialProtector>();
+builder.Services.AddScoped<PlatformCredentialService>();
+builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+
 // --- Database ---
 var dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";
 builder.Services.AddDbContext<IngestContext>(options =>

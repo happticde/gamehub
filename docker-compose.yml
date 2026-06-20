@@ -40,6 +40,8 @@ services:
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
       - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       - Authentication__ServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:-}
+      - Credentials__ActiveKeyVersion=${GAMEHUB_CREDENTIAL_KEY_VERSION:-1}
+      - Credentials__Keys__1=${GAMEHUB_CREDENTIAL_KEY_1:-}
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8080/health" ]
       interval: 10s

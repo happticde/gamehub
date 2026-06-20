@@ -110,6 +110,8 @@ Open `.env` and configure your credentials:
 | `GAMEHUB_API_KEY` | API key for authenticating requests (empty = auth disabled) |
 | `GAMEHUB_TENANT_ID` | Trusted tenant assigned to the compatibility API key |
 | `GAMEHUB_INGEST_SERVICE_KEY` | Dedicated internal key for trusted Core→Ingest tenant delegation |
+| `GAMEHUB_CREDENTIAL_KEY_VERSION` | Active encryption-key version for new platform credentials |
+| `GAMEHUB_CREDENTIAL_KEY_1` | Base64-encoded 32-byte AES key for the tenant credential vault |
 | `GAMEHUB_JWT_SIGNING_KEY` | JWT signing secret; at least 32 UTF-8 bytes (empty = JWT disabled) |
 | `GAMEHUB_JWT_REFRESH_TOKEN_DAYS` | Absolute refresh-session lifetime, from 1–90 days |
 | `GAMEHUB_FRONTEND_AUTH_ENABLED` | Set `true` to require the frontend login flow |
@@ -225,9 +227,10 @@ The provided `docker-compose.yml` is a deployment-oriented baseline:
 - **Resilient Orchestration**: Services feature `restart: unless-stopped` policies and strict `healthcheck` startup dependencies.
 - **PostgreSQL Ready**: The Compose setup defaults the Core service to use a bundled PostgreSQL container dynamically configurable via environment variables in `.env`.
 
-> Multi-user operation is not enabled yet. Core and Ingest data are tenant-isolated and internal
-> tenant delegation is authenticated with a dedicated service key, but encrypted tenant-specific
-> platform credentials are still required before provisioned tenants can synchronize libraries.
+> Multi-user operation is not enabled yet. Core and Ingest data are tenant-isolated, internal
+> tenant delegation is authenticated, and an encrypted credential vault is available. Typed
+> fetcher integration and credential management are still required before provisioned tenants can
+> synchronize libraries.
 
 To run in production:
 1. Populate your `.env` file with secure real-world values (`POSTGRES_PASSWORD`, `GAMEHUB_API_KEY`, `GAMEHUB_INGEST_SERVICE_KEY`, etc.).
