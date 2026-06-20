@@ -1,0 +1,151 @@
+import "server-only";
+
+import { NextResponse } from "next/server";
+
+export const ACCESS_TOKEN_COOKIE = "gamehub_access_token";
+export const REFRESH_TOKEN_COOKIE = "gamehub_refresh_token";
+
+/** Keeps the existing auth-disabled local mode working until an operator opts into JWT login. */
+export function isFrontendAuthEnabled(): boolean {
+    return process.env.AUTH_ENABLED?.toLowerCase() === "true";
+}
+
+/** Token pair returned by the Core authentication API. */
+export interface CoreTokenResponse {
+    accessToken: string;
+    tokenType: "Bearer";
+    expiresAtUtc: string;
+    refreshToken: string;
+    refreshTokenExpiresAtUtc: string;
+}
+
+/** Structured error returned by Core authentication endpoints. */
+export interface CoreAuthError {
+    code: string;
+    message: string;
+}
+
+/** Internal Core URL used only by the Next.js server, never shipped to browser JavaScript. */
+export function getCoreApiUrl(path: string): string {
+    const coreUrl = process.env.CORE_URL || "http://host.docker.internal:5001";
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return `${coreUrl.replace(/\/$/, "")}/api${normalizedPath}`;
+}
+
+/**
+ * Stores both secrets in HttpOnly cookies. HttpOnly prevents client-side JavaScript—including
+ * injected scripts—from reading them. SameSite=Lax blocks most cross-site form/fetch requests,
+ * while Secure is enabled explicitly for deployments served through HTTPS.
+ */
+export function setAuthCookies(response: NextResponse, tokens: CoreTokenResponse): void {
+    setTokenCookie(response, ACCESS_TOKEN_COOKIE, tokens.accessToken, tokens.expiresAtUtc);
+    setTokenCookie(
+        response,
+        REFRESH_TOKEN_COOKIE,
+        tokens.refreshToken,
+        tokens.refreshTokenExpiresAtUtc,
+    );
+}
+
+/** Deletes both browser-side session cookies after logout or failed refresh. */
+export function clearAuthCookies(response: NextResponse): void {
+    response.cookies.set(ACCESS_TOKEN_COOKIE, "", expiredCookieOptions());
+    response.cookies.set(REFRESH_TOKEN_COOKIE, "", expiredCookieOptions());
+}
+
+/**
+ * Decodes only the JWT expiry to decide whether a refresh is due. This is not authentication:
+ * the BFF always sends the token to Core, whose JwtBearer handler verifies its signature,
+ * issuer, audience, and lifetime before trusting any claim.
+ */
+export function isAccessTokenFresh(token: string | undefined, skewSeconds = 15): boolean {
+    if (!token) return false;
+
+    try {
+        const segments = token.split(".");
+        if (segments.length !== 3) return false;
+
+        const payload = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8")) as {
+            exp?: number;
+        };
+        return typeof payload.exp === "number" && payload.exp > Date.now() / 1000 + skewSeconds;
+    } catch {
+        return false;
+    }
+}
+
+/** Rotates a refresh secret directly against Core from the trusted Next.js server. */
+export async function rotateRefreshToken(
+    refreshToken: string | undefined,
+): Promise<CoreTokenResponse | null> {
+    if (!refreshToken) return null;
+
+    try {
+        const response = await fetch(getCoreApiUrl("/auth/refresh"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken }),
+            cache: "no-store",
+        });
+        if (!response.ok) return null;
+
+        const tokens = (await response.json()) as CoreTokenResponse;
+        return isTokenResponse(tokens) ? tokens : null;
+    } catch {
+        // Network failures are treated like an unavailable session. Route handlers return a
+        // stable 401/login redirect instead of leaking infrastructure details to the browser.
+        return null;
+    }
+}
+
+/** Runtime validation keeps malformed upstream JSON out of security-sensitive cookies. */
+export function isTokenResponse(value: unknown): value is CoreTokenResponse {
+    if (!value || typeof value !== "object") return false;
+    const token = value as Partial<CoreTokenResponse>;
+    return (
+        typeof token.accessToken === "string" &&
+        token.tokenType === "Bearer" &&
+        typeof token.expiresAtUtc === "string" &&
+        typeof token.refreshToken === "string" &&
+        typeof token.refreshTokenExpiresAtUtc === "string"
+    );
+}
+
+/** Accepts only an application-local redirect path, preventing open-redirect attacks. */
+export function safeReturnPath(value: string | null | undefined): string {
+    return value?.startsWith("/") && !value.startsWith("//") && !value.startsWith("/login")
+        ? value
+        : "/library";
+}
+
+function setTokenCookie(
+    response: NextResponse,
+    name: string,
+    value: string,
+    expiresAtUtc: string,
+): void {
+    const expires = new Date(expiresAtUtc);
+    response.cookies.set(name, value, {
+        httpOnly: true,
+        secure: shouldUseSecureCookies(),
+        sameSite: "lax",
+        path: "/",
+        expires,
+    });
+}
+
+function expiredCookieOptions() {
+    return {
+        httpOnly: true,
+        secure: shouldUseSecureCookies(),
+        sameSite: "lax" as const,
+        path: "/",
+        expires: new Date(0),
+    };
+}
+
+function shouldUseSecureCookies(): boolean {
+    // The stock Compose setup serves plain HTTP on localhost, where browsers reject Secure
+    // cookies. Reverse-proxy deployments should explicitly enable this after terminating TLS.
+    return process.env.AUTH_COOKIE_SECURE?.toLowerCase() === "true";
+}

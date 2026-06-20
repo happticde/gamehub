@@ -9,9 +9,12 @@ Configure both secrets before bootstrapping the first account:
 ```dotenv
 GAMEHUB_API_KEY=replace-with-a-strong-api-key
 GAMEHUB_JWT_SIGNING_KEY=replace-with-a-random-secret-of-at-least-32-bytes
+GAMEHUB_FRONTEND_AUTH_ENABLED=true
 ```
 
-Restart Core after changing authentication configuration. Leaving `GAMEHUB_JWT_SIGNING_KEY` empty keeps JWT disabled.
+Restart the Compose services after changing authentication configuration. Leaving
+`GAMEHUB_JWT_SIGNING_KEY` empty and `GAMEHUB_FRONTEND_AUTH_ENABLED=false` preserves the legacy
+local mode without a login screen.
 
 ## Bootstrap the Tenant Account
 
@@ -80,3 +83,17 @@ Content-Type: application/json
 
 Revocation returns `204 No Content` whether the token was active, expired, or unknown. Clients
 should always discard their local access and refresh tokens after this request.
+
+## Frontend Session
+
+The Next.js frontend signs in through `POST /api/auth/login` on its own origin. Its BFF calls
+Core, stores the returned access and refresh tokens in HttpOnly, SameSite cookies, and forwards
+the access token to Core for `/api/core/*` requests. When the access token expires, the BFF
+rotates the refresh token without exposing either secret to React or `localStorage`.
+
+Opening a protected page without a valid session redirects to `/login`. The navigation's sign-
+out action revokes the current refresh session and deletes both cookies.
+
+The default Compose deployment uses plain HTTP and therefore sets
+`GAMEHUB_AUTH_COOKIE_SECURE=false`. Set it to `true` whenever a reverse proxy serves the frontend
+to browsers over HTTPS; browsers intentionally reject Secure cookies over plain HTTP.

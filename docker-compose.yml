@@ -13,6 +13,8 @@ services:
       # Use the internal docker service name to connect to the backend
       - CORE_URL=http://core:8080
       - INGEST_URL=http://ingest:8080
+      - AUTH_ENABLED=${GAMEHUB_FRONTEND_AUTH_ENABLED:-false}
+      - AUTH_COOKIE_SECURE=${GAMEHUB_AUTH_COOKIE_SECURE:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

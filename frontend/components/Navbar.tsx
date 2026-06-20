@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Menu, X, Sun, Moon, Terminal } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import GlobalSearchBar from "@/components/GlobalSearchBar";
+import { LogoutButton } from "@/components/LogoutButton";
 
 /** Navigation links shared between desktop and mobile menus */
 const NAV_LINKS = [
@@ -15,8 +16,9 @@ const NAV_LINKS = [
     { href: "/admin", label: "Admin", match: (p: string) => p.startsWith("/admin") },
 ] as const;
 
-export default function Navbar() {
+export default function Navbar({ showLogout }: { showLogout: boolean }) {
     const pathname = usePathname();
+    const isLoginPage = pathname === "/login";
     const { theme, setTheme } = useTheme();
     const [mobileOpen, setMobileOpen] = useState(false);
     const [desktopThemeOpen, setDesktopThemeOpen] = useState(false);
@@ -54,13 +56,15 @@ export default function Navbar() {
                 </div>
 
                 {/* Desktop Global Search Bar - Top Middle */}
-                <div className="hidden md:flex flex-1 justify-center max-w-md mx-4">
-                    <GlobalSearchBar />
-                </div>
+                {!isLoginPage && (
+                    <div className="hidden md:flex flex-1 justify-center max-w-md mx-4">
+                        <GlobalSearchBar />
+                    </div>
+                )}
 
                 {/* Desktop nav links — hidden on mobile */}
                 <div className="hidden md:flex items-center gap-6 text-sm font-medium">
-                    {NAV_LINKS.map((link) => (
+                    {!isLoginPage && NAV_LINKS.map((link) => (
                         <Link
                             key={link.href}
                             href={link.href}
@@ -74,6 +78,8 @@ export default function Navbar() {
                             {link.label}
                         </Link>
                     ))}
+
+                    {!isLoginPage && showLogout && <LogoutButton />}
 
                     {/* Desktop Theme Switcher */}
                     <div className="relative">
@@ -115,7 +121,7 @@ export default function Navbar() {
                 {/* Mobile right-side controls */}
                 <div className="flex md:hidden items-center gap-1">
                     {/* Mobile Global Search Button */}
-                    <GlobalSearchBar />
+                    {!isLoginPage && <GlobalSearchBar />}
 
                     {/* Mobile Theme Switcher */}
                     <div className="relative">
@@ -154,20 +160,22 @@ export default function Navbar() {
                     </div>
 
                     {/* Mobile hamburger button */}
-                    <button
-                        type="button"
-                        className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                        onClick={() => setMobileOpen(!mobileOpen)}
-                        aria-label={mobileOpen ? "Close menu" : "Open menu"}
-                        aria-expanded={mobileOpen}
-                    >
-                        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-                    </button>
+                    {!isLoginPage && (
+                        <button
+                            type="button"
+                            className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                            onClick={() => setMobileOpen(!mobileOpen)}
+                            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                            aria-expanded={mobileOpen}
+                        >
+                            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                        </button>
+                    )}
                 </div>
             </div>
 
             {/* Mobile menu overlay */}
-            {mobileOpen && (
+            {mobileOpen && !isLoginPage && (
                 <div className="md:hidden border-t border-border/40 bg-background/98 backdrop-blur animate-in slide-in-from-top-2 fade-in duration-200">
                     <div className="container px-4 py-4 flex flex-col gap-1">
                         {NAV_LINKS.map((link) => (
@@ -184,6 +192,7 @@ export default function Navbar() {
                                 {link.label}
                             </Link>
                         ))}
+                        {showLogout && <LogoutButton mobile />}
                     </div>
                 </div>
             )}

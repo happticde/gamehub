@@ -3,7 +3,7 @@
 /**
  * ActivityPanel — Admin tab showing recent system activity.
  *
- * Fetches the latest activity log entries from GET /api/activity
+ * Fetches the latest activity log entries through the authenticated Core BFF.
  * and renders them in a card with relative timestamps (e.g. "5 mins ago").
  *
  * Why client-side? Same reason as the other admin panels — it lives inside
@@ -109,7 +109,7 @@ export function ActivityPanel() {
 
     const fetchActivity = useCallback(async () => {
         try {
-            const res = await fetch("/api/activity");
+            const res = await fetch("/api/core/activity");
             if (!res.ok) {
                 setError(`Failed to fetch activity (Status ${res.status})`);
                 return;
