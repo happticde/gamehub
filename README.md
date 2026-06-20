@@ -1,6 +1,6 @@
-# GameHub Backend
+# GameHub
 
-![CI](https://github.com/happticde/game-library-backend/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/happticde/gamehub/actions/workflows/ci.yml/badge.svg)
 
 A unified game library aggregator that ingests data from **Steam**, **PSN**, **GOG**, and **Epic** into a single queryable library. It merges games across platforms using intelligent title matching, enriches them with IGDB metadata, and provides a modern web interface along with REST APIs.
 
@@ -27,9 +27,9 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, **G
 ```
 
 **Five components:**
-- **Ingest Service** (.NET) — stores raw game data per platform, fetches directly from platform APIs
-- **Core Service** (.NET) — merges data into a unified library with cross-platform matching, IGDB enrichment
-- **Frontend** (Next.js) — unified library browser, game detail pages, and admin dashboard
+- **Ingest Service** (.NET) — stores tenant-scoped raw platform data and fetches directly from platform APIs
+- **Core Service** (.NET) — owns tenant libraries, accounts, matching, sync, and IGDB enrichment
+- **Frontend** (Next.js) — authenticated BFF, unified library, game details, statistics, and administration
 - **CLI** (Go) — alternative client that fetches libraries and pushes to Ingest
 - **MCP Server** (.NET console) — Model Context Protocol server; lets AI assistants query and manage your library
 
@@ -41,7 +41,9 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, **G
 - **Modern web UI** — filterable/searchable library grid, cinematic game detail pages
 - **Admin dashboard** — enrichment controls, platform ingestion forms, sync management, audit logs
 - **Data portability** — versioned JSON backup/restore and spreadsheet-safe CSV export
-- **API key authentication** — JWT-ready, configurable via env vars
+- **Authentication** — API key compatibility mode plus local accounts, JWT access tokens,
+  rotating refresh sessions, and HttpOnly frontend cookies
+- **Tenant isolation** — tenant-scoped Core and Ingest storage, queries, writes, and constraints
 - **MCP Server** — AI assistant integration via the [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ---
@@ -106,8 +108,17 @@ Open `.env` and configure your credentials:
 | Variable | Purpose |
 |----------|---------|
 | `GAMEHUB_API_KEY` | API key for authenticating requests (empty = auth disabled) |
+| `GAMEHUB_TENANT_ID` | Trusted tenant assigned to the compatibility API key |
+| `GAMEHUB_JWT_SIGNING_KEY` | JWT signing secret; at least 32 UTF-8 bytes (empty = JWT disabled) |
+| `GAMEHUB_JWT_REFRESH_TOKEN_DAYS` | Absolute refresh-session lifetime, from 1–90 days |
+| `GAMEHUB_FRONTEND_AUTH_ENABLED` | Set `true` to require the frontend login flow |
+| `GAMEHUB_AUTH_COOKIE_SECURE` | Set `true` only when browsers reach the frontend over HTTPS |
 | `IGDB_CLIENT_ID` | Twitch Developer App Client ID (for IGDB enrichment) |
 | `IGDB_CLIENT_SECRET` | Twitch Developer App Client Secret |
+| `CORE_DB_PROVIDER` | Core database provider (`Postgres` or `Sqlite`) |
+| `POSTGRES_DB` | Core PostgreSQL database name |
+| `POSTGRES_USER` | Core PostgreSQL user |
+| `POSTGRES_PASSWORD` | Core PostgreSQL password |
 
 **To get IGDB credentials:**
 1. Log in to the [Twitch Developer Console](https://dev.twitch.tv/console) (requires 2FA)
@@ -124,30 +135,36 @@ docker compose up --build
 | Service | URL |
 |---------|-----|
 | Frontend | `http://localhost:3000` |
-| Ingest API | `http://localhost:5000` (Swagger at `/swagger`) |
+| Ingest API | `http://localhost:5000` (Swagger UI at `/`) |
 | Core API | `http://localhost:5001/swagger` |
 | Health checks | `/health` on both services |
 
-## Production Deployment
+### 3. Bootstrap the First Account (JWT Mode)
 
-The provided `docker-compose.yml` is secure, production-ready, and Kubernetes-friendly:
-- **Next.js Standalone**: The frontend builds a minimal `standalone` image for optimal size and caching.
-- **Non-Root Security**: All Dockerfiles drop root privileges (e.g., `USER $APP_UID` in .NET, `nextjs:nodejs` in Next.js).
-- **Resilient Orchestration**: Services feature `restart: unless-stopped` policies and strict `healthcheck` startup dependencies.
-- **PostgreSQL Ready**: The Compose setup defaults the Core service to use a bundled PostgreSQL container dynamically configurable via environment variables in `.env`.
+Skip this section when `GAMEHUB_JWT_SIGNING_KEY` and `GAMEHUB_FRONTEND_AUTH_ENABLED` are empty.
+Legacy local mode remains available without a login.
 
-To run in production:
-1. Populate your `.env` file with secure real-world values (`POSTGRES_PASSWORD`, `GAMEHUB_API_KEY`, etc.).
-2. Launch in detached mode:
-   ```bash
-   docker compose up -d --build
-   ```
+When JWT mode is enabled, create the default tenant's owner account exactly once:
 
-### 3. Ingest Your Libraries
+```bash
+curl -X POST http://localhost:5001/api/auth/bootstrap \
+  -H "X-Api-Key: replace-with-your-gamehub-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@example.com","password":"use-a-long-unique-password","displayName":"Owner"}'
+```
 
-**Option A: Admin Dashboard (recommended)**
+You can alternatively use Core Swagger's **Authorize** dialog and
+`POST /api/auth/bootstrap`. Afterwards, open `http://localhost:3000/login`.
+
+### 4. Ingest Your Libraries
+
+**Option A: Admin Dashboard (auth-disabled local mode)**
 
 Navigate to `http://localhost:3000/admin` → **Ingestion** tab. Enter your platform credentials and click "Fetch & Ingest".
+
+> With Ingest API-key authentication enabled, use the CLI or direct API calls for
+> now. Trusted Core→Ingest tenant delegation and encrypted platform credentials are the next
+> multi-user milestone; provisioned tenants remain platform-sync disabled until then.
 
 **Option B: CLI**
 
@@ -164,44 +181,70 @@ gamehub-cli ingest psn --cookies '{"JSESSIONID":"...","sb-cdn.session":"..."}'
 ```bash
 # Steam
 curl -X POST http://localhost:5000/api/retrieve/steam \
+  -H "X-Api-Key: replace-with-your-gamehub-api-key" \
   -H "Content-Type: application/json" \
   -d '{"apiKey": "YOUR_KEY", "steamId": "YOUR_STEAM_ID_64"}'
 
 # GOG
 curl -X POST http://localhost:5000/api/retrieve/gog \
+  -H "X-Api-Key: replace-with-your-gamehub-api-key" \
   -H "Content-Type: application/json" \
   -d '{"cookie": "YOUR_GOG_AL_COOKIE", "user": "YOUR_GOG_USERNAME"}'
 
 # PSN
 curl -X POST http://localhost:5000/api/retrieve/psn \
+  -H "X-Api-Key: replace-with-your-gamehub-api-key" \
   -H "Content-Type: application/json" \
   -d '{"cookies": {"JSESSIONID": "...", "sb-cdn.session": "..."}}'
 ```
 
-### 4. Sync & Enrich
+### 5. Sync & Enrich
 
 ```bash
 # Trigger unification sync
-curl -X POST http://localhost:5001/api/library/sync
+curl -X POST http://localhost:5001/api/library/sync \
+  -H "X-Api-Key: replace-with-your-gamehub-api-key"
 
 # Enrich all un-enriched games with IGDB metadata
-curl -X POST http://localhost:5001/api/library/enrich
+curl -X POST http://localhost:5001/api/library/enrich \
+  -H "X-Api-Key: replace-with-your-gamehub-api-key"
 ```
 
 Or use the Admin Dashboard at `/admin` for a visual interface.
 
-### 5. Browse Your Library
+### 6. Browse Your Library
 
 Visit `http://localhost:3000/library` to see your unified collection with filters, sorting, and game detail pages.
+
+## Deployment
+
+The provided `docker-compose.yml` is a deployment-oriented baseline:
+- **Next.js Standalone**: The frontend builds a minimal `standalone` image for optimal size and caching.
+- **Non-Root Security**: All Dockerfiles drop root privileges (e.g., `USER $APP_UID` in .NET, `nextjs:nodejs` in Next.js).
+- **Resilient Orchestration**: Services feature `restart: unless-stopped` policies and strict `healthcheck` startup dependencies.
+- **PostgreSQL Ready**: The Compose setup defaults the Core service to use a bundled PostgreSQL container dynamically configurable via environment variables in `.env`.
+
+> Multi-user operation is not enabled yet. Core and Ingest data are tenant-isolated, but trusted
+> Core→Ingest tenant delegation and encrypted tenant-specific platform credentials are still
+> required before provisioned tenants can synchronize platform libraries.
+
+To run in production:
+1. Populate your `.env` file with secure real-world values (`POSTGRES_PASSWORD`, `GAMEHUB_API_KEY`, etc.).
+2. Launch in detached mode:
+   ```bash
+   docker compose up -d --build
+   ```
 
 ## Frontend Pages
 
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page with quick stats and feature highlights |
+| `/login` | Local-account login when frontend authentication is enabled |
 | `/library` | Unified library grid with search, filters (tags, platforms, developer, publisher), sorting |
 | `/library/[id]` | Cinematic game detail page with metadata, screenshots, artworks |
-| `/admin` | Admin dashboard with tabs for Enrichment, Ingestion, and Sync management |
+| `/stats` | Tenant-scoped library statistics and analytics |
+| `/admin` | Enrichment, ingestion, sync, activity, and backup administration |
 
 ## API Reference
 
@@ -222,6 +265,11 @@ Visit `http://localhost:3000/library` to see your unified collection with filter
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `POST` | `/api/auth/bootstrap` | Create the first account for the API key's configured tenant |
+| `POST` | `/api/auth/tenants` | API-key-controlled tenant and owner-account provisioning |
+| `POST` | `/api/auth/token` | Exchange email/password for access and refresh tokens |
+| `POST` | `/api/auth/refresh` | Rotate a refresh token and issue a new token pair |
+| `POST` | `/api/auth/revoke` | Revoke a refresh session |
 | `POST` | `/api/library/sync` | Trigger incremental sync from Ingest |
 | `GET` | `/api/library?search=&tags=&platforms=&sortBy=&page=&includeIgnored=false` | Query unified library (paginated) |
 | `GET` | `/api/library/{id}` | Full game detail with media arrays |
@@ -229,6 +277,8 @@ Visit `http://localhost:3000/library` to see your unified collection with filter
 | `GET` | `/api/library/tags` | List all unique tags |
 | `GET` | `/api/library/developers` | List all developers |
 | `GET` | `/api/library/publishers` | List all publishers |
+| `GET` | `/api/library/random` | Random game using optional platform/genre/status filters |
+| `GET` | `/api/library/stats` | Tenant-scoped statistics dashboard data |
 | `POST` | `/api/library/enrich` | Bulk enrich un-enriched games (`?force=true` to reset all) |
 | `POST` | `/api/library/enrich/stale` | Reset stale enrichments (enriched but no metadata) |
 | `POST` | `/api/library/enrich/{id}` | Enrich/re-enrich a single game (`?force=true`) |
@@ -238,6 +288,11 @@ Visit `http://localhost:3000/library` to see your unified collection with filter
 | `POST` | `/api/library/retroactive-ignore` | Retroactively hide junk/demo games matching keywords |
 | `POST` | `/api/library/merge` | Merge two games `{ sourceGameId, targetGameId }` |
 | `POST` | `/api/library/split` | Split a platform entry `{ libraryItemId }` |
+| `GET` | `/api/backup` | Download a versioned JSON backup |
+| `GET` | `/api/backup/csv` | Download a spreadsheet-safe CSV export |
+| `POST` | `/api/backup/validate` | Validate a multipart JSON backup without restoring |
+| `POST` | `/api/backup/restore` | Restore a valid backup into the active tenant's empty library |
+| `GET` | `/api/activity` | Recent tenant activity events |
 
 ## Tech Stack
 
@@ -247,7 +302,7 @@ Visit `http://localhost:3000/library` to see your unified collection with filter
 | Services | ASP.NET Core (.NET 10), C# |
 | CLI | Go (Cobra + Viper) |
 | Database | SQLite (dev) / PostgreSQL (prod) via EF Core |
-| Auth | API key via `X-Api-Key` header (JWT-ready) |
+| Auth | API key, local accounts, signed JWTs, rotating refresh tokens, HttpOnly BFF cookies |
 | Docker | Alpine-based images, Docker Compose |
 | Tests | xUnit with in-memory SQLite |
 
@@ -258,6 +313,10 @@ frontend/                   # Next.js web application
 ├── app/
 │   ├── page.tsx            # Landing page
 │   ├── layout.tsx          # Root layout with Navbar
+│   ├── login/page.tsx      # Local-account login
+│   ├── api/auth/           # Login/logout BFF routes and HttpOnly cookies
+│   ├── api/core/           # Authenticated Core proxy with refresh rotation
+│   ├── stats/page.tsx      # Statistics dashboard
 │   ├── admin/page.tsx      # Admin dashboard (enrichment, ingestion, sync)
 │   └── library/
 │       ├── page.tsx        # Library grid
@@ -270,7 +329,8 @@ frontend/                   # Next.js web application
 │   ├── LibraryFilters.tsx
 │   └── LibraryPagination.tsx
 ├── types/game.ts           # TypeScript interfaces
-└── lib/                    # Utilities
+├── proxy.ts                # Page protection and transparent session refresh
+└── lib/                    # Server-side API/session helpers and utilities
 
 services/
 ├── ingest/                 # Raw data storage service
@@ -280,16 +340,22 @@ services/
 │   │   ├── RetrieveController.cs     # Server-side fetch + ingest
 │   │   └── ExportController.cs       # Paginated export for Core
 │   ├── Services/            # Platform fetchers
-│   └── Data/
+│   └── Data/                # Tenant-filtered raw and audit storage
 ├── core/                   # Unified library service
 │   ├── Controllers/
+│   │   ├── AuthController.cs         # Bootstrap, provisioning, JWT/refresh lifecycle
+│   │   ├── BackupController.cs       # JSON and CSV exports
+│   │   ├── BackupImportController.cs # Validation and transactional restore
 │   │   └── LibraryController.cs      # Library, enrichment, merge/split
 │   ├── Services/
 │   │   ├── UnificationService.cs     # Slug matching + manual links
 │   │   ├── EnrichmentService.cs      # IGDB enrichment orchestration
 │   │   ├── IgdbClient.cs             # IGDB API client with caching
+│   │   ├── AccountService.cs         # Password hashing and tenant provisioning
+│   │   ├── JwtTokenService.cs        # Signed tenant-scoped access tokens
+│   │   ├── RefreshTokenService.cs    # Hashed, rotating, revocable sessions
 │   │   └── IngestClient.cs           # HTTP client for Ingest
-│   └── Data/
+│   └── Data/                          # Tenant-filtered unified library and accounts
 ├── mcp/                    # MCP server (AI assistant integration)
 │   ├── Program.cs           # Generic host + stdio transport
 │   ├── CoreApiClient.cs     # Typed HTTP client → Core REST API
@@ -308,6 +374,10 @@ docs/                       # ROADMAP.md, DEBUGGING.md, ADRs
 ## Notes
 
 - **Schema changes:** Run `dotnet ef migrations add <Name> --project services/<service>/<project>.csproj` and restart. Migrations are auto-applied on startup.
-- **Swagger:** Available at `/swagger` on both services.
+- **Swagger:** Core UI is at `http://localhost:5001/swagger`; Ingest UI is served at
+  `http://localhost:5000/`. Core Swagger supports both `X-Api-Key` and Bearer authorization.
 - **Health checks:** Both services expose `GET /health` with DB connectivity checks.
-- **Authentication:** Set `Authentication__ApiKey` env var. Leave empty to disable auth.
+- **Authentication:** Configure Compose through the `GAMEHUB_*` variables in `.env`. Leaving
+  API key, JWT key, and frontend auth disabled preserves legacy local mode.
+- **Tenant safety:** Tenant identity comes from trusted authentication claims, never request
+  bodies. JSON backups remain intentionally tenant-neutral.
