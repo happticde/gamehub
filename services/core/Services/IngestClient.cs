@@ -1,4 +1,6 @@
+using GameHub.Core.Data;
 using GameHub.Shared;
+using GameHub.Shared.Authentication;
 
 namespace GameHub.Core.Services;
 
@@ -13,8 +15,19 @@ namespace GameHub.Core.Services;
 public class IngestClient
 {
     private readonly HttpClient _http;
+    private readonly ITenantContext _tenantContext;
+    private readonly string _serviceKey;
 
-    public IngestClient(HttpClient http) { _http = http; }
+    /// <summary>Creates a client that delegates Core's trusted tenant to Ingest.</summary>
+    public IngestClient(
+        HttpClient http,
+        ITenantContext tenantContext,
+        IConfiguration configuration)
+    {
+        _http = http;
+        _tenantContext = tenantContext;
+        _serviceKey = configuration["Services:IngestServiceKey"] ?? "";
+    }
 
     /// <summary>
     /// Fetches a single page of game data from the Ingest service.
@@ -44,8 +57,23 @@ public class IngestClient
         if (updatedAfter.HasValue)
             url += $"&updatedAfter={updatedAfter.Value:O}"; // ISO 8601 format
 
-        // Fetch and deserialize, returning an empty result on failure
-        return await _http.GetFromJsonAsync<PagedResult<RawGameDto>>(url)
+        if (string.IsNullOrWhiteSpace(_serviceKey))
+        {
+            throw new InvalidOperationException(
+                "Services:IngestServiceKey must be configured before Core can call Ingest.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Add(
+            TenantDelegationAuthenticationHandler.ServiceKeyHeaderName,
+            _serviceKey);
+        request.Headers.Add(
+            TenantDelegationAuthenticationHandler.TenantHeaderName,
+            _tenantContext.TenantId.ToString("D"));
+
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PagedResult<RawGameDto>>()
             ?? new PagedResult<RawGameDto>();
     }
 }

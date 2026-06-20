@@ -38,6 +38,8 @@ services:
       - Database__Provider=${INGEST_DB_PROVIDER:-Sqlite}
       - ConnectionStrings__DefaultConnection=${INGEST_DB_CONN:-Data Source=/app/data/ingest.db}
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
+      - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      - Authentication__ServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:-}
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8080/health" ]
       interval: 10s
@@ -57,6 +59,7 @@ services:
       - ConnectionStrings__Postgres=Host=db;Port=5432;Database=${POSTGRES_DB:-gamehub_core};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres_password}
       - ConnectionStrings__Sqlite=Data Source=/app/data/core.db
       - Services__IngestUrl=http://ingest:8080
+      - Services__IngestServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:-}
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
       - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       - Authentication__Jwt__SigningKey=${GAMEHUB_JWT_SIGNING_KEY:-}

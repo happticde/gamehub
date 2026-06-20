@@ -4,10 +4,11 @@ GameHub keeps the existing API-key mode and optionally enables local account JWT
 
 ## Enable JWT
 
-Configure both secrets before bootstrapping the first account:
+Configure separate external, internal, and JWT secrets before bootstrapping the first account:
 
 ```dotenv
 GAMEHUB_API_KEY=replace-with-a-strong-api-key
+GAMEHUB_INGEST_SERVICE_KEY=replace-with-a-different-strong-random-key
 GAMEHUB_JWT_SIGNING_KEY=replace-with-a-random-secret-of-at-least-32-bytes
 GAMEHUB_FRONTEND_AUTH_ENABLED=true
 ```
@@ -15,6 +16,10 @@ GAMEHUB_FRONTEND_AUTH_ENABLED=true
 Restart the Compose services after changing authentication configuration. Leaving
 `GAMEHUB_JWT_SIGNING_KEY` empty and `GAMEHUB_FRONTEND_AUTH_ENABLED=false` preserves the legacy
 local mode without a login screen.
+
+`GAMEHUB_INGEST_SERVICE_KEY` is an internal Core-to-Ingest credential and must not reuse the
+external API key. Only requests authenticated with this service key may supply
+`X-GameHub-Tenant-Id`; normal API-key requests carrying that header are rejected.
 
 ## Bootstrap the Tenant Account
 

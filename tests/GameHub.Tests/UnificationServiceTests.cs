@@ -3,6 +3,7 @@ using GameHub.Core.Services;
 using GameHub.Shared;
 using GameHub.Tests.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -63,7 +64,13 @@ public class UnificationServiceTests : IDisposable
         // Instead, we'll test the sync pipeline by seeding data directly.
         // For full end-to-end, we test ProcessPageAsync behavior via the DB state.
         var http = new HttpClient(new FakeHandler(items));
-        return new IngestClient(http);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Services:IngestServiceKey"] = "test-service-key"
+            })
+            .Build();
+        return new IngestClient(http, new MutableTenantContext(), configuration);
     }
 
     [Fact]
