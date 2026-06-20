@@ -45,6 +45,40 @@ public sealed class IngestClientTests
         Assert.Null(handler.Request);
     }
 
+    [Fact]
+    public async Task RetrieveStoredAsync_ActiveTenant_PostsWithInternalDelegationOnly()
+    {
+        var tenantId = Guid.NewGuid();
+        var handler = new CapturingHandler();
+        var client = CreateClient(handler, tenantId, "dedicated-service-key");
+
+        var retrieved = await client.RetrieveStoredAsync(Platform.Gog);
+
+        Assert.True(retrieved);
+        Assert.Equal(HttpMethod.Post, handler.Request?.Method);
+        Assert.Equal("/api/retrieve/gog/stored", handler.Request?.RequestUri?.AbsolutePath);
+        Assert.Equal(
+            "dedicated-service-key",
+            handler.Request?.Headers.GetValues(
+                TenantDelegationAuthenticationHandler.ServiceKeyHeaderName).Single());
+        Assert.Equal(
+            tenantId.ToString("D"),
+            handler.Request?.Headers.GetValues(
+                TenantDelegationAuthenticationHandler.TenantHeaderName).Single());
+        Assert.False(handler.Request!.Headers.Contains(ApiKeyAuthenticationHandler.HeaderName));
+    }
+
+    [Fact]
+    public async Task RetrieveStoredAsync_MissingCredential_ReturnsFalse()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.NotFound);
+        var client = CreateClient(handler, Guid.NewGuid(), "dedicated-service-key");
+
+        var retrieved = await client.RetrieveStoredAsync(Platform.Psn);
+
+        Assert.False(retrieved);
+    }
+
     private static IngestClient CreateClient(
         CapturingHandler handler,
         Guid tenantId,
@@ -68,7 +102,8 @@ public sealed class IngestClientTests
         public Guid TenantId { get; } = tenantId;
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
+    private sealed class CapturingHandler(HttpStatusCode statusCode = HttpStatusCode.OK)
+        : HttpMessageHandler
     {
         public HttpRequestMessage? Request { get; private set; }
 
@@ -77,7 +112,7 @@ public sealed class IngestClientTests
             CancellationToken cancellationToken)
         {
             Request = request;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult(new HttpResponseMessage(statusCode)
             {
                 Content = JsonContent.Create(new PagedResult<RawGameDto>())
             });

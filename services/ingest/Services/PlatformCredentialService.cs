@@ -37,6 +37,8 @@ public sealed class PlatformCredentialService(
                     $"Credential payload must not exceed {MaximumPayloadSizeBytes} UTF-8 bytes.");
             }
 
+            PlatformCredentialPayloadCodec.Validate(platform, schemaVersion, plaintext);
+
             var credential = await db.PlatformCredentials
                 .SingleOrDefaultAsync(item => item.Platform == platform, cancellationToken);
             var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -100,6 +102,63 @@ public sealed class PlatformCredentialService(
         return true;
     }
 
+    /// <summary>Decrypts the active tenant's Steam credential for immediate retrieval.</summary>
+    public Task<SteamPlatformCredential?> GetSteamAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync(Platform.Steam, PlatformCredentialPayloadCodec.DecodeSteam, cancellationToken);
+
+    /// <summary>Decrypts the active tenant's GOG credential for immediate retrieval.</summary>
+    public Task<GogPlatformCredential?> GetGogAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync(Platform.Gog, PlatformCredentialPayloadCodec.DecodeGog, cancellationToken);
+
+    /// <summary>Decrypts the active tenant's PlayStation credential for immediate retrieval.</summary>
+    public Task<PsnPlatformCredential?> GetPsnAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync(Platform.Psn, PlatformCredentialPayloadCodec.DecodePsn, cancellationToken);
+
+    private async Task<T?> ReadAsync<T>(
+        Platform platform,
+        Func<ReadOnlySpan<byte>, T> decode,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        var credential = await db.PlatformCredentials
+            .AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Platform == platform, cancellationToken);
+        if (credential is null)
+        {
+            return null;
+        }
+
+        byte[]? plaintext = null;
+        try
+        {
+            plaintext = protector.Unprotect(credential);
+            if (credential.CredentialSchemaVersion != 1)
+            {
+                throw new PlatformCredentialValidationException(
+                    $"Stored credential schema {credential.CredentialSchemaVersion} is unsupported.");
+            }
+            return decode(plaintext);
+        }
+        catch (PlatformCredentialVaultNotConfiguredException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (
+            ex is CryptographicException or
+                PlatformCredentialValidationException or
+                InvalidOperationException)
+        {
+            throw new PlatformCredentialReadException(platform, ex);
+        }
+        finally
+        {
+            if (plaintext is not null)
+            {
+                CryptographicOperations.ZeroMemory(plaintext);
+            }
+        }
+    }
+
     private static void Validate(
         Platform platform,
         int schemaVersion,
@@ -130,4 +189,18 @@ public sealed class PlatformCredentialService(
 }
 
 /// <summary>Raised when a credential request violates the vault's public contract.</summary>
-public sealed class PlatformCredentialValidationException(string message) : ArgumentException(message);
+public sealed class PlatformCredentialValidationException : ArgumentException
+{
+    public PlatformCredentialValidationException(string message) : base(message)
+    {
+    }
+
+    public PlatformCredentialValidationException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>Raised when stored credential material cannot be safely decoded.</summary>
+public sealed class PlatformCredentialReadException(Platform platform, Exception innerException)
+    : InvalidOperationException($"Stored credential for {platform} is unavailable.", innerException);

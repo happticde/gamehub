@@ -69,15 +69,21 @@ public sealed class PlatformCredentialServiceTests : IDisposable
     {
         await using var db = CreateContext(TenantA);
         var service = CreateService(db, TenantA);
-        await service.UpsertAsync(Platform.Gog, 1, ParseCredentials("{\"cookie\":\"first\"}"));
+        await service.UpsertAsync(
+            Platform.Gog,
+            1,
+            ParseCredentials("{\"cookie\":\"first\",\"user\":\"player\"}"));
         var firstNonce = (await db.PlatformCredentials.SingleAsync()).Nonce.ToArray();
         db.ChangeTracker.Clear();
 
-        await service.UpsertAsync(Platform.Gog, 2, ParseCredentials("{\"cookie\":\"second\"}"));
+        await service.UpsertAsync(
+            Platform.Gog,
+            1,
+            ParseCredentials("{\"cookie\":\"second\",\"user\":\"player\"}"));
         var stored = await db.PlatformCredentials.SingleAsync();
 
         Assert.Equal(1, await db.PlatformCredentials.CountAsync());
-        Assert.Equal(2, stored.CredentialSchemaVersion);
+        Assert.Equal(1, stored.CredentialSchemaVersion);
         Assert.NotEqual(firstNonce, stored.Nonce);
     }
 
@@ -89,14 +95,14 @@ public sealed class PlatformCredentialServiceTests : IDisposable
             await CreateService(dbA, TenantA).UpsertAsync(
                 Platform.Psn,
                 1,
-                ParseCredentials("{\"npsso\":\"tenant-a\"}"));
+                ParseCredentials("{\"cookies\":{\"session\":\"tenant-a\"}}"));
         }
         await using (var dbB = CreateContext(TenantB))
         {
             await CreateService(dbB, TenantB).UpsertAsync(
                 Platform.Psn,
                 1,
-                ParseCredentials("{\"npsso\":\"tenant-b\"}"));
+                ParseCredentials("{\"cookies\":{\"session\":\"tenant-b\"}}"));
         }
 
         await using (var dbA = CreateContext(TenantA))
@@ -125,6 +131,89 @@ public sealed class PlatformCredentialServiceTests : IDisposable
             () => service.UpsertAsync(Platform.Epic, 1, ParseCredentials("{}")));
 
         Assert.Empty(await db.PlatformCredentials.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(Platform.Steam, "{\"apiKey\":\"secret\"}")]
+    [InlineData(Platform.Gog, "{\"cookie\":\"secret\"}")]
+    [InlineData(Platform.Psn, "{\"cookies\":{}}")]
+    [InlineData(Platform.Epic, "{\"token\":\"secret\"}")]
+    public async Task Upsert_InvalidOrUnsupportedPlatformSchema_RejectsWithoutWriting(
+        Platform platform,
+        string json)
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(db, TenantA);
+
+        await Assert.ThrowsAsync<PlatformCredentialValidationException>(
+            () => service.UpsertAsync(platform, 1, ParseCredentials(json)));
+
+        Assert.Empty(await db.PlatformCredentials.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Upsert_UnsupportedSchemaVersion_RejectsWithoutWriting()
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(db, TenantA);
+
+        await Assert.ThrowsAsync<PlatformCredentialValidationException>(
+            () => service.UpsertAsync(
+                Platform.Steam,
+                2,
+                ParseCredentials("{\"apiKey\":\"secret\",\"steamId\":\"123\"}")));
+
+        Assert.Empty(await db.PlatformCredentials.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ReadCredential_TwoTenants_ReturnsOnlyActiveTenantPlaintext()
+    {
+        await using (var dbA = CreateContext(TenantA))
+        {
+            await CreateService(dbA, TenantA).UpsertAsync(
+                Platform.Steam,
+                1,
+                ParseCredentials("{\"apiKey\":\"secret-a\",\"steamId\":\"111\"}"));
+        }
+        await using (var dbB = CreateContext(TenantB))
+        {
+            await CreateService(dbB, TenantB).UpsertAsync(
+                Platform.Steam,
+                1,
+                ParseCredentials("{\"apiKey\":\"secret-b\",\"steamId\":\"222\"}"));
+        }
+
+        await using var verifyA = CreateContext(TenantA);
+        await using var verifyB = CreateContext(TenantB);
+        var credentialA = await CreateService(verifyA, TenantA).GetSteamAsync();
+        var credentialB = await CreateService(verifyB, TenantB).GetSteamAsync();
+
+        Assert.Equal("secret-a", credentialA?.ApiKey);
+        Assert.Equal("111", credentialA?.SteamId);
+        Assert.Equal("secret-b", credentialB?.ApiKey);
+        Assert.Equal("222", credentialB?.SteamId);
+    }
+
+    [Fact]
+    public async Task ReadCredential_UnavailableEncryptionKey_ReturnsSanitizedReadFailure()
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(db, TenantA);
+        await service.UpsertAsync(
+            Platform.Steam,
+            1,
+            ParseCredentials("{\"apiKey\":\"secret\",\"steamId\":\"123\"}"));
+        var stored = await db.PlatformCredentials.SingleAsync();
+        stored.EncryptionKeyVersion = 999;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<PlatformCredentialReadException>(
+            () => service.GetSteamAsync());
+
+        Assert.Equal("Stored credential for Steam is unavailable.", exception.Message);
+        Assert.DoesNotContain("secret", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -181,7 +270,7 @@ public sealed class PlatformCredentialServiceTests : IDisposable
             Platform.Steam,
             new UpsertPlatformCredentialRequest
             {
-                Credentials = ParseCredentials("{\"apiKey\":\"secret\"}")
+                Credentials = ParseCredentials("{\"apiKey\":\"secret\",\"steamId\":\"123\"}")
             },
             CancellationToken.None);
 

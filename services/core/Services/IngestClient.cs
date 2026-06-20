@@ -1,6 +1,7 @@
 using GameHub.Core.Data;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
+using System.Net;
 
 namespace GameHub.Core.Services;
 
@@ -57,23 +58,47 @@ public class IngestClient
         if (updatedAfter.HasValue)
             url += $"&updatedAfter={updatedAfter.Value:O}"; // ISO 8601 format
 
+        using var request = CreateDelegatedRequest(HttpMethod.Get, url);
+
+        using var response = await _http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PagedResult<RawGameDto>>()
+            ?? new PagedResult<RawGameDto>();
+    }
+
+    /// <summary>
+    /// Asks Ingest to refresh one platform using the delegated tenant's encrypted credential.
+    /// Returns false when that tenant has no credential for the platform.
+    /// </summary>
+    public async Task<bool> RetrieveStoredAsync(Platform platform)
+    {
+        var url = $"/api/retrieve/{platform.ToString().ToLowerInvariant()}/stored";
+        using var request = CreateDelegatedRequest(HttpMethod.Post, url);
+        using var response = await _http.SendAsync(request);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
+    private HttpRequestMessage CreateDelegatedRequest(HttpMethod method, string url)
+    {
         if (string.IsNullOrWhiteSpace(_serviceKey))
         {
             throw new InvalidOperationException(
                 "Services:IngestServiceKey must be configured before Core can call Ingest.");
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        var request = new HttpRequestMessage(method, url);
         request.Headers.Add(
             TenantDelegationAuthenticationHandler.ServiceKeyHeaderName,
             _serviceKey);
         request.Headers.Add(
             TenantDelegationAuthenticationHandler.TenantHeaderName,
             _tenantContext.TenantId.ToString("D"));
-
-        using var response = await _http.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<PagedResult<RawGameDto>>()
-            ?? new PagedResult<RawGameDto>();
+        return request;
     }
 }

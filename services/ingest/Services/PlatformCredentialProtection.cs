@@ -208,14 +208,22 @@ public sealed class PlatformCredentialProtector(PlatformCredentialKeyRing keyRin
             credential.EncryptionFormatVersion,
             credential.EncryptionKeyVersion);
 
-        using var aes = new AesGcm(key, AuthenticationTagSizeBytes);
-        aes.Decrypt(
-            credential.Nonce,
-            credential.EncryptedPayload,
-            credential.AuthenticationTag,
-            plaintext,
-            associatedData);
-        return plaintext;
+        try
+        {
+            using var aes = new AesGcm(key, AuthenticationTagSizeBytes);
+            aes.Decrypt(
+                credential.Nonce,
+                credential.EncryptedPayload,
+                credential.AuthenticationTag,
+                plaintext,
+                associatedData);
+            return plaintext;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+            throw;
+        }
     }
 
     private static byte[] BuildAssociatedData(

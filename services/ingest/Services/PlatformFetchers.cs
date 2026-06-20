@@ -4,13 +4,28 @@ using Microsoft.Extensions.Logging;
 
 namespace GameHub.Ingest.Services;
 
+public interface ISteamFetcher
+{
+    Task<List<JsonElement>> FetchGamesAsync(string apiKey, string steamId);
+}
+
+public interface IGogFetcher
+{
+    Task<List<JsonElement>> FetchGamesAsync(string gogAlCookie, string username);
+}
+
+public interface IPsnFetcher
+{
+    Task<List<JsonElement>> FetchGamesAsync(Dictionary<string, string> cookies);
+}
+
 /// <summary>
 /// Fetches the user's Steam game library via the Steam Web API.
 ///
 /// API endpoint: IPlayerService/GetOwnedGames
 /// Returns a JSON array of game objects with appid, name, playtime_forever, etc.
 /// </summary>
-public class SteamFetcher
+public class SteamFetcher : ISteamFetcher
 {
     private readonly HttpClient _http;
     private readonly ILogger<SteamFetcher> _logger;
@@ -57,10 +72,9 @@ public class SteamFetcher
 
             if (!resp.IsSuccessStatusCode)
             {
-                var body = await resp.Content.ReadAsStringAsync();
-                _logger.LogError("Steam API returned {StatusCode}: {Body}", (int)resp.StatusCode, body);
+                _logger.LogError("Steam API returned {StatusCode}", (int)resp.StatusCode);
                 await WriteAuditLogAsync("Steam", "Error", 0, $"HTTP {(int)resp.StatusCode}");
-                throw new HttpRequestException($"Steam API returned {(int)resp.StatusCode}: {body}");
+                throw new HttpRequestException($"Steam API returned {(int)resp.StatusCode}.");
             }
 
             var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
@@ -107,7 +121,7 @@ public class SteamFetcher
 /// Uses cookie-based auth (gog-al cookie) — matching the user's Python GogClient.
 /// The endpoint is paginated, returning embedded game items per page.
 /// </summary>
-public class GogFetcher
+public class GogFetcher : IGogFetcher
 {
     private readonly ILogger<GogFetcher> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -161,9 +175,8 @@ public class GogFetcher
 
                 if (!resp.IsSuccessStatusCode)
                 {
-                    var body = await resp.Content.ReadAsStringAsync();
-                    _logger.LogError("GOG API returned {StatusCode} on page {Page}: {Body}",
-                        (int)resp.StatusCode, page, body);
+                    _logger.LogError("GOG API returned {StatusCode} on page {Page}",
+                        (int)resp.StatusCode, page);
                     await WriteAuditLogAsync("GOG", "Error", 0, $"HTTP {(int)resp.StatusCode}");
                     throw new HttpRequestException($"GOG API returned {(int)resp.StatusCode} on page {page}.");
                 }
@@ -176,8 +189,7 @@ public class GogFetcher
                 }
                 catch (JsonException ex)
                 {
-                    _logger.LogError(ex, "GOG: failed to parse JSON response on page {Page}. Raw response: {Raw}",
-                        page, rawJson[..Math.Min(500, rawJson.Length)]);
+                    _logger.LogError(ex, "GOG: failed to parse JSON response on page {Page}", page);
                     await WriteAuditLogAsync("GOG", "Error", 0, "JSON Parse Exception");
                     throw;
                 }
@@ -248,7 +260,7 @@ public class GogFetcher
 /// Uses cookie-based auth — matching the user's Python PSN_Client.
 /// The endpoint uses a persisted GraphQL query with pagination.
 /// </summary>
-public class PsnFetcher
+public class PsnFetcher : IPsnFetcher
 {
     private readonly ILogger<PsnFetcher> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -320,13 +332,12 @@ public class PsnFetcher
 
                 if (!resp.IsSuccessStatusCode)
                 {
-                    var body = await resp.Content.ReadAsStringAsync();
-                    _logger.LogError("PSN API returned {StatusCode} at offset {Offset}: {Body}",
-                        (int)resp.StatusCode, offset, body);
+                    _logger.LogError("PSN API returned {StatusCode} at offset {Offset}",
+                        (int)resp.StatusCode, offset);
                     await WriteAuditLogAsync("PSN", "Error", 0, $"HTTP {(int)resp.StatusCode}");
                     throw new HttpRequestException(
                         $"PSN API returned {(int)resp.StatusCode}. " +
-                        $"Cookies may have expired. Response: {body}");
+                        "Cookies may have expired.");
                 }
 
                 var rawJson = await resp.Content.ReadAsStringAsync();
@@ -337,8 +348,7 @@ public class PsnFetcher
                 }
                 catch (JsonException ex)
                 {
-                    _logger.LogError(ex, "PSN: failed to parse JSON at offset {Offset}. Raw: {Raw}",
-                        offset, rawJson[..Math.Min(500, rawJson.Length)]);
+                    _logger.LogError(ex, "PSN: failed to parse JSON at offset {Offset}", offset);
                     await WriteAuditLogAsync("PSN", "Error", 0, "JSON Parse Exception");
                     throw;
                 }
@@ -347,8 +357,7 @@ public class PsnFetcher
                 if (!doc.RootElement.TryGetProperty("data", out var data) ||
                     !data.TryGetProperty("purchasedTitlesRetrieve", out var retrieve))
                 {
-                    _logger.LogError("PSN: unexpected response structure at offset {Offset}. Raw: {Raw}",
-                        offset, rawJson[..Math.Min(500, rawJson.Length)]);
+                    _logger.LogError("PSN: unexpected response structure at offset {Offset}", offset);
                     await WriteAuditLogAsync("PSN", "Error", 0, "Unexpected Response Structure");
                     throw new InvalidOperationException("PSN API returned an unexpected response structure");
                 }

@@ -19,3 +19,12 @@ public sealed record PlatformCredentialStatusResponse(
 
 /// <summary>Uniform error response from the internal credential vault.</summary>
 public sealed record PlatformCredentialErrorResponse(string Message);
+
+/// <summary>Schema v1 for Steam retrieval credentials.</summary>
+public sealed record SteamPlatformCredential(string ApiKey, string SteamId);
+
+/// <summary>Schema v1 for GOG retrieval credentials.</summary>
+public sealed record GogPlatformCredential(string Cookie, string User);
+
+/// <summary>Schema v1 for PlayStation retrieval credentials.</summary>
+public sealed record PsnPlatformCredential(Dictionary<string, string> Cookies);
