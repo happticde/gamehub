@@ -17,6 +17,16 @@ public sealed record BootstrapAccountRequest(
     string DisplayName);
 
 /// <summary>
+/// Administrative request that creates a tenant and its first owner account atomically.
+/// TenantId is deliberately absent: the server generates an unpredictable identifier.
+/// </summary>
+public sealed record ProvisionTenantRequest(
+    string TenantName,
+    string Email,
+    string Password,
+    string DisplayName);
+
+/// <summary>
 /// Credentials exchanged for a signed access token. Password is input-only and is never
 /// included in TokenResponse, JWT claims, logs, or persisted plaintext.
 /// </summary>
@@ -29,6 +39,13 @@ public sealed record AccountResponse(
     string Email,
     string DisplayName,
     DateTime CreatedAtUtc);
+
+/// <summary>Public identifiers returned after a tenant and owner account are provisioned.</summary>
+public sealed record TenantProvisioningResponse(
+    Guid TenantId,
+    string TenantName,
+    bool PlatformSyncEnabled,
+    AccountResponse Account);
 
 /// <summary>
 /// Signed bearer token response. TokenType is "Bearer" and ExpiresAtUtc lets clients stop

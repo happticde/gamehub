@@ -72,6 +72,28 @@ public sealed class AuthControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task ProvisionTenant_ValidRequest_ReturnsServerGeneratedTenant()
+    {
+        var controller = CreateController(apiKey: "configured", jwtEnabled: true);
+
+        var result = await controller.ProvisionTenant(
+            new ProvisionTenantRequest(
+                "Family Library",
+                "family@example.com",
+                Password,
+                "Family Owner"),
+            CancellationToken.None);
+
+        var created = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(201, created.StatusCode);
+        var response = Assert.IsType<TenantProvisioningResponse>(created.Value);
+        Assert.NotEqual(Guid.Empty, response.TenantId);
+        Assert.NotEqual(TenantDefaults.DefaultTenantId, response.TenantId);
+        Assert.Equal(response.TenantId, response.Account.TenantId);
+        Assert.False(response.PlatformSyncEnabled);
+    }
+
+    [Fact]
     public async Task Token_JwtNotConfigured_ReturnsServiceUnavailable()
     {
         var controller = CreateController(apiKey: "configured", jwtEnabled: false);

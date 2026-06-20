@@ -56,7 +56,25 @@ public class LibraryController : ControllerBase
         _logger.LogInformation("Starting full library sync");
         await _activityLog.LogAsync("SyncStarted", "Manual sync triggered from admin dashboard");
 
-        var count = await _unifier.RunFullSyncAsync();
+        int count;
+        try
+        {
+            count = await _unifier.RunFullSyncAsync();
+        }
+        catch (TenantPlatformSyncDisabledException exception)
+        {
+            _logger.LogWarning(
+                "Rejected platform sync for tenant {TenantId} because shared Ingest data is unsafe",
+                exception.TenantId);
+            await _activityLog.LogAsync(
+                "SyncSkipped",
+                "Platform sync is unavailable until Ingest data is tenant-scoped");
+            return Conflict(new
+            {
+                Code = "platform_sync_disabled",
+                Message = "Platform sync is unavailable for this tenant until Ingest data is tenant-scoped."
+            });
+        }
 
         _logger.LogInformation("Library sync completed: {Count} items processed", count);
         await _activityLog.LogAsync("SyncFinished", $"Manual sync completed — {count} items processed");

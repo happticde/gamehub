@@ -275,6 +275,9 @@ namespace GameHub.Core.Migrations.sqlite
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<bool>("PlatformSyncEnabled")
+                        .HasColumnType("boolean");
+
                     b.HasKey("Id");
 
                     b.ToTable("Tenants");
@@ -284,7 +287,8 @@ namespace GameHub.Core.Migrations.sqlite
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000001"),
                             CreatedAtUtc = new DateTime(2026, 6, 19, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Name = "Default"
+                            Name = "Default",
+                            PlatformSyncEnabled = true
                         });
                 });
 

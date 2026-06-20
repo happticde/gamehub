@@ -23,6 +23,7 @@ public class UnificationServiceTests : IDisposable
     private readonly Microsoft.Data.Sqlite.SqliteConnection _connection;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IServiceProvider _serviceProvider;
+    private readonly MutableTenantContext _tenantContext = new();
 
     public UnificationServiceTests()
     {
@@ -32,7 +33,7 @@ public class UnificationServiceTests : IDisposable
 
         // Build a minimal DI container with our in-memory DB
         var services = new ServiceCollection();
-        services.AddScoped<ITenantContext, DefaultTenantContext>();
+        services.AddSingleton<ITenantContext>(_tenantContext);
         services.AddDbContext<CoreContext>(o => o.UseSqlite(_connection));
         _serviceProvider = services.BuildServiceProvider();
         _scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
@@ -63,6 +64,32 @@ public class UnificationServiceTests : IDisposable
         // For full end-to-end, we test ProcessPageAsync behavior via the DB state.
         var http = new HttpClient(new FakeHandler(items));
         return new IngestClient(http);
+    }
+
+    [Fact]
+    public async Task RunFullSync_NewTenant_RefusesSharedIngestData()
+    {
+        Guid tenantId;
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            var tenant = new Tenant
+            {
+                Id = Guid.NewGuid(),
+                Name = "Isolated tenant",
+                PlatformSyncEnabled = false,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            db.Tenants.Add(tenant);
+            await db.SaveChangesAsync();
+            tenantId = tenant.Id;
+        }
+
+        _tenantContext.TenantId = tenantId;
+        var exception = await Assert.ThrowsAsync<TenantPlatformSyncDisabledException>(
+            () => CreateService().RunFullSyncAsync());
+
+        Assert.Equal(tenantId, exception.TenantId);
     }
 
     // =========================================================================
@@ -245,4 +272,9 @@ public class UnificationServiceTests : IDisposable
             });
         }
     }
+}
+
+internal sealed class MutableTenantContext : ITenantContext
+{
+    public Guid TenantId { get; set; } = TenantDefaults.DefaultTenantId;
 }

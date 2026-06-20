@@ -77,6 +77,55 @@ public sealed class AccountServiceTests : IDisposable
         Assert.Equal(1, await _db.UserAccounts.CountAsync());
     }
 
+    [Fact]
+    public async Task ProvisionTenant_ValidCredentials_CreatesIsolatedDisabledTenantAndAccount()
+    {
+        var result = await _accounts.ProvisionTenantAsync(
+            "Family Library",
+            "family@example.com",
+            Password,
+            "Family Owner");
+
+        Assert.True(result.Created);
+        Assert.NotEqual(Guid.Empty, result.Tenant!.Id);
+        Assert.NotEqual(TenantDefaults.DefaultTenantId, result.Tenant.Id);
+        Assert.False(result.Tenant.PlatformSyncEnabled);
+        Assert.Equal(result.Tenant.Id, result.Account!.TenantId);
+        Assert.Equal(2, await _db.Tenants.CountAsync());
+        Assert.Single(await _db.UserAccounts.ToListAsync());
+        Assert.NotEqual(Password, result.Account.PasswordHash);
+
+        // A login uses the globally unique email to find the account, then the signed token
+        // receives the server-generated tenant ID from that verified database row.
+        var authenticated = await _accounts.AuthenticateAsync("FAMILY@EXAMPLE.COM", Password);
+        var tokens = new JwtTokenService(CreateJwtSettings(), new FixedTimeProvider(FixedNow));
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(tokens.CreateToken(authenticated!).AccessToken);
+        Assert.Equal(
+            result.Tenant.Id.ToString("D"),
+            jwt.Claims.Single(claim => claim.Type == GameHubClaimTypes.TenantId).Value);
+    }
+
+    [Fact]
+    public async Task ProvisionTenant_DuplicateEmail_PersistsNoSecondTenant()
+    {
+        await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner");
+
+        var result = await _accounts.ProvisionTenantAsync(
+            "Other Library",
+            "OWNER@example.com",
+            Password,
+            "Other Owner");
+
+        Assert.False(result.Created);
+        Assert.Equal("email_exists", result.ErrorCode);
+        Assert.Single(await _db.Tenants.ToListAsync());
+        Assert.Single(await _db.UserAccounts.ToListAsync());
+    }
+
     [Theory]
     [InlineData("not-an-email", Password, "Owner", "invalid_email")]
     [InlineData("owner@example.com", "too-short", "Owner", "invalid_password")]

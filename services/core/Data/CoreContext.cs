@@ -51,6 +51,9 @@ public class CoreContext : DbContext
             {
                 Id = TenantDefaults.DefaultTenantId,
                 Name = "Default",
+                // The legacy tenant already owns the existing shared Ingest data. Only this
+                // compatibility tenant may sync until Ingest itself becomes tenant-aware.
+                PlatformSyncEnabled = true,
                 CreatedAtUtc = new DateTime(2026, 6, 19, 0, 0, 0, DateTimeKind.Utc)
             });
         });
