@@ -17,6 +17,9 @@ public class CoreContext : DbContext
     /// <summary>Local accounts that authenticate into tenant boundaries.</summary>
     public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
 
+    /// <summary>Hashed, revocable refresh-token sessions for local accounts.</summary>
+    public DbSet<RefreshTokenSession> RefreshTokenSessions => Set<RefreshTokenSession>();
+
     // --- Unified Tables (Owned by Core) ---
     public DbSet<UnifiedGame> UnifiedGames => Set<UnifiedGame>();
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
@@ -75,6 +78,20 @@ public class CoreContext : DbContext
                 .WithMany()
                 .HasForeignKey(account => account.TenantId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RefreshTokenSession>(entity =>
+        {
+            // Refresh lookup happens before authentication, so this table cannot use the
+            // tenant query filter. Possession of the unguessable client secret is verified
+            // by its unique hash before the related account and tenant are trusted.
+            entity.Property(session => session.TokenHash).HasMaxLength(64);
+            entity.HasIndex(session => session.TokenHash).IsUnique();
+            entity.HasIndex(session => session.UserAccountId);
+            entity.HasOne(session => session.UserAccount)
+                .WithMany(account => account.RefreshTokenSessions)
+                .HasForeignKey(session => session.UserAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         ConfigureTenantOwned(modelBuilder.Entity<UnifiedGame>());

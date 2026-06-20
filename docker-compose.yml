@@ -58,6 +58,7 @@ services:
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
       - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       - Authentication__Jwt__SigningKey=${GAMEHUB_JWT_SIGNING_KEY:-}
+      - Authentication__Jwt__RefreshTokenLifetimeDays=${GAMEHUB_JWT_REFRESH_TOKEN_DAYS:-30}
       - Igdb__ClientId=${IGDB_CLIENT_ID:-}
       - Igdb__ClientSecret=${IGDB_CLIENT_SECRET:-}
       - Logging__LogLevel__GameHub.Core.Services.IgdbClient=Warning

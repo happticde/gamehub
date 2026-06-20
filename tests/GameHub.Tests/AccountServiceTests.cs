@@ -220,7 +220,8 @@ public sealed class AccountServiceTests : IDisposable
             "GameHub.Tests",
             "GameHub.Tests.Clients",
             "test-signing-key-with-at-least-32-bytes",
-            60);
+            60,
+            30);
 
     internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

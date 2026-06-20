@@ -44,3 +44,39 @@ Content-Type: application/json
 ```
 
 Use the returned access token as `Authorization: Bearer <token>`. Tokens expire after 60 minutes by default, and token requests are limited to 10 attempts per minute per remote IP.
+
+The response also contains an opaque `refreshToken` and `refreshTokenExpiresAtUtc`. The access
+token is a readable, signed JWT carrying the trusted tenant claim; the refresh token contains
+only random bytes and is stored server-side as a SHA-256 hash.
+
+## Refresh a Session
+
+```http
+POST /api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "the-current-opaque-refresh-token"
+}
+```
+
+Every successful refresh returns a new access token and a new refresh token. The submitted
+refresh token is consumed and cannot be used again. Reusing it is treated as possible token
+theft and revokes the account's remaining active refresh sessions.
+
+Refresh sessions expire after 30 days by default. Configure a value from 1–90 days with
+`GAMEHUB_JWT_REFRESH_TOKEN_DAYS`.
+
+## Revoke a Session
+
+```http
+POST /api/auth/revoke
+Content-Type: application/json
+
+{
+  "refreshToken": "the-current-opaque-refresh-token"
+}
+```
+
+Revocation returns `204 No Content` whether the token was active, expired, or unknown. Clients
+should always discard their local access and refresh tokens after this request.

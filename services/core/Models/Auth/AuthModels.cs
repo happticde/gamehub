@@ -32,6 +32,12 @@ public sealed record ProvisionTenantRequest(
 /// </summary>
 public sealed record TokenRequest(string Email, string Password);
 
+/// <summary>
+/// Opaque secret used to rotate or revoke a login session. It contains no claims and must be
+/// protected like a password; the server persists only its SHA-256 digest.
+/// </summary>
+public sealed record RefreshTokenRequest(string RefreshToken);
+
 /// <summary>Public account data returned after bootstrap.</summary>
 public sealed record AccountResponse(
     Guid Id,
@@ -54,7 +60,9 @@ public sealed record TenantProvisioningResponse(
 public sealed record TokenResponse(
     string AccessToken,
     string TokenType,
-    DateTimeOffset ExpiresAtUtc);
+    DateTimeOffset ExpiresAtUtc,
+    string RefreshToken,
+    DateTimeOffset RefreshTokenExpiresAtUtc);
 
 /// <summary>Structured authentication error safe to return to API clients.</summary>
 public sealed record AuthErrorResponse(string Code, string Message);
