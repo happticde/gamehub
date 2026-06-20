@@ -14,6 +14,9 @@ public class CoreContext : DbContext
     /// <summary>All configured tenant boundaries.</summary>
     public DbSet<Tenant> Tenants => Set<Tenant>();
 
+    /// <summary>Local accounts that authenticate into tenant boundaries.</summary>
+    public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
+
     // --- Unified Tables (Owned by Core) ---
     public DbSet<UnifiedGame> UnifiedGames => Set<UnifiedGame>();
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
@@ -50,6 +53,25 @@ public class CoreContext : DbContext
                 Name = "Default",
                 CreatedAtUtc = new DateTime(2026, 6, 19, 0, 0, 0, DateTimeKind.Utc)
             });
+        });
+
+        modelBuilder.Entity<UserAccount>(entity =>
+        {
+            // Accounts are identity records, not tenant-filtered library rows. The token
+            // endpoint must locate an account by email before it knows which tenant is valid.
+            // Only a successful password check allows this TenantId into a signed JWT.
+            entity.Property(account => account.Email).HasMaxLength(320);
+            entity.Property(account => account.NormalizedEmail).HasMaxLength(320);
+            entity.Property(account => account.DisplayName).HasMaxLength(100);
+            entity.Property(account => account.PasswordHash).HasMaxLength(1024);
+            // Global email uniqueness provides one unambiguous login identity. TenantId is
+            // unique because this initial account model supports one owner account per tenant.
+            entity.HasIndex(account => account.NormalizedEmail).IsUnique();
+            entity.HasIndex(account => account.TenantId).IsUnique();
+            entity.HasOne(account => account.Tenant)
+                .WithMany()
+                .HasForeignKey(account => account.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         ConfigureTenantOwned(modelBuilder.Entity<UnifiedGame>());

@@ -12,7 +12,7 @@ Two ASP.NET Core microservices:
 - **AuthenticationHandler<T>** — API key auth using ASP.NET's pipeline, not raw middleware.
 
 ## Configuration
-- Auth: `Authentication:ApiKey` in appsettings.json or `Authentication__ApiKey` env var. Empty = auth disabled. `Authentication:TenantId` maps the legacy API key to a trusted tenant claim and defaults to the legacy tenant.
+- Auth: `Authentication:ApiKey` in appsettings.json or `Authentication__ApiKey` env var. Empty = legacy auth-disabled mode. `Authentication:TenantId` maps the API key to a trusted tenant claim. Setting `Authentication:Jwt:SigningKey` (minimum 32 UTF-8 bytes) enables JWT validation and token issuance.
 - DB: `Database:Provider` (`Sqlite`/`Postgres`), connection strings in `ConnectionStrings` section.
 - Core→Ingest URL: `Services:IngestUrl` (default `http://localhost:5000`).
 - Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`).

@@ -58,17 +58,26 @@ public sealed class AuthenticatedTenantContext : ITenantContext
     {
         get
         {
+            // Background workers have no HttpContext. TenantJobRunner creates an AsyncLocal
+            // execution scope for each tenant, and that explicit server-side choice takes
+            // precedence over any ambient request principal.
             if (_executionContext.TenantId is { } backgroundTenantId)
             {
                 return backgroundTenantId;
             }
 
+            // For HTTP requests, UseAuthentication has already validated the selected scheme
+            // and populated HttpContext.User before a controller resolves CoreContext.
             var principal = _httpContextAccessor.HttpContext?.User;
             if (principal?.Identity?.IsAuthenticated != true)
             {
+                // This is legacy local mode, retained only while API-key authentication is
+                // allowed to be disabled. It never accepts a tenant ID from request data.
                 return TenantDefaults.DefaultTenantId;
             }
 
+            // A tenant claim is trusted because the API-key handler created it from server
+            // configuration or JwtBearer validated the signature before exposing it here.
             var claimValue = principal.FindFirstValue(GameHubClaimTypes.TenantId);
             if (!Guid.TryParse(claimValue, out var tenantId) || tenantId == Guid.Empty)
             {

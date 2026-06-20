@@ -1,0 +1,218 @@
+using System.Net.Mail;
+using GameHub.Core.Data;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+
+namespace GameHub.Core.Services;
+
+/// <summary>
+/// Creates and validates local tenant accounts without exposing password hashes. Database
+/// work lives here instead of the controller so password handling follows one audited path.
+/// </summary>
+public sealed class AccountService
+{
+    /// <summary>Minimum accepted password length; long passphrases are encouraged.</summary>
+    public const int MinimumPasswordLength = 12;
+
+    /// <summary>Upper bound that limits password-hashing work and abusive request sizes.</summary>
+    public const int MaximumPasswordLength = 128;
+
+    private readonly CoreContext _db;
+    private readonly IPasswordHasher<UserAccount> _passwordHasher;
+    private readonly TimeProvider _timeProvider;
+
+    public AccountService(
+        CoreContext db,
+        IPasswordHasher<UserAccount> passwordHasher,
+        TimeProvider timeProvider)
+    {
+        _db = db;
+        _passwordHasher = passwordHasher;
+        _timeProvider = timeProvider;
+    }
+
+    /// <summary>
+    /// Creates the first account for an existing tenant. The tenant ID is supplied by the
+    /// trusted API-key claim through AuthController, not by the request JSON.
+    /// </summary>
+    public async Task<AccountCreationResult> BootstrapAsync(
+        Guid tenantId,
+        string? email,
+        string? password,
+        string? displayName,
+        CancellationToken cancellationToken = default)
+    {
+        // Store both a readable canonical address and a normalized comparison value. This
+        // prevents Owner@example.com and owner@example.com from creating separate accounts.
+        if (!TryNormalizeEmail(email, out var canonicalEmail, out var normalizedEmail))
+        {
+            return AccountCreationResult.Failed("invalid_email", "A valid email address is required.");
+        }
+
+        // We intentionally use length rules rather than brittle "must contain a symbol"
+        // composition rules. The PasswordHasher handles salt and computational hardening.
+        if (password is null || password.Length is < MinimumPasswordLength or > MaximumPasswordLength)
+        {
+            return AccountCreationResult.Failed(
+                "invalid_password",
+                $"Password length must be between {MinimumPasswordLength} and {MaximumPasswordLength} characters.");
+        }
+
+        var canonicalDisplayName = displayName?.Trim();
+        if (string.IsNullOrEmpty(canonicalDisplayName) || canonicalDisplayName.Length > 100)
+        {
+            return AccountCreationResult.Failed(
+                "invalid_display_name",
+                "Display name length must be between 1 and 100 characters.");
+        }
+
+        // A valid foreign key is not enough for a friendly API error, so check the trusted
+        // tenant first. This also catches a misconfigured Authentication:TenantId value.
+        if (!await _db.Tenants.AnyAsync(tenant => tenant.Id == tenantId, cancellationToken))
+        {
+            return AccountCreationResult.Failed("tenant_not_found", "The configured tenant does not exist.");
+        }
+
+        // This slice models one owner account per tenant. Both checks are repeated as unique
+        // database indexes, because application checks alone cannot prevent concurrent races.
+        if (await _db.UserAccounts.AnyAsync(account => account.TenantId == tenantId, cancellationToken))
+        {
+            return AccountCreationResult.Failed(
+                "account_exists",
+                "An account already exists for this tenant.");
+        }
+
+        if (await _db.UserAccounts.AnyAsync(
+                account => account.NormalizedEmail == normalizedEmail,
+                cancellationToken))
+        {
+            return AccountCreationResult.Failed(
+                "email_exists",
+                "An account already exists for this email address.");
+        }
+
+        var account = new UserAccount
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Email = canonicalEmail,
+            NormalizedEmail = normalizedEmail,
+            DisplayName = canonicalDisplayName,
+            CreatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime
+        };
+        // HashPassword generates a random salt and stores algorithm/version metadata in the
+        // encoded hash. The original password cannot be recovered from this value.
+        account.PasswordHash = _passwordHasher.HashPassword(account, password);
+
+        _db.UserAccounts.Add(account);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        // Another bootstrap request may win after the AnyAsync checks but before SaveChanges.
+        // Unique indexes are the final authority; translate their failure into a safe conflict
+        // without exposing provider-specific SQL details.
+        catch (DbUpdateException)
+        {
+            return AccountCreationResult.Failed(
+                "account_conflict",
+                "The account could not be created because it already exists.");
+        }
+
+        return AccountCreationResult.Succeeded(account);
+    }
+
+    /// <summary>
+    /// Validates local credentials and records a successful login. Null is deliberately used
+    /// for every failure so the controller returns the same response for an unknown email and
+    /// a wrong password, avoiding easy account enumeration.
+    /// </summary>
+    public async Task<UserAccount?> AuthenticateAsync(
+        string? email,
+        string? password,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryNormalizeEmail(email, out _, out var normalizedEmail)
+            || string.IsNullOrEmpty(password)
+            || password.Length > MaximumPasswordLength)
+        {
+            return null;
+        }
+
+        // UserAccount is intentionally not behind the tenant query filter: at login time no
+        // tenant is trusted yet. The globally unique normalized email locates an account;
+        // only successful password verification allows its TenantId into a signed token.
+        var account = await _db.UserAccounts
+            .SingleOrDefaultAsync(
+                candidate => candidate.NormalizedEmail == normalizedEmail,
+                cancellationToken);
+        if (account is null)
+        {
+            return null;
+        }
+
+        // VerifyHashedPassword extracts the salt and algorithm parameters from PasswordHash,
+        // hashes the supplied password the same way, and compares the results safely.
+        var verification = _passwordHasher.VerifyHashedPassword(account, account.PasswordHash, password);
+        if (verification == PasswordVerificationResult.Failed)
+        {
+            return null;
+        }
+
+        // ASP.NET can signal that an older, valid hash should be upgraded. Rehashing here
+        // transparently improves stored credentials during a normal successful login.
+        if (verification == PasswordVerificationResult.SuccessRehashNeeded)
+        {
+            account.PasswordHash = _passwordHasher.HashPassword(account, password);
+        }
+
+        // Record activity only after verification. TimeProvider keeps this deterministic in
+        // tests and avoids mixing local server time with persisted UTC timestamps.
+        account.LastLoginAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        await _db.SaveChangesAsync(cancellationToken);
+        return account;
+    }
+
+    /// <summary>
+    /// Validates a plain mailbox address and produces its case-insensitive lookup form.
+    /// Display-address syntax such as "Owner &lt;owner@example.com&gt;" is rejected because the
+    /// API contract expects an address only.
+    /// </summary>
+    private static bool TryNormalizeEmail(
+        string? email,
+        out string canonicalEmail,
+        out string normalizedEmail)
+    {
+        canonicalEmail = email?.Trim() ?? "";
+        normalizedEmail = "";
+        if (canonicalEmail.Length is 0 or > 320
+            || !MailAddress.TryCreate(canonicalEmail, out var parsed)
+            || !string.Equals(parsed.Address, canonicalEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        canonicalEmail = parsed.Address;
+        normalizedEmail = canonicalEmail.ToUpperInvariant();
+        return true;
+    }
+}
+
+/// <summary>
+/// Result of attempting to bootstrap an account. Expected validation/conflict outcomes are
+/// values rather than exceptions, allowing AuthController to map them to stable HTTP errors.
+/// </summary>
+public sealed record AccountCreationResult(
+    UserAccount? Account,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    /// <summary>True only when a new persisted account is available.</summary>
+    public bool Created => Account is not null;
+
+    /// <summary>Creates a successful result without an error payload.</summary>
+    public static AccountCreationResult Succeeded(UserAccount account) => new(account, null, null);
+
+    /// <summary>Creates an expected failure result safe for controller mapping.</summary>
+    public static AccountCreationResult Failed(string code, string message) => new(null, code, message);
+}

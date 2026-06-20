@@ -56,6 +56,8 @@ services:
       - ConnectionStrings__Sqlite=Data Source=/app/data/core.db
       - Services__IngestUrl=http://ingest:8080
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
+      - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      - Authentication__Jwt__SigningKey=${GAMEHUB_JWT_SIGNING_KEY:-}
       - Igdb__ClientId=${IGDB_CLIENT_ID:-}
       - Igdb__ClientSecret=${IGDB_CLIENT_SECRET:-}
       - Logging__LogLevel__GameHub.Core.Services.IgdbClient=Warning

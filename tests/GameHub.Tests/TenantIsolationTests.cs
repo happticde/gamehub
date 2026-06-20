@@ -158,6 +158,7 @@ public sealed class TenantIsolationTests : IDisposable
         var game = await db.UnifiedGames.SingleAsync();
         Assert.Equal(TenantA, game.TenantId);
         Assert.Equal("Default", (await db.Tenants.SingleAsync()).Name);
+        Assert.Empty(db.UserAccounts);
     }
 
     private CoreContext CreateContext(Guid tenantId) =>

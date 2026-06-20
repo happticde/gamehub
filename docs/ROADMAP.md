@@ -59,7 +59,7 @@ GitHub Actions: build → test → Docker build → push to registry.
 
 ### 8. User Accounts & Multi-Tenancy
 Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth (Steam/PSN/GOG login).
-- **Foundation (2026-06-19)**: Default-tenant migration, claim-based tenant context, tenant-scoped Core queries/writes and uniqueness constraints, plus tenant-isolated background jobs are implemented. Account management and JWT/OAuth login remain pending; multi-user operation is not enabled.
+- **Foundation (2026-06-20)**: Default-tenant migration, claim-based tenant context, tenant-scoped Core queries/writes and uniqueness constraints, tenant-isolated background jobs, local account bootstrap, and optional JWT token issuance are implemented. Tenant provisioning, refresh tokens, frontend login, and OAuth remain pending; multi-user operation is not enabled by default.
 - **Ownership migration**: Assign existing records to a default tenant, then make user-owned entities and background jobs tenant-aware.
 - **Isolation**: Scope library queries, sync, export, validation, and restore to the authenticated tenant. Tenant identity must come from trusted authentication claims, never request payloads.
 - **Constraints**: Replace global uniqueness for slugs, tags, and manual platform links with tenant-scoped composite indexes where appropriate.
