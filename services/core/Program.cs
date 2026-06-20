@@ -1,8 +1,16 @@
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using GameHub.Core.Data;
+using GameHub.Core.Models.Auth;
 using GameHub.Core.Services;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +25,25 @@ builder.Services.AddControllers()
     });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Login endpoints are attractive brute-force targets. This named policy limits each
+// remote IP address independently, so one noisy client does not consume the allowance
+// for every other client. QueueLimit=0 rejects excess attempts immediately with HTTP 429
+// instead of holding password-verification work in memory.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(AuthRateLimitPolicies.Token, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
 
 // --- Health Checks (Improvement #9) ---
 // Registers a /health endpoint that checks DB connectivity.
@@ -53,6 +80,21 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<TenantExecutionContext>();
 builder.Services.AddScoped<ITenantContext, AuthenticatedTenantContext>();
 builder.Services.AddSingleton<ITenantJobRunner, TenantJobRunner>();
+
+// PasswordHasher<TUser> implements ASP.NET's versioned password-hash format. It is
+// intentionally used instead of encrypting or manually hashing passwords: hashes are
+// one-way, salted, and can be upgraded transparently when ASP.NET changes its defaults.
+// The hasher is stateless and safe as a singleton; AccountService is scoped because it
+// owns a request-scoped CoreContext.
+builder.Services.AddSingleton<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
+builder.Services.AddScoped<AccountService>();
+
+// Parsing here makes invalid security configuration fail during startup rather than on
+// the first login request. An empty signing key is the deliberate opt-out switch, keeping
+// existing API-key-only installations backward compatible.
+var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddSingleton<JwtTokenService>();
 
 // --- IGDB Metadata Provider (ADR-003) ---
 // IgdbClient is a singleton so there's only one OAuth token in memory.
@@ -94,7 +136,66 @@ if (syncStatus.IsEnabled)
 }
 
 // --- Authentication (ADR-002) ---
+// Always register the legacy API-key handler first. It remains the only/default scheme
+// when JWT has no signing key, which preserves existing CLI and service-to-service clients.
 builder.Services.AddApiKeyAuthentication(builder.Configuration);
+if (jwtSettings.IsEnabled)
+{
+    // A policy scheme is a dispatcher, not another credential format. Controllers can keep
+    // using a plain [Authorize] attribute while this selector chooses the concrete handler:
+    //   Authorization: Bearer <token> -> JWT Bearer
+    //   every other request            -> X-Api-Key
+    // Bootstrap explicitly requests the API-key scheme, so a JWT cannot create accounts.
+    const string compositeScheme = "GameHub";
+    builder.Services.AddAuthentication(options =>
+        {
+            // AuthenticateScheme builds HttpContext.User. ChallengeScheme decides which
+            // handler produces a 401 response when authorization fails.
+            options.DefaultAuthenticateScheme = compositeScheme;
+            options.DefaultChallengeScheme = compositeScheme;
+        })
+        .AddPolicyScheme(compositeScheme, null, options =>
+        {
+            options.ForwardDefaultSelector = context =>
+                context.Request.Headers.Authorization.ToString()
+                    .StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? JwtBearerDefaults.AuthenticationScheme
+                    : ApiKeyAuthenticationHandler.SchemeName;
+        })
+        .AddJwtBearer(options =>
+        {
+            // Keep the exact claim names written by JwtTokenService. Automatic inbound
+            // mapping can rename standard JWT claims and makes tenant resolution harder
+            // to reason about when inspecting a token.
+            options.MapInboundClaims = false;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                // The signature proves that GameHub issued the token and that its payload
+                // (especially the tenant claim) has not been modified by the client.
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = jwtSettings.CreateSecurityKey(),
+
+                // Issuer identifies this GameHub server; audience identifies the intended
+                // clients. Both checks prevent accepting an otherwise valid token created
+                // for a different application or deployment.
+                ValidateIssuer = true,
+                ValidIssuer = jwtSettings.Issuer,
+                ValidateAudience = true,
+                ValidAudience = jwtSettings.Audience,
+
+                // Expired tokens are rejected. A one-minute skew tolerates small clock
+                // differences between machines without materially extending token life.
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromMinutes(1),
+
+                // This tells ClaimsPrincipal.Identity which claim represents the display
+                // name. Restricting algorithms prevents accepting another signing method
+                // merely because it happens to use the same key material.
+                NameClaimType = ClaimTypes.Name,
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256]
+            };
+        });
+}
 
 // --- Database ---
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
@@ -150,6 +251,10 @@ if (app.Environment.IsDevelopment())
 app.MapHealthChecks("/health");
 
 // --- Authentication & Authorization ---
+// Rate limiting must run before endpoint execution. Authentication then validates the
+// selected credential and creates HttpContext.User; authorization evaluates [Authorize]
+// metadata against that principal before MapControllers invokes an action.
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

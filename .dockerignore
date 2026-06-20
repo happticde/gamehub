@@ -30,6 +30,11 @@ tests/
 # .NET build output (built inside Docker)
 **/bin/
 **/obj/
+# Also exclude malformed host artefact directories such as a literal `bin\Debug`
+# name. On macOS the backslash is part of the directory name; once copied into
+# Linux it can break MSBuild's default glob expansion (for example **/*.resx).
+**/[Bb]in*/
+**/[Oo]bj*/
 
 # Environment files (secrets should be passed via env vars at runtime)
 .env

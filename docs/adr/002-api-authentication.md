@@ -1,7 +1,7 @@
 # ADR-002: API Authentication
 
 **Date:** 2026-03-06
-**Status:** Proposed
+**Status:** Accepted
 **Deciders:** @jankahnt
 
 ## Context
@@ -112,3 +112,13 @@ When multi-user support is needed:
 - API key is a shared secret — if leaked, full access is exposed until rotated
 - No per-user permissions (acceptable for single-user)
 - Clients must store the key (CLI config, env var, etc.)
+
+## Implementation Update (2026-06-20)
+
+The API-key scheme remains the backward-compatible default. Core additionally supports optional JWT bearer authentication when `Authentication:Jwt:SigningKey` is configured with at least 32 UTF-8 bytes.
+
+- `POST /api/auth/bootstrap` creates the first password-hashed local account for the API key's trusted tenant and requires a configured API key.
+- `POST /api/auth/token` verifies local credentials and issues a short-lived JWT containing the trusted tenant claim.
+- JWT and API-key authentication coexist through a policy scheme; existing API-key clients continue to work.
+- Token requests are rate-limited and return a generic invalid-credentials response.
+- Refresh tokens, tenant provisioning, registration UI, password recovery, and OAuth remain future work.
