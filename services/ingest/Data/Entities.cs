@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using GameHub.Shared;
-using Microsoft.EntityFrameworkCore;
 
 namespace GameHub.Ingest.Data;
 
@@ -14,11 +13,11 @@ namespace GameHub.Ingest.Data;
 // are computed at runtime and NOT stored as database columns.
 // =============================================================================
 
-/// <summary>Raw game data from the Steam API. Keyed by integer AppId.</summary>
-[Index(nameof(AppId), IsUnique = true)]
-public class SteamRawItem : IRawItem
+/// <summary>Raw game data from the Steam API. Keyed by tenant and integer AppId.</summary>
+public class SteamRawItem : IRawItem, IIngestTenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
 
     [Required]
     public int AppId { get; set; }
@@ -32,11 +31,11 @@ public class SteamRawItem : IRawItem
     [NotMapped] public string ExternalId => AppId.ToString();
 }
 
-/// <summary>Raw game data from the PlayStation Network API. Keyed by string TitleId (e.g. "CUSA00001_00").</summary>
-[Index(nameof(TitleId), IsUnique = true)]
-public class PsnRawItem : IRawItem
+/// <summary>Raw PSN data keyed by tenant and TitleId (e.g. "CUSA00001_00").</summary>
+public class PsnRawItem : IRawItem, IIngestTenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
 
     [Required]
     public string TitleId { get; set; } = string.Empty;
@@ -50,11 +49,11 @@ public class PsnRawItem : IRawItem
     [NotMapped] public string ExternalId => TitleId;
 }
 
-/// <summary>Raw game data from the GOG API. Keyed by long GameId.</summary>
-[Index(nameof(GameId), IsUnique = true)]
-public class GogRawItem : IRawItem
+/// <summary>Raw game data from the GOG API. Keyed by tenant and long GameId.</summary>
+public class GogRawItem : IRawItem, IIngestTenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
 
     [Required]
     public long GameId { get; set; }
@@ -68,11 +67,11 @@ public class GogRawItem : IRawItem
     [NotMapped] public string ExternalId => GameId.ToString();
 }
 
-/// <summary>Raw game data from the Epic Games API (via Legendary). Keyed by string AppName.</summary>
-[Index(nameof(AppName), IsUnique = true)]
-public class EpicRawItem : IRawItem
+/// <summary>Raw Epic Games data (via Legendary), keyed by tenant and AppName.</summary>
+public class EpicRawItem : IRawItem, IIngestTenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
 
     [Required]
     public string AppName { get; set; } = string.Empty;
@@ -86,9 +85,10 @@ public class EpicRawItem : IRawItem
     [NotMapped] public string ExternalId => AppName;
 }
 
-public class IngestAuditLog
+public class IngestAuditLog : IIngestTenantOwned
 {
     public int Id { get; set; }
+    public Guid TenantId { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public string Platform { get; set; } = ""; // "Steam", "GOG", "PSN", "Epic"
     public string Status { get; set; } = "";   // "Success", "TokenExpired", "RateLimited", "Error"
