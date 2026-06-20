@@ -36,4 +36,10 @@ public sealed class UserAccount
 
     /// <summary>UTC timestamp of the latest successful password verification.</summary>
     public DateTime? LastLoginAtUtc { get; set; }
+
+    /// <summary>
+    /// Independent device/login sessions. They are identity records rather than tenant-
+    /// filtered library rows because refresh begins before an authenticated tenant exists.
+    /// </summary>
+    public ICollection<RefreshTokenSession> RefreshTokenSessions { get; set; } = [];
 }

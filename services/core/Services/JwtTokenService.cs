@@ -17,12 +17,14 @@ namespace GameHub.Core.Services;
 /// <param name="Audience">The clients for which the token is intended.</param>
 /// <param name="SigningKey">Server-only HMAC secret; it is never placed inside the JWT.</param>
 /// <param name="LifetimeMinutes">Access-token lifetime measured from issuance.</param>
+/// <param name="RefreshTokenLifetimeDays">Absolute lifetime of an opaque refresh session.</param>
 public sealed record JwtSettings(
     bool IsEnabled,
     string Issuer,
     string Audience,
     string SigningKey,
-    int LifetimeMinutes)
+    int LifetimeMinutes,
+    int RefreshTokenLifetimeDays)
 {
     /// <summary>Configuration section containing JWT settings.</summary>
     public const string SectionName = "Authentication:Jwt";
@@ -39,6 +41,7 @@ public sealed record JwtSettings(
         var issuer = section["Issuer"]?.Trim() ?? "GameHub";
         var audience = section["Audience"]?.Trim() ?? "GameHub.Clients";
         var lifetimeMinutes = section.GetValue("LifetimeMinutes", 60);
+        var refreshTokenLifetimeDays = section.GetValue("RefreshTokenLifetimeDays", 30);
         // The presence of a key is the feature flag. There is no second boolean that could
         // say "enabled" while the cryptographic material is missing.
         var isEnabled = !string.IsNullOrEmpty(signingKey);
@@ -58,14 +61,28 @@ public sealed record JwtSettings(
         }
 
         // Extremely short lifetimes create clock-related login failures; extremely long
-        // lifetimes increase exposure because access tokens are not revocable in this slice.
+        // lifetimes increase exposure because issued access JWTs themselves are not revocable.
         if (lifetimeMinutes is < 5 or > 1440)
         {
             throw new InvalidOperationException(
                 $"{SectionName}:LifetimeMinutes must be between 5 and 1440.");
         }
 
-        return new JwtSettings(isEnabled, issuer, audience, signingKey, lifetimeMinutes);
+        // Refresh tokens are revocable server-side, but a bounded absolute lifetime still
+        // limits how long a copied secret can be useful if its theft is never detected.
+        if (refreshTokenLifetimeDays is < 1 or > 90)
+        {
+            throw new InvalidOperationException(
+                $"{SectionName}:RefreshTokenLifetimeDays must be between 1 and 90.");
+        }
+
+        return new JwtSettings(
+            isEnabled,
+            issuer,
+            audience,
+            signingKey,
+            lifetimeMinutes,
+            refreshTokenLifetimeDays);
     }
 
     /// <summary>

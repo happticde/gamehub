@@ -9,11 +9,13 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace GameHub.Core.Controllers;
 
 /// <summary>
-/// Bootstraps local tenant credentials and exchanges them for JWT access tokens.
+/// Provisions local credentials and manages JWT access/refresh sessions.
 ///
-/// The two endpoints have deliberately different trust models:
+/// The endpoints have deliberately different trust models:
 ///   - bootstrap trusts the pre-existing server API key to choose a tenant;
 ///   - token starts anonymous, verifies email/password, then signs the account's tenant ID.
+///   - refresh trusts a one-time opaque secret whose hash selects the database account;
+///   - revoke invalidates that opaque session without exposing whether it existed.
 /// At no point does a request body get to submit or override a tenant identifier.
 /// </summary>
 [ApiController]
@@ -22,6 +24,7 @@ public sealed class AuthController : ControllerBase
 {
     private readonly AccountService _accounts;
     private readonly JwtTokenService _tokens;
+    private readonly RefreshTokenService _refreshTokens;
     private readonly ITenantContext _tenantContext;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
@@ -30,12 +33,14 @@ public sealed class AuthController : ControllerBase
     public AuthController(
         AccountService accounts,
         JwtTokenService tokens,
+        RefreshTokenService refreshTokens,
         ITenantContext tenantContext,
         IConfiguration configuration,
         ILogger<AuthController> logger)
     {
         _accounts = accounts;
         _tokens = tokens;
+        _refreshTokens = refreshTokens;
         _tenantContext = tenantContext;
         _configuration = configuration;
         _logger = logger;
@@ -214,10 +219,93 @@ public sealed class AuthController : ControllerBase
         // AuthenticateAsync returns a database account only after password verification.
         // JwtTokenService copies the tenant from that trusted account and signs the result.
         var token = _tokens.CreateToken(account);
+        // The JWT is self-contained and short-lived. The independent opaque refresh secret
+        // creates a revocable server-side session and is returned only in this response.
+        var refreshToken = await _refreshTokens.IssueAsync(account, cancellationToken);
         _logger.LogInformation(
             "Issued JWT for account {AccountId} and tenant {TenantId}",
             account.Id,
             account.TenantId);
-        return Ok(new TokenResponse(token.AccessToken, "Bearer", token.ExpiresAtUtc));
+        return Ok(CreateTokenResponse(token, refreshToken));
     }
+
+    /// <summary>
+    /// POST: api/auth/refresh
+    /// Consumes an opaque refresh token and rotates it into a new access/refresh token pair.
+    /// </summary>
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Refresh(
+        [FromBody] RefreshTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_tokens.IsEnabled)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new AuthErrorResponse(
+                    "jwt_not_configured",
+                    "JWT authentication is not configured."));
+        }
+
+        // The refresh secret itself contains no account or tenant claim. RefreshTokenService
+        // matches its hash, enforces one-time use, and returns the related account only after
+        // successful rotation. That verified row is the trusted source for the next JWT.
+        var rotation = await _refreshTokens.RotateAsync(request.RefreshToken, cancellationToken);
+        if (!rotation.Rotated)
+        {
+            _logger.LogWarning("Rejected invalid, expired, revoked, or replayed refresh token");
+            return Unauthorized(new AuthErrorResponse(
+                "invalid_refresh_token",
+                "Refresh token is invalid or expired."));
+        }
+
+        var accessToken = _tokens.CreateToken(rotation.Account!);
+        _logger.LogInformation(
+            "Rotated refresh session for account {AccountId} and tenant {TenantId}",
+            rotation.Account!.Id,
+            rotation.Account.TenantId);
+        return Ok(CreateTokenResponse(accessToken, rotation.RefreshToken!));
+    }
+
+    /// <summary>
+    /// POST: api/auth/revoke
+    /// Revokes an opaque refresh session for logout without revealing whether it existed.
+    /// </summary>
+    [HttpPost("revoke")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Revoke(
+        [FromBody] RefreshTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_tokens.IsEnabled)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new AuthErrorResponse(
+                    "jwt_not_configured",
+                    "JWT authentication is not configured."));
+        }
+
+        // A uniform 204 response prevents token enumeration. Clients may safely discard their
+        // local token whether it was active, expired, already revoked, or completely unknown.
+        await _refreshTokens.RevokeAsync(request.RefreshToken, cancellationToken);
+        return NoContent();
+    }
+
+    private static TokenResponse CreateTokenResponse(
+        IssuedJwtToken accessToken,
+        IssuedRefreshToken refreshToken) =>
+        new(
+            accessToken.AccessToken,
+            "Bearer",
+            accessToken.ExpiresAtUtc,
+            refreshToken.RefreshToken,
+            refreshToken.ExpiresAtUtc);
 }

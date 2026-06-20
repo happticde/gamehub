@@ -161,6 +161,7 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.Equal("Default", defaultTenant.Name);
         Assert.True(defaultTenant.PlatformSyncEnabled);
         Assert.Empty(db.UserAccounts);
+        Assert.Empty(db.RefreshTokenSessions);
     }
 
     private CoreContext CreateContext(Guid tenantId) =>

@@ -95,6 +95,9 @@ builder.Services.AddScoped<AccountService>();
 var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<JwtTokenService>();
+// RefreshTokenService is scoped because rotation performs transactional database writes.
+// The JWT signing service stays singleton and contains no per-request state.
+builder.Services.AddScoped<RefreshTokenService>();
 
 // --- IGDB Metadata Provider (ADR-003) ---
 // IgdbClient is a singleton so there's only one OAuth token in memory.

@@ -170,6 +170,42 @@ namespace GameHub.Core.Migrations.sqlite
                     b.ToTable("ManualLinks");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.RefreshTokenSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ConsumedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserAccountId");
+
+                    b.ToTable("RefreshTokenSessions");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.SyncAuditLog", b =>
                 {
                     b.Property<int>("Id")
@@ -493,6 +529,17 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Navigation("UnifiedGame");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.RefreshTokenSession", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.UserAccount", "UserAccount")
+                        .WithMany("RefreshTokenSessions")
+                        .HasForeignKey("UserAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.SyncAuditLog", b =>
                 {
                     b.HasOne("GameHub.Core.Data.Tenant", null)
@@ -558,6 +605,11 @@ namespace GameHub.Core.Migrations.sqlite
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.UserAccount", b =>
+                {
+                    b.Navigation("RefreshTokenSessions");
                 });
 #pragma warning restore 612, 618
         }
