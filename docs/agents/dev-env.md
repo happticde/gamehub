@@ -4,6 +4,8 @@
 - **dotnet is NOT installed on the host machine.** 
 - **npm / npx are NOT installed on the host machine.**
 - Use **Docker Exec** for all building, testing, and dependency management.
+- `dotnet-ef` is installed system-wide by the devcontainer image and pinned to the EF Core version
+  used by the service projects. Rebuild the devcontainer after changing that version.
 
 ## Git Workflow
 - The `main` branch is protected. **Never commit or push directly to `main`.**

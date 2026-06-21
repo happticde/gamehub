@@ -19,6 +19,11 @@ Expected output: `game-library-backend_devcontainer-app-1 | Up ...`
 
 If not running, the user needs to open the project in VS Code with the Dev Containers extension.
 
+`dotnet-ef` is installed system-wide by `.devcontainer/Dockerfile` and pinned to the EF Core
+version used by the service projects. If `dotnet ef --version` is unavailable, the running
+devcontainer is stale: rebuild and recreate it instead of installing the tool ad hoc or falling
+back to hand-written migrations solely because the command is missing.
+
 ## Container Details
 
 | Property | Value |
