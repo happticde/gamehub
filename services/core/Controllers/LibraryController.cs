@@ -64,15 +64,15 @@ public class LibraryController : ControllerBase
         catch (TenantPlatformSyncDisabledException exception)
         {
             _logger.LogWarning(
-                "Rejected platform sync for tenant {TenantId} because shared Ingest data is unsafe",
+                "Rejected platform sync for tenant {TenantId} because no supported credential is active",
                 exception.TenantId);
             await _activityLog.LogAsync(
                 "SyncSkipped",
-                "Platform sync is unavailable until Ingest data is tenant-scoped");
+                "Platform sync requires a supported encrypted platform credential");
             return Conflict(new
             {
                 Code = "platform_sync_disabled",
-                Message = "Platform sync is unavailable for this tenant until Ingest data is tenant-scoped."
+                Message = "Configure a Steam, GOG, or PlayStation credential before running platform sync."
             });
         }
 

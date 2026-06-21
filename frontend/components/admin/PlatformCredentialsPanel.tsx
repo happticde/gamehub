@@ -1,0 +1,433 @@
+"use client";
+
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { getPlatformColor } from "@/lib/platform-colors";
+import type {
+    Platform,
+    PlatformCredentialManagement,
+    PlatformCredentialStatus,
+} from "@/types/game";
+import { CheckCircle2, KeyRound, Loader2, Plus, ShieldCheck, Trash2 } from "lucide-react";
+
+type CredentialPayload = Record<string, unknown>;
+
+/**
+ * Tenant credential management through Core's authenticated BFF route. Secret values live only
+ * in component state until submission; Core and Ingest never return them to the browser.
+ */
+export function PlatformCredentialsPanel() {
+    const [state, setState] = useState<PlatformCredentialManagement | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
+    const [message, setMessage] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const loadStatus = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await fetch("/api/core/platform-credentials", { cache: "no-store" });
+            if (!response.ok) throw new Error(await readError(response));
+            setState(await response.json());
+        } catch (caught) {
+            setError(errorMessage(caught));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadStatus();
+    }, [loadStatus]);
+
+    const save = async (platform: Platform, credentials: CredentialPayload): Promise<boolean> => {
+        setBusyPlatform(platform);
+        setMessage(null);
+        setError(null);
+        try {
+            const response = await fetch(`/api/core/platform-credentials/${platform}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ schemaVersion: 1, credentials }),
+            });
+            if (!response.ok) throw new Error(await readError(response));
+            setState(await response.json());
+            setMessage(`${platformLabel(platform)} credential stored securely.`);
+            return true;
+        } catch (caught) {
+            setError(errorMessage(caught));
+            return false;
+        } finally {
+            setBusyPlatform(null);
+        }
+    };
+
+    const remove = async (platform: Platform) => {
+        setBusyPlatform(platform);
+        setMessage(null);
+        setError(null);
+        try {
+            const response = await fetch(`/api/core/platform-credentials/${platform}`, {
+                method: "DELETE",
+            });
+            if (!response.ok) throw new Error(await readError(response));
+            setState(await response.json());
+            setMessage(`${platformLabel(platform)} credential removed.`);
+        } catch (caught) {
+            setError(errorMessage(caught));
+        } finally {
+            setBusyPlatform(null);
+        }
+    };
+
+    if (loading && !state) {
+        return (
+            <div className="flex items-center justify-center p-12 text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Loading credential status…
+            </div>
+        );
+    }
+
+    const statusFor = (platform: Platform) =>
+        state?.credentials.find((credential) => credential.platform === platform);
+
+    return (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <Card>
+                <CardHeader className="pb-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <CardTitle className="flex items-center gap-2 text-lg">
+                                <ShieldCheck className="h-5 w-5 text-primary" />
+                                Encrypted platform vault
+                            </CardTitle>
+                            <CardDescription className="mt-1">
+                                Credentials are encrypted per tenant and are never displayed again.
+                            </CardDescription>
+                        </div>
+                        <Badge variant={state?.platformSyncEnabled ? "default" : "secondary"}>
+                            Platform sync {state?.platformSyncEnabled ? "enabled" : "disabled"}
+                        </Badge>
+                    </div>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                    Sync is enabled by Core only after at least one supported credential has been
+                    stored and verified. Removing the final credential disables sync first.
+                </CardContent>
+            </Card>
+
+            {(message || error) && (
+                <div
+                    role="status"
+                    className={`rounded-lg border px-4 py-3 text-sm ${
+                        error
+                            ? "border-destructive/40 bg-destructive/10 text-destructive"
+                            : "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
+                    }`}
+                >
+                    {error ?? message}
+                </div>
+            )}
+
+            <div className="grid gap-4 lg:grid-cols-3">
+                <SteamCredentialCard
+                    status={statusFor("Steam")}
+                    busy={busyPlatform === "Steam"}
+                    onSave={(payload) => save("Steam", payload)}
+                    onDelete={() => remove("Steam")}
+                />
+                <GogCredentialCard
+                    status={statusFor("Gog")}
+                    busy={busyPlatform === "Gog"}
+                    onSave={(payload) => save("Gog", payload)}
+                    onDelete={() => remove("Gog")}
+                />
+                <PsnCredentialCard
+                    status={statusFor("Psn")}
+                    busy={busyPlatform === "Psn"}
+                    onSave={(payload) => save("Psn", payload)}
+                    onDelete={() => remove("Psn")}
+                />
+            </div>
+
+            <Card className="border-dashed">
+                <CardHeader>
+                    <CardTitle className="text-base">Epic Games</CardTitle>
+                    <CardDescription>
+                        Stored Epic retrieval is not supported yet, so Epic cannot activate platform sync.
+                    </CardDescription>
+                </CardHeader>
+            </Card>
+        </div>
+    );
+}
+
+interface CredentialCardProps {
+    platform: Platform;
+    description: string;
+    status?: PlatformCredentialStatus;
+    busy: boolean;
+    onDelete: () => Promise<void>;
+    children: ReactNode;
+}
+
+function CredentialCard({
+    platform,
+    description,
+    status,
+    busy,
+    onDelete,
+    children,
+}: CredentialCardProps) {
+    return (
+        <Card className="overflow-hidden">
+            <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <span
+                                className="h-3 w-3 rounded-full"
+                                style={{ backgroundColor: getPlatformColor(platform) }}
+                            />
+                            {platformLabel(platform)}
+                        </CardTitle>
+                        <CardDescription className="mt-1">{description}</CardDescription>
+                    </div>
+                    <Badge variant={status?.isConfigured ? "default" : "outline"}>
+                        {status?.isConfigured ? "Configured" : "Not configured"}
+                    </Badge>
+                </div>
+                {status?.updatedAtUtc && (
+                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                        Updated {new Date(status.updatedAtUtc).toLocaleString()}
+                    </p>
+                )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {children}
+                {status?.isConfigured && (
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="outline" className="w-full" disabled={busy}>
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Remove credential
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Remove {platformLabel(platform)} credential?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    The encrypted secret will be deleted. If this is the final configured
+                                    platform, Core will disable platform sync before deletion.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => void onDelete()}>
+                                    Remove credential
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+interface FormProps {
+    status?: PlatformCredentialStatus;
+    busy: boolean;
+    onSave: (credentials: CredentialPayload) => Promise<boolean>;
+    onDelete: () => Promise<void>;
+}
+
+function SteamCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
+    const [apiKey, setApiKey] = useState("");
+    const [steamId, setSteamId] = useState("");
+
+    const submit = async () => {
+        if (await onSave({ apiKey, steamId })) {
+            setApiKey("");
+            setSteamId("");
+        }
+    };
+
+    return (
+        <CredentialCard
+            platform="Steam"
+            description="Steam Web API key and 64-bit Steam ID"
+            status={status}
+            busy={busy}
+            onDelete={onDelete}
+        >
+            <CredentialInput label="Steam ID (64-bit)" value={steamId} onChange={setSteamId} />
+            <CredentialInput label="Steam Web API key" value={apiKey} onChange={setApiKey} secret />
+            <SaveButton busy={busy} disabled={!apiKey.trim() || !steamId.trim()} onClick={submit} />
+        </CredentialCard>
+    );
+}
+
+function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
+    const [cookie, setCookie] = useState("");
+    const [user, setUser] = useState("");
+
+    const submit = async () => {
+        if (await onSave({ cookie, user })) {
+            setCookie("");
+            setUser("");
+        }
+    };
+
+    return (
+        <CredentialCard
+            platform="Gog"
+            description="GOG username and gog-al cookie"
+            status={status}
+            busy={busy}
+            onDelete={onDelete}
+        >
+            <CredentialInput label="GOG username" value={user} onChange={setUser} />
+            <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
+            <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
+        </CredentialCard>
+    );
+}
+
+function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
+    const [cookies, setCookies] = useState([{ key: "", value: "" }]);
+    const validCookies = cookies.filter((cookie) => cookie.key.trim() && cookie.value.trim());
+
+    const submit = async () => {
+        const payload = Object.fromEntries(
+            validCookies.map((cookie) => [cookie.key.trim(), cookie.value]),
+        );
+        if (await onSave({ cookies: payload })) setCookies([{ key: "", value: "" }]);
+    };
+
+    return (
+        <CredentialCard
+            platform="Psn"
+            description="PlayStation Store browser cookies"
+            status={status}
+            busy={busy}
+            onDelete={onDelete}
+        >
+            {cookies.map((cookie, index) => (
+                <div key={index} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
+                    <Input
+                        aria-label={`Cookie ${index + 1} name`}
+                        placeholder="Cookie name"
+                        value={cookie.key}
+                        onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, key: event.target.value } : item))}
+                    />
+                    <Input
+                        aria-label={`Cookie ${index + 1} value`}
+                        placeholder="Cookie value"
+                        type="password"
+                        autoComplete="off"
+                        value={cookie.value}
+                        onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, value: event.target.value } : item))}
+                    />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove cookie ${index + 1}`}
+                        disabled={cookies.length === 1}
+                        onClick={() => setCookies((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                </div>
+            ))}
+            <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setCookies((current) => [...current, { key: "", value: "" }])}
+            >
+                <Plus className="mr-2 h-4 w-4" /> Add cookie
+            </Button>
+            <SaveButton busy={busy} disabled={validCookies.length === 0} onClick={submit} />
+        </CredentialCard>
+    );
+}
+
+function CredentialInput({
+    label,
+    value,
+    onChange,
+    secret = false,
+}: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    secret?: boolean;
+}) {
+    return (
+        <label className="block space-y-1.5 text-xs font-medium text-muted-foreground">
+            {label}
+            <Input
+                type={secret ? "password" : "text"}
+                autoComplete="off"
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+            />
+        </label>
+    );
+}
+
+function SaveButton({
+    busy,
+    disabled,
+    onClick,
+}: {
+    busy: boolean;
+    disabled: boolean;
+    onClick: () => Promise<void>;
+}) {
+    return (
+        <Button className="w-full" disabled={busy || disabled} onClick={() => void onClick()}>
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+            {busy ? "Saving…" : "Store encrypted credential"}
+        </Button>
+    );
+}
+
+async function readError(response: Response): Promise<string> {
+    try {
+        const body = await response.json() as { message?: string };
+        return body.message ?? `Request failed with status ${response.status}.`;
+    } catch {
+        return `Request failed with status ${response.status}.`;
+    }
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "The credential request failed.";
+}
+
+function platformLabel(platform: Platform): string {
+    if (platform === "Gog") return "GOG";
+    if (platform === "Psn") return "PlayStation";
+    return platform;
+}

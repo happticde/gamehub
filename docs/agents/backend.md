@@ -17,10 +17,14 @@ Two ASP.NET Core microservices:
 - Auth: `Authentication:ApiKey` in appsettings.json or `Authentication__ApiKey` env var. Empty = legacy auth-disabled mode. `Authentication:TenantId` maps the API key to a trusted tenant claim. Setting `Authentication:Jwt:SigningKey` (minimum 32 UTF-8 bytes) enables JWT validation and token issuance. `Authentication:Jwt:RefreshTokenLifetimeDays` controls rotating opaque refresh sessions (default 30, range 1–90).
 - Core→Ingest delegation: Core reads `Services:IngestServiceKey`; Ingest validates the matching `Authentication:ServiceKey`. Only this internal key may authenticate `X-GameHub-Tenant-Id`. Normal API keys cannot select a tenant through request headers.
 - Platform credential vault: Ingest reads versioned Base64-encoded 32-byte AES keys from `Credentials:Keys:{version}` and selects the write key with `Credentials:ActiveKeyVersion`. Empty keys disable writes; invalid key-ring configuration fails startup. Vault endpoints require the internal tenant-delegation scheme and never return plaintext. Steam/GOG/PSN use strict schema-v1 payloads; Core triggers the service-key-only stored-retrieval route before exporting raw data. Epic stored retrieval is not supported yet.
+- Credential management: Authenticated clients use Core's `/api/platform-credentials` endpoints;
+  Core alone delegates the tenant and forwards credential bodies to Ingest. Responses contain only
+  configuration status and timestamps. `PlatformSyncEnabled` is never client-settable.
 - DB: `Database:Provider` (`Sqlite`/`Postgres`), connection strings in `ConnectionStrings` section.
 - Core→Ingest URL: `Services:IngestUrl` (default `http://localhost:5000`).
-- Provisioned tenants remain platform-sync disabled until Core/frontend credential management and
-  the explicit activation policy are complete.
+- Provisioned tenants start platform-sync disabled. Core enables them only after a fresh vault
+  status confirms at least one Steam, GOG, or PSN credential. Deletion disables first and only
+  re-enables after another supported credential is verified; failures remain disabled.
 - Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`).
 
 ## Conventions

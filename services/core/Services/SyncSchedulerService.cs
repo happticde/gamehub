@@ -145,12 +145,11 @@ public class SyncSchedulerService : BackgroundService
                     }
                     catch (TenantPlatformSyncDisabledException)
                     {
-                        // A provisioned tenant is intentionally non-syncable while Ingest is
-                        // shared. Treat that policy as a normal skip so it neither fails the
-                        // scheduler cycle nor prevents later tenants from being visited.
+                        // Missing supported credentials are a normal policy skip, not a failed
+                        // scheduler cycle, and must not prevent later tenants from being visited.
                         await activityLog.LogAsync(
                             "SyncSkipped",
-                            "Scheduled sync skipped until Ingest data is tenant-scoped");
+                            "Scheduled sync skipped because no supported credential is active");
                         _logger.LogInformation(
                             "Sync scheduler skipped tenant {TenantId}: platform sync disabled",
                             tenantId);

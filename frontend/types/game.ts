@@ -83,6 +83,20 @@ export interface IngestAuditLog {
     errorMessage: string | null;
 }
 
+/** Secret-free state returned by Core for one encrypted platform credential. */
+export interface PlatformCredentialStatus {
+    platform: Platform;
+    isConfigured: boolean;
+    schemaVersion: number | null;
+    updatedAtUtc: string | null;
+}
+
+/** Credential status plus Core's server-derived sync activation state. */
+export interface PlatformCredentialManagement {
+    platformSyncEnabled: boolean;
+    credentials: PlatformCredentialStatus[];
+}
+
 /** Comprehensive stats payload from GET /api/library/stats */
 export interface LibraryStats {
     totalGames: number;

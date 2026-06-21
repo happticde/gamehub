@@ -100,6 +100,7 @@ builder.Services.AddHttpClient<IngestClient>(c =>
 })
     .AddStandardResilienceHandler();
 builder.Services.AddScoped<UnificationService>();
+builder.Services.AddScoped<PlatformCredentialManagementService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<BackupExportService>();
 builder.Services.AddScoped<BackupImportService>();

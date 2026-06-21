@@ -1,22 +1,13 @@
 "use client";
 
 /**
- * IngestionPanel — Admin tab for triggering platform data ingestion.
- *
- * This component lets the user provide platform credentials and trigger
- * a fetch-and-ingest in one step via the Retrieve endpoints on the Ingest service.
- *
- * Each platform has its own collapsible card with the required credential fields.
- * The PSN card supports dynamic key-value pairs for browser cookies.
- *
- * Below the platform cards, there's an ingest audit log table showing recent
- * retrieval activity fetched from GET /api/ingest/retrieve/history.
+ * Tenant-safe immediate platform retrieval. The browser never sends API keys or platform
+ * secrets to Ingest directly; Core authenticates the user and delegates the tenant internally.
  */
-
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useCallback, useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     Select,
     SelectContent,
@@ -24,437 +15,291 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import {
-    Loader2,
-    ChevronDown,
-    ChevronUp,
-    Plus,
-    Trash2,
-    Download,
-} from "lucide-react";
 import { getPlatformColor } from "@/lib/platform-colors";
-import type { IngestAuditLog } from "@/types/game";
+import type {
+    IngestAuditLog,
+    Platform,
+    PlatformCredentialManagement,
+    PlatformCredentialStatus,
+} from "@/types/game";
+import { Download, Loader2, ShieldAlert } from "lucide-react";
+
+const RETRIEVAL_PLATFORMS: Platform[] = ["Steam", "Gog", "Psn"];
 
 export function IngestionPanel() {
-    // -------------------------------------------------------
-    // Ingest audit log state
-    // -------------------------------------------------------
+    const [credentials, setCredentials] = useState<PlatformCredentialManagement | null>(null);
     const [logs, setLogs] = useState<IngestAuditLog[]>([]);
-    const [platformFilter, setPlatformFilter] = useState<string>("all");
-    const [isLoadingLogs, setIsLoadingLogs] = useState(true);
+    const [platformFilter, setPlatformFilter] = useState("all");
+    const [loadingStatus, setLoadingStatus] = useState(true);
+    const [loadingLogs, setLoadingLogs] = useState(true);
+    const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
+    const [message, setMessage] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchCredentialStatus = useCallback(async () => {
+        setLoadingStatus(true);
+        try {
+            const response = await fetch("/api/core/platform-credentials", { cache: "no-store" });
+            if (!response.ok) throw new Error(await readError(response));
+            setCredentials(await response.json());
+        } catch (caught) {
+            setError(errorMessage(caught));
+        } finally {
+            setLoadingStatus(false);
+        }
+    }, []);
 
     const fetchLogs = useCallback(async () => {
-        setIsLoadingLogs(true);
+        setLoadingLogs(true);
         try {
             const params = new URLSearchParams({ limit: "100" });
             if (platformFilter !== "all") params.set("platform", platformFilter);
-            const res = await fetch(`/api/ingest/retrieve/history?${params}`);
-            if (res.ok) setLogs(await res.json());
-        } catch {
-            // Swallow — table will show empty
+            const response = await fetch(
+                `/api/core/platform-credentials/retrieval-history?${params}`,
+                { cache: "no-store" },
+            );
+            if (!response.ok) throw new Error(await readError(response));
+            setLogs(await response.json());
+        } catch (caught) {
+            setError(errorMessage(caught));
         } finally {
-            setIsLoadingLogs(false);
+            setLoadingLogs(false);
         }
     }, [platformFilter]);
 
-    useEffect(() => { fetchLogs(); }, [fetchLogs]);
+    useEffect(() => {
+        void fetchCredentialStatus();
+    }, [fetchCredentialStatus]);
+
+    useEffect(() => {
+        void fetchLogs();
+    }, [fetchLogs]);
+
+    const retrieve = async (platform: Platform) => {
+        setBusyPlatform(platform);
+        setMessage(null);
+        setError(null);
+        try {
+            const response = await fetch(`/api/core/platform-credentials/${platform}/retrieve`, {
+                method: "POST",
+            });
+            if (!response.ok) throw new Error(await readError(response));
+            const result = await response.json() as { message?: string };
+            setMessage(result.message ?? `${platformLabel(platform)} retrieval completed.`);
+            await Promise.all([fetchCredentialStatus(), fetchLogs()]);
+        } catch (caught) {
+            setError(errorMessage(caught));
+        } finally {
+            setBusyPlatform(null);
+        }
+    };
+
+    const statusFor = (platform: Platform) =>
+        credentials?.credentials.find((credential) => credential.platform === platform);
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            {/* ---- Platform Ingest Cards ---- */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <SteamIngestCard onSuccess={fetchLogs} />
-                <GogIngestCard onSuccess={fetchLogs} />
-                <PsnIngestCard onSuccess={fetchLogs} />
+            <div>
+                <h2 className="text-lg font-semibold tracking-tight">Stored platform retrieval</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                    Fetch fresh raw platform data using the encrypted credentials from the Credentials tab.
+                </p>
             </div>
 
-            {/* ---- Ingest Audit Log ---- */}
+            {error && (
+                <div className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    {error}
+                </div>
+            )}
+            {message && (
+                <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-300">
+                    {message}
+                </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {RETRIEVAL_PLATFORMS.map((platform) => (
+                    <StoredRetrievalCard
+                        key={platform}
+                        platform={platform}
+                        status={statusFor(platform)}
+                        loading={loadingStatus}
+                        busy={busyPlatform === platform}
+                        blocked={busyPlatform !== null}
+                        onRetrieve={() => retrieve(platform)}
+                    />
+                ))}
+            </div>
+
             <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold tracking-tight">Ingest Audit Log</h3>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-lg font-semibold tracking-tight">Ingest audit log</h3>
                     <Select value={platformFilter} onValueChange={setPlatformFilter}>
-                        <SelectTrigger className="w-36">
+                        <SelectTrigger className="w-full sm:w-40">
                             <SelectValue placeholder="Filter platform" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All Platforms</SelectItem>
+                            <SelectItem value="all">All platforms</SelectItem>
                             <SelectItem value="Steam">Steam</SelectItem>
                             <SelectItem value="Gog">GOG</SelectItem>
-                            <SelectItem value="Psn">PSN</SelectItem>
-                            <SelectItem value="Epic">Epic</SelectItem>
+                            <SelectItem value="Psn">PlayStation</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
 
-                {isLoadingLogs ? (
+                {loadingLogs ? (
                     <div className="flex items-center justify-center p-12 text-muted-foreground">
-                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                        Loading logs...
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading logs…
                     </div>
                 ) : logs.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center text-muted-foreground">
-                        <p>No ingest logs found.</p>
-                        <p className="text-sm mt-1">Trigger a platform retrieval to populate the audit log.</p>
+                    <div className="rounded-xl border border-dashed p-12 text-center text-sm text-muted-foreground">
+                        No retrieval logs found for this tenant.
                     </div>
                 ) : (
-                    <>
-                        {/* Mobile: Card layout */}
-                        <div className="md:hidden space-y-3">
-                            {logs.map((log) => (
-                                <div key={log.id} className="rounded-xl border border-border bg-card p-4 space-y-2.5">
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
-                                                {log.platform}
-                                            </span>
-                                            <IngestStatusBadge status={log.status} />
-                                        </div>
-                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                            {new Date(log.timestamp).toLocaleString(undefined, {
-                                                month: "short", day: "numeric",
-                                                hour: "2-digit", minute: "2-digit",
-                                            })}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <span className="text-muted-foreground">Items:</span>
-                                        <span className="font-medium tabular-nums">{log.itemsProcessed}</span>
-                                    </div>
-                                    {log.errorMessage && (
-                                        <p className="text-xs text-destructive bg-destructive/10 rounded-md px-2.5 py-1.5 break-words">
-                                            {log.errorMessage}
-                                        </p>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Desktop: Table layout */}
-                        <div className="hidden md:block rounded-xl border border-border bg-card overflow-hidden">
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-muted/50 text-muted-foreground">
-                                        <tr>
-                                            <th className="px-4 py-3 font-medium">Timestamp</th>
-                                            <th className="px-4 py-3 font-medium">Platform</th>
-                                            <th className="px-4 py-3 font-medium">Status</th>
-                                            <th className="px-4 py-3 font-medium">Items</th>
-                                            <th className="px-4 py-3 font-medium">Error</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border">
-                                        {logs.map((log) => (
-                                            <tr key={log.id} className="hover:bg-muted/30 transition-colors">
-                                                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                                                    {new Date(log.timestamp).toLocaleString(undefined, {
-                                                        month: "short", day: "numeric",
-                                                        hour: "2-digit", minute: "2-digit",
-                                                    })}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
-                                                        {log.platform}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <IngestStatusBadge status={log.status} />
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap tabular-nums font-medium">
-                                                    {log.itemsProcessed}
-                                                </td>
-                                                <td className="px-4 py-3 text-muted-foreground max-w-[250px] truncate" title={log.errorMessage || ""}>
-                                                    {log.errorMessage || "—"}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </>
+                    <AuditLogList logs={logs} />
                 )}
             </div>
         </div>
     );
 }
 
-// =========================================================================
-// Platform Ingest Card Components
-// =========================================================================
-
-/**
- * SteamIngestCard — Collapsible card with API Key + Steam ID inputs.
- * Calls POST /api/ingest/retrieve/steam when submitted.
- */
-function SteamIngestCard({ onSuccess }: { onSuccess: () => void }) {
-    const [expanded, setExpanded] = useState(false);
-    const [apiKey, setApiKey] = useState("");
-    const [steamId, setSteamId] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState("");
-
-    const handleSubmit = async () => {
-        setLoading(true);
-        setResult("");
-        try {
-            const res = await fetch("/api/ingest/retrieve/steam", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ apiKey, steamId }),
-            });
-            const data = await res.json();
-            setResult(data.Message || data.message || `Status: ${res.status}`);
-            if (res.ok) onSuccess();
-        } catch (err: any) {
-            setResult(`Error: ${err.message}`);
-        } finally {
-            setLoading(false);
-        }
-    };
-
+function StoredRetrievalCard({
+    platform,
+    status,
+    loading,
+    busy,
+    blocked,
+    onRetrieve,
+}: {
+    platform: Platform;
+    status?: PlatformCredentialStatus;
+    loading: boolean;
+    busy: boolean;
+    blocked: boolean;
+    onRetrieve: () => Promise<void>;
+}) {
+    const configured = status?.isConfigured === true;
     return (
-        <Card className="overflow-hidden">
-            <CardHeader
-                className="cursor-pointer select-none"
-                onClick={() => setExpanded(!expanded)}
-            >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="h-3 w-3 rounded-full" style={{ backgroundColor: getPlatformColor("Steam") }} />
-                        <CardTitle className="text-base">Steam</CardTitle>
+        <Card>
+            <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <span
+                                className="h-3 w-3 rounded-full"
+                                style={{ backgroundColor: getPlatformColor(platform) }}
+                            />
+                            {platformLabel(platform)}
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                            Uses the tenant&apos;s encrypted stored credential.
+                        </CardDescription>
                     </div>
-                    {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    <Badge variant={configured ? "default" : "outline"}>
+                        {configured ? "Ready" : "Not configured"}
+                    </Badge>
                 </div>
-                <CardDescription>Fetch via Steam Web API</CardDescription>
             </CardHeader>
-            {expanded && (
-                <CardContent className="space-y-3">
-                    <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Steam ID (64-bit)</label>
-                        <Input placeholder="e.g. 76561198012345678" value={steamId} onChange={(e) => setSteamId(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Steam Web API Key</label>
-                        <Input type="password" placeholder="Your Steam API key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-                    </div>
-                    <Button onClick={handleSubmit} disabled={loading || !apiKey || !steamId} className="w-full">
-                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                        {loading ? "Fetching..." : "Fetch & Ingest"}
-                    </Button>
-                    {result && <p className="text-xs text-muted-foreground">{result}</p>}
-                </CardContent>
-            )}
-        </Card>
-    );
-}
-
-/**
- * GogIngestCard — Collapsible card with Cookie + Username inputs.
- * Calls POST /api/ingest/retrieve/gog when submitted.
- */
-function GogIngestCard({ onSuccess }: { onSuccess: () => void }) {
-    const [expanded, setExpanded] = useState(false);
-    const [cookie, setCookie] = useState("");
-    const [user, setUser] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState("");
-
-    const handleSubmit = async () => {
-        setLoading(true);
-        setResult("");
-        try {
-            const res = await fetch("/api/ingest/retrieve/gog", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ cookie, user }),
-            });
-            const data = await res.json();
-            setResult(data.Message || data.message || `Status: ${res.status}`);
-            if (res.ok) onSuccess();
-        } catch (err: any) {
-            setResult(`Error: ${err.message}`);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Card className="overflow-hidden">
-            <CardHeader
-                className="cursor-pointer select-none"
-                onClick={() => setExpanded(!expanded)}
-            >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="h-3 w-3 rounded-full" style={{ backgroundColor: getPlatformColor("Gog") }} />
-                        <CardTitle className="text-base">GOG</CardTitle>
-                    </div>
-                    {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                </div>
-                <CardDescription>Fetch via GOG Galaxy API</CardDescription>
-            </CardHeader>
-            {expanded && (
-                <CardContent className="space-y-3">
-                    <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">GOG Username</label>
-                        <Input placeholder="Your GOG username" value={user} onChange={(e) => setUser(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">GOG Cookie (gog-al)</label>
-                        <Input type="password" placeholder="gog-al cookie value" value={cookie} onChange={(e) => setCookie(e.target.value)} />
-                    </div>
-                    <Button onClick={handleSubmit} disabled={loading || !cookie || !user} className="w-full">
-                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                        {loading ? "Fetching..." : "Fetch & Ingest"}
-                    </Button>
-                    {result && <p className="text-xs text-muted-foreground">{result}</p>}
-                </CardContent>
-            )}
-        </Card>
-    );
-}
-
-/**
- * PsnIngestCard — Collapsible card with dynamic cookie key-value rows.
- *
- * PSN ingestion requires several browser cookies (JSESSIONID, sb-cdn.session, etc.).
- * This card lets the user add/remove rows for each cookie key-value pair,
- * then sends them all as POST /api/ingest/retrieve/psn.
- */
-function PsnIngestCard({ onSuccess }: { onSuccess: () => void }) {
-    const [expanded, setExpanded] = useState(false);
-    // Each cookie row has a unique key string and a value string
-    const [cookies, setCookies] = useState<{ key: string; value: string }[]>([
-        { key: "", value: "" },
-    ]);
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState("");
-
-    /** Add a new empty cookie row */
-    const addRow = () => setCookies((prev) => [...prev, { key: "", value: "" }]);
-
-    /** Remove a cookie row by index */
-    const removeRow = (index: number) =>
-        setCookies((prev) => prev.filter((_, i) => i !== index));
-
-    /** Update a specific field in a cookie row */
-    const updateRow = (index: number, field: "key" | "value", val: string) =>
-        setCookies((prev) =>
-            prev.map((row, i) => (i === index ? { ...row, [field]: val } : row))
-        );
-
-    const handleSubmit = async () => {
-        setLoading(true);
-        setResult("");
-        try {
-            // Convert the array of {key, value} into a plain object
-            const cookieObj: Record<string, string> = {};
-            cookies.forEach((c) => {
-                if (c.key.trim()) cookieObj[c.key.trim()] = c.value;
-            });
-
-            const res = await fetch("/api/ingest/retrieve/psn", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ cookies: cookieObj }),
-            });
-            const data = await res.json();
-            setResult(data.Message || data.message || `Status: ${res.status}`);
-            if (res.ok) onSuccess();
-        } catch (err: any) {
-            setResult(`Error: ${err.message}`);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // The submit button is disabled if there are no non-empty cookie keys
-    const hasValidCookies = cookies.some((c) => c.key.trim() && c.value.trim());
-
-    return (
-        <Card className="overflow-hidden">
-            <CardHeader
-                className="cursor-pointer select-none"
-                onClick={() => setExpanded(!expanded)}
-            >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="h-3 w-3 rounded-full" style={{ backgroundColor: getPlatformColor("Psn") }} />
-                        <CardTitle className="text-base">PlayStation</CardTitle>
-                    </div>
-                    {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                </div>
-                <CardDescription>Fetch via PSN store cookies</CardDescription>
-            </CardHeader>
-            {expanded && (
-                <CardContent className="space-y-3">
-                    <p className="text-xs text-muted-foreground">
-                        Add browser cookies from store.playstation.com (e.g. JSESSIONID, sb-cdn.session).
+            <CardContent>
+                <Button
+                    className="w-full"
+                    disabled={loading || blocked || !configured}
+                    onClick={() => void onRetrieve()}
+                >
+                    {busy ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <Download className="mr-2 h-4 w-4" />
+                    )}
+                    {busy ? "Retrieving…" : "Fetch & ingest"}
+                </Button>
+                {!loading && !configured && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                        Store this credential in the Credentials tab first.
                     </p>
-                    {cookies.map((cookie, i) => (
-                        <div key={i} className="flex gap-2 items-center">
-                            <Input
-                                placeholder="Cookie name"
-                                className="flex-1"
-                                value={cookie.key}
-                                onChange={(e) => updateRow(i, "key", e.target.value)}
-                            />
-                            <Input
-                                placeholder="Cookie value"
-                                className="flex-[2]"
-                                type="password"
-                                value={cookie.value}
-                                onChange={(e) => updateRow(i, "value", e.target.value)}
-                            />
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeRow(i)}
-                                disabled={cookies.length <= 1}
-                            >
-                                <Trash2 className="h-4 w-4 text-muted-foreground" />
-                            </Button>
-                        </div>
-                    ))}
-                    <Button variant="outline" size="sm" onClick={addRow} className="w-full">
-                        <Plus className="mr-2 h-3 w-3" />
-                        Add Cookie
-                    </Button>
-                    <Button onClick={handleSubmit} disabled={loading || !hasValidCookies} className="w-full">
-                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                        {loading ? "Fetching..." : "Fetch & Ingest"}
-                    </Button>
-                    {result && <p className="text-xs text-muted-foreground">{result}</p>}
-                </CardContent>
-            )}
+                )}
+            </CardContent>
         </Card>
     );
 }
 
-// =========================================================================
-// Helper sub-components
-// =========================================================================
+function AuditLogList({ logs }: { logs: IngestAuditLog[] }) {
+    return (
+        <>
+            <div className="space-y-3 md:hidden">
+                {logs.map((log) => (
+                    <div key={log.id} className="rounded-xl border bg-card p-4 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                            <Badge variant="secondary">{platformLabel(log.platform as Platform)}</Badge>
+                            <span className="text-xs text-muted-foreground">
+                                {new Date(log.timestamp).toLocaleString()}
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                            <IngestStatusBadge status={log.status} />
+                            <span>{log.itemsProcessed} items</span>
+                        </div>
+                        {log.errorMessage && <p className="text-xs text-destructive">{log.errorMessage}</p>}
+                    </div>
+                ))}
+            </div>
+            <div className="hidden overflow-x-auto rounded-xl border bg-card md:block">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-muted/50 text-muted-foreground">
+                        <tr>
+                            <th className="px-4 py-3 font-medium">Timestamp</th>
+                            <th className="px-4 py-3 font-medium">Platform</th>
+                            <th className="px-4 py-3 font-medium">Status</th>
+                            <th className="px-4 py-3 font-medium">Items</th>
+                            <th className="px-4 py-3 font-medium">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                        {logs.map((log) => (
+                            <tr key={log.id}>
+                                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                                    {new Date(log.timestamp).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-3">{platformLabel(log.platform as Platform)}</td>
+                                <td className="px-4 py-3"><IngestStatusBadge status={log.status} /></td>
+                                <td className="px-4 py-3 tabular-nums">{log.itemsProcessed}</td>
+                                <td className="max-w-[280px] truncate px-4 py-3 text-muted-foreground">
+                                    {log.errorMessage ?? "—"}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </>
+    );
+}
 
-/** Color-coded badge for ingest status values. */
 function IngestStatusBadge({ status }: { status: string }) {
-    switch (status) {
-        case "Success":
-            return (
-                <span className="inline-flex items-center rounded-md bg-green-500/15 px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400 ring-1 ring-inset ring-green-500/20">
-                    Success
-                </span>
-            );
-        case "Failed":
-            return (
-                <span className="inline-flex items-center rounded-md bg-red-500/15 px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 ring-1 ring-inset ring-red-500/20">
-                    Failed
-                </span>
-            );
-        default:
-            return (
-                <span className="inline-flex items-center rounded-md bg-zinc-500/15 px-2 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-400 ring-1 ring-inset ring-zinc-500/20">
-                    {status}
-                </span>
-            );
+    const className = status === "Success"
+        ? "bg-green-500/15 text-green-700 dark:text-green-300"
+        : status === "Failed"
+            ? "bg-red-500/15 text-red-700 dark:text-red-300"
+            : "bg-muted text-muted-foreground";
+    return <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${className}`}>{status}</span>;
+}
+
+async function readError(response: Response): Promise<string> {
+    try {
+        const body = await response.json() as { message?: string };
+        return body.message ?? `Request failed with status ${response.status}.`;
+    } catch {
+        return `Request failed with status ${response.status}.`;
     }
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "The retrieval request failed.";
+}
+
+function platformLabel(platform: Platform): string {
+    if (platform === "Gog") return "GOG";
+    if (platform === "Psn") return "PlayStation";
+    return platform;
 }
