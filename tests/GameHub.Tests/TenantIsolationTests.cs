@@ -86,6 +86,31 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.Equal("Cannot create a record for a different tenant.", exception.Message);
     }
 
+    [Theory]
+    [InlineData("library-item")]
+    [InlineData("manual-link")]
+    [InlineData("enrichment-audit")]
+    public async Task TenantGameRelationship_ForeignTenantGame_RejectsWrite(string relationship)
+    {
+        int foreignGameId;
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            var game = new UnifiedGame
+            {
+                Title = "Tenant B relation target",
+                Slug = "tenant-b-relation-target"
+            };
+            tenantB.UnifiedGames.Add(game);
+            await tenantB.SaveChangesAsync();
+            foreignGameId = game.Id;
+        }
+
+        await using var tenantA = CreateContext(TenantA);
+        tenantA.Add(CreateTenantGameDependent(relationship, foreignGameId));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => tenantA.SaveChangesAsync());
+    }
+
     [Fact]
     public async Task UpdatePersonalTracking_ForeignTenantGame_ReturnsNotFoundWithoutMutation()
     {
@@ -350,6 +375,49 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.Empty(db.RefreshTokenSessions);
     }
 
+    [Theory]
+    [InlineData("library-item")]
+    [InlineData("manual-link")]
+    [InlineData("enrichment-audit")]
+    public async Task TenantRelationshipMigration_ForeignTenantGame_RejectsWrite(string relationship)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite(connection)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var tenantA = new CoreContext(options, new FixedTenantContext(TenantA));
+        var migrator = tenantA.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260620094428_AddRefreshTokenSessions");
+        tenantA.Tenants.Add(new Tenant
+        {
+            Id = TenantB,
+            Name = "Tenant B",
+            CreatedAtUtc = FixedNow.UtcDateTime
+        });
+        await tenantA.SaveChangesAsync();
+
+        int foreignGameId;
+        await using (var tenantB = new CoreContext(options, new FixedTenantContext(TenantB)))
+        {
+            var game = new UnifiedGame
+            {
+                Title = "Tenant B migration target",
+                Slug = "tenant-b-migration-target"
+            };
+            tenantB.UnifiedGames.Add(game);
+            await tenantB.SaveChangesAsync();
+            foreignGameId = game.Id;
+        }
+
+        await migrator.MigrateAsync();
+        tenantA.ChangeTracker.Clear();
+        tenantA.Add(CreateTenantGameDependent(relationship, foreignGameId));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => tenantA.SaveChangesAsync());
+    }
+
     private CoreContext CreateContext(Guid tenantId) =>
         new(_options, new FixedTenantContext(tenantId));
 
@@ -406,6 +474,30 @@ public sealed class TenantIsolationTests : IDisposable
                     LastSynced = FixedNow.UtcDateTime
                 }
             ]
+        };
+
+    private static object CreateTenantGameDependent(string relationship, int unifiedGameId) =>
+        relationship switch
+        {
+            "library-item" => new LibraryItem
+            {
+                UnifiedGameId = unifiedGameId,
+                Platform = Platform.Steam,
+                ExternalId = "foreign-game"
+            },
+            "manual-link" => new ManualLink
+            {
+                UnifiedGameId = unifiedGameId,
+                Platform = Platform.Steam,
+                ExternalId = "foreign-game"
+            },
+            "enrichment-audit" => new EnrichmentAuditLog
+            {
+                UnifiedGameId = unifiedGameId,
+                ProviderName = "Test",
+                Status = "Success"
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(relationship), relationship, null)
         };
 
     private static UnifiedGame CreateGame(string title)
