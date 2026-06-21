@@ -16,9 +16,17 @@
 - Immediate retrieval and tenant-scoped audit history now run through Core's trusted delegation;
   the frontend no longer sends platform credentials or a global API key directly to Ingest.
 
+**Epic Product Scope:**
+- Epic remains a fully manual Ingest flow through API or CLI. GameHub does not store Epic
+  credentials and does not perform automatic Epic stored retrieval.
+- Core continues to synchronize Epic raw data that was ingested manually.
+- A future Epic authentication and stored-retrieval integration is tracked separately in Roadmap
+  item #16; it is not unfinished work in the current credential-management scope.
+
 ### Known State / Pending
 
-- OAuth and stored Epic retrieval remain pending.
+- Roadmap item #8 still requires the remaining multi-user readiness and tenant-isolation work.
+- Future Epic authentication and stored retrieval are independently tracked in Roadmap item #16.
 
 ## Previous Session Summary (2026-06-20)
 

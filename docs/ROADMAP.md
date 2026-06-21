@@ -59,12 +59,23 @@ GitHub Actions: build → test → Docker build → push to registry.
 
 ### 8. User Accounts & Multi-Tenancy
 Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth (Steam/PSN/GOG login).
-- **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, rotating/revocable refresh sessions, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. OAuth and Epic stored retrieval remain pending; multi-user operation is not enabled by default.
-- **Ownership migration**: Assign existing records to a default tenant, then make user-owned entities and background jobs tenant-aware.
-- **Isolation**: Scope library queries, sync, export, validation, and restore to the authenticated tenant. Tenant identity must come from trusted authentication claims, never request payloads.
-- **Constraints**: Replace global uniqueness for slugs, tags, and manual platform links with tenant-scoped composite indexes where appropriate.
-- **Portability**: Keep the JSON backup tenant-neutral. The current empty-library restore rule must become "the authenticated tenant's library is empty" before multi-user operation is enabled.
-- **Verification**: Add cross-tenant tests proving exports cannot leak data, restores cannot modify another tenant, and identical slugs/platform IDs can coexist across tenants.
+- **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, rotating/revocable refresh sessions, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. The current Steam/GOG/PSN credential-management scope is complete; multi-user operation is not enabled by default.
+- **Epic boundary**: Epic remains a fully manual Ingest flow through API or CLI. No Epic credentials
+  are stored and no automatic Epic stored retrieval runs. Core continues to synchronize manually
+  ingested Epic raw data. Future Epic authentication and stored retrieval are independently tracked
+  in item #16 and are not pending work for the current credential-management scope.
+- **Remaining isolation gate**: Audit every user-owned read, write, background job, and uniqueness
+  constraint against the authenticated tenant and close any gaps before multi-user enablement. This
+  includes library data, sync, tags, manual links, credential policy, export, and restore.
+- **Remaining portability work**: Keep the JSON backup tenant-neutral and change the current
+  empty-library restore rule to "the authenticated tenant's library is empty."
+- **Remaining verification**: Complete cross-tenant coverage proving exports cannot leak data,
+  restores cannot modify another tenant, and identical slugs/platform IDs can coexist across tenants.
+- **Remaining account work**: Define the supported multi-user account lifecycle and complete the
+  chosen production authentication flow. OAuth remains an account/authentication option; Epic
+  integration is outside this item.
+- **Remaining rollout work**: Add an explicit, guarded multi-user enablement path only after the
+  isolation, portability, verification, and account-lifecycle gates are complete.
 
 ### 9. Notifications & Activity Feed
 `ActivityLog` table + activity endpoint for social sharing/feed.
@@ -91,15 +102,25 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Platforms**: Support for PS3, PS4, and PS5 as distinct physical platforms.
 - **Lookup**: Resolve barcodes to titles and automatically enrich via IGDB.
 
-### 14. Discovery: "Surprise Me" (Random Pick)
+### 14. Discovery: "Surprise Me" (Random Pick) ✅
 - **Feature**: Random game selection button that respects active filters (e.g., "Random RPG I haven't finished").
 - **Goal**: Help users conquer their backlog by removing decision paralysis.
+- **Implemented**: The Core random-library endpoint respects active filters, and the frontend
+  provides a "Surprise Me" action that navigates to the selected game.
 
 ### 15. Power-User Maintenance Tools
 - **Direct Enrichment**: Allow manual input of IGDB ID for instant, accurate matching.
 - **Advanced Pagination**: Customizable page sizes, FIRST/LAST navigation, and direct page jumping.
 - **Manual Split**: Ability to separate platform entries from a unified game into their own records.
 - **Robust Sorting**: Logic to gracefully handle missing years or ratings (coalesce nulls).
+
+### 16. Epic Authentication & Stored Retrieval
+- **Current behavior**: Epic ingestion is manual through API or CLI; Core synchronizes the resulting
+  raw data alongside other platforms.
+- **Future scope**: Evaluate an Epic authentication mechanism, secure credential or token handling,
+  and tenant-scoped stored retrieval as a standalone integration.
+- **Boundary**: This work is not a missing part of the Steam/GOG/PSN credential-management feature
+  and does not block that feature from being considered complete.
 
 ---
 
@@ -110,6 +131,8 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
+| **Multi-user readiness** | #8 isolation audit → tenant-scoped portability → account lifecycle and production auth → guarded enablement |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
-| **Maintenance & UI** | #15 Power-User Tools → #14 Random Pick |
+| **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
+| **Future platform integration** | #16 Epic authentication and stored retrieval |
