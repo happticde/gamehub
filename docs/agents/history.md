@@ -33,6 +33,9 @@
 - The scheduled-sync cycle is independently testable without hosted-service delays. Its integration
   test covers isolated per-tenant scopes, tenant-owned activity/sync audit rows, and a disabled
   tenant policy skip alongside a successful tenant in the same cycle.
+- The background-enrichment batch is independently testable as well. A two-tenant integration test
+  proves that the batch limit is applied per tenant and that enriched games and audit rows retain
+  the correct owner without starving later tenants.
 - ADR-008 and Roadmap item #8 now reflect that tenant-scoped portability is implemented; the
   remaining isolation audit, account lifecycle, production authentication, and guarded enablement
   are still open.

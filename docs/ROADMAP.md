@@ -68,7 +68,8 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   empty-library restore rule, equivalent cross-tenant slugs/platform IDs, and Library mutation
   boundaries for personal tracking, merge, and split have direct cross-tenant test coverage.
   Scheduled sync cycles also verify isolated tenant scopes, tenant-owned activity/audit rows, and
-  policy skips that do not block later tenants.
+  policy skips that do not block later tenants. Background enrichment verifies independent
+  per-tenant batch limits, progress, writes, and audit ownership.
 - **Remaining isolation gate**: Complete the audit of user-owned paths not yet explicitly verified
   above and close any gaps before multi-user enablement, especially sync, tags, manual links,
   background jobs, and uniqueness constraints.

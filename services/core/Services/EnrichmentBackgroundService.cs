@@ -44,34 +44,7 @@ public class EnrichmentBackgroundService : BackgroundService
         {
             try
             {
-                var remaining = 0;
-                var processed = 0;
-                await _tenantJobs.RunForEachTenantAsync(async (services, tenantId, cancellationToken) =>
-                {
-                    var enrichment = services.GetRequiredService<EnrichmentService>();
-                    var tenantRemaining = await enrichment.GetUnenrichedCountAsync(cancellationToken);
-                    remaining += tenantRemaining;
-
-                    if (tenantRemaining == 0)
-                    {
-                        return;
-                    }
-
-                    _logger.LogInformation(
-                        "Enrichment progress for tenant {TenantId}: {Remaining} games remaining",
-                        tenantId,
-                        tenantRemaining);
-
-                    var tenantProcessed = await enrichment.EnrichUnenrichedAsync(batchSize, cancellationToken);
-                    processed += tenantProcessed;
-                    if (tenantProcessed > 0)
-                    {
-                        _logger.LogInformation(
-                            "Enrichment batch complete for tenant {TenantId}: {Count} games processed",
-                            tenantId,
-                            tenantProcessed);
-                    }
-                }, stoppingToken);
+                var (remaining, processed) = await RunCycleAsync(batchSize, stoppingToken);
 
                 if (remaining == 0)
                 {
@@ -99,5 +72,47 @@ public class EnrichmentBackgroundService : BackgroundService
         }
 
         _logger.LogInformation("Enrichment background service stopped");
+    }
+
+    /// <summary>
+    /// Runs one tenant-isolated enrichment batch. Separating the batch from the timing loop keeps
+    /// per-tenant limits and ownership verifiable without waiting for hosted-service delays.
+    /// </summary>
+    internal async Task<(int Remaining, int Processed)> RunCycleAsync(
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        var remaining = 0;
+        var processed = 0;
+        await _tenantJobs.RunForEachTenantAsync(async (services, tenantId, tenantCancellationToken) =>
+        {
+            var enrichment = services.GetRequiredService<EnrichmentService>();
+            var tenantRemaining = await enrichment.GetUnenrichedCountAsync(tenantCancellationToken);
+            remaining += tenantRemaining;
+
+            if (tenantRemaining == 0)
+            {
+                return;
+            }
+
+            _logger.LogInformation(
+                "Enrichment progress for tenant {TenantId}: {Remaining} games remaining",
+                tenantId,
+                tenantRemaining);
+
+            var tenantProcessed = await enrichment.EnrichUnenrichedAsync(
+                batchSize,
+                tenantCancellationToken);
+            processed += tenantProcessed;
+            if (tenantProcessed > 0)
+            {
+                _logger.LogInformation(
+                    "Enrichment batch complete for tenant {TenantId}: {Count} games processed",
+                    tenantId,
+                    tenantProcessed);
+            }
+        }, cancellationToken);
+
+        return (remaining, processed);
     }
 }
