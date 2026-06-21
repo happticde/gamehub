@@ -23,7 +23,8 @@ export function SyncTriggerButton() {
             });
 
             if (!res.ok) {
-                setResultMsg(`Sync failed with status: ${res.status}`);
+                const data = await res.json().catch(() => null) as { message?: string } | null;
+                setResultMsg(data?.message || `Sync failed with status: ${res.status}`);
             } else {
                 const data = await res.json();
                 setResultMsg(data.Message || "Sync completed successfully.");

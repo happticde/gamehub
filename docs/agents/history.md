@@ -1,6 +1,26 @@
 # Session History
 
-## Current Session Summary (2026-06-20)
+## Current Session Summary (2026-06-21)
+
+### What Changed
+
+**Core/Frontend Platform Credential Management:**
+- Core now exposes authenticated, tenant-scoped credential status, upsert, and deletion endpoints
+  while forwarding secrets only to Ingest's internal service-key-protected vault API.
+- `PlatformSyncEnabled` is server-derived: a verified Steam, GOG, or PSN vault credential enables
+  sync; Epic cannot activate it, and deleting starts by disabling sync before any Ingest call.
+- Delete and verification failures remain fail-closed, and cross-tenant tests prove that changing
+  one tenant's credential policy cannot activate or deactivate another tenant.
+- The Admin dashboard has a credential vault tab. Secret fields are cleared after successful
+  storage and the browser receives only configuration status and timestamps.
+- Immediate retrieval and tenant-scoped audit history now run through Core's trusted delegation;
+  the frontend no longer sends platform credentials or a global API key directly to Ingest.
+
+### Known State / Pending
+
+- OAuth and stored Epic retrieval remain pending.
+
+## Previous Session Summary (2026-06-20)
 
 ### What Changed
 
@@ -24,8 +44,8 @@
 
 ### Known State / Pending
 
-- Core/frontend credential management and the explicit sync-activation policy remain pending.
-- Provisioned tenants remain `PlatformSyncEnabled = false` until that management flow is complete.
+- Core/frontend credential management and the explicit sync-activation policy were completed in
+  the following session.
 
 ## Last Session Summary (2026-05-25)
 

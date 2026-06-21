@@ -21,7 +21,8 @@ public sealed class Tenant
     public string Name { get; set; } = "";
     /// <summary>
     /// Whether Core may synchronize this tenant's raw Ingest catalogue into its library.
-    /// New tenants remain disabled until encrypted platform credentials are tenant-scoped.
+    /// Core derives activation from verified tenant-scoped credentials; request payloads cannot
+    /// set this flag directly.
     /// </summary>
     public bool PlatformSyncEnabled { get; set; }
     public DateTime CreatedAtUtc { get; set; }

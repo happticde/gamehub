@@ -7,12 +7,13 @@
  * needs to live in the browser — the user clicks tabs and the component
  * re-renders to show the right panel without a full page reload.
  *
- * Five tabs:
+ * Six tabs:
  *   1. Enrichment — manage IGDB metadata enrichment (stats, actions, audit)
- *   2. Ingestion  — trigger platform data fetches (Steam, GOG, PSN)
- *   3. Sync       — trigger and review unification syncs
- *   4. Activity   — recent system activity feed
- *   5. Backup     — export, validate, and restore portable backups
+ *   2. Credentials — manage tenant-scoped encrypted platform credentials
+ *   3. Ingestion  — trigger platform data fetches (Steam, GOG, PSN)
+ *   4. Sync       — trigger and review unification syncs
+ *   5. Activity   — recent system activity feed
+ *   6. Backup     — export, validate, and restore portable backups
  */
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -21,7 +22,8 @@ import { IngestionPanel } from "@/components/admin/IngestionPanel";
 import { SyncPanel } from "@/components/admin/SyncPanel";
 import { ActivityPanel } from "@/components/admin/ActivityPanel";
 import { BackupRestorePanel } from "@/components/admin/BackupRestorePanel";
-import { Settings, Sparkles, Download, RefreshCw, Bell, ArchiveRestore } from "lucide-react";
+import { PlatformCredentialsPanel } from "@/components/admin/PlatformCredentialsPanel";
+import { Settings, Sparkles, Download, RefreshCw, Bell, ArchiveRestore, KeyRound } from "lucide-react";
 
 export default function AdminPage() {
     return (
@@ -45,6 +47,10 @@ export default function AdminPage() {
                             <Sparkles className="h-4 w-4" />
                             Enrichment
                         </TabsTrigger>
+                        <TabsTrigger value="credentials" className="gap-1.5">
+                            <KeyRound className="h-4 w-4" />
+                            Credentials
+                        </TabsTrigger>
                         <TabsTrigger value="ingestion" className="gap-1.5">
                             <Download className="h-4 w-4" />
                             Ingestion
@@ -65,6 +71,10 @@ export default function AdminPage() {
 
                     <TabsContent value="enrichment">
                         <EnrichmentPanel />
+                    </TabsContent>
+
+                    <TabsContent value="credentials">
+                        <PlatformCredentialsPanel />
                     </TabsContent>
 
                     <TabsContent value="ingestion">

@@ -1,7 +1,11 @@
 using GameHub.Core.Data;
+using GameHub.Core.Models.PlatformCredentials;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace GameHub.Core.Services;
 
@@ -15,6 +19,7 @@ namespace GameHub.Core.Services;
 /// </summary>
 public class IngestClient
 {
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly HttpClient _http;
     private readonly ITenantContext _tenantContext;
     private readonly string _serviceKey;
@@ -70,11 +75,13 @@ public class IngestClient
     /// Asks Ingest to refresh one platform using the delegated tenant's encrypted credential.
     /// Returns false when that tenant has no credential for the platform.
     /// </summary>
-    public async Task<bool> RetrieveStoredAsync(Platform platform)
+    public async Task<bool> RetrieveStoredAsync(
+        Platform platform,
+        CancellationToken cancellationToken = default)
     {
         var url = $"/api/retrieve/{platform.ToString().ToLowerInvariant()}/stored";
         using var request = CreateDelegatedRequest(HttpMethod.Post, url);
-        using var response = await _http.SendAsync(request);
+        using var response = await _http.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             return false;
@@ -82,6 +89,100 @@ public class IngestClient
 
         response.EnsureSuccessStatusCode();
         return true;
+    }
+
+    /// <summary>Returns tenant-scoped stored-retrieval audit entries from Ingest.</summary>
+    public async Task<IReadOnlyList<PlatformRetrievalAuditLogResponse>> GetRetrievalHistoryAsync(
+        string? platform,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"/api/retrieve/history?limit={limit}";
+        if (!string.IsNullOrWhiteSpace(platform))
+        {
+            url += $"&platform={Uri.EscapeDataString(platform)}";
+        }
+
+        using var request = CreateDelegatedRequest(HttpMethod.Get, url);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        await EnsurePlatformCredentialSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<List<PlatformRetrievalAuditLogResponse>>(
+                JsonOptions,
+                cancellationToken)
+            ?? [];
+    }
+
+    /// <summary>Returns secret-free encrypted credential status for the active tenant.</summary>
+    public async Task<IReadOnlyList<PlatformCredentialStatusResponse>> ListPlatformCredentialStatusesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var request = CreateDelegatedRequest(HttpMethod.Get, "/api/internal/platform-credentials");
+        using var response = await _http.SendAsync(request, cancellationToken);
+        await EnsurePlatformCredentialSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<List<PlatformCredentialStatusResponse>>(
+                JsonOptions,
+                cancellationToken)
+            ?? [];
+    }
+
+    /// <summary>Forwards one credential to Ingest's encrypted tenant vault.</summary>
+    public async Task UpsertPlatformCredentialAsync(
+        Platform platform,
+        UpsertPlatformCredentialRequest credential,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"/api/internal/platform-credentials/{platform.ToString().ToLowerInvariant()}";
+        using var request = CreateDelegatedRequest(HttpMethod.Put, url);
+        request.Content = JsonContent.Create(credential, options: JsonOptions);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        await EnsurePlatformCredentialSuccessAsync(response, cancellationToken);
+    }
+
+    /// <summary>Deletes one encrypted credential for the active tenant.</summary>
+    public async Task DeletePlatformCredentialAsync(
+        Platform platform,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"/api/internal/platform-credentials/{platform.ToString().ToLowerInvariant()}";
+        using var request = CreateDelegatedRequest(HttpMethod.Delete, url);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return;
+        }
+
+        await EnsurePlatformCredentialSuccessAsync(response, cancellationToken);
+    }
+
+    private static async Task EnsurePlatformCredentialSuccessAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        PlatformCredentialUpstreamError? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<PlatformCredentialUpstreamError>(
+                JsonOptions,
+                cancellationToken);
+        }
+        catch (JsonException)
+        {
+            // Upstream response bodies are never forwarded verbatim. The fallback below keeps
+            // infrastructure errors and accidental secret-bearing content out of Core responses.
+        }
+
+        var safeMessage = response.StatusCode switch
+        {
+            HttpStatusCode.BadRequest => error?.Message ?? "The platform credential is invalid.",
+            HttpStatusCode.ServiceUnavailable => "Platform credential storage is unavailable.",
+            _ => "The Ingest service could not complete the credential request."
+        };
+        throw new IngestPlatformCredentialException(response.StatusCode, safeMessage);
     }
 
     private HttpRequestMessage CreateDelegatedRequest(HttpMethod method, string url)
@@ -101,4 +202,22 @@ public class IngestClient
             _tenantContext.TenantId.ToString("D"));
         return request;
     }
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
+    }
+
+    private sealed record PlatformCredentialUpstreamError(string Message);
+}
+
+/// <summary>Sanitized failure returned by Ingest's credential vault API.</summary>
+public sealed class IngestPlatformCredentialException(
+    HttpStatusCode statusCode,
+    string safeMessage) : HttpRequestException(safeMessage, null, statusCode)
+{
+    public HttpStatusCode UpstreamStatusCode { get; } = statusCode;
+    public string SafeMessage { get; } = safeMessage;
 }

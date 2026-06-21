@@ -411,13 +411,13 @@ public class UnificationService
 }
 
 /// <summary>
-/// Raised before contacting Ingest when a tenant cannot safely consume shared platform data.
+/// Raised before contacting Ingest when Core's credential-derived sync policy is disabled.
 /// Controllers and background jobs use the typed exception to distinguish a policy skip from
 /// an operational sync failure.
 /// </summary>
 public sealed class TenantPlatformSyncDisabledException(Guid tenantId)
     : InvalidOperationException(
-        $"Platform sync is disabled for tenant '{tenantId}' until Ingest data is tenant-scoped.")
+        $"Platform sync is disabled for tenant '{tenantId}' until a supported credential is configured.")
 {
     public Guid TenantId { get; } = tenantId;
 }
