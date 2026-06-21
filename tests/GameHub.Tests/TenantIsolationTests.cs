@@ -1,12 +1,15 @@
+using GameHub.Core.Controllers;
 using GameHub.Core.Data;
 using GameHub.Core.Models.Backup;
 using GameHub.Core.Services;
 using GameHub.Shared;
 using Microsoft.Data.Sqlite;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace GameHub.Tests;
@@ -81,6 +84,189 @@ public sealed class TenantIsolationTests : IDisposable
             () => tenantA.SaveChangesAsync());
 
         Assert.Equal("Cannot create a record for a different tenant.", exception.Message);
+    }
+
+    [Fact]
+    public async Task UpdatePersonalTracking_ForeignTenantGame_ReturnsNotFoundWithoutMutation()
+    {
+        int foreignGameId;
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            var game = new UnifiedGame
+            {
+                Title = "Tenant B personal game",
+                Slug = "tenant-b-personal",
+                PlayStatus = PlayStatus.Unplayed
+            };
+            tenantB.UnifiedGames.Add(game);
+            await tenantB.SaveChangesAsync();
+            foreignGameId = game.Id;
+        }
+
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var controller = CreateLibraryController(tenantA);
+
+            var result = await controller.UpdatePersonalTracking(
+                foreignGameId,
+                new PersonalUpdateRequest
+                {
+                    PlayStatus = PlayStatus.Completed,
+                    UserRating = 5,
+                    IsIgnored = true
+                });
+
+            Assert.IsType<NotFoundObjectResult>(result);
+            Assert.Empty(tenantA.ActivityLogs);
+        }
+
+        await using var verifyB = CreateContext(TenantB);
+        var unchanged = await verifyB.UnifiedGames.SingleAsync(game => game.Id == foreignGameId);
+        Assert.Equal(PlayStatus.Unplayed, unchanged.PlayStatus);
+        Assert.Null(unchanged.UserRating);
+        Assert.False(unchanged.IsIgnored);
+        Assert.False(unchanged.IsPlayStatusManual);
+        Assert.Empty(verifyB.ActivityLogs);
+    }
+
+    [Fact]
+    public async Task MergeGames_ForeignTenantSource_ReturnsNotFoundWithoutMutation()
+    {
+        int targetGameId;
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var target = CreateGameWithItem(
+                "Tenant A target",
+                "tenant-a-target",
+                Platform.Steam,
+                "tenant-a-steam");
+            tenantA.UnifiedGames.Add(target);
+            await tenantA.SaveChangesAsync();
+            targetGameId = target.Id;
+        }
+
+        int foreignSourceId;
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            var source = CreateGameWithItem(
+                "Tenant B source",
+                "tenant-b-source",
+                Platform.Gog,
+                "tenant-b-gog");
+            tenantB.UnifiedGames.Add(source);
+            await tenantB.SaveChangesAsync();
+            foreignSourceId = source.Id;
+        }
+
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var controller = CreateLibraryController(tenantA);
+
+            var result = await controller.MergeGames(new MergeRequest
+            {
+                SourceGameId = foreignSourceId,
+                TargetGameId = targetGameId
+            });
+
+            Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        await AssertTenantLibrariesUnchangedAsync(
+            targetGameId,
+            "tenant-a-steam",
+            foreignSourceId,
+            "tenant-b-gog");
+    }
+
+    [Fact]
+    public async Task MergeGames_ForeignTenantTarget_ReturnsNotFoundWithoutMutation()
+    {
+        int sourceGameId;
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var source = CreateGameWithItem(
+                "Tenant A source",
+                "tenant-a-source",
+                Platform.Gog,
+                "tenant-a-gog");
+            tenantA.UnifiedGames.Add(source);
+            await tenantA.SaveChangesAsync();
+            sourceGameId = source.Id;
+        }
+
+        int foreignTargetId;
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            var target = CreateGameWithItem(
+                "Tenant B target",
+                "tenant-b-target",
+                Platform.Steam,
+                "tenant-b-steam");
+            tenantB.UnifiedGames.Add(target);
+            await tenantB.SaveChangesAsync();
+            foreignTargetId = target.Id;
+        }
+
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var controller = CreateLibraryController(tenantA);
+
+            var result = await controller.MergeGames(new MergeRequest
+            {
+                SourceGameId = sourceGameId,
+                TargetGameId = foreignTargetId
+            });
+
+            Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        await AssertTenantLibrariesUnchangedAsync(
+            sourceGameId,
+            "tenant-a-gog",
+            foreignTargetId,
+            "tenant-b-steam");
+    }
+
+    [Fact]
+    public async Task SplitGame_ForeignTenantItem_ReturnsNotFoundWithoutMutation()
+    {
+        int foreignGameId;
+        int foreignItemId;
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            var game = CreateGameWithItem(
+                "Tenant B split game",
+                "tenant-b-split",
+                Platform.Psn,
+                "tenant-b-psn");
+            tenantB.UnifiedGames.Add(game);
+            await tenantB.SaveChangesAsync();
+            foreignGameId = game.Id;
+            foreignItemId = Assert.Single(game.Items).Id;
+        }
+
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var controller = CreateLibraryController(tenantA);
+
+            var result = await controller.SplitGame(new SplitRequest
+            {
+                LibraryItemId = foreignItemId
+            });
+
+            Assert.IsType<NotFoundObjectResult>(result);
+            Assert.Empty(tenantA.UnifiedGames);
+            Assert.Empty(tenantA.ManualLinks);
+            Assert.Empty(tenantA.ActivityLogs);
+        }
+
+        await using var verifyB = CreateContext(TenantB);
+        var unchanged = await verifyB.UnifiedGames
+            .Include(game => game.Items)
+            .SingleAsync(game => game.Id == foreignGameId);
+        Assert.Equal("tenant-b-psn", Assert.Single(unchanged.Items).ExternalId);
+        Assert.Empty(verifyB.ManualLinks);
+        Assert.Empty(verifyB.ActivityLogs);
     }
 
     [Fact]
@@ -166,6 +352,61 @@ public sealed class TenantIsolationTests : IDisposable
 
     private CoreContext CreateContext(Guid tenantId) =>
         new(_options, new FixedTenantContext(tenantId));
+
+    private static LibraryController CreateLibraryController(CoreContext db) =>
+        new(
+            null!,
+            null!,
+            db,
+            NullLogger<LibraryController>.Instance,
+            new SyncSchedulerStatus(),
+            new ActivityLogService(db),
+            null!);
+
+    private async Task AssertTenantLibrariesUnchangedAsync(
+        int tenantAGameId,
+        string tenantAExternalId,
+        int tenantBGameId,
+        string tenantBExternalId)
+    {
+        await using (var verifyA = CreateContext(TenantA))
+        {
+            var game = await verifyA.UnifiedGames
+                .Include(candidate => candidate.Items)
+                .SingleAsync(candidate => candidate.Id == tenantAGameId);
+            Assert.Equal(tenantAExternalId, Assert.Single(game.Items).ExternalId);
+            Assert.Empty(verifyA.ManualLinks);
+            Assert.Empty(verifyA.ActivityLogs);
+        }
+
+        await using var verifyB = CreateContext(TenantB);
+        var foreignGame = await verifyB.UnifiedGames
+            .Include(candidate => candidate.Items)
+            .SingleAsync(candidate => candidate.Id == tenantBGameId);
+        Assert.Equal(tenantBExternalId, Assert.Single(foreignGame.Items).ExternalId);
+        Assert.Empty(verifyB.ManualLinks);
+        Assert.Empty(verifyB.ActivityLogs);
+    }
+
+    private static UnifiedGame CreateGameWithItem(
+        string title,
+        string slug,
+        Platform platform,
+        string externalId) =>
+        new()
+        {
+            Title = title,
+            Slug = slug,
+            Items =
+            [
+                new LibraryItem
+                {
+                    Platform = platform,
+                    ExternalId = externalId,
+                    LastSynced = FixedNow.UtcDateTime
+                }
+            ]
+        };
 
     private static UnifiedGame CreateGame(string title)
     {

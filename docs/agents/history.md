@@ -23,6 +23,17 @@
 - A future Epic authentication and stored-retrieval integration is tracked separately in Roadmap
   item #16; it is not unfinished work in the current credential-management scope.
 
+**Tenant Isolation Verification:**
+- Direct cross-tenant controller tests now prove that personal tracking cannot mutate another
+  tenant's game, merge cannot use a foreign source or target, and split cannot detach another
+  tenant's library item.
+- Backup export and restore were confirmed to already use the active tenant boundary. Existing
+  tests cover non-leaking exports, restore alongside another tenant's data, tenant-owned writes,
+  and equivalent slugs/platform identifiers.
+- ADR-008 and Roadmap item #8 now reflect that tenant-scoped portability is implemented; the
+  remaining isolation audit, account lifecycle, production authentication, and guarded enablement
+  are still open.
+
 ### Known State / Pending
 
 - Roadmap item #8 still requires the remaining multi-user readiness and tenant-isolation work.
