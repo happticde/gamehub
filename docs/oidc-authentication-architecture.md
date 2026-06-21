@@ -216,7 +216,7 @@ sequenceDiagram
     P->>P: Authenticate user / MFA / provider policy
     P-->>U: Redirect with code + state
     U->>B: GET /api/auth/oidc/callback
-    B->>B: Open cookie; validate state, redirect, age, PKCE pair
+    B->>B: Open cookie, validate state, redirect, age, PKCE pair
     B->>P: POST code + verifier to token endpoint
     P-->>B: Signed ID token
     B->>C: POST /api/auth/oidc/link + BFF key + GameHub JWT + ID token + nonce
@@ -226,7 +226,7 @@ sequenceDiagram
     C->>D: Link exact (issuer, subject) to signed account/tenant
     D-->>C: Mapping stored or conflict
     C-->>B: 204 or generic/conflict error
-    B-->>U: Redirect to local return path; delete transaction cookie
+    B-->>U: Redirect to local return path, delete transaction cookie
 ```
 
 The destination account and tenant come only from the existing GameHub JWT. The linking request
@@ -249,29 +249,29 @@ GET /api/auth/oidc/start?returnTo=/library
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant U as Browser
-    participant B as Next.js BFF
-    participant P as OIDC Provider
-    participant C as Core
-    participant D as Core DB
+   autonumber
+   participant U as Browser
+   participant B as Next.js BFF
+   participant P as OIDC Provider
+   participant C as Core
+   participant D as Core DB
 
-    U->>B: Start OIDC login
-    B->>P: Authorization request (code, state, nonce, S256 challenge)
-    P->>P: Primary authentication, MFA, recovery policy
-    P-->>U: Browser redirect with one-time code + state
-    U->>B: Callback with code + state and sealed cookie
-    B->>B: Validate transaction correlation
-    B->>P: Exchange code + private verifier
-    P-->>B: Signed ID token
-    B->>C: POST /api/auth/oidc/token + BFF key + ID token + expected nonce
-    C->>P: Obtain cached/refreshed discovery and JWKS
-    C->>C: Validate signature, issuer, audience, time, algorithm, nonce, azp
-    C->>D: Find exact ExternalIdentity issuer/subject
-    D-->>C: Live UserAccount and Tenant
-    C->>D: Create rotating refresh session; update login timestamps
-    C-->>B: GameHub access JWT + opaque refresh token
-    B-->>U: HttpOnly session cookies + redirect; delete transaction cookie
+   U->>B: Start OIDC login
+   B->>P: Authorization request (code, state, nonce, S256 challenge)
+   P->>P: Primary authentication, MFA, recovery policy
+   P-->>U: Browser redirect with one-time code + state
+   U->>B: Callback with code + state and sealed cookie
+   B->>B: Validate transaction correlation
+   B->>P: Exchange code + private verifier
+   P-->>B: Signed ID token
+   B->>C: POST /api/auth/oidc/token + BFF key + ID token + expected nonce
+   C->>P: Obtain cached/refreshed discovery and JWKS
+   C->>C: Validate signature, issuer, audience, time, algorithm, nonce, azp
+   C->>D: Find exact ExternalIdentity issuer/subject
+   D-->>C: Live UserAccount and Tenant
+   C->>D: Create rotating refresh session, update login timestamps
+   C-->>B: GameHub access JWT + opaque refresh token
+   B-->>U: HttpOnly session cookies + redirect, delete transaction cookie
 ```
 
 ### Detailed validation order in Core
