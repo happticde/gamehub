@@ -98,6 +98,13 @@ and tags. Provider-specific SQLite and PostgreSQL migrations retain existing ass
 cross-tenant rows are normalized to an equivalent tag owned by the game's tenant before the new
 constraints are applied.
 
+The wider Roadmap #8 isolation gate is also complete. The remaining Core audit verified operational
+history and cursor paths (`ActivityLog`, `SyncAuditLog`, and `SyncMetadata`), their request and
+background-job boundaries, and tenant-specific scheduler status. SQLite and PostgreSQL upgrade
+tests prove that legacy operational rows retain their data and become owned by the default tenant.
+The complete path inventory and remaining account/rollout work are recorded in the
+[Core Tenant-Isolation Audit](../tenant-isolation-audit.md).
+
 ## Delivery Plan
 
 1. **Completed:** Add `GET /api/backup` for a downloadable V1 JSON document.

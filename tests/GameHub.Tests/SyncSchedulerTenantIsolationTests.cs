@@ -19,22 +19,23 @@ public sealed class SyncSchedulerTenantIsolationTests
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
     [Fact]
-    public async Task RunCycleAsync_MixedTenantPolicies_WritesOnlyTenantOwnedActivityAndAuditRows()
+    public async Task RunCycleAsync_MixedTenantPolicies_WritesOnlyTenantOwnedOperationalRows()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         await using var serviceProvider = CreateServiceProvider(connection);
         await SeedTenantsAsync(serviceProvider);
         var runner = serviceProvider.GetRequiredService<ITenantJobRunner>();
+        var status = new SyncSchedulerStatus();
         var scheduler = new SyncSchedulerService(
             runner,
             new ConfigurationBuilder().Build(),
             NullLogger<SyncSchedulerService>.Instance,
-            new SyncSchedulerStatus());
+            status);
 
         var processed = await scheduler.RunCycleAsync(CancellationToken.None);
 
-        Assert.Equal(0, processed);
+        Assert.Equal(Enum.GetValues<Platform>().Length, processed);
         using var verifyScope = serviceProvider.CreateScope();
         var db = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
         var activity = await db.ActivityLogs
@@ -57,6 +58,19 @@ public sealed class SyncSchedulerTenantIsolationTests
         Assert.Equal(Enum.GetValues<Platform>().Length, audit.Count);
         Assert.All(audit, log => Assert.Equal(TenantA, log.TenantId));
         Assert.All(audit, log => Assert.Equal("Success", log.Status));
+
+        var metadata = await db.SyncMetadata
+            .IgnoreQueryFilters()
+            .OrderBy(record => record.Platform)
+            .ToListAsync();
+        Assert.Equal(Enum.GetValues<Platform>().Length, metadata.Count);
+        Assert.All(metadata, record => Assert.Equal(TenantA, record.TenantId));
+
+        var tenantAStatus = status.GetSnapshot(TenantA);
+        var tenantBStatus = status.GetSnapshot(TenantB);
+        Assert.Equal("Success", tenantAStatus.LastResult);
+        Assert.Equal("Skipped", tenantBStatus.LastResult);
+        Assert.DoesNotContain("Skipped", tenantAStatus.LastResult);
     }
 
     private static ServiceProvider CreateServiceProvider(SqliteConnection connection)
@@ -123,8 +137,15 @@ public sealed class SyncSchedulerTenantIsolationTests
             {
                 Content = JsonContent.Create(new PagedResult<RawGameDto>
                 {
-                    Items = [],
-                    TotalCount = 0,
+                    Items =
+                    [
+                        new RawGameDto
+                        {
+                            Id = "scheduler-game",
+                            Name = "Scheduler game"
+                        }
+                    ],
+                    TotalCount = 1,
                     Page = 1,
                     PageSize = 200
                 })

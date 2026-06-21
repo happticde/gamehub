@@ -1,5 +1,6 @@
 using System.Data.Common;
 using GameHub.Core.Data;
+using GameHub.Shared;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -13,6 +14,55 @@ public sealed class PostgresTagRelationshipMigrationTests
 {
     private static readonly Guid TenantA = TenantDefaults.DefaultTenantId;
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
+
+    [Fact]
+    public async Task TenantFoundationMigration_OperationalHistoryIsPreservedForDefaultTenant()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            var migrator = db.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260324123258_AddActivityLog");
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO "ActivityLogs" ("Timestamp", "EventType", "Message", "Details")
+                VALUES (TIMESTAMPTZ '2026-06-19 10:00:00+00', 'LegacyActivity', 'Legacy activity preserved', 'legacy-details');
+                INSERT INTO "SyncAuditLogs"
+                    ("Timestamp", "Platform", "Status", "ItemsProcessed", "NewGamesCreated", "ErrorMessage")
+                VALUES (TIMESTAMPTZ '2026-06-19 11:00:00+00', 0, 'Error', 12, 3, 'Legacy sync audit preserved');
+                INSERT INTO "SyncMetadata" ("Platform", "LastSyncedAt")
+                VALUES (0, TIMESTAMPTZ '2026-06-19 12:00:00+00');
+                """);
+
+            await migrator.MigrateAsync();
+            db.ChangeTracker.Clear();
+
+            var activity = await db.ActivityLogs.SingleAsync();
+            Assert.Equal(TenantA, activity.TenantId);
+            Assert.Equal("Legacy activity preserved", activity.Message);
+            var audit = await db.SyncAuditLogs.SingleAsync();
+            Assert.Equal(TenantA, audit.TenantId);
+            Assert.Equal("Legacy sync audit preserved", audit.ErrorMessage);
+            var metadata = await db.SyncMetadata.SingleAsync();
+            Assert.Equal(TenantA, metadata.TenantId);
+            Assert.Equal(Platform.Steam, metadata.Platform);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
 
     [Fact]
     public async Task TenantTagRelationshipMigration_ExistingAssignmentsPreservedAndCrossTenantRejected()

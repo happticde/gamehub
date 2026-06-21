@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Reflection;
 using Xunit;
 
 namespace GameHub.Tests;
@@ -67,6 +68,75 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.Equal(TenantB, (await verifyB.Tags.SingleAsync()).TenantId);
         Assert.Equal(2, await verifyA.UnifiedGames.IgnoreQueryFilters().CountAsync());
         Assert.Equal(2, await verifyA.ManualLinks.IgnoreQueryFilters().CountAsync());
+    }
+
+    [Fact]
+    public async Task OperationalHistoryReads_ActiveTenant_DoNotExposeOtherTenant()
+    {
+        await SeedOperationalHistoryAsync(TenantA, "Tenant A", new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc));
+        await SeedOperationalHistoryAsync(TenantB, "Tenant B secret", new DateTime(2026, 6, 21, 11, 0, 0, DateTimeKind.Utc));
+
+        await using var tenantA = CreateContext(TenantA);
+        var controller = CreateLibraryController(tenantA, TenantA);
+
+        var activityResult = Assert.IsType<OkObjectResult>(await controller.GetActivity());
+        var activity = Assert.Single(Assert.IsAssignableFrom<IEnumerable<object>>(activityResult.Value));
+        Assert.Equal("Tenant A activity", GetProperty<string>(activity, "Message"));
+
+        var syncResult = Assert.IsType<OkObjectResult>(await controller.GetSyncHistory(null));
+        var syncLog = Assert.Single(Assert.IsAssignableFrom<IEnumerable<SyncAuditLog>>(syncResult.Value));
+        Assert.Equal("Tenant A sync error", syncLog.ErrorMessage);
+        Assert.Equal(TenantA, syncLog.TenantId);
+
+        var metadata = await tenantA.SyncMetadata.SingleAsync();
+        Assert.Equal(Platform.Steam, metadata.Platform);
+        Assert.Equal(new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc), metadata.LastSyncedAt);
+        Assert.Equal(TenantA, metadata.TenantId);
+    }
+
+    [Fact]
+    public async Task SyncStatus_ActiveTenant_DoesNotExposeOtherTenantResult()
+    {
+        var status = new SyncSchedulerStatus { IsEnabled = true };
+        status.MarkCompleted(TenantA, 7);
+        status.MarkFailed(TenantB, "Tenant B secret failure");
+
+        await using var tenantADb = CreateContext(TenantA);
+        await using var tenantBDb = CreateContext(TenantB);
+        var tenantAResult = Assert.IsType<OkObjectResult>(
+            CreateLibraryController(tenantADb, TenantA, status).GetSyncStatus());
+        var tenantBResult = Assert.IsType<OkObjectResult>(
+            CreateLibraryController(tenantBDb, TenantB, status).GetSyncStatus());
+        var tenantASnapshot = Assert.IsType<SyncSchedulerSnapshot>(tenantAResult.Value);
+        var tenantBSnapshot = Assert.IsType<SyncSchedulerSnapshot>(tenantBResult.Value);
+
+        Assert.Equal("Success", tenantASnapshot.LastResult);
+        Assert.Equal(7, tenantASnapshot.ItemsProcessed);
+        Assert.Equal("Tenant B secret failure", tenantBSnapshot.LastResult);
+        Assert.Equal(0, tenantBSnapshot.ItemsProcessed);
+    }
+
+    [Theory]
+    [InlineData("activity")]
+    [InlineData("sync-audit")]
+    [InlineData("sync-metadata")]
+    public async Task OperationalRecordWrite_ExplicitDifferentTenant_IsRejected(string recordType)
+    {
+        await using var tenantA = CreateContext(TenantA);
+        tenantA.Add(recordType switch
+        {
+            "activity" => new ActivityLog { TenantId = TenantB, EventType = "Test", Message = "Foreign" },
+            "sync-audit" => new SyncAuditLog { TenantId = TenantB, Platform = Platform.Steam, Status = "Success" },
+            "sync-metadata" => new SyncMetadata
+            {
+                TenantId = TenantB,
+                Platform = Platform.Steam,
+                LastSyncedAt = FixedNow.UtcDateTime
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(recordType), recordType, null)
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => tenantA.SaveChangesAsync());
     }
 
     [Fact]
@@ -394,6 +464,15 @@ public sealed class TenantIsolationTests : IDisposable
         await migrator.MigrateAsync("20260324123259_AddActivityLog");
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO UnifiedGames (Title, Slug) VALUES ('Legacy game', 'legacy-game')");
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO ActivityLogs (Timestamp, EventType, Message, Details)
+            VALUES ('2026-06-19 10:00:00', 'LegacyActivity', 'Legacy activity preserved', 'legacy-details');
+            INSERT INTO SyncAuditLogs
+                (Timestamp, Platform, Status, ItemsProcessed, NewGamesCreated, ErrorMessage)
+            VALUES ('2026-06-19 11:00:00', 0, 'Error', 12, 3, 'Legacy sync audit preserved');
+            INSERT INTO SyncMetadata (Platform, LastSyncedAt)
+            VALUES (0, '2026-06-19 12:00:00');
+            """);
 
         await migrator.MigrateAsync();
         db.ChangeTracker.Clear();
@@ -405,6 +484,15 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.True(defaultTenant.PlatformSyncEnabled);
         Assert.Empty(db.UserAccounts);
         Assert.Empty(db.RefreshTokenSessions);
+        var activity = await db.ActivityLogs.SingleAsync();
+        Assert.Equal(TenantA, activity.TenantId);
+        Assert.Equal("Legacy activity preserved", activity.Message);
+        var audit = await db.SyncAuditLogs.SingleAsync();
+        Assert.Equal(TenantA, audit.TenantId);
+        Assert.Equal("Legacy sync audit preserved", audit.ErrorMessage);
+        var metadata = await db.SyncMetadata.SingleAsync();
+        Assert.Equal(TenantA, metadata.TenantId);
+        Assert.Equal(Platform.Steam, metadata.Platform);
     }
 
     [Theory]
@@ -508,15 +596,46 @@ public sealed class TenantIsolationTests : IDisposable
     private CoreContext CreateContext(Guid tenantId) =>
         new(_options, new FixedTenantContext(tenantId));
 
-    private static LibraryController CreateLibraryController(CoreContext db) =>
+    private static LibraryController CreateLibraryController(
+        CoreContext db,
+        Guid? tenantId = null,
+        SyncSchedulerStatus? syncStatus = null) =>
         new(
             null!,
             null!,
             db,
             NullLogger<LibraryController>.Instance,
-            new SyncSchedulerStatus(),
+            syncStatus ?? new SyncSchedulerStatus(),
+            new FixedTenantContext(tenantId ?? TenantA),
             new ActivityLogService(db),
             null!);
+
+    private async Task SeedOperationalHistoryAsync(Guid tenantId, string marker, DateTime lastSyncedAt)
+    {
+        await using var db = CreateContext(tenantId);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            EventType = "TenantAudit",
+            Message = $"{marker} activity"
+        });
+        db.SyncAuditLogs.Add(new SyncAuditLog
+        {
+            Platform = Platform.Steam,
+            Status = "Error",
+            ErrorMessage = $"{marker} sync error"
+        });
+        db.SyncMetadata.Add(new SyncMetadata
+        {
+            Platform = Platform.Steam,
+            LastSyncedAt = lastSyncedAt
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static T GetProperty<T>(object instance, string propertyName) =>
+        (T)(instance.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
+            ?.GetValue(instance)
+            ?? throw new InvalidOperationException($"Property '{propertyName}' was not found."));
 
     private async Task AssertTenantLibrariesUnchangedAsync(
         int tenantAGameId,

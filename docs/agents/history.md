@@ -4,6 +4,17 @@
 
 ### What Changed
 
+**Remaining Core Tenant-Isolation Audit:**
+- Audited user-owned Core API, service, sync, background-job, backup, credential-policy, and
+  identity/session paths, with a durable inventory in `docs/tenant-isolation-audit.md`.
+- Added direct two-tenant coverage for ActivityLog, SyncAuditLog, and SyncMetadata reads and writes.
+- Fixed `/api/library/sync/status`: per-tenant results, error text, running state, and processed counts
+  can no longer leak through the formerly global singleton status.
+- Added SQLite and real PostgreSQL upgrade tests proving that legacy operational history/cursors are
+  preserved and assigned to the default tenant by the existing tenant-foundation migrations.
+- Marked the Roadmap #8 isolation gate complete. Account lifecycle, production authentication, and
+  guarded multi-user enablement remain open; multi-user operation is still not enabled.
+
 **Core/Frontend Platform Credential Management:**
 - Core now exposes authenticated, tenant-scoped credential status, upsert, and deletion endpoints
   while forwarding secrets only to Ingest's internal service-key-protected vault API.
@@ -50,7 +61,8 @@
 
 ### Known State / Pending
 
-- Roadmap item #8 still requires the remaining multi-user readiness and tenant-isolation work.
+- Roadmap item #8 still requires account lifecycle, production authentication, and guarded
+  enablement work. The tenant-isolation gate is complete.
 - Future Epic authentication and stored retrieval are independently tracked in Roadmap item #16.
 
 ## Previous Session Summary (2026-06-20)
