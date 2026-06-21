@@ -94,9 +94,7 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId");
-
-                    b.HasIndex("UnifiedGameId");
+                    b.HasIndex("TenantId", "UnifiedGameId");
 
                     b.ToTable("EnrichmentAuditLogs");
                 });
@@ -129,8 +127,6 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UnifiedGameId");
-
                     b.HasIndex("TenantId", "UnifiedGameId", "Platform")
                         .IsUnique();
 
@@ -162,7 +158,7 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UnifiedGameId");
+                    b.HasIndex("TenantId", "UnifiedGameId");
 
                     b.HasIndex("TenantId", "Platform", "ExternalId")
                         .IsUnique();
@@ -402,6 +398,8 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "Id");
+
                     b.HasIndex("TenantId", "Slug")
                         .IsUnique();
 
@@ -488,7 +486,8 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
                         .WithMany()
-                        .HasForeignKey("UnifiedGameId")
+                        .HasForeignKey("TenantId", "UnifiedGameId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -505,7 +504,8 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
                         .WithMany("Items")
-                        .HasForeignKey("UnifiedGameId")
+                        .HasForeignKey("TenantId", "UnifiedGameId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -522,7 +522,8 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
                         .WithMany()
-                        .HasForeignKey("UnifiedGameId")
+                        .HasForeignKey("TenantId", "UnifiedGameId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 

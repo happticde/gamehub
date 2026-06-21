@@ -36,6 +36,11 @@
 - The background-enrichment batch is independently testable as well. A two-tenant integration test
   proves that the batch limit is applied per tenant and that enriched games and audit rows retain
   the correct owner without starving later tenants.
+- Core now enforces tenant-aware game relationships below the query-filter layer. Library items,
+  manual links, and enrichment audits use composite tenant/game relationships in the EF model and
+  PostgreSQL; SQLite uses equivalent insert/update guard triggers in its upgrade-safe migration.
+- Cross-tenant writes are rejected for all three relationships in both newly created schemas and
+  databases upgraded from the previous migration.
 - ADR-008 and Roadmap item #8 now reflect that tenant-scoped portability is implemented; the
   remaining isolation audit, account lifecycle, production authentication, and guarded enablement
   are still open.

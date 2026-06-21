@@ -106,9 +106,17 @@ public class CoreContext : DbContext
         modelBuilder.Entity<UnifiedGame>()
             .HasIndex(game => new { game.TenantId, game.Slug })
             .IsUnique();
+        modelBuilder.Entity<UnifiedGame>()
+            .HasAlternateKey(game => new { game.TenantId, game.Id });
         modelBuilder.Entity<LibraryItem>()
             .HasIndex(item => new { item.TenantId, item.UnifiedGameId, item.Platform })
             .IsUnique();
+        modelBuilder.Entity<LibraryItem>()
+            .HasOne(item => item.UnifiedGame)
+            .WithMany(game => game.Items)
+            .HasForeignKey(item => new { item.TenantId, item.UnifiedGameId })
+            .HasPrincipalKey(game => new { game.TenantId, game.Id })
+            .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<Tag>()
             .HasIndex(tag => new { tag.TenantId, tag.Name })
             .IsUnique();
@@ -118,6 +126,18 @@ public class CoreContext : DbContext
         modelBuilder.Entity<ManualLink>()
             .HasIndex(link => new { link.TenantId, link.Platform, link.ExternalId })
             .IsUnique();
+        modelBuilder.Entity<ManualLink>()
+            .HasOne(link => link.UnifiedGame)
+            .WithMany()
+            .HasForeignKey(link => new { link.TenantId, link.UnifiedGameId })
+            .HasPrincipalKey(game => new { game.TenantId, game.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<EnrichmentAuditLog>()
+            .HasOne(log => log.UnifiedGame)
+            .WithMany()
+            .HasForeignKey(log => new { log.TenantId, log.UnifiedGameId })
+            .HasPrincipalKey(game => new { game.TenantId, game.Id })
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

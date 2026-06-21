@@ -25,6 +25,9 @@ Two ASP.NET Core microservices:
   Core alone delegates the tenant and forwards credential bodies to Ingest. Responses contain only
   configuration status and timestamps. `PlatformSyncEnabled` is never client-settable.
 - DB: `Database:Provider` (`Sqlite`/`Postgres`), connection strings in `ConnectionStrings` section.
+- Tenant-owned game relationships: Library items, manual links, and enrichment audit rows reference
+  games through `(TenantId, UnifiedGameId)`. PostgreSQL enforces composite foreign keys; SQLite
+  migrations preserve existing tables and enforce the same insert/update boundary with triggers.
 - Core→Ingest URL: `Services:IngestUrl` (default `http://localhost:5000`).
 - Provisioned tenants start platform-sync disabled. Core enables them only after a fresh vault
   status confirms at least one Steam, GOG, or PSN credential. Deletion disables first and only
