@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using GameHub.Core.Data;
 using GameHub.Core.Models.Auth;
 using GameHub.Core.Services;
@@ -25,6 +26,7 @@ public sealed class AuthController : ControllerBase
     private readonly AccountService _accounts;
     private readonly JwtTokenService _tokens;
     private readonly RefreshTokenService _refreshTokens;
+    private readonly AccountDeletionService _deletion;
     private readonly ITenantContext _tenantContext;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
@@ -34,6 +36,7 @@ public sealed class AuthController : ControllerBase
         AccountService accounts,
         JwtTokenService tokens,
         RefreshTokenService refreshTokens,
+        AccountDeletionService deletion,
         ITenantContext tenantContext,
         IConfiguration configuration,
         ILogger<AuthController> logger)
@@ -41,6 +44,7 @@ public sealed class AuthController : ControllerBase
         _accounts = accounts;
         _tokens = tokens;
         _refreshTokens = refreshTokens;
+        _deletion = deletion;
         _tenantContext = tenantContext;
         _configuration = configuration;
         _logger = logger;
@@ -297,6 +301,135 @@ public sealed class AuthController : ControllerBase
         // local token whether it was active, expired, already revoked, or completely unknown.
         await _refreshTokens.RevokeAsync(request.RefreshToken, cancellationToken);
         return NoContent();
+    }
+
+    /// <summary>
+    /// PUT: api/auth/password
+    /// Changes the signed account's password after checking the current password and revokes
+    /// every refresh session for that account.
+    /// </summary>
+    [HttpPut("password")]
+    [Authorize]
+    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword(
+        [FromBody] ChangePasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAuthenticatedIdentity(out var accountId, out var tenantId))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_authentication_required",
+                "A tenant account access token is required."));
+        }
+
+        var result = await _accounts.ChangePasswordAsync(
+            accountId,
+            tenantId,
+            request.CurrentPassword,
+            request.NewPassword,
+            cancellationToken);
+        if (!result.Changed)
+        {
+            var error = new AuthErrorResponse(result.ErrorCode!, result.ErrorMessage!);
+            return result.ErrorCode == "account_identity_mismatch"
+                ? Unauthorized(error)
+                : BadRequest(error);
+        }
+
+        _logger.LogInformation(
+            "Changed password and revoked refresh sessions for account {AccountId} in tenant {TenantId}",
+            accountId,
+            tenantId);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// POST: api/auth/revoke-all
+    /// Explicitly revokes every refresh session for the signed account.
+    /// </summary>
+    [HttpPost("revoke-all")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RevokeAll(CancellationToken cancellationToken)
+    {
+        if (!TryGetAuthenticatedIdentity(out var accountId, out var tenantId)
+            || !await _accounts.RevokeAllSessionsAsync(accountId, tenantId, cancellationToken))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_authentication_required",
+                "A current tenant account access token is required."));
+        }
+
+        _logger.LogInformation(
+            "Revoked all refresh sessions for account {AccountId} in tenant {TenantId}",
+            accountId,
+            tenantId);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// DELETE: api/auth/account
+    /// Idempotently deletes the signed account, its Core tenant data, and delegated Ingest data.
+    /// </summary>
+    [HttpDelete("account")]
+    [Authorize]
+    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> DeleteAccount(
+        [FromBody] DeleteAccountRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAuthenticatedIdentity(out var accountId, out var tenantId))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_authentication_required",
+                "A tenant account access token is required."));
+        }
+
+        var result = await _deletion.DeleteAsync(
+            accountId,
+            tenantId,
+            request.CurrentPassword,
+            cancellationToken);
+        return result switch
+        {
+            AccountDeletionResult.Deleted or AccountDeletionResult.AlreadyDeleted => NoContent(),
+            AccountDeletionResult.InvalidCurrentPassword => BadRequest(new AuthErrorResponse(
+                "invalid_current_password",
+                "Current password is invalid.")),
+            AccountDeletionResult.IdentityMismatch => Unauthorized(new AuthErrorResponse(
+                "account_identity_mismatch",
+                "The authenticated account does not match the tenant.")),
+            AccountDeletionResult.IngestCleanupFailed => StatusCode(
+                StatusCodes.Status502BadGateway,
+                new AuthErrorResponse(
+                    "account_deletion_incomplete",
+                    "Ingest cleanup did not complete. The account remains pending deletion and the request can be retried.")),
+            _ => StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new AuthErrorResponse(
+                    "account_deletion_incomplete",
+                    "Core cleanup did not complete. The account remains pending deletion and the request can be retried."))
+        };
+    }
+
+    private bool TryGetAuthenticatedIdentity(out Guid accountId, out Guid tenantId)
+    {
+        accountId = Guid.Empty;
+        tenantId = Guid.Empty;
+        return Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out accountId)
+            && accountId != Guid.Empty
+            && Guid.TryParse(User.FindFirstValue(GameHubClaimTypes.TenantId), out tenantId)
+            && tenantId != Guid.Empty
+            && tenantId == _tenantContext.TenantId;
     }
 
     private static TokenResponse CreateTokenResponse(

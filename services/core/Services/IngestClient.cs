@@ -154,6 +154,17 @@ public class IngestClient
         await EnsurePlatformCredentialSuccessAsync(response, cancellationToken);
     }
 
+    /// <summary>
+    /// Idempotently deletes every Ingest row, including encrypted credentials, for the active
+    /// tenant selected by Core's trusted delegation headers.
+    /// </summary>
+    public async Task DeleteTenantDataAsync(CancellationToken cancellationToken = default)
+    {
+        using var request = CreateDelegatedRequest(HttpMethod.Delete, "/api/internal/tenant");
+        using var response = await _http.SendAsync(request, cancellationToken);
+        await EnsurePlatformCredentialSuccessAsync(response, cancellationToken);
+    }
+
     private static async Task EnsurePlatformCredentialSuccessAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)

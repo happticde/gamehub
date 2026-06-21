@@ -61,7 +61,16 @@ async function proxyCore(request: NextRequest, context: CoreRouteContext): Promi
     }
 
     const response = copyCoreResponse(upstream);
-    if (rotatedTokens) {
+    const completedAccountLifecycleAction = upstream.ok && (
+        corePath === "/auth/password" ||
+        corePath === "/auth/revoke-all" ||
+        corePath === "/auth/account"
+    );
+    if (completedAccountLifecycleAction) {
+        // Core has invalidated every refresh session (or deleted the account). Remove both
+        // cookies immediately so the browser cannot keep presenting the still-unexpired JWT.
+        clearAuthCookies(response);
+    } else if (rotatedTokens) {
         setAuthCookies(response, rotatedTokens);
     } else if (upstream.status === 401) {
         clearAuthCookies(response);

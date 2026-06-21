@@ -4,6 +4,19 @@
 
 ### What Changed
 
+**Initial Account Lifecycle:**
+- Added ADR-010 covering operator-controlled provisioning, authenticated password changes,
+  account-wide refresh-session revocation, the no-email-provider recovery boundary, deletion,
+  partial failures, and the explicit non-activation of multi-user mode.
+- Password changes verify the current password and atomically revoke every refresh session.
+  Explicit global revocation is scoped to the signed account/tenant pair.
+- Account deletion enters a durable fail-closed state, disables sync and revokes sessions, then
+  idempotently deletes all Ingest data including encrypted credential rows before transactionally
+  removing Core user-owned data, identity, and provisioned tenant rows.
+- Direct two-tenant tests cover password/session isolation, stale refresh tokens, exclusive
+  deletion, repeated deletion, Ingest failure/retry, encrypted credential cleanup, and preserved
+  default-tenant upgrades on SQLite and real PostgreSQL.
+
 **Remaining Core Tenant-Isolation Audit:**
 - Audited user-owned Core API, service, sync, background-job, backup, credential-policy, and
   identity/session paths, with a durable inventory in `docs/tenant-isolation-audit.md`.
@@ -12,8 +25,8 @@
   can no longer leak through the formerly global singleton status.
 - Added SQLite and real PostgreSQL upgrade tests proving that legacy operational history/cursors are
   preserved and assigned to the default tenant by the existing tenant-foundation migrations.
-- Marked the Roadmap #8 isolation gate complete. Account lifecycle, production authentication, and
-  guarded multi-user enablement remain open; multi-user operation is still not enabled.
+- Marked the Roadmap #8 isolation gate complete. The lifecycle work above followed that audit;
+  production authentication and guarded multi-user enablement remain open.
 
 **Core/Frontend Platform Credential Management:**
 - Core now exposes authenticated, tenant-scoped credential status, upsert, and deletion endpoints
@@ -55,14 +68,13 @@
 - Tag-to-game assignments are now tenant-owned join rows with composite game/tag foreign keys.
   SQLite and PostgreSQL upgrade tests prove that existing assignments survive, legacy cross-tenant
   rows are retained through tenant-local tags, and new cross-tenant relations are rejected.
-- ADR-008 and Roadmap item #8 now reflect that tenant-scoped portability is implemented; the
-  remaining isolation audit, account lifecycle, production authentication, and guarded enablement
-  are still open.
+- ADR-008 and Roadmap item #8 reflect that tenant-scoped portability is implemented. The remaining
+  isolation audit and initial account lifecycle were subsequently completed in this session.
 
 ### Known State / Pending
 
-- Roadmap item #8 still requires account lifecycle, production authentication, and guarded
-  enablement work. The tenant-isolation gate is complete.
+- Roadmap item #8 still requires production authentication/recovery and guarded enablement work.
+  The tenant-isolation and initial account-lifecycle gates are complete.
 - Future Epic authentication and stored retrieval are independently tracked in Roadmap item #16.
 
 ## Previous Session Summary (2026-06-20)

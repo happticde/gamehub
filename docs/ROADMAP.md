@@ -78,9 +78,13 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   and the in-memory scheduler status. Direct tests prove tenant-isolated operational history,
   foreign-owner write rejection, tenant-specific scheduler results, and SQLite/PostgreSQL upgrade
   preservation. See [Core Tenant-Isolation Audit](tenant-isolation-audit.md).
-- **Remaining account work**: Define the supported multi-user account lifecycle and complete the
-  chosen production authentication flow. OAuth remains an account/authentication option; Epic
-  integration is outside this item.
+- **Account lifecycle (2026-06-21)**: Operator-controlled provisioning, current-password-verified
+  password changes, account-wide refresh-session revocation, fail-closed/idempotent Core+Ingest
+  tenant deletion (including encrypted credentials), and the no-email-provider recovery boundary
+  are defined in [ADR-010](adr/010-account-lifecycle.md) and directly tested. This does not enable
+  multi-user operation.
+- **Remaining account work**: Complete the chosen production authentication and recovery flow.
+  OAuth remains an account/authentication option; Epic integration is outside this item.
 - **Remaining rollout work**: Add an explicit, guarded multi-user enablement path only after the
   isolation, portability, verification, and account-lifecycle gates are complete.
 
@@ -140,7 +144,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
-| **Multi-user readiness** | #8 account lifecycle and production auth → guarded enablement (isolation audit complete) |
+| **Multi-user readiness** | #8 production auth/recovery → guarded enablement (isolation + lifecycle gates complete) |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |

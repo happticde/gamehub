@@ -65,10 +65,13 @@ public sealed class RefreshTokenService
         var existing = await _db.RefreshTokenSessions
             .AsNoTracking()
             .Include(session => session.UserAccount)
+                .ThenInclude(account => account!.Tenant)
             .SingleOrDefaultAsync(
                 session => session.TokenHash == tokenHash,
                 cancellationToken);
-        if (existing?.UserAccount is null || existing.ExpiresAtUtc <= nowUtc)
+        if (existing?.UserAccount is null
+            || existing.UserAccount.Tenant?.DeletionRequestedAtUtc is not null
+            || existing.ExpiresAtUtc <= nowUtc)
         {
             // Unknown and naturally expired tokens get the same result. This avoids turning
             // the endpoint into an oracle that reveals which session secrets once existed.

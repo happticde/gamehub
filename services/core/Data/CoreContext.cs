@@ -57,6 +57,7 @@ public class CoreContext : DbContext
                 // Preserve sync for the legacy compatibility tenant. Newly provisioned tenants
                 // start disabled and Core activates them only from verified vault state.
                 PlatformSyncEnabled = true,
+                DeletionRequestedAtUtc = null,
                 CreatedAtUtc = new DateTime(2026, 6, 19, 0, 0, 0, DateTimeKind.Utc)
             });
         });

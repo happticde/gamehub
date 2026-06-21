@@ -223,6 +223,7 @@ public sealed class AuthControllerTests : IDisposable
             _accounts,
             new JwtTokenService(jwtSettings, new AccountServiceTests.FixedTimeProvider(FixedNow)),
             _refreshTokens,
+            null!,
             new DefaultTenantContext(),
             configuration,
             NullLogger<AuthController>.Instance);

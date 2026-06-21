@@ -88,6 +88,15 @@ public class SyncSchedulerStatus
         }
     }
 
+    /// <summary>Removes the last in-memory result for a tenant whose account was deleted.</summary>
+    public void RemoveTenant(Guid tenantId)
+    {
+        lock (_lock)
+        {
+            _tenantStatuses.Remove(tenantId);
+        }
+    }
+
     private TenantSyncSchedulerStatus GetOrCreateTenantStatus(Guid tenantId)
     {
         if (tenantId == Guid.Empty)

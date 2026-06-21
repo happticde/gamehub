@@ -482,6 +482,7 @@ public sealed class TenantIsolationTests : IDisposable
         var defaultTenant = await db.Tenants.SingleAsync();
         Assert.Equal("Default", defaultTenant.Name);
         Assert.True(defaultTenant.PlatformSyncEnabled);
+        Assert.Null(defaultTenant.DeletionRequestedAtUtc);
         Assert.Empty(db.UserAccounts);
         Assert.Empty(db.RefreshTokenSessions);
         var activity = await db.ActivityLogs.SingleAsync();
@@ -510,13 +511,10 @@ public sealed class TenantIsolationTests : IDisposable
         await using var tenantA = new CoreContext(options, new FixedTenantContext(TenantA));
         var migrator = tenantA.Database.GetService<IMigrator>();
         await migrator.MigrateAsync("20260620094428_AddRefreshTokenSessions");
-        tenantA.Tenants.Add(new Tenant
-        {
-            Id = TenantB,
-            Name = "Tenant B",
-            CreatedAtUtc = FixedNow.UtcDateTime
-        });
-        await tenantA.SaveChangesAsync();
+        await tenantA.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "Tenants" ("Id", "Name", "PlatformSyncEnabled", "CreatedAtUtc")
+            VALUES ({TenantB}, {"Tenant B"}, {false}, {FixedNow.UtcDateTime})
+            """);
 
         int foreignGameId;
         await using (var tenantB = new CoreContext(options, new FixedTenantContext(TenantB)))
@@ -550,12 +548,10 @@ public sealed class TenantIsolationTests : IDisposable
         await using var tenantA = new CoreContext(options, new FixedTenantContext(TenantA));
         var migrator = tenantA.Database.GetService<IMigrator>();
         await migrator.MigrateAsync("20260621110001_EnforceTenantGameRelationships");
-        tenantA.Tenants.Add(new Tenant
-        {
-            Id = TenantB,
-            Name = "Tenant B",
-            CreatedAtUtc = FixedNow.UtcDateTime
-        });
+        await tenantA.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "Tenants" ("Id", "Name", "PlatformSyncEnabled", "CreatedAtUtc")
+            VALUES ({TenantB}, {"Tenant B"}, {false}, {FixedNow.UtcDateTime})
+            """);
         var game = new UnifiedGame { Title = "Existing game", Slug = "existing-game" };
         var localTag = new Tag { Name = "Local tag" };
         tenantA.AddRange(game, localTag);

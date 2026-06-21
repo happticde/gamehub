@@ -104,6 +104,38 @@ Content-Type: application/json
 Revocation returns `204 No Content` whether the token was active, expired, or unknown. Clients
 should always discard their local access and refresh tokens after this request.
 
+## Change the Password
+
+`PUT /api/auth/password` requires a bearer token and both the current and replacement password.
+The current password must verify, the new password must be 12–128 characters and different, and
+Core revokes every refresh session in the same transaction as the password hash change.
+
+## Revoke Every Session
+
+`POST /api/auth/revoke-all` requires a bearer token and revokes every refresh session for the
+signed account/tenant pair. Password changes and global revocation invalidate refresh tokens
+immediately. Existing stateless access JWTs cannot be recalled and remain valid until their short
+expiry; clients must discard them. The GameHub BFF clears both HttpOnly cookies after success.
+
+## Delete the Account and Tenant
+
+`DELETE /api/auth/account` requires a bearer token and `{ "currentPassword": "..." }`. Core first
+disables sync, records a pending-deletion state, and revokes refresh sessions. It then asks Ingest
+to delete all delegated raw data, audit rows, and encrypted platform credentials. Core deletes its
+library, operational history, account, and provisioned tenant only after Ingest succeeds.
+
+An Ingest failure returns HTTP 502; a Core cleanup failure after Ingest returns HTTP 503. Both use
+`account_deletion_incomplete`, never claim success, and are safe to retry. Pending tenants cannot
+use ordinary JWT-protected APIs. The seeded default tenant row is retained empty and disabled for
+single-user upgrade/bootstrap compatibility; all of its account-owned data is still removed.
+
+## Recovery Boundary
+
+GameHub currently has no trusted email provider and therefore offers no forgot-password,
+email-reset, recovery-code, or administrative password-replacement API. Losing the password and
+all active sessions requires trusted operator recovery outside the public API. This must be
+revisited as part of production authentication before guarded multi-user enablement. See ADR-010.
+
 ## Frontend Session
 
 The Next.js frontend signs in through `POST /api/auth/login` on its own origin. Its BFF calls
