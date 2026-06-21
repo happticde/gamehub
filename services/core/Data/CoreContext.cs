@@ -20,6 +20,9 @@ public class CoreContext : DbContext
     /// <summary>Hashed, revocable refresh-token sessions for local accounts.</summary>
     public DbSet<RefreshTokenSession> RefreshTokenSessions => Set<RefreshTokenSession>();
 
+    /// <summary>Stable OIDC issuer/subject mappings to existing account and tenant pairs.</summary>
+    public DbSet<ExternalIdentity> ExternalIdentities => Set<ExternalIdentity>();
+
     // --- Unified Tables (Owned by Core) ---
     public DbSet<UnifiedGame> UnifiedGames => Set<UnifiedGame>();
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
@@ -75,6 +78,7 @@ public class CoreContext : DbContext
             // unique because this initial account model supports one owner account per tenant.
             entity.HasIndex(account => account.NormalizedEmail).IsUnique();
             entity.HasIndex(account => account.TenantId).IsUnique();
+            entity.HasAlternateKey(account => new { account.TenantId, account.Id });
             entity.HasOne(account => account.Tenant)
                 .WithMany()
                 .HasForeignKey(account => account.TenantId)
@@ -92,6 +96,23 @@ public class CoreContext : DbContext
             entity.HasOne(session => session.UserAccount)
                 .WithMany(account => account.RefreshTokenSessions)
                 .HasForeignKey(session => session.UserAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ExternalIdentity>(entity =>
+        {
+            // Login happens before a tenant is known, so this identity table is intentionally
+            // global. Only the exact, case-sensitive issuer/subject pair may locate a mapping.
+            entity.Property(identity => identity.Issuer).HasMaxLength(2048);
+            entity.Property(identity => identity.Subject).HasMaxLength(255);
+            entity.HasIndex(identity => new { identity.Issuer, identity.Subject }).IsUnique();
+            // A GameHub account may link only one subject from a given issuer. Replacing it
+            // requires an explicit unlink/relink design rather than an implicit email match.
+            entity.HasIndex(identity => new { identity.UserAccountId, identity.Issuer }).IsUnique();
+            entity.HasOne(identity => identity.UserAccount)
+                .WithMany(account => account.ExternalIdentities)
+                .HasForeignKey(identity => new { identity.TenantId, identity.UserAccountId })
+                .HasPrincipalKey(account => new { account.TenantId, account.Id })
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

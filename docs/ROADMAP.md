@@ -83,10 +83,14 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   tenant deletion (including encrypted credentials), and the no-email-provider recovery boundary
   are defined in [ADR-010](adr/010-account-lifecycle.md) and directly tested. This does not enable
   multi-user operation.
-- **Remaining account work**: Complete the chosen production authentication and recovery flow.
-  OAuth remains an account/authentication option; Epic integration is outside this item.
+- **Production authentication/recovery gate (2026-06-21)**: Provider-neutral OIDC Authorization
+  Code Flow with PKCE is implemented through the server-side BFF. Core independently pins issuer,
+  audience, algorithms, nonce, and JWKS and maps only an explicitly linked `(issuer, subject)` to
+  one account/tenant. Recovery, MFA, email verification, and provider credential security remain
+  the configured trusted provider's responsibility. See [ADR-011](adr/011-production-oidc-authentication.md).
 - **Remaining rollout work**: Add an explicit, guarded multi-user enablement path only after the
-  isolation, portability, verification, and account-lifecycle gates are complete.
+  now-complete isolation, portability, verification, lifecycle, and production-authentication
+  gates. OIDC configuration alone must never activate or advertise multi-user operation.
 
 ### 9. Notifications & Activity Feed
 `ActivityLog` table + activity endpoint for social sharing/feed.
@@ -144,7 +148,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
-| **Multi-user readiness** | #8 production auth/recovery → guarded enablement (isolation + lifecycle gates complete) |
+| **Multi-user readiness** | #8 guarded enablement (isolation + lifecycle + production auth/recovery gates complete) |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |

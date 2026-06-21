@@ -3,6 +3,7 @@ import { Gamepad2, KeyRound, ShieldCheck } from "lucide-react";
 import { LoginForm } from "@/components/LoginForm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { safeReturnPath } from "@/lib/auth-session";
+import { isOidcEnabled } from "@/lib/oidc";
 
 export const metadata: Metadata = {
     title: "Sign in — GameHub",
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
 export default async function LoginPage({
     searchParams,
 }: {
-    searchParams: Promise<{ returnTo?: string | string[] }>;
+    searchParams: Promise<{ returnTo?: string | string[]; oidcError?: string | string[] }>;
 }) {
     const params = await searchParams;
     const requestedPath = typeof params.returnTo === "string" ? params.returnTo : undefined;
@@ -58,11 +59,15 @@ export default async function LoginPage({
                         </div>
                         <CardTitle className="text-2xl">Sign in</CardTitle>
                         <CardDescription>
-                            Use the local owner account configured for your GameHub tenant.
+                            Use the configured identity provider or the local compatibility account.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <LoginForm returnTo={safeReturnPath(requestedPath)} />
+                        <LoginForm
+                            returnTo={safeReturnPath(requestedPath)}
+                            oidcEnabled={isOidcEnabled()}
+                            oidcFailed={params.oidcError === "authentication_failed"}
+                        />
                     </CardContent>
                 </Card>
             </div>

@@ -4,8 +4,8 @@
 
 **Scope:** Roadmap item #8, user-owned Core service paths
 
-**Result:** Isolation and initial account-lifecycle gates complete; multi-user operation remains
-disabled pending production authentication and guarded rollout work.
+**Result:** Isolation, initial account lifecycle, and production OIDC authentication/recovery gates
+complete; multi-user operation remains disabled pending explicit guarded rollout work.
 
 ## Audited paths
 
@@ -20,6 +20,7 @@ disabled pending production authentication and guarded rollout work.
 | Credential policy | Core credential management, stored retrieval delegation, and `Tenant.PlatformSyncEnabled` updates | Core selects the tenant from trusted authentication, delegates it with the service key, and updates only that tenant's sync policy. Cross-tenant activation/deactivation tests exist. |
 | Identity and sessions | Account bootstrap/provisioning/login and rotating refresh sessions | Account discovery is intentionally global until credentials establish the tenant. Email uniqueness, password verification, unguessable token-hash lookup, rotation, expiry, and revocation form the trust boundary; request bodies cannot select an authenticated tenant. |
 | Account lifecycle | Password change, global refresh-session revocation, pending deletion, Core cleanup, and Core→Ingest deletion delegation | Signed account/tenant claims select the identity. Current-password confirmation protects password change and deletion. Pending deletion blocks ordinary JWT access; Ingest and Core cleanup are idempotent and tenant-filtered. |
+| Production identity | Next.js OIDC state/nonce/PKCE/callback handling, BFF-only Core exchange, Core ID-token validation, explicit external-identity linking, exact issuer/subject login, and local GameHub session issuance | The BFF uses an authenticated encrypted correlation cookie, exact redirect binding, and a separate Core service key. Core pins issuer, audience, algorithms, nonce, lifetime, and JWKS. A composite database relationship binds the linked account and tenant; email, roles, organization, and tenant-like claims are ignored for mapping. |
 
 ## Operational-history verification
 
@@ -47,12 +48,29 @@ Direct tests exercise mismatched account/tenant identities, stale refresh tokens
 repeated deletion, fail-closed Ingest failure plus retry, encrypted credential removal, in-memory
 scheduler cleanup, and SQLite/PostgreSQL upgrade preservation.
 
+## Production OIDC path verification
+
+The production-authentication follow-up reviewed and tested:
+
+- API-key bootstrap/provisioning and local account/password compatibility paths.
+- GameHub JWT issuance/validation, rotating refresh sessions, live-account checks, pending deletion,
+  account cleanup, and default-tenant preservation.
+- Next.js login/proxy/logout cookies plus OIDC discovery, authorization redirect, encrypted
+  correlation cookie, exact callback, code exchange, PKCE, and Core BFF calls.
+- Core OIDC discovery/JWKS retrieval, fixed issuer/audience/algorithm validation, nonce checks,
+  exact issuer/subject mapping, composite account/tenant ownership, and session issuance.
+- SQLite and real PostgreSQL upgrades preserving local accounts, refresh sessions, default tenant,
+  unified games, and library items while adding empty external-identity storage.
+
+Direct tests reject wrong issuer, audience, algorithm, nonce, state, callback redirect, PKCE
+verifier, tampered/expired correlation cookies, foreign-tenant mapping, email collisions, provider
+outages, pending deletion, and deleted accounts.
+
 ## Remaining Roadmap #8 work
 
-- The initial account lifecycle is defined and implemented in ADR-010. Its explicit recovery
-  boundary remains until a trusted production identity/email provider exists.
-- Complete and select the production authentication flow; OAuth remains an option.
-- Add an explicit guarded multi-user enablement path only after production authentication and
-  recovery are implemented and verified.
+- ADR-011 defines and implements the provider-neutral production OIDC path. A deployment must still
+  select a trusted provider and configure its recovery, MFA, verification, and abuse-control policy.
+- Add an explicit guarded multi-user enablement path and rollout review. This must remain a separate
+  operator action and must not be inferred from OIDC configuration alone.
 
 Until those items are complete, GameHub must not advertise or enable production multi-user operation.

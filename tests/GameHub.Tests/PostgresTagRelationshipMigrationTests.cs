@@ -16,6 +16,62 @@ public sealed class PostgresTagRelationshipMigrationTests
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
     [Fact]
+    public async Task ExternalIdentityMigration_PostgresUpgradePreservesLocalAccountSessionAndLibrary()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            var migrator = db.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260621135445_AddTenantDeletionState");
+            var accountId = Guid.NewGuid();
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "UserAccounts"
+                    ("Id", "TenantId", "Email", "NormalizedEmail", "DisplayName", "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
+                VALUES
+                    ({accountId}, {TenantA}, {"legacy@example.com"}, {"LEGACY@EXAMPLE.COM"}, {"Legacy Owner"}, {"preserved-password-hash"}, {new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)}, NULL);
+                INSERT INTO "RefreshTokenSessions"
+                    ("Id", "UserAccountId", "TokenHash", "CreatedAtUtc", "ExpiresAtUtc", "ConsumedAtUtc", "RevokedAtUtc")
+                VALUES
+                    ({Guid.NewGuid()}, {accountId}, {new string('A', 64)}, {new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)}, {new DateTime(2026, 7, 21, 12, 0, 0, DateTimeKind.Utc)}, NULL, NULL);
+                """);
+            var game = new UnifiedGame { Title = "Preserved game", Slug = "preserved-game" };
+            game.Items.Add(new LibraryItem
+            {
+                Platform = GameHub.Shared.Platform.Steam,
+                ExternalId = "preserved-item",
+                LastSynced = new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)
+            });
+            db.UnifiedGames.Add(game);
+            await db.SaveChangesAsync();
+
+            await migrator.MigrateAsync();
+            db.ChangeTracker.Clear();
+
+            Assert.Equal("preserved-password-hash", (await db.UserAccounts.SingleAsync()).PasswordHash);
+            Assert.Equal(new string('A', 64), (await db.RefreshTokenSessions.SingleAsync()).TokenHash);
+            Assert.Equal("Preserved game", (await db.UnifiedGames.SingleAsync()).Title);
+            Assert.Equal("preserved-item", (await db.LibraryItems.SingleAsync()).ExternalId);
+            Assert.Equal(TenantA, (await db.Tenants.SingleAsync()).Id);
+            Assert.Empty(db.ExternalIdentities);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
     public async Task TenantFoundationMigration_OperationalHistoryIsPreservedForDefaultTenant()
     {
         var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");

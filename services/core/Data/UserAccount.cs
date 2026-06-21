@@ -42,4 +42,10 @@ public sealed class UserAccount
     /// filtered library rows because refresh begins before an authenticated tenant exists.
     /// </summary>
     public ICollection<RefreshTokenSession> RefreshTokenSessions { get; set; } = [];
+
+    /// <summary>
+    /// Provider identities explicitly linked while this account was authenticated. They are
+    /// removed with the account and never discovered or attached by matching email addresses.
+    /// </summary>
+    public ICollection<ExternalIdentity> ExternalIdentities { get; set; } = [];
 }
