@@ -5,6 +5,7 @@ using GameHub.Core.Services;
 using GameHub.Shared.Authentication;
 using GameHub.Tests.Helpers;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -163,6 +164,21 @@ public sealed class AuthControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task OidcToken_DirectCallerWithoutBffKey_IsRejected()
+    {
+        var controller = CreateController(apiKey: "configured", jwtEnabled: true, oidcEnabled: true);
+
+        var result = await controller.OidcToken(
+            new OidcTokenRequest("header.payload.signature", new string('N', 43)),
+            CancellationToken.None);
+
+        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
+        Assert.Equal(
+            "oidc_authentication_failed",
+            Assert.IsType<AuthErrorResponse>(unauthorized.Value).Code);
+    }
+
+    [Fact]
     public async Task Refresh_ValidToken_RotatesPairAndRejectsReplay()
     {
         await _accounts.BootstrapAsync(
@@ -207,7 +223,7 @@ public sealed class AuthControllerTests : IDisposable
         Assert.IsType<NoContentResult>(result);
     }
 
-    private AuthController CreateController(string apiKey, bool jwtEnabled)
+    private AuthController CreateController(string apiKey, bool jwtEnabled, bool oidcEnabled = false)
     {
         var jwtSettings = jwtEnabled
             ? AccountServiceTests.CreateJwtSettings()
@@ -218,14 +234,37 @@ public sealed class AuthControllerTests : IDisposable
                 ["Authentication:ApiKey"] = apiKey
             })
             .Build();
+        var oidcSettings = oidcEnabled
+            ? new OidcSettings(
+                true,
+                "https://identity.example.test",
+                "gamehub-client",
+                "https://identity.example.test/.well-known/openid-configuration",
+                [Microsoft.IdentityModel.Tokens.SecurityAlgorithms.RsaSha256],
+                new string('B', 32))
+            : new OidcSettings(false, "", "", "", [], "");
+        var oidcValidator = new OidcTokenValidator(
+            oidcSettings,
+            new OidcMetadataProvider(oidcSettings),
+            NullLogger<OidcTokenValidator>.Instance);
 
-        return new AuthController(
+        var controller = new AuthController(
             _accounts,
             new JwtTokenService(jwtSettings, new AccountServiceTests.FixedTimeProvider(FixedNow)),
             _refreshTokens,
+            oidcValidator,
+            new ExternalIdentityService(
+                _db,
+                new AccountServiceTests.FixedTimeProvider(FixedNow)),
+            oidcSettings,
             null!,
             new DefaultTenantContext(),
             configuration,
             NullLogger<AuthController>.Instance);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext()
+        };
+        return controller;
     }
 }

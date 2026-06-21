@@ -40,14 +40,25 @@ Two ASP.NET Core microservices:
   a fail-closed pending state, delegates idempotent full Ingest cleanup (including encrypted
   credentials), then transactionally deletes Core data. See ADR-010.
 - Pending deletion blocks ordinary JWT access and refresh rotation. Only the signed deletion route
-  remains retryable. No email/password recovery path exists until a trusted identity provider is
-  selected; multi-user operation remains disabled.
+  remains retryable. The local compatibility path still has no email/password recovery; configured
+  OIDC delegates recovery to its trusted provider. Multi-user operation remains disabled.
 - Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`).
 - Sync scheduler results are tenant-indexed in memory. The status endpoint resolves the active
   tenant through `ITenantContext`; only enabled configuration and the next-cycle time are shared.
-- The Roadmap #8 isolation and initial account-lifecycle gates are complete. See
-  `docs/tenant-isolation-audit.md` for the audited path inventory and the production
-  authentication/recovery plus guarded-rollout work that still blocks enablement.
+- The Roadmap #8 isolation, initial account-lifecycle, and production authentication/recovery gates
+  are complete. See `docs/tenant-isolation-audit.md` for the audited path inventory and the
+  guarded-rollout work that still blocks enablement.
+- Production authentication: optional provider-neutral OIDC uses Authorization Code + PKCE in the
+  Next.js BFF and independent ID-token validation in Core. Core pins exact issuer, audience,
+  asymmetric algorithms, nonce, lifetime, and JWKS, then resolves only a persisted issuer/subject
+  mapping. Email and provider tenant/role claims never select an account. See ADR-011.
+- The learning-oriented implementation walkthrough, sequence diagrams, trust boundaries, failure
+  matrix, and source-file map live in `docs/oidc-authentication-architecture.md`.
+- External identities are linked only from a live signed GameHub account and use a composite
+  `(TenantId, UserAccountId)` foreign key. OIDC requires secure cookies and complete HTTPS
+  configuration; failures close. Local accounts remain a non-production compatibility path.
+- The Roadmap #8 production authentication/recovery gate is complete. Multi-user operation remains
+  disabled until a separate explicit guarded enablement and rollout review is implemented.
 
 ## Conventions
 - All controllers have `ILogger` injection with structured logging (`{Platform}`, `{Count}`, etc.).

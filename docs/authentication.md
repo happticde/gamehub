@@ -1,6 +1,67 @@
 # GameHub Authentication
 
-GameHub keeps the existing API-key mode and optionally enables local account JWTs. Tenant identity always comes from a server-issued authentication claim, never from request bodies.
+GameHub keeps the existing API-key and local-account modes for compatibility and supports
+provider-neutral OIDC as the production authentication direction. Tenant identity always comes
+from a server-verified GameHub account mapping, never from request bodies or provider tenant claims.
+
+For a source-oriented explanation with sequence diagrams, trust boundaries, data model, failure
+paths, and a guided reading order, see
+[OIDC Authentication Architecture](oidc-authentication-architecture.md).
+
+## Production OIDC
+
+OIDC uses Authorization Code Flow with PKCE through the server-side Next.js BFF. Before enabling
+it, create a provider client with the exact callback URI for
+`/api/auth/oidc/callback`. Configure these deployment variables without committing their values:
+
+| Variable | Required value |
+|---|---|
+| `GAMEHUB_OIDC_ENABLED` | `true` only after every value and provider policy below is ready |
+| `GAMEHUB_OIDC_ISSUER` | Exact HTTPS issuer from provider discovery metadata |
+| `GAMEHUB_OIDC_CLIENT_ID` | Audience/client ID registered for GameHub |
+| `GAMEHUB_OIDC_CLIENT_SECRET` | Provider client secret when a confidential client is required; omit for a supported public PKCE client |
+| `GAMEHUB_OIDC_REDIRECT_URI` | Exact external HTTPS callback URL registered at the provider |
+| `GAMEHUB_OIDC_SCOPES` | Space-separated scopes including `openid`; default `openid profile email` |
+| `GAMEHUB_OIDC_COOKIE_KEY` | Base64 encoding of 32 random bytes used only for BFF correlation-cookie encryption |
+| `GAMEHUB_OIDC_BFF_SERVICE_KEY` | Separate random server-to-server key authorizing only the BFF to call Core's OIDC exchange/link endpoints |
+| `GAMEHUB_OIDC_METADATA_ADDRESS` | Optional explicit HTTPS discovery address; Core otherwise derives it from the issuer |
+| `GAMEHUB_OIDC_ALLOWED_ALGORITHMS` | Comma-separated asymmetric ID-token allowlist; default `RS256` |
+| `GAMEHUB_AUTH_COOKIE_SECURE` | Must be `true` for OIDC |
+| `GAMEHUB_FRONTEND_AUTH_ENABLED` | Must be `true` for OIDC and GameHub session cookies |
+| `GAMEHUB_JWT_SIGNING_KEY` | Existing GameHub session-signing key, at least 32 bytes |
+
+Generate the correlation and BFF service keys independently with `openssl rand -base64 32`. Keep
+them and any provider client secret outside the repository. Partial, non-HTTPS,
+symmetric-algorithm, or insecure-cookie OIDC configuration fails closed.
+
+An existing account must explicitly approve its provider identity while signed in:
+
+```http
+GET /api/auth/oidc/start?intent=link&returnTo=/admin
+```
+
+Normal login begins at `GET /api/auth/oidc/start?returnTo=/library`; the login page exposes the
+same route when OIDC is enabled. State, nonce, exact redirect, correlation expiry, and the S256
+PKCE verifier are checked before Core independently validates the ID token against issuer,
+audience, signing keys, lifetime, nonce, and allowed algorithms.
+
+Core stores only an explicit `(issuer, subject) -> (account, tenant)` mapping. It never links by
+email and never accepts a tenant, account, organization, or role choice from browser parameters or
+provider claims. Pending-deletion and deleted accounts cannot authenticate or relink.
+
+### Recovery, MFA, and email verification
+
+The configured identity provider owns recovery, MFA, email verification, credential security, and
+authentication abuse controls. GameHub does not duplicate those flows and does not treat an email
+claim as account ownership. Provider recovery restores access only to the already linked stable
+issuer/subject identity; it cannot choose or change a GameHub tenant.
+
+The provider must offer HTTPS discovery/JWKS, nonce-bearing signed ID tokens, and the selected
+asymmetric algorithm. This release supports one issuer/client configuration, no just-in-time
+provisioning, no unlink/subject replacement, and no provider back-channel logout. Provider outages
+fail closed for new login/link attempts; already-issued GameHub sessions retain their normal local
+expiry and revocation behavior. A reverse proxy must preserve the external HTTPS scheme and host so
+the BFF can compare the callback to the registered redirect URI exactly. See ADR-011.
 
 ## Enable JWT
 
@@ -129,12 +190,12 @@ An Ingest failure returns HTTP 502; a Core cleanup failure after Ingest returns 
 use ordinary JWT-protected APIs. The seeded default tenant row is retained empty and disabled for
 single-user upgrade/bootstrap compatibility; all of its account-owned data is still removed.
 
-## Recovery Boundary
+## Local Compatibility Recovery Boundary
 
 GameHub currently has no trusted email provider and therefore offers no forgot-password,
 email-reset, recovery-code, or administrative password-replacement API. Losing the password and
 all active sessions requires trusted operator recovery outside the public API. This must be
-revisited as part of production authentication before guarded multi-user enablement. See ADR-010.
+revisited separately from provider recovery. See ADR-010 and ADR-011.
 
 ## Frontend Session
 
@@ -149,3 +210,7 @@ out action revokes the current refresh session and deletes both cookies.
 The default Compose deployment uses plain HTTP and therefore sets
 `GAMEHUB_AUTH_COOKIE_SECURE=false`. Set it to `true` whenever a reverse proxy serves the frontend
 to browsers over HTTPS; browsers intentionally reject Secure cookies over plain HTTP.
+
+OIDC is stricter: enabling it while secure cookies are disabled is rejected. Neither enabling
+OIDC nor linking an identity activates production multi-user operation. The explicit guarded
+enablement and rollout gate remains open.

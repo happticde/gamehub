@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3005",
     "build": "next build",
+    "test:security": "node --no-warnings --test tests/*.test.mjs",
     "start": "next start -H 0.0.0.0",
     "lint": "eslint"
   },

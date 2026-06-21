@@ -4,6 +4,24 @@
 
 ### What Changed
 
+**Production OIDC Authentication Gate:**
+- Added a detailed source-oriented architecture guide with protocol concepts, trust boundaries,
+  linking/login/session sequence diagrams, validation order, data model, failure matrix, test map,
+  debugging guidance, and a provider integration checklist. Security-critical OIDC source paths
+  now explain the reasoning behind each validation layer inline.
+- Added ADR-011 selecting provider-neutral OIDC Authorization Code Flow with PKCE while keeping
+  recovery, MFA, email verification, and provider credentials at the trusted identity provider.
+- Next.js now owns state, nonce, PKCE, exact callback checks, HTTPS discovery, and an encrypted
+  HttpOnly/Secure/SameSite correlation cookie; Core independently validates issuer, audience,
+  signing keys, lifetime, nonce, and an asymmetric algorithm allowlist.
+- External identities use exact issuer/subject mappings to one account and tenant. Linking requires
+  a current GameHub session; email, roles, organizations, and tenant-like claims never select or
+  create a mapping. Pending-deletion/deleted accounts remain blocked.
+- SQLite and real PostgreSQL upgrade tests preserve existing local accounts, refresh sessions,
+  default tenant, unified games, and library items. Direct BFF/Core tests reject state, nonce,
+  redirect, PKCE, issuer, audience, algorithm, provider-outage, email-collision, and cross-tenant
+  attacks.
+
 **Initial Account Lifecycle:**
 - Added ADR-010 covering operator-controlled provisioning, authenticated password changes,
   account-wide refresh-session revocation, the no-email-provider recovery boundary, deletion,
@@ -25,8 +43,8 @@
   can no longer leak through the formerly global singleton status.
 - Added SQLite and real PostgreSQL upgrade tests proving that legacy operational history/cursors are
   preserved and assigned to the default tenant by the existing tenant-foundation migrations.
-- Marked the Roadmap #8 isolation gate complete. The lifecycle work above followed that audit;
-  production authentication and guarded multi-user enablement remain open.
+- Marked the Roadmap #8 isolation gate complete. The lifecycle and production-authentication work
+  above followed that audit; guarded multi-user enablement remains open.
 
 **Core/Frontend Platform Credential Management:**
 - Core now exposes authenticated, tenant-scoped credential status, upsert, and deletion endpoints
@@ -73,8 +91,9 @@
 
 ### Known State / Pending
 
-- Roadmap item #8 still requires production authentication/recovery and guarded enablement work.
-  The tenant-isolation and initial account-lifecycle gates are complete.
+- Roadmap item #8 now has complete isolation, lifecycle, and production OIDC authentication/recovery
+  gates. Explicit guarded multi-user enablement and rollout review remain open; multi-user operation
+  is still disabled and must not be advertised as production-ready.
 - Future Epic authentication and stored retrieval are independently tracked in Roadmap item #16.
 
 ## Previous Session Summary (2026-06-20)

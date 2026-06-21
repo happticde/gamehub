@@ -33,6 +33,12 @@ public sealed record ProvisionTenantRequest(
 public sealed record TokenRequest(string Email, string Password);
 
 /// <summary>
+/// Provider ID token and the BFF-generated nonce expected inside it. Account, tenant, email,
+/// and role selectors are deliberately absent.
+/// </summary>
+public sealed record OidcTokenRequest(string IdToken, string Nonce);
+
+/// <summary>
 /// Opaque secret used to rotate or revoke a login session. It contains no claims and must be
 /// protected like a password; the server persists only its SHA-256 digest.
 /// </summary>

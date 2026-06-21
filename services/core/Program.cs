@@ -120,6 +120,7 @@ builder.Services.AddSingleton<ITenantJobRunner, TenantJobRunner>();
 // owns a request-scoped CoreContext.
 builder.Services.AddSingleton<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
 builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<ExternalIdentityService>();
 
 // Parsing here makes invalid security configuration fail during startup rather than on
 // the first login request. An empty signing key is the deliberate opt-out switch, keeping
@@ -127,6 +128,14 @@ builder.Services.AddScoped<AccountService>();
 var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<JwtTokenService>();
+// OIDC configuration is parsed during startup, not lazily on the first callback. A deployment
+// that opts in with incomplete issuer/audience/algorithm/BFF trust therefore never starts in a
+// partially authenticated state. The metadata provider is a singleton so discovery/JWKS caching
+// and signing-key refresh state are shared across requests.
+var oidcSettings = OidcSettings.FromConfiguration(builder.Configuration, jwtSettings);
+builder.Services.AddSingleton(oidcSettings);
+builder.Services.AddSingleton<IOidcMetadataProvider, OidcMetadataProvider>();
+builder.Services.AddSingleton<OidcTokenValidator>();
 // RefreshTokenService is scoped because rotation performs transactional database writes.
 // The JWT signing service stays singleton and contains no per-request state.
 builder.Services.AddScoped<RefreshTokenService>();

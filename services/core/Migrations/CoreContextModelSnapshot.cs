@@ -99,6 +99,47 @@ namespace GameHub.Core.Migrations.sqlite
                     b.ToTable("EnrichmentAuditLogs");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.ExternalIdentity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<DateTime?>("LastLoginAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Issuer", "Subject")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "UserAccountId");
+
+                    b.HasIndex("UserAccountId", "Issuer")
+                        .IsUnique();
+
+                    b.ToTable("ExternalIdentities");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>
                 {
                     b.Property<int>("Id")
@@ -502,6 +543,18 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Navigation("UnifiedGame");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.ExternalIdentity", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.UserAccount", "UserAccount")
+                        .WithMany("ExternalIdentities")
+                        .HasForeignKey("TenantId", "UserAccountId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.LibraryItem", b =>
                 {
                     b.HasOne("GameHub.Core.Data.Tenant", null)
@@ -630,6 +683,8 @@ namespace GameHub.Core.Migrations.sqlite
 
             modelBuilder.Entity("GameHub.Core.Data.UserAccount", b =>
                 {
+                    b.Navigation("ExternalIdentities");
+
                     b.Navigation("RefreshTokenSessions");
                 });
 #pragma warning restore 612, 618

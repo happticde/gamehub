@@ -122,3 +122,9 @@ The API-key scheme remains the backward-compatible default. Core additionally su
 - JWT and API-key authentication coexist through a policy scheme; existing API-key clients continue to work.
 - Token requests are rate-limited and return a generic invalid-credentials response.
 - Refresh tokens, tenant provisioning, registration UI, password recovery, and OAuth remain future work.
+
+## Production Authentication Update (2026-06-21)
+
+Provider-neutral OIDC Authorization Code Flow with PKCE is implemented as the production
+authentication direction in [ADR-011](011-production-oidc-authentication.md). The API-key and local
+password/JWT modes remain compatibility paths and do not enable production multi-user operation.

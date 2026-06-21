@@ -496,6 +496,60 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.Equal(Platform.Steam, metadata.Platform);
     }
 
+    [Fact]
+    public async Task ExternalIdentityMigration_SqliteUpgradePreservesLocalAccountSessionAndLibrary()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite(connection)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260621135445_AddTenantDeletionState");
+
+        var account = new UserAccount
+        {
+            Id = Guid.NewGuid(),
+            TenantId = TenantA,
+            Email = "legacy@example.com",
+            NormalizedEmail = "LEGACY@EXAMPLE.COM",
+            DisplayName = "Legacy Owner",
+            PasswordHash = "preserved-password-hash",
+            CreatedAtUtc = FixedNow.UtcDateTime
+        };
+        var game = new UnifiedGame { Title = "Preserved game", Slug = "preserved-game" };
+        game.Items.Add(new LibraryItem
+        {
+            Platform = Platform.Steam,
+            ExternalId = "preserved-item",
+            LastSynced = FixedNow.UtcDateTime
+        });
+        db.AddRange(
+            account,
+            new RefreshTokenSession
+            {
+                Id = Guid.NewGuid(),
+                UserAccountId = account.Id,
+                TokenHash = new string('A', 64),
+                CreatedAtUtc = FixedNow.UtcDateTime,
+                ExpiresAtUtc = FixedNow.AddDays(30).UtcDateTime
+            },
+            game);
+        await db.SaveChangesAsync();
+
+        await migrator.MigrateAsync();
+        db.ChangeTracker.Clear();
+
+        Assert.Equal("preserved-password-hash", (await db.UserAccounts.SingleAsync()).PasswordHash);
+        Assert.Equal(new string('A', 64), (await db.RefreshTokenSessions.SingleAsync()).TokenHash);
+        Assert.Equal("Preserved game", (await db.UnifiedGames.SingleAsync()).Title);
+        Assert.Equal("preserved-item", (await db.LibraryItems.SingleAsync()).ExternalId);
+        Assert.Equal(TenantA, (await db.Tenants.SingleAsync()).Id);
+        Assert.Empty(db.ExternalIdentities);
+    }
+
     [Theory]
     [InlineData("library-item")]
     [InlineData("manual-link")]

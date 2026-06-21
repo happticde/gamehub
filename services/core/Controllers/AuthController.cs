@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using GameHub.Core.Data;
 using GameHub.Core.Models.Auth;
 using GameHub.Core.Services;
@@ -26,6 +28,9 @@ public sealed class AuthController : ControllerBase
     private readonly AccountService _accounts;
     private readonly JwtTokenService _tokens;
     private readonly RefreshTokenService _refreshTokens;
+    private readonly OidcTokenValidator _oidcTokens;
+    private readonly ExternalIdentityService _externalIdentities;
+    private readonly OidcSettings _oidcSettings;
     private readonly AccountDeletionService _deletion;
     private readonly ITenantContext _tenantContext;
     private readonly IConfiguration _configuration;
@@ -36,6 +41,9 @@ public sealed class AuthController : ControllerBase
         AccountService accounts,
         JwtTokenService tokens,
         RefreshTokenService refreshTokens,
+        OidcTokenValidator oidcTokens,
+        ExternalIdentityService externalIdentities,
+        OidcSettings oidcSettings,
         AccountDeletionService deletion,
         ITenantContext tenantContext,
         IConfiguration configuration,
@@ -44,6 +52,9 @@ public sealed class AuthController : ControllerBase
         _accounts = accounts;
         _tokens = tokens;
         _refreshTokens = refreshTokens;
+        _oidcTokens = oidcTokens;
+        _externalIdentities = externalIdentities;
+        _oidcSettings = oidcSettings;
         _deletion = deletion;
         _tenantContext = tenantContext;
         _configuration = configuration;
@@ -231,6 +242,148 @@ public sealed class AuthController : ControllerBase
             account.Id,
             account.TenantId);
         return Ok(CreateTokenResponse(token, refreshToken));
+    }
+
+    /// <summary>
+    /// POST: api/auth/oidc/token
+    /// Exchanges a provider ID token for a GameHub session only when its exact issuer/subject
+    /// pair was explicitly linked to a live account. Provider email and tenant-like claims are
+    /// never identity selectors.
+    /// </summary>
+    [HttpPost("oidc/token")]
+    [AllowAnonymous]
+    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> OidcToken(
+        [FromBody] OidcTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        // Layer 1: require the independent BFF credential. ID tokens are bearer-like proofs; a
+        // public Core exchange would let callers skip the BFF's state/redirect/PKCE transaction.
+        if (!IsTrustedOidcBff())
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+        // OIDC ultimately creates a normal GameHub session, so local JWT issuance must also be
+        // configured. There is no alternate unsigned/cookie-only session format.
+        if (!_tokens.IsEnabled)
+        {
+            return OidcUnavailable("JWT authentication is not configured.");
+        }
+
+        // Layer 2: independently validate provider proof. The expected nonce came from the BFF's
+        // encrypted transaction; Core still checks it inside the signed ID token.
+        var validation = await _oidcTokens.ValidateAsync(
+            request.IdToken,
+            request.Nonce,
+            cancellationToken);
+        if (validation.Status is OidcTokenValidationStatus.ProviderUnavailable
+            or OidcTokenValidationStatus.ConfigurationUnavailable)
+        {
+            return OidcUnavailable("OIDC authentication is unavailable.");
+        }
+        if (validation.Status != OidcTokenValidationStatus.Succeeded)
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        // Layer 3: resolve only the durable issuer/subject mapping. The request has no tenant or
+        // account field, and provider email/role/organization claims are not consulted.
+        var account = await _externalIdentities.AuthenticateAsync(
+            validation.Identity!,
+            cancellationToken);
+        if (account is null)
+        {
+            // Unknown, pending-deletion, and deleted mappings intentionally share one response.
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        // Layer 4: issue GameHub's own tenant-scoped access token and revocable refresh session.
+        // Provider tokens do not authorize library APIs directly.
+        var accessToken = _tokens.CreateToken(account);
+        var refreshToken = await _refreshTokens.IssueAsync(account, cancellationToken);
+        _logger.LogInformation(
+            "Issued GameHub session for external identity on account {AccountId} and tenant {TenantId}",
+            account.Id,
+            account.TenantId);
+        return Ok(CreateTokenResponse(accessToken, refreshToken));
+    }
+
+    /// <summary>
+    /// POST: api/auth/oidc/link
+    /// Links a validated provider identity to the currently signed GameHub account. This is the
+    /// sole linking path: email similarity never creates or changes a mapping.
+    /// </summary>
+    [HttpPost("oidc/link")]
+    [Authorize]
+    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> LinkOidc(
+        [FromBody] OidcTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        // Linking requires both trust channels: the BFF proves the OIDC browser transaction and
+        // the current GameHub JWT supplies the only acceptable account/tenant destination.
+        if (!IsTrustedOidcBff()
+            || !TryGetAuthenticatedIdentity(out var accountId, out var tenantId))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_authentication_required",
+                "A current tenant account access token is required."));
+        }
+
+        // Validate the new external proof exactly as strictly as a login proof. Linking is not a
+        // lower-assurance path and cannot accept unverified profile data.
+        var validation = await _oidcTokens.ValidateAsync(
+            request.IdToken,
+            request.Nonce,
+            cancellationToken);
+        if (validation.Status is OidcTokenValidationStatus.ProviderUnavailable
+            or OidcTokenValidationStatus.ConfigurationUnavailable)
+        {
+            return OidcUnavailable("OIDC authentication is unavailable.");
+        }
+        if (validation.Status != OidcTokenValidationStatus.Succeeded)
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        // The service/database enforce uniqueness and pending-deletion checks. Repeated linking of
+        // the same exact identity is idempotent; ownership conflicts remain explicit.
+        var result = await _externalIdentities.LinkAsync(
+            accountId,
+            tenantId,
+            validation.Identity!,
+            cancellationToken);
+        if (result == ExternalIdentityLinkResult.Linked)
+        {
+            _logger.LogInformation(
+                "Linked external identity to account {AccountId} and tenant {TenantId}",
+                accountId,
+                tenantId);
+            return NoContent();
+        }
+
+        return result == ExternalIdentityLinkResult.AccountUnavailable
+            ? Unauthorized(new AuthErrorResponse(
+                "account_authentication_required",
+                "The current account is unavailable."))
+            : Conflict(new AuthErrorResponse(
+                "external_identity_conflict",
+                "The external identity or provider is already linked."));
     }
 
     /// <summary>
@@ -441,4 +594,27 @@ public sealed class AuthController : ControllerBase
             accessToken.ExpiresAtUtc,
             refreshToken.RefreshToken,
             refreshToken.ExpiresAtUtc);
+
+    private ObjectResult OidcUnavailable(string message) => StatusCode(
+        StatusCodes.Status503ServiceUnavailable,
+        new AuthErrorResponse("oidc_unavailable", message));
+
+    private bool IsTrustedOidcBff()
+    {
+        const string headerName = "X-GameHub-Oidc-Bff-Key";
+        // Count must be exactly one so proxies cannot create ambiguous comma-joined credentials.
+        if (!_oidcSettings.IsEnabled
+            || !Request.Headers.TryGetValue(headerName, out var supplied)
+            || supplied.Count != 1)
+        {
+            return false;
+        }
+
+        // Avoid ordinary string equality for secret material. Length is checked separately because
+        // FixedTimeEquals requires equal-sized inputs for a meaningful constant-work comparison.
+        var expectedBytes = Encoding.UTF8.GetBytes(_oidcSettings.BffServiceKey);
+        var suppliedBytes = Encoding.UTF8.GetBytes(supplied[0] ?? "");
+        return expectedBytes.Length == suppliedBytes.Length
+            && CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
+    }
 }

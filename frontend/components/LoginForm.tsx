@@ -2,12 +2,14 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, LogIn } from "lucide-react";
+import { KeyRound, Loader2, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 interface LoginFormProps {
     returnTo: string;
+    oidcEnabled: boolean;
+    oidcFailed: boolean;
 }
 
 /**
@@ -15,10 +17,12 @@ interface LoginFormProps {
  * password goes directly to the same-origin BFF and is never stored in component state after
  * navigation. Access and refresh tokens return as HttpOnly cookies, not JSON visible here.
  */
-export function LoginForm({ returnTo }: LoginFormProps) {
+export function LoginForm({ returnTo, oidcEnabled, oidcFailed }: LoginFormProps) {
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(
+        oidcFailed ? "External sign-in failed or expired. Please try again." : null,
+    );
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -54,7 +58,23 @@ export function LoginForm({ returnTo }: LoginFormProps) {
     }
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-5">
+            {oidcEnabled && (
+                <>
+                    <Button asChild className="h-11 w-full">
+                        <a href={`/api/auth/oidc/start?returnTo=${encodeURIComponent(returnTo)}`}>
+                            <KeyRound aria-hidden="true" />
+                            Sign in with identity provider
+                        </a>
+                    </Button>
+                    <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground">
+                        <span className="h-px flex-1 bg-border" />
+                        Local compatibility
+                        <span className="h-px flex-1 bg-border" />
+                    </div>
+                </>
+            )}
+            <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
                 <label htmlFor="email" className="text-sm font-medium">
                     Email address
@@ -105,6 +125,7 @@ export function LoginForm({ returnTo }: LoginFormProps) {
                 )}
                 {isSubmitting ? "Signing in…" : "Sign in"}
             </Button>
-        </form>
+            </form>
+        </div>
     );
 }
