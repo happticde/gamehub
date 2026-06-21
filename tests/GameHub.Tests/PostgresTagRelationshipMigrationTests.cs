@@ -57,6 +57,8 @@ public sealed class PostgresTagRelationshipMigrationTests
             var metadata = await db.SyncMetadata.SingleAsync();
             Assert.Equal(TenantA, metadata.TenantId);
             Assert.Equal(Platform.Steam, metadata.Platform);
+            var defaultTenant = await db.Tenants.SingleAsync();
+            Assert.Null(defaultTenant.DeletionRequestedAtUtc);
         }
         finally
         {
@@ -84,12 +86,13 @@ public sealed class PostgresTagRelationshipMigrationTests
         {
             var migrator = tenantA.Database.GetService<IMigrator>();
             await migrator.MigrateAsync("20260621110000_EnforceTenantGameRelationshipsPostgres");
-            tenantA.Tenants.Add(new Tenant
-            {
-                Id = TenantB,
-                Name = "Tenant B",
-                CreatedAtUtc = new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)
-            });
+            // The test intentionally stops before the lifecycle migration. Insert with the
+            // historical tenant shape so the current EF model does not reference the future
+            // nullable DeletionRequestedAtUtc column prematurely.
+            await tenantA.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "Tenants" ("Id", "Name", "PlatformSyncEnabled", "CreatedAtUtc")
+                VALUES ({TenantB}, {"Tenant B"}, {false}, {new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)})
+                """);
             var game = new UnifiedGame { Title = "Existing game", Slug = "existing-game" };
             var localTag = new Tag { Name = "Local tag" };
             tenantA.AddRange(game, localTag);

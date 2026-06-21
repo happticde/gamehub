@@ -35,11 +35,19 @@ Two ASP.NET Core microservices:
 - Provisioned tenants start platform-sync disabled. Core enables them only after a fresh vault
   status confirms at least one Steam, GOG, or PSN credential. Deletion disables first and only
   re-enables after another supported credential is verified; failures remain disabled.
+- Account lifecycle: password changes require the current password and revoke all refresh
+  sessions. Explicit global revocation is tenant/account-claim scoped. Account deletion persists
+  a fail-closed pending state, delegates idempotent full Ingest cleanup (including encrypted
+  credentials), then transactionally deletes Core data. See ADR-010.
+- Pending deletion blocks ordinary JWT access and refresh rotation. Only the signed deletion route
+  remains retryable. No email/password recovery path exists until a trusted identity provider is
+  selected; multi-user operation remains disabled.
 - Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`).
 - Sync scheduler results are tenant-indexed in memory. The status endpoint resolves the active
   tenant through `ITenantContext`; only enabled configuration and the next-cycle time are shared.
-- The Roadmap #8 Core tenant-isolation gate is complete. See `docs/tenant-isolation-audit.md` for
-  the audited path inventory and the account/authentication/rollout work that still blocks enablement.
+- The Roadmap #8 isolation and initial account-lifecycle gates are complete. See
+  `docs/tenant-isolation-audit.md` for the audited path inventory and the production
+  authentication/recovery plus guarded-rollout work that still blocks enablement.
 
 ## Conventions
 - All controllers have `ILogger` injection with structured logging (`{Platform}`, `{Count}`, etc.).

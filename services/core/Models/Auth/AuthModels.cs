@@ -38,6 +38,15 @@ public sealed record TokenRequest(string Email, string Password);
 /// </summary>
 public sealed record RefreshTokenRequest(string RefreshToken);
 
+/// <summary>Current and replacement password for an authenticated password change.</summary>
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+/// <summary>
+/// Current password confirmation for destructive account and tenant deletion. Tenant and
+/// account identifiers are deliberately absent and come only from the signed JWT.
+/// </summary>
+public sealed record DeleteAccountRequest(string CurrentPassword);
+
 /// <summary>Public account data returned after bootstrap.</summary>
 public sealed record AccountResponse(
     Guid Id,

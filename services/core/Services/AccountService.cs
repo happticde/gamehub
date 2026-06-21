@@ -249,6 +249,148 @@ public sealed class AccountService
     }
 
     /// <summary>
+    /// Replaces an authenticated account password only after verifying the current password.
+    /// Every refresh session is revoked in the same database transaction as the new hash.
+    /// </summary>
+    public async Task<PasswordChangeResult> ChangePasswordAsync(
+        Guid accountId,
+        Guid tenantId,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        if (newPassword is null
+            || newPassword.Length is < MinimumPasswordLength or > MaximumPasswordLength)
+        {
+            return PasswordChangeResult.Failed(
+                "invalid_new_password",
+                $"New password length must be between {MinimumPasswordLength} and {MaximumPasswordLength} characters.");
+        }
+
+        var account = await _db.UserAccounts.SingleOrDefaultAsync(
+            candidate => candidate.Id == accountId && candidate.TenantId == tenantId,
+            cancellationToken);
+        if (account is null)
+        {
+            return PasswordChangeResult.Failed(
+                "account_identity_mismatch",
+                "The authenticated account no longer exists.");
+        }
+
+        if (!VerifyPassword(account, currentPassword))
+        {
+            return PasswordChangeResult.Failed(
+                "invalid_current_password",
+                "Current password is invalid.");
+        }
+
+        if (VerifyPassword(account, newPassword))
+        {
+            return PasswordChangeResult.Failed(
+                "invalid_new_password",
+                "New password must differ from the current password.");
+        }
+
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        account.PasswordHash = _passwordHasher.HashPassword(account, newPassword);
+        await RevokeAllSessionsForAccountAsync(account.Id, nowUtc, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return PasswordChangeResult.Succeeded;
+    }
+
+    /// <summary>
+    /// Revokes every refresh session belonging to the exact signed account/tenant pair.
+    /// The account lookup prevents a valid Tenant A principal from selecting Tenant B.
+    /// </summary>
+    public async Task<bool> RevokeAllSessionsAsync(
+        Guid accountId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await _db.UserAccounts.AnyAsync(
+                account => account.Id == accountId && account.TenantId == tenantId,
+                cancellationToken))
+        {
+            return false;
+        }
+
+        await RevokeAllSessionsForAccountAsync(
+            accountId,
+            _timeProvider.GetUtcNow().UtcDateTime,
+            cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Confirms destructive deletion and persists its fail-closed retry state before Core calls
+    /// Ingest. Repeated preparation is safe; a missing account is accepted only when neither
+    /// half of the signed account/tenant pair now belongs to another live identity.
+    /// </summary>
+    public async Task<AccountDeletionPreparationResult> PrepareDeletionAsync(
+        Guid accountId,
+        Guid tenantId,
+        string? currentPassword,
+        CancellationToken cancellationToken = default)
+    {
+        var account = await _db.UserAccounts
+            .Include(candidate => candidate.Tenant)
+            .SingleOrDefaultAsync(
+                candidate => candidate.Id == accountId && candidate.TenantId == tenantId,
+                cancellationToken);
+        if (account is null)
+        {
+            var identityStillInUse = await _db.UserAccounts.AnyAsync(
+                candidate => candidate.Id == accountId || candidate.TenantId == tenantId,
+                cancellationToken);
+            return identityStillInUse
+                ? AccountDeletionPreparationResult.IdentityMismatch
+                : AccountDeletionPreparationResult.AlreadyDeleted;
+        }
+
+        if (account.Tenant is null)
+        {
+            return AccountDeletionPreparationResult.IdentityMismatch;
+        }
+
+        if (!VerifyPassword(account, currentPassword))
+        {
+            return AccountDeletionPreparationResult.InvalidCurrentPassword;
+        }
+
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        account.Tenant.PlatformSyncEnabled = false;
+        account.Tenant.DeletionRequestedAtUtc ??= nowUtc;
+        await RevokeAllSessionsForAccountAsync(account.Id, nowUtc, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return AccountDeletionPreparationResult.Prepared;
+    }
+
+    private bool VerifyPassword(UserAccount account, string? password)
+    {
+        if (string.IsNullOrEmpty(password) || password.Length > MaximumPasswordLength)
+        {
+            return false;
+        }
+
+        return _passwordHasher.VerifyHashedPassword(account, account.PasswordHash, password)
+            != PasswordVerificationResult.Failed;
+    }
+
+    private Task<int> RevokeAllSessionsForAccountAsync(
+        Guid accountId,
+        DateTime revokedAtUtc,
+        CancellationToken cancellationToken) =>
+        _db.RefreshTokenSessions
+            .Where(session => session.UserAccountId == accountId && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
+                cancellationToken);
+
+    /// <summary>
     /// Validates a plain mailbox address and produces its case-insensitive lookup form.
     /// Display-address syntax such as "Owner &lt;owner@example.com&gt;" is rejected because the
     /// API contract expects an address only.
@@ -350,4 +492,23 @@ public sealed record TenantProvisioningResult(
 
     public static TenantProvisioningResult Failed(string code, string message) =>
         new(null, null, code, message);
+}
+
+/// <summary>Expected result of an authenticated password-change attempt.</summary>
+public sealed record PasswordChangeResult(string? ErrorCode, string? ErrorMessage)
+{
+    public bool Changed => ErrorCode is null;
+
+    public static PasswordChangeResult Succeeded { get; } = new(null, null);
+
+    public static PasswordChangeResult Failed(string code, string message) => new(code, message);
+}
+
+/// <summary>Security decision made before a cross-service account deletion starts.</summary>
+public enum AccountDeletionPreparationResult
+{
+    Prepared,
+    AlreadyDeleted,
+    InvalidCurrentPassword,
+    IdentityMismatch
 }

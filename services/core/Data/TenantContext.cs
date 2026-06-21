@@ -25,6 +25,12 @@ public sealed class Tenant
     /// set this flag directly.
     /// </summary>
     public bool PlatformSyncEnabled { get; set; }
+    /// <summary>
+    /// UTC time at which authenticated account deletion entered its fail-closed retry state.
+    /// Null means the tenant is active. A pending tenant may only authenticate the deletion
+    /// endpoint until Ingest and Core cleanup both complete.
+    /// </summary>
+    public DateTime? DeletionRequestedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }
 

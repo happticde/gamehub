@@ -101,6 +101,7 @@ builder.Services.AddHttpClient<IngestClient>(c =>
     .AddStandardResilienceHandler();
 builder.Services.AddScoped<UnificationService>();
 builder.Services.AddScoped<PlatformCredentialManagementService>();
+builder.Services.AddScoped<AccountDeletionService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<BackupExportService>();
 builder.Services.AddScoped<BackupImportService>();
@@ -227,6 +228,52 @@ if (jwtSettings.IsEnabled)
                 // merely because it happens to use the same key material.
                 NameClaimType = ClaimTypes.Name,
                 ValidAlgorithms = [SecurityAlgorithms.HmacSha256]
+            };
+            options.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = async context =>
+                {
+                    // A signed token proves what was issued, while this lookup proves that the
+                    // account/tenant pair is still live. Pending or completed deletion therefore
+                    // invalidates normal API access immediately instead of waiting for JWT expiry.
+                    var principal = context.Principal;
+                    var accountId = Guid.Empty;
+                    var tenantId = Guid.Empty;
+                    var hasIdentity = Guid.TryParse(
+                            principal?.FindFirstValue(ClaimTypes.NameIdentifier),
+                            out accountId)
+                        && accountId != Guid.Empty
+                        && Guid.TryParse(
+                            principal?.FindFirstValue(GameHubClaimTypes.TenantId),
+                            out tenantId)
+                        && tenantId != Guid.Empty;
+                    if (!hasIdentity)
+                    {
+                        context.Fail("The access token has no valid account identity.");
+                        return;
+                    }
+
+                    // Keep a cryptographically valid, unexpired deletion request retryable even
+                    // after its account row is gone. AccountDeletionService still checks that the
+                    // signed pair cannot select another live account or tenant.
+                    if (HttpMethods.IsDelete(context.HttpContext.Request.Method)
+                        && context.HttpContext.Request.Path.Equals("/api/auth/account"))
+                    {
+                        return;
+                    }
+
+                    var db = context.HttpContext.RequestServices.GetRequiredService<CoreContext>();
+                    var isActive = await db.UserAccounts.AsNoTracking().AnyAsync(
+                        account => account.Id == accountId
+                            && account.TenantId == tenantId
+                            && account.Tenant != null
+                            && account.Tenant.DeletionRequestedAtUtc == null,
+                        context.HttpContext.RequestAborted);
+                    if (!isActive)
+                    {
+                        context.Fail("The account is unavailable or pending deletion.");
+                    }
+                }
             };
         });
 }

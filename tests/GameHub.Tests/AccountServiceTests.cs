@@ -15,6 +15,7 @@ namespace GameHub.Tests;
 public sealed class AccountServiceTests : IDisposable
 {
     private const string Password = "correct horse battery staple";
+    private const string NewPassword = "new correct horse battery staple";
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 20, 10, 0, 0, TimeSpan.Zero);
 
     private readonly Microsoft.Data.Sqlite.SqliteConnection _connection;
@@ -161,6 +162,86 @@ public sealed class AccountServiceTests : IDisposable
         Assert.NotNull(account);
         Assert.Equal(FixedNow.UtcDateTime, account.LastLoginAtUtc);
         Assert.Null(await _accounts.AuthenticateAsync("owner@example.com", "incorrect password"));
+    }
+
+    [Fact]
+    public async Task ChangePassword_CurrentPasswordVerified_RevokesOnlyAccountRefreshSessions()
+    {
+        var accountA = (await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner")).Account!;
+        var tenantB = await _accounts.ProvisionTenantAsync(
+            "Tenant B",
+            "tenant-b@example.com",
+            Password,
+            "Tenant B Owner");
+        var refresh = new RefreshTokenService(_db, CreateJwtSettings(), new FixedTimeProvider(FixedNow));
+        var tokenA = await refresh.IssueAsync(accountA);
+        var tokenB = await refresh.IssueAsync(tenantB.Account!);
+
+        var result = await _accounts.ChangePasswordAsync(
+            accountA.Id,
+            accountA.TenantId,
+            Password,
+            NewPassword);
+
+        Assert.True(result.Changed);
+        Assert.Null(await _accounts.AuthenticateAsync(accountA.Email, Password));
+        Assert.NotNull(await _accounts.AuthenticateAsync(accountA.Email, NewPassword));
+        Assert.False((await refresh.RotateAsync(tokenA.RefreshToken)).Rotated);
+        Assert.True((await refresh.RotateAsync(tokenB.RefreshToken)).Rotated);
+    }
+
+    [Fact]
+    public async Task ChangePassword_TenantACannotChangeTenantBAccount()
+    {
+        var accountA = (await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner")).Account!;
+        var tenantB = await _accounts.ProvisionTenantAsync(
+            "Tenant B",
+            "tenant-b@example.com",
+            Password,
+            "Tenant B Owner");
+
+        var result = await _accounts.ChangePasswordAsync(
+            tenantB.Account!.Id,
+            accountA.TenantId,
+            Password,
+            NewPassword);
+
+        Assert.False(result.Changed);
+        Assert.Equal("account_identity_mismatch", result.ErrorCode);
+        Assert.NotNull(await _accounts.AuthenticateAsync("tenant-b@example.com", Password));
+        Assert.Null(await _accounts.AuthenticateAsync("tenant-b@example.com", NewPassword));
+    }
+
+    [Fact]
+    public async Task RevokeAllSessions_SignedAccountPair_InvalidatesOnlyItsRefreshTokens()
+    {
+        var accountA = (await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner")).Account!;
+        var tenantB = await _accounts.ProvisionTenantAsync(
+            "Tenant B",
+            "tenant-b@example.com",
+            Password,
+            "Tenant B Owner");
+        var refresh = new RefreshTokenService(_db, CreateJwtSettings(), new FixedTimeProvider(FixedNow));
+        var tokenA = await refresh.IssueAsync(accountA);
+        var tokenB = await refresh.IssueAsync(tenantB.Account!);
+
+        Assert.True(await _accounts.RevokeAllSessionsAsync(accountA.Id, accountA.TenantId));
+
+        Assert.False((await refresh.RotateAsync(tokenA.RefreshToken)).Rotated);
+        Assert.True((await refresh.RotateAsync(tokenB.RefreshToken)).Rotated);
+        Assert.False(await _accounts.RevokeAllSessionsAsync(tenantB.Account!.Id, accountA.TenantId));
     }
 
     [Fact]
