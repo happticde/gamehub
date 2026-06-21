@@ -41,6 +41,9 @@
   PostgreSQL; SQLite uses equivalent insert/update guard triggers in its upgrade-safe migration.
 - Cross-tenant writes are rejected for all three relationships in both newly created schemas and
   databases upgraded from the previous migration.
+- Tag-to-game assignments are now tenant-owned join rows with composite game/tag foreign keys.
+  SQLite and PostgreSQL upgrade tests prove that existing assignments survive, legacy cross-tenant
+  rows are retained through tenant-local tags, and new cross-tenant relations are rejected.
 - ADR-008 and Roadmap item #8 now reflect that tenant-scoped portability is implemented; the
   remaining isolation audit, account lifecycle, production authentication, and guarded enablement
   are still open.

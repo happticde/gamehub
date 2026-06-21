@@ -93,6 +93,11 @@ Cross-tenant tests verify that exports cannot leak another tenant's games, a ten
 another tenant already has data, equivalent slugs and platform identifiers can coexist, and the
 other tenant's library and activity log remain unchanged.
 
+Tag assignments are enforced as tenant-owned join rows with composite foreign keys to both games
+and tags. Provider-specific SQLite and PostgreSQL migrations retain existing assignments; legacy
+cross-tenant rows are normalized to an equivalent tag owned by the game's tenant before the new
+constraints are applied.
+
 ## Delivery Plan
 
 1. **Completed:** Add `GET /api/backup` for a downloadable V1 JSON document.
