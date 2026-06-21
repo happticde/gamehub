@@ -73,8 +73,11 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   prevent LibraryItems, ManualLinks, enrichment audits, and tag assignments from referencing
   another tenant's game or tag. SQLite and PostgreSQL upgrades preserve existing tag assignments;
   any legacy cross-tenant assignment is retained through an equivalent tenant-local tag.
-- **Remaining isolation gate**: Complete the audit of user-owned paths not yet explicitly verified
-  above and close any gaps before multi-user enablement, especially remaining service-level paths.
+- **Isolation gate complete (2026-06-21)**: The remaining user-owned Core paths were audited,
+  including ActivityLog, SyncAuditLog, SyncMetadata, their API reads and sync/background writes,
+  and the in-memory scheduler status. Direct tests prove tenant-isolated operational history,
+  foreign-owner write rejection, tenant-specific scheduler results, and SQLite/PostgreSQL upgrade
+  preservation. See [Core Tenant-Isolation Audit](tenant-isolation-audit.md).
 - **Remaining account work**: Define the supported multi-user account lifecycle and complete the
   chosen production authentication flow. OAuth remains an account/authentication option; Epic
   integration is outside this item.
@@ -137,7 +140,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
-| **Multi-user readiness** | #8 remaining isolation audit → account lifecycle and production auth → guarded enablement |
+| **Multi-user readiness** | #8 account lifecycle and production auth → guarded enablement (isolation audit complete) |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |

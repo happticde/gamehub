@@ -36,6 +36,10 @@ Two ASP.NET Core microservices:
   status confirms at least one Steam, GOG, or PSN credential. Deletion disables first and only
   re-enables after another supported credential is verified; failures remain disabled.
 - Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`).
+- Sync scheduler results are tenant-indexed in memory. The status endpoint resolves the active
+  tenant through `ITenantContext`; only enabled configuration and the next-cycle time are shared.
+- The Roadmap #8 Core tenant-isolation gate is complete. See `docs/tenant-isolation-audit.md` for
+  the audited path inventory and the account/authentication/rollout work that still blocks enablement.
 
 ## Conventions
 - All controllers have `ILogger` injection with structured logging (`{Platform}`, `{Count}`, etc.).

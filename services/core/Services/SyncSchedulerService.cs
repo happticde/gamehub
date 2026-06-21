@@ -8,70 +8,128 @@ namespace GameHub.Core.Services;
 public class SyncSchedulerStatus
 {
     private readonly object _lock = new();
+    private readonly Dictionary<Guid, TenantSyncSchedulerStatus> _tenantStatuses = [];
+    private DateTime? _nextRunAt;
 
     /// <summary>Whether the scheduler is enabled in configuration.</summary>
     public bool IsEnabled { get; set; }
 
-    /// <summary>True while a sync cycle is actively running.</summary>
-    public bool IsRunning { get; private set; }
-
-    /// <summary>UTC timestamp of the last completed sync.</summary>
-    public DateTime? LastRunAt { get; private set; }
-
-    /// <summary>UTC timestamp when the next sync is expected to start.</summary>
-    public DateTime? NextRunAt { get; private set; }
-
-    /// <summary>"Success" or the error message from the last run.</summary>
-    public string? LastResult { get; private set; }
-
-    /// <summary>Number of game-platform records processed in the last run.</summary>
-    public int ItemsProcessed { get; private set; }
-
-    /// <summary>Marks the start of a sync cycle.</summary>
-    public void MarkStarted()
+    /// <summary>Returns scheduler state containing only the selected tenant's last result.</summary>
+    public SyncSchedulerSnapshot GetSnapshot(Guid tenantId)
     {
         lock (_lock)
         {
-            IsRunning = true;
+            var tenantStatus = GetOrCreateTenantStatus(tenantId);
+            return new SyncSchedulerSnapshot(
+                IsEnabled,
+                tenantStatus.IsRunning,
+                tenantStatus.LastRunAt,
+                _nextRunAt,
+                tenantStatus.LastResult,
+                tenantStatus.ItemsProcessed);
         }
     }
 
-    /// <summary>Marks a successful completion of a sync cycle.</summary>
-    public void MarkCompleted(int itemsProcessed, DateTime nextRunAt)
+    /// <summary>Marks the start of one tenant's work in a scheduler cycle.</summary>
+    public void MarkStarted(Guid tenantId)
     {
         lock (_lock)
         {
-            IsRunning = false;
-            LastRunAt = DateTime.UtcNow;
-            NextRunAt = nextRunAt;
-            LastResult = "Success";
-            ItemsProcessed = itemsProcessed;
+            GetOrCreateTenantStatus(tenantId).IsRunning = true;
         }
     }
 
-    /// <summary>Marks a failed sync cycle.</summary>
-    public void MarkFailed(string errorMessage, DateTime nextRunAt)
+    /// <summary>Marks successful completion of one tenant's work.</summary>
+    public void MarkCompleted(Guid tenantId, int itemsProcessed)
     {
         lock (_lock)
         {
-            IsRunning = false;
-            LastRunAt = DateTime.UtcNow;
-            NextRunAt = nextRunAt;
-            LastResult = errorMessage;
-            ItemsProcessed = 0;
+            CompleteTenant(tenantId, "Success", itemsProcessed);
         }
     }
 
-    /// <summary>Clears NextRunAt when the scheduler is stopping.</summary>
+    /// <summary>Marks one tenant as skipped by its server-controlled sync policy.</summary>
+    public void MarkSkipped(Guid tenantId)
+    {
+        lock (_lock)
+        {
+            CompleteTenant(tenantId, "Skipped", 0);
+        }
+    }
+
+    /// <summary>Marks failed completion of one tenant's work.</summary>
+    public void MarkFailed(Guid tenantId, string errorMessage)
+    {
+        lock (_lock)
+        {
+            CompleteTenant(tenantId, errorMessage, 0);
+        }
+    }
+
+    /// <summary>Sets the shared time at which the scheduler will start its next cycle.</summary>
+    public void SetNextRunAt(DateTime nextRunAt)
+    {
+        lock (_lock)
+        {
+            _nextRunAt = nextRunAt;
+        }
+    }
+
+    /// <summary>Clears the shared schedule and any in-progress flags when stopping.</summary>
     public void MarkStopped()
     {
         lock (_lock)
         {
-            IsRunning = false;
-            NextRunAt = null;
+            _nextRunAt = null;
+            foreach (var status in _tenantStatuses.Values)
+            {
+                status.IsRunning = false;
+            }
         }
     }
+
+    private TenantSyncSchedulerStatus GetOrCreateTenantStatus(Guid tenantId)
+    {
+        if (tenantId == Guid.Empty)
+        {
+            throw new ArgumentException("The tenant identifier cannot be empty.", nameof(tenantId));
+        }
+
+        if (!_tenantStatuses.TryGetValue(tenantId, out var status))
+        {
+            status = new TenantSyncSchedulerStatus();
+            _tenantStatuses.Add(tenantId, status);
+        }
+
+        return status;
+    }
+
+    private void CompleteTenant(Guid tenantId, string result, int itemsProcessed)
+    {
+        var status = GetOrCreateTenantStatus(tenantId);
+        status.IsRunning = false;
+        status.LastRunAt = DateTime.UtcNow;
+        status.LastResult = result;
+        status.ItemsProcessed = itemsProcessed;
+    }
+
+    private sealed class TenantSyncSchedulerStatus
+    {
+        public bool IsRunning { get; set; }
+        public DateTime? LastRunAt { get; set; }
+        public string? LastResult { get; set; }
+        public int ItemsProcessed { get; set; }
+    }
 }
+
+/// <summary>Tenant-safe scheduler status returned by the sync status endpoint.</summary>
+public sealed record SyncSchedulerSnapshot(
+    bool IsEnabled,
+    bool IsRunning,
+    DateTime? LastRunAt,
+    DateTime? NextRunAt,
+    string? LastResult,
+    int ItemsProcessed);
 
 /// <summary>
 /// Background worker that runs a full library sync on a configurable interval.
@@ -119,14 +177,12 @@ public class SyncSchedulerService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             _logger.LogInformation("Sync scheduler: starting sync cycle");
-            _status.MarkStarted();
-
             try
             {
                 var count = await RunCycleAsync(stoppingToken);
 
                 var nextRun = DateTime.UtcNow.Add(interval);
-                _status.MarkCompleted(count, nextRun);
+                _status.SetNextRunAt(nextRun);
 
                 _logger.LogInformation(
                     "Sync scheduler: cycle complete — {Count} items processed. Next run at {NextRun}",
@@ -140,7 +196,7 @@ public class SyncSchedulerService : BackgroundService
             catch (Exception ex)
             {
                 var nextRun = DateTime.UtcNow.Add(interval);
-                _status.MarkFailed(ex.Message, nextRun);
+                _status.SetNextRunAt(nextRun);
 
                 _logger.LogError(ex,
                     "Sync scheduler: cycle failed. Next retry at {NextRun}",
@@ -174,11 +230,13 @@ public class SyncSchedulerService : BackgroundService
             var unifier = services.GetRequiredService<UnificationService>();
             var activityLog = services.GetRequiredService<ActivityLogService>();
 
-            await activityLog.LogAsync("SyncStarted", "Scheduled sync cycle started");
+            _status.MarkStarted(tenantId);
             try
             {
+                await activityLog.LogAsync("SyncStarted", "Scheduled sync cycle started");
                 var tenantCount = await unifier.RunFullSyncAsync();
                 count += tenantCount;
+                _status.MarkCompleted(tenantId, tenantCount);
                 await activityLog.LogAsync(
                     "SyncFinished",
                     $"Scheduled sync completed — {tenantCount} items processed");
@@ -192,6 +250,7 @@ public class SyncSchedulerService : BackgroundService
             {
                 // Missing supported credentials are a normal policy skip, not a failed
                 // scheduler cycle, and must not prevent later tenants from being visited.
+                _status.MarkSkipped(tenantId);
                 await activityLog.LogAsync(
                     "SyncSkipped",
                     "Scheduled sync skipped because no supported credential is active");
@@ -201,6 +260,7 @@ public class SyncSchedulerService : BackgroundService
             }
             catch (Exception exception)
             {
+                _status.MarkFailed(tenantId, exception.Message);
                 try
                 {
                     await activityLog.LogAsync(

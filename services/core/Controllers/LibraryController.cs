@@ -24,6 +24,7 @@ public class LibraryController : ControllerBase
     private readonly CoreContext _db;
     private readonly ILogger<LibraryController> _logger;
     private readonly SyncSchedulerStatus _syncStatus;
+    private readonly ITenantContext _tenantContext;
     private readonly ActivityLogService _activityLog;
     private readonly IGameMetadataProvider _metadataProvider;
 
@@ -33,6 +34,7 @@ public class LibraryController : ControllerBase
         CoreContext db,
         ILogger<LibraryController> logger,
         SyncSchedulerStatus syncStatus,
+        ITenantContext tenantContext,
         ActivityLogService activityLog,
         IGameMetadataProvider metadataProvider)
     {
@@ -41,6 +43,7 @@ public class LibraryController : ControllerBase
         _db = db;
         _logger = logger;
         _syncStatus = syncStatus;
+        _tenantContext = tenantContext;
         _activityLog = activityLog;
         _metadataProvider = metadataProvider;
     }
@@ -90,15 +93,7 @@ public class LibraryController : ControllerBase
     [HttpGet("sync/status")]
     public IActionResult GetSyncStatus()
     {
-        return Ok(new
-        {
-            _syncStatus.IsEnabled,
-            _syncStatus.IsRunning,
-            _syncStatus.LastRunAt,
-            _syncStatus.NextRunAt,
-            _syncStatus.LastResult,
-            _syncStatus.ItemsProcessed
-        });
+        return Ok(_syncStatus.GetSnapshot(_tenantContext.TenantId));
     }
 
     /// <summary>
