@@ -67,6 +67,8 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
 - **Isolation verification (2026-06-21)**: Tenant-scoped backup export and restore, the active-tenant
   empty-library restore rule, equivalent cross-tenant slugs/platform IDs, and Library mutation
   boundaries for personal tracking, merge, and split have direct cross-tenant test coverage.
+  Scheduled sync cycles also verify isolated tenant scopes, tenant-owned activity/audit rows, and
+  policy skips that do not block later tenants.
 - **Remaining isolation gate**: Complete the audit of user-owned paths not yet explicitly verified
   above and close any gaps before multi-user enablement, especially sync, tags, manual links,
   background jobs, and uniqueness constraints.

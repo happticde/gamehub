@@ -30,6 +30,9 @@
 - Backup export and restore were confirmed to already use the active tenant boundary. Existing
   tests cover non-leaking exports, restore alongside another tenant's data, tenant-owned writes,
   and equivalent slugs/platform identifiers.
+- The scheduled-sync cycle is independently testable without hosted-service delays. Its integration
+  test covers isolated per-tenant scopes, tenant-owned activity/sync audit rows, and a disabled
+  tenant policy skip alongside a successful tenant in the same cycle.
 - ADR-008 and Roadmap item #8 now reflect that tenant-scoped portability is implemented; the
   remaining isolation audit, account lifecycle, production authentication, and guarded enablement
   are still open.

@@ -123,56 +123,7 @@ public class SyncSchedulerService : BackgroundService
 
             try
             {
-                var count = 0;
-                await _tenantJobs.RunForEachTenantAsync(async (services, tenantId, cancellationToken) =>
-                {
-                    var unifier = services.GetRequiredService<UnificationService>();
-                    var activityLog = services.GetRequiredService<ActivityLogService>();
-
-                    await activityLog.LogAsync("SyncStarted", "Scheduled sync cycle started");
-                    try
-                    {
-                        var tenantCount = await unifier.RunFullSyncAsync();
-                        count += tenantCount;
-                        await activityLog.LogAsync(
-                            "SyncFinished",
-                            $"Scheduled sync completed — {tenantCount} items processed");
-
-                        _logger.LogInformation(
-                            "Sync scheduler completed tenant {TenantId} with {Count} items processed",
-                            tenantId,
-                            tenantCount);
-                    }
-                    catch (TenantPlatformSyncDisabledException)
-                    {
-                        // Missing supported credentials are a normal policy skip, not a failed
-                        // scheduler cycle, and must not prevent later tenants from being visited.
-                        await activityLog.LogAsync(
-                            "SyncSkipped",
-                            "Scheduled sync skipped because no supported credential is active");
-                        _logger.LogInformation(
-                            "Sync scheduler skipped tenant {TenantId}: platform sync disabled",
-                            tenantId);
-                    }
-                    catch (Exception exception)
-                    {
-                        try
-                        {
-                            await activityLog.LogAsync(
-                                "SyncFinished",
-                                $"Scheduled sync failed: {exception.Message}");
-                        }
-                        catch (Exception activityException)
-                        {
-                            _logger.LogWarning(
-                                activityException,
-                                "Could not record sync failure for tenant {TenantId}",
-                                tenantId);
-                        }
-
-                        throw;
-                    }
-                }, stoppingToken);
+                var count = await RunCycleAsync(stoppingToken);
 
                 var nextRun = DateTime.UtcNow.Add(interval);
                 _status.MarkCompleted(count, nextRun);
@@ -209,5 +160,65 @@ public class SyncSchedulerService : BackgroundService
 
         _status.MarkStopped();
         _logger.LogInformation("Sync scheduler stopped");
+    }
+
+    /// <summary>
+    /// Runs one tenant-isolated scheduler cycle. Kept separate from the timing loop so tenant
+    /// boundaries and policy skips can be verified without waiting for hosted-service delays.
+    /// </summary>
+    internal async Task<int> RunCycleAsync(CancellationToken cancellationToken)
+    {
+        var count = 0;
+        await _tenantJobs.RunForEachTenantAsync(async (services, tenantId, tenantCancellationToken) =>
+        {
+            var unifier = services.GetRequiredService<UnificationService>();
+            var activityLog = services.GetRequiredService<ActivityLogService>();
+
+            await activityLog.LogAsync("SyncStarted", "Scheduled sync cycle started");
+            try
+            {
+                var tenantCount = await unifier.RunFullSyncAsync();
+                count += tenantCount;
+                await activityLog.LogAsync(
+                    "SyncFinished",
+                    $"Scheduled sync completed — {tenantCount} items processed");
+
+                _logger.LogInformation(
+                    "Sync scheduler completed tenant {TenantId} with {Count} items processed",
+                    tenantId,
+                    tenantCount);
+            }
+            catch (TenantPlatformSyncDisabledException)
+            {
+                // Missing supported credentials are a normal policy skip, not a failed
+                // scheduler cycle, and must not prevent later tenants from being visited.
+                await activityLog.LogAsync(
+                    "SyncSkipped",
+                    "Scheduled sync skipped because no supported credential is active");
+                _logger.LogInformation(
+                    "Sync scheduler skipped tenant {TenantId}: platform sync disabled",
+                    tenantId);
+            }
+            catch (Exception exception)
+            {
+                try
+                {
+                    await activityLog.LogAsync(
+                        "SyncFinished",
+                        $"Scheduled sync failed: {exception.Message}");
+                }
+                catch (Exception activityException)
+                {
+                    _logger.LogWarning(
+                        activityException,
+                        "Could not record sync failure for tenant {TenantId}",
+                        tenantId);
+                }
+
+                throw;
+            }
+        }, cancellationToken);
+
+        return count;
     }
 }
