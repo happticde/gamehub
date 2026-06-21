@@ -79,7 +79,19 @@ No backup format change is required if only ownership semantics change. A new fo
 - Format migrations will be required when breaking changes are introduced.
 - CSV cannot be used for complete restoration.
 - Audit history and raw platform payloads are not restored.
-- Export and restore remain instance-wide administrative operations until tenant scoping is implemented.
+- Export and restore remain privileged account-wide operations; restore intentionally requires an
+  empty library for the active tenant.
+
+## Implementation Status (2026-06-21)
+
+Tenant scoping is now implemented without changing the V1 document format. Core's authenticated
+tenant context applies query filters to backup export and to the restore empty-library checks, while
+save guards assign every restored entity to the active tenant. Data owned by other tenants neither
+appears in exports nor blocks or changes a restore.
+
+Cross-tenant tests verify that exports cannot leak another tenant's games, a tenant can restore while
+another tenant already has data, equivalent slugs and platform identifiers can coexist, and the
+other tenant's library and activity log remain unchanged.
 
 ## Delivery Plan
 
@@ -87,3 +99,5 @@ No backup format change is required if only ownership semantics change. A new fo
 2. **Completed:** Add validation and transactional restore into an empty library.
 3. **Completed:** Add an Admin UI for download, validation preview, and restore.
 4. **Completed:** Add a separate flat CSV export for spreadsheet use.
+5. **Completed:** Scope export and restore preconditions/writes to the authenticated tenant.
+6. **Completed:** Add cross-tenant export, restore, ownership, and equivalent-key isolation tests.

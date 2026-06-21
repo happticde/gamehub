@@ -64,13 +64,12 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   are stored and no automatic Epic stored retrieval runs. Core continues to synchronize manually
   ingested Epic raw data. Future Epic authentication and stored retrieval are independently tracked
   in item #16 and are not pending work for the current credential-management scope.
-- **Remaining isolation gate**: Audit every user-owned read, write, background job, and uniqueness
-  constraint against the authenticated tenant and close any gaps before multi-user enablement. This
-  includes library data, sync, tags, manual links, credential policy, export, and restore.
-- **Remaining portability work**: Keep the JSON backup tenant-neutral and change the current
-  empty-library restore rule to "the authenticated tenant's library is empty."
-- **Remaining verification**: Complete cross-tenant coverage proving exports cannot leak data,
-  restores cannot modify another tenant, and identical slugs/platform IDs can coexist across tenants.
+- **Isolation verification (2026-06-21)**: Tenant-scoped backup export and restore, the active-tenant
+  empty-library restore rule, equivalent cross-tenant slugs/platform IDs, and Library mutation
+  boundaries for personal tracking, merge, and split have direct cross-tenant test coverage.
+- **Remaining isolation gate**: Complete the audit of user-owned paths not yet explicitly verified
+  above and close any gaps before multi-user enablement, especially sync, tags, manual links,
+  background jobs, and uniqueness constraints.
 - **Remaining account work**: Define the supported multi-user account lifecycle and complete the
   chosen production authentication flow. OAuth remains an account/authentication option; Epic
   integration is outside this item.
@@ -95,7 +94,9 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Feature**: GameHub-specific import/export via JSON/CSV.
 - **Goal**: Full manual backup of entire unified library (metadata, ratings, play status).
 - **Current scope**: JSON V1 export, validation, transactional empty-library restore, Admin UI, and spreadsheet-safe CSV export are implemented for the single-user deployment model.
-- **Multi-tenancy dependency**: Data portability must be tenant-scoped as part of item #8 before multi-user operation is enabled. See [ADR-008](adr/008-data-portability-format.md).
+- **Multi-tenancy status**: Export and restore are scoped to the authenticated tenant while the V1
+  document remains tenant-neutral. Cross-tenant isolation and active-tenant empty-library behavior
+  are covered by tests. See [ADR-008](adr/008-data-portability-format.md).
 
 ### 13. Physical Collection (Barcode Scanning)
 - **Scanner**: Web-based barcode scanner (MediaDevices API) for physical game cases.
@@ -131,7 +132,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
-| **Multi-user readiness** | #8 isolation audit → tenant-scoped portability → account lifecycle and production auth → guarded enablement |
+| **Multi-user readiness** | #8 remaining isolation audit → account lifecycle and production auth → guarded enablement |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
