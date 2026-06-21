@@ -105,10 +105,14 @@ public class CoreContext : DbContext
             // global. Only the exact, case-sensitive issuer/subject pair may locate a mapping.
             entity.Property(identity => identity.Issuer).HasMaxLength(2048);
             entity.Property(identity => identity.Subject).HasMaxLength(255);
+            // This is the core anti-takeover invariant: one external identity cannot point to two
+            // local accounts even when email/profile claims happen to match.
             entity.HasIndex(identity => new { identity.Issuer, identity.Subject }).IsUnique();
             // A GameHub account may link only one subject from a given issuer. Replacing it
             // requires an explicit unlink/relink design rather than an implicit email match.
             entity.HasIndex(identity => new { identity.UserAccountId, identity.Issuer }).IsUnique();
+            // TenantId participates in the FK even though UserAccount.Id is globally unique. The
+            // database therefore rejects a manipulated row that combines Tenant B with Account A.
             entity.HasOne(identity => identity.UserAccount)
                 .WithMany(account => account.ExternalIdentities)
                 .HasForeignKey(identity => new { identity.TenantId, identity.UserAccountId })

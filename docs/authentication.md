@@ -4,6 +4,10 @@ GameHub keeps the existing API-key and local-account modes for compatibility and
 provider-neutral OIDC as the production authentication direction. Tenant identity always comes
 from a server-verified GameHub account mapping, never from request bodies or provider tenant claims.
 
+For a source-oriented explanation with sequence diagrams, trust boundaries, data model, failure
+paths, and a guided reading order, see
+[OIDC Authentication Architecture](oidc-authentication-architecture.md).
+
 ## Production OIDC
 
 OIDC uses Authorization Code Flow with PKCE through the server-side Next.js BFF. Before enabling
@@ -191,7 +195,7 @@ single-user upgrade/bootstrap compatibility; all of its account-owned data is st
 GameHub currently has no trusted email provider and therefore offers no forgot-password,
 email-reset, recovery-code, or administrative password-replacement API. Losing the password and
 all active sessions requires trusted operator recovery outside the public API. This must be
-remains intentionally separate from provider recovery. See ADR-010 and ADR-011.
+revisited separately from provider recovery. See ADR-010 and ADR-011.
 
 ## Frontend Session
 

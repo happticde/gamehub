@@ -52,6 +52,8 @@ Two ASP.NET Core microservices:
   Next.js BFF and independent ID-token validation in Core. Core pins exact issuer, audience,
   asymmetric algorithms, nonce, lifetime, and JWKS, then resolves only a persisted issuer/subject
   mapping. Email and provider tenant/role claims never select an account. See ADR-011.
+- The learning-oriented implementation walkthrough, sequence diagrams, trust boundaries, failure
+  matrix, and source-file map live in `docs/oidc-authentication-architecture.md`.
 - External identities are linked only from a live signed GameHub account and use a composite
   `(TenantId, UserAccountId)` foreign key. OIDC requires secure cookies and complete HTTPS
   configuration; failures close. Local accounts remain a non-production compatibility path.

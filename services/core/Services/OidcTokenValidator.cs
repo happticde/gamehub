@@ -6,7 +6,18 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace GameHub.Core.Services;
 
-/// <summary>Validated, provider-neutral OIDC configuration for server-side ID-token checks.</summary>
+/// <summary>
+/// Validated, provider-neutral OIDC trust configuration used by Core.
+/// This is intentionally separate from the BFF configuration: both components read the same
+/// issuer/client trust anchors, but only Core decides whether an ID token represents a GameHub
+/// identity and only Core can issue a tenant-scoped GameHub session.
+/// </summary>
+/// <param name="IsEnabled">Explicit feature switch; disabled preserves the local compatibility path.</param>
+/// <param name="Issuer">Exact provider identifier required in discovery metadata and the ID token.</param>
+/// <param name="Audience">GameHub provider client ID required in the ID token audience.</param>
+/// <param name="MetadataAddress">HTTPS discovery document used to obtain issuer metadata and JWKS.</param>
+/// <param name="AllowedAlgorithms">Closed asymmetric signature-algorithm allowlist.</param>
+/// <param name="BffServiceKey">Independent credential authorizing only the server-side BFF exchange.</param>
 public sealed record OidcSettings(
     bool IsEnabled,
     string Issuer,
@@ -18,6 +29,8 @@ public sealed record OidcSettings(
     /// <summary>Configuration section containing production OIDC trust settings.</summary>
     public const string SectionName = "Authentication:Oidc";
 
+    // Do not accept an arbitrary configuration string as a valid algorithm. This outer allowlist
+    // excludes `none` and symmetric algorithms before the deployment-specific subset is parsed.
     private static readonly HashSet<string> SupportedAsymmetricAlgorithms = new(StringComparer.Ordinal)
     {
         SecurityAlgorithms.RsaSha256,
@@ -34,6 +47,8 @@ public sealed record OidcSettings(
     /// <summary>
     /// Parses OIDC configuration at startup. Enabling the feature with missing, non-HTTPS,
     /// symmetric, or incomplete trust material aborts startup instead of weakening validation.
+    /// Configuration errors are therefore deployment failures, not per-request authentication
+    /// branches that might accidentally fall back to a less trusted mode.
     /// </summary>
     public static OidcSettings FromConfiguration(IConfiguration configuration, JwtSettings jwtSettings)
     {
@@ -41,6 +56,7 @@ public sealed record OidcSettings(
         var enabled = section.GetValue("Enabled", false);
         if (!enabled)
         {
+            // Disabled is the only state in which the remaining OIDC values may be absent.
             return new OidcSettings(false, "", "", "", [], "");
         }
 
@@ -50,6 +66,8 @@ public sealed record OidcSettings(
                 $"{SectionName} requires Authentication:Jwt:SigningKey for GameHub sessions.");
         }
 
+        // Issuer is an exact security identifier. It is validated as a URL but deliberately not
+        // normalized (for example by silently adding/removing a trailing slash).
         var issuer = section["Issuer"]?.Trim() ?? "";
         if (!IsSecureAbsoluteUri(issuer, out _))
         {
@@ -62,6 +80,8 @@ public sealed record OidcSettings(
             throw new InvalidOperationException($"{SectionName}:Audience is required and must not exceed 512 characters.");
         }
 
+        // A custom metadata address supports provider-specific deployments while the issuer
+        // remains fixed. Metadata still has to assert the configured issuer later.
         var metadataAddress = section["MetadataAddress"]?.Trim();
         if (string.IsNullOrEmpty(metadataAddress))
         {
@@ -73,6 +93,7 @@ public sealed record OidcSettings(
                 $"{SectionName}:MetadataAddress must be an absolute HTTPS URI.");
         }
 
+        // The deployment chooses a subset (normally RS256); no algorithm is inferred from a token.
         var configuredAlgorithms = (section["AllowedAlgorithms"] ?? "")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.Ordinal)
@@ -84,6 +105,8 @@ public sealed record OidcSettings(
                 $"{SectionName}:AllowedAlgorithms must contain only explicitly supported asymmetric algorithms.");
         }
 
+        // Printable ASCII makes the key safe to carry in a dedicated internal HTTP header. It is
+        // an independent trust boundary and must not reuse the cookie key or provider secret.
         var bffServiceKey = section["BffServiceKey"]?.Trim() ?? "";
         if (bffServiceKey.Length is < 32 or > 512
             || bffServiceKey.Any(character => character is < '!' or > '~'))
@@ -116,7 +139,10 @@ public sealed record OidcSettings(
     }
 }
 
-/// <summary>Fetches and caches provider discovery metadata and signing keys.</summary>
+/// <summary>
+/// Fetches and caches provider discovery metadata and signing keys. The abstraction lets tests
+/// provide deterministic keys or simulated outages without weakening production validation.
+/// </summary>
 public interface IOidcMetadataProvider
 {
     /// <summary>Gets current discovery metadata, throwing when the provider is unavailable.</summary>
@@ -126,7 +152,11 @@ public interface IOidcMetadataProvider
     void RequestRefresh();
 }
 
-/// <summary>Microsoft.IdentityModel-backed discovery and JWKS provider.</summary>
+/// <summary>
+/// Microsoft.IdentityModel-backed discovery and JWKS provider.
+/// <see cref="ConfigurationManager{T}"/> caches successful metadata, automatically respects its
+/// refresh intervals, and can be explicitly refreshed when a valid provider rotates signing keys.
+/// </summary>
 public sealed class OidcMetadataProvider : IOidcMetadataProvider, IDisposable
 {
     private readonly ConfigurationManager<OpenIdConnectConfiguration>? _configurationManager;
@@ -139,6 +169,8 @@ public sealed class OidcMetadataProvider : IOidcMetadataProvider, IDisposable
             return;
         }
 
+        // A bounded timeout turns provider failure into a closed, observable login failure instead
+        // of tying up request resources for the much longer HttpClient default timeout.
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         _configurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
             settings.MetadataAddress,
@@ -161,6 +193,10 @@ public sealed class OidcMetadataProvider : IOidcMetadataProvider, IDisposable
 /// <summary>
 /// Validates provider ID tokens without trusting browser, email, tenant, account, or role claims.
 /// Only the configured issuer and the provider-stable subject leave this trust boundary.
+///
+/// The BFF has already validated redirect protocol state, but Core repeats every check needed to
+/// trust the token itself. This defense-in-depth separation prevents a compromised/misconfigured
+/// BFF from manufacturing account or tenant claims.
 /// </summary>
 public sealed class OidcTokenValidator
 {
@@ -179,17 +215,23 @@ public sealed class OidcTokenValidator
         _logger = logger;
     }
 
-    /// <summary>Validates signature, issuer, audience, lifetime, algorithm, subject, and nonce.</summary>
+    /// <summary>
+    /// Validates signature, issuer, audience, lifetime, algorithm, subject, and nonce.
+    /// Provider availability and invalid-token outcomes remain distinct internally so the API can
+    /// return 503 for infrastructure failure and a generic 401 for untrusted identity proof.
+    /// </summary>
     public async Task<OidcTokenValidationResult> ValidateAsync(
         string? idToken,
         string? expectedNonce,
         CancellationToken cancellationToken = default)
     {
+        // Gate 1: no token processing occurs unless the complete configuration passed startup checks.
         if (!_settings.IsEnabled)
         {
             return OidcTokenValidationResult.ConfigurationUnavailable;
         }
 
+        // Gate 2: bound attacker-controlled work before parsing JSON or performing cryptography.
         if (string.IsNullOrWhiteSpace(idToken)
             || idToken.Length > MaximumIdTokenLength
             || string.IsNullOrWhiteSpace(expectedNonce)
@@ -198,6 +240,8 @@ public sealed class OidcTokenValidator
             return OidcTokenValidationResult.Invalid;
         }
 
+        // Gate 3: obtain cached provider metadata/JWKS over HTTPS. An outage never causes fallback
+        // to unsigned claims, email lookup, or a locally supplied signing key.
         OpenIdConnectConfiguration configuration;
         try
         {
@@ -209,6 +253,8 @@ public sealed class OidcTokenValidator
             return OidcTokenValidationResult.ProviderUnavailable;
         }
 
+        // Discovery is data, not a trust anchor. Pin its issuer to explicit local configuration
+        // and require at least one signing key before parsing a token.
         if (!string.Equals(configuration.Issuer, _settings.Issuer, StringComparison.Ordinal)
             || configuration.SigningKeys.Count == 0)
         {
@@ -216,6 +262,7 @@ public sealed class OidcTokenValidator
             return OidcTokenValidationResult.Invalid;
         }
 
+        // Gate 4: validate the token against the current metadata snapshot.
         var validation = ValidateWithConfiguration(idToken, expectedNonce, configuration);
         if (validation.Status != OidcTokenValidationStatus.SigningKeyUnavailable)
         {
@@ -244,6 +291,8 @@ public sealed class OidcTokenValidator
     {
         try
         {
+            // These parameters intentionally turn on every relevant validation switch instead of
+            // relying on library defaults that may change between framework versions.
             var parameters = new TokenValidationParameters
             {
                 ValidateIssuerSigningKey = true,
@@ -259,11 +308,15 @@ public sealed class OidcTokenValidator
                 ValidAlgorithms = _settings.AllowedAlgorithms,
                 NameClaimType = ClaimTypes.Name
             };
+            // Keep original OIDC claim names (`iss`, `sub`, `aud`, `nonce`, `azp`). Automatic .NET
+            // claim mapping would make the security checks harder to audit against the standard.
             var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
             var principal = handler.ValidateToken(idToken, parameters, out _);
             var issuer = principal.FindFirstValue(JwtRegisteredClaimNames.Iss);
             var subject = principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
             var nonce = principal.FindFirstValue("nonce");
+            // OIDC requires `azp` when more than one audience exists. If supplied for a single
+            // audience, it must still identify this configured GameHub client.
             var audiences = principal.FindAll(JwtRegisteredClaimNames.Aud).Select(claim => claim.Value).ToArray();
             var authorizedParty = principal.FindFirstValue("azp");
             var authorizedPartyIsValid = audiences.Length <= 1
@@ -278,6 +331,8 @@ public sealed class OidcTokenValidator
                 return OidcTokenValidationResult.Invalid;
             }
 
+            // Deliberately project a narrow value. Provider tenant, organization, group, role, and
+            // email-verification claims cannot accidentally flow into authorization code later.
             return OidcTokenValidationResult.Succeeded(new ValidatedOidcIdentity(
                 _settings.Issuer,
                 subject,
@@ -295,16 +350,28 @@ public sealed class OidcTokenValidator
     }
 }
 
-/// <summary>Stable provider identity after all token checks; Email is display-only metadata.</summary>
+/// <summary>
+/// Stable provider identity after all cryptographic/protocol token checks.
+/// <paramref name="Email"/> is display-only metadata and is never used to find, create, or link an
+/// account. Authorization identity is exclusively the exact <c>(Issuer, Subject)</c> pair.
+/// </summary>
+/// <param name="Issuer">Exact validated OIDC issuer.</param>
+/// <param name="Subject">Provider-stable subject scoped to that issuer.</param>
+/// <param name="Email">Optional untrusted-for-linking display claim.</param>
 public sealed record ValidatedOidcIdentity(string Issuer, string Subject, string? Email);
 
 /// <summary>Outcome category used to distinguish invalid input from provider availability.</summary>
 public enum OidcTokenValidationStatus
 {
+    /// <summary>All token checks passed and a stable identity is available.</summary>
     Succeeded,
+    /// <summary>The proof is malformed, expired, mismatched, or cryptographically invalid.</summary>
     Invalid,
+    /// <summary>Discovery or signing keys could not be obtained from the provider.</summary>
     ProviderUnavailable,
+    /// <summary>OIDC is disabled; no external token may be accepted.</summary>
     ConfigurationUnavailable,
+    /// <summary>The token key ID was not cached; the caller may force one bounded metadata refresh.</summary>
     SigningKeyUnavailable
 }
 

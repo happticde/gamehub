@@ -58,10 +58,13 @@ test("tampered correlation cookie is rejected", () => {
     const key = randomBytes(32);
     const transaction = createOidcTransaction(redirectUri, "/library", "login", createdAt);
     const sealed = sealOidcTransaction(transaction, key);
-    const replacement = sealed.endsWith("A") ? "B" : "A";
+    const [version, iv, encodedCiphertext, tag] = sealed.split(".");
+    const ciphertext = Buffer.from(encodedCiphertext, "base64url");
+    ciphertext[0] ^= 0x01;
+    const tampered = [version, iv, ciphertext.toString("base64url"), tag].join(".");
 
     assert.throws(
-        () => openOidcTransaction(`${sealed.slice(0, -1)}${replacement}`, key),
+        () => openOidcTransaction(tampered, key),
         /invalid_oidc_transaction/,
     );
 });

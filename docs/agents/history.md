@@ -5,6 +5,10 @@
 ### What Changed
 
 **Production OIDC Authentication Gate:**
+- Added a detailed source-oriented architecture guide with protocol concepts, trust boundaries,
+  linking/login/session sequence diagrams, validation order, data model, failure matrix, test map,
+  debugging guidance, and a provider integration checklist. Security-critical OIDC source paths
+  now explain the reasoning behind each validation layer inline.
 - Added ADR-011 selecting provider-neutral OIDC Authorization Code Flow with PKCE while keeping
   recovery, MFA, email verification, and provider credentials at the trusted identity provider.
 - Next.js now owns state, nonce, PKCE, exact callback checks, HTTPS discovery, and an encrypted

@@ -87,7 +87,8 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   Code Flow with PKCE is implemented through the server-side BFF. Core independently pins issuer,
   audience, algorithms, nonce, and JWKS and maps only an explicitly linked `(issuer, subject)` to
   one account/tenant. Recovery, MFA, email verification, and provider credential security remain
-  the configured trusted provider's responsibility. See [ADR-011](adr/011-production-oidc-authentication.md).
+  the configured trusted provider's responsibility. See [ADR-011](adr/011-production-oidc-authentication.md)
+  and the [OIDC architecture walkthrough](oidc-authentication-architecture.md).
 - **Remaining rollout work**: Add an explicit, guarded multi-user enablement path only after the
   now-complete isolation, portability, verification, lifecycle, and production-authentication
   gates. OIDC configuration alone must never activate or advertise multi-user operation.

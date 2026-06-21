@@ -128,6 +128,10 @@ builder.Services.AddScoped<ExternalIdentityService>();
 var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<JwtTokenService>();
+// OIDC configuration is parsed during startup, not lazily on the first callback. A deployment
+// that opts in with incomplete issuer/audience/algorithm/BFF trust therefore never starts in a
+// partially authenticated state. The metadata provider is a singleton so discovery/JWKS caching
+// and signing-key refresh state are shared across requests.
 var oidcSettings = OidcSettings.FromConfiguration(builder.Configuration, jwtSettings);
 builder.Services.AddSingleton(oidcSettings);
 builder.Services.AddSingleton<IOidcMetadataProvider, OidcMetadataProvider>();

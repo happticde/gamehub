@@ -117,6 +117,7 @@ Until that work is complete, GameHub must not enable or advertise production mul
 
 ## References
 
+- [GameHub OIDC Authentication Architecture](../oidc-authentication-architecture.md)
 - [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
 - [OAuth 2.0 Authorization Code Grant](https://www.rfc-editor.org/rfc/rfc6749#section-4.1)
 - [Proof Key for Code Exchange (RFC 7636)](https://www.rfc-editor.org/rfc/rfc7636)
