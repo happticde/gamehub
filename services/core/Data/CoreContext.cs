@@ -97,6 +97,7 @@ public class CoreContext : DbContext
         ConfigureTenantOwned(modelBuilder.Entity<UnifiedGame>());
         ConfigureTenantOwned(modelBuilder.Entity<LibraryItem>());
         ConfigureTenantOwned(modelBuilder.Entity<Tag>());
+        ConfigureTenantOwned(modelBuilder.Entity<TagAssignment>());
         ConfigureTenantOwned(modelBuilder.Entity<SyncMetadata>());
         ConfigureTenantOwned(modelBuilder.Entity<ManualLink>());
         ConfigureTenantOwned(modelBuilder.Entity<EnrichmentAuditLog>());
@@ -120,6 +121,36 @@ public class CoreContext : DbContext
         modelBuilder.Entity<Tag>()
             .HasIndex(tag => new { tag.TenantId, tag.Name })
             .IsUnique();
+        modelBuilder.Entity<Tag>()
+            .HasAlternateKey(tag => new { tag.TenantId, tag.Id });
+        modelBuilder.Entity<UnifiedGame>()
+            .HasMany(game => game.Tags)
+            .WithMany(tag => tag.Games)
+            .UsingEntity<TagAssignment>(
+                right => right
+                    .HasOne(assignment => assignment.Tag)
+                    .WithMany()
+                    .HasForeignKey(assignment => new { assignment.TenantId, assignment.TagId })
+                    .HasPrincipalKey(tag => new { tag.TenantId, tag.Id })
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left
+                    .HasOne(assignment => assignment.UnifiedGame)
+                    .WithMany()
+                    .HasForeignKey(assignment => new { assignment.TenantId, assignment.UnifiedGameId })
+                    .HasPrincipalKey(game => new { game.TenantId, game.Id })
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.ToTable("TagUnifiedGame");
+                    join.Property(assignment => assignment.UnifiedGameId).HasColumnName("GamesId");
+                    join.Property(assignment => assignment.TagId).HasColumnName("TagsId");
+                    join.HasKey(assignment => new
+                    {
+                        assignment.TenantId,
+                        assignment.UnifiedGameId,
+                        assignment.TagId
+                    });
+                });
         modelBuilder.Entity<SyncMetadata>()
             .HasIndex(metadata => new { metadata.TenantId, metadata.Platform })
             .IsUnique();

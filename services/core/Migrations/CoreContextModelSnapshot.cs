@@ -287,6 +287,8 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "Id");
+
                     b.HasIndex("TenantId", "Name")
                         .IsUnique();
 
@@ -452,17 +454,24 @@ namespace GameHub.Core.Migrations.sqlite
                     b.ToTable("UserAccounts");
                 });
 
-            modelBuilder.Entity("TagUnifiedGame", b =>
+            modelBuilder.Entity("GameHub.Core.Data.TagAssignment", b =>
                 {
-                    b.Property<int>("GamesId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
 
-                    b.Property<int>("TagsId")
-                        .HasColumnType("integer");
+                    b.Property<int>("UnifiedGameId")
+                        .HasColumnType("integer")
+                        .HasColumnName("GamesId");
 
-                    b.HasKey("GamesId", "TagsId");
+                    b.Property<int>("TagId")
+                        .HasColumnType("integer")
+                        .HasColumnName("TagsId");
 
-                    b.HasIndex("TagsId");
+                    b.HasKey("TenantId", "UnifiedGameId", "TagId");
+
+                    b.HasIndex("TenantId", "TagId");
 
                     b.ToTable("TagUnifiedGame");
                 });
@@ -588,19 +597,31 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("TagUnifiedGame", b =>
+            modelBuilder.Entity("GameHub.Core.Data.TagAssignment", b =>
                 {
-                    b.HasOne("GameHub.Core.Data.UnifiedGame", null)
+                    b.HasOne("GameHub.Core.Data.Tag", "Tag")
                         .WithMany()
-                        .HasForeignKey("GamesId")
+                        .HasForeignKey("TenantId", "TagId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("GameHub.Core.Data.Tag", null)
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
                         .WithMany()
-                        .HasForeignKey("TagsId")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "UnifiedGameId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Tag");
+
+                    b.Navigation("UnifiedGame");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>

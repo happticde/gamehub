@@ -117,6 +117,16 @@ public class Tag : ITenantOwned
     public ICollection<UnifiedGame> Games { get; set; } = new List<UnifiedGame>();
 }
 
+/// <summary>Tenant-owned association between a tag and a unified game.</summary>
+public class TagAssignment : ITenantOwned
+{
+    public Guid TenantId { get; set; }
+    public int UnifiedGameId { get; set; }
+    public UnifiedGame? UnifiedGame { get; set; }
+    public int TagId { get; set; }
+    public Tag? Tag { get; set; }
+}
+
 /// <summary>
 /// Tracks system events (sync cycles, manual merge/split actions, game count changes)
 /// for display in the admin dashboard's activity feed.

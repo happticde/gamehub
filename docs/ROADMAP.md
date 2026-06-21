@@ -70,10 +70,11 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   Scheduled sync cycles also verify isolated tenant scopes, tenant-owned activity/audit rows, and
   policy skips that do not block later tenants. Background enrichment verifies independent
   per-tenant batch limits, progress, writes, and audit ownership. Tenant-aware database relations
-  prevent LibraryItems, ManualLinks, and enrichment audits from referencing another tenant's game.
+  prevent LibraryItems, ManualLinks, enrichment audits, and tag assignments from referencing
+  another tenant's game or tag. SQLite and PostgreSQL upgrades preserve existing tag assignments;
+  any legacy cross-tenant assignment is retained through an equivalent tenant-local tag.
 - **Remaining isolation gate**: Complete the audit of user-owned paths not yet explicitly verified
-  above and close any gaps before multi-user enablement, especially tag relationships and any
-  remaining service-level paths.
+  above and close any gaps before multi-user enablement, especially remaining service-level paths.
 - **Remaining account work**: Define the supported multi-user account lifecycle and complete the
   chosen production authentication flow. OAuth remains an account/authentication option; Epic
   integration is outside this item.
