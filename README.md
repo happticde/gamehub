@@ -41,9 +41,14 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, **G
 - **Modern web UI** — filterable/searchable library grid, cinematic game detail pages
 - **Admin dashboard** — enrichment controls, platform ingestion forms, sync management, audit logs
 - **Data portability** — versioned JSON backup/restore and spreadsheet-safe CSV export
-- **Authentication** — API key compatibility mode plus local accounts, JWT access tokens,
-  rotating refresh sessions, and HttpOnly frontend cookies
+- **Production authentication** — provider-neutral OIDC Authorization Code Flow with PKCE,
+  exact issuer/subject mappings, signed GameHub JWTs, rotating refresh sessions, and HttpOnly BFF
+  cookies
 - **Tenant isolation** — tenant-scoped Core and Ingest storage, queries, writes, and constraints
+- **Guarded multi-user mode** — an immutable, default-off operator gate with Core/Ingest/BFF
+  readiness checks, OIDC-only production login, and non-destructive disable/rollback behavior
+- **Encrypted credential vault** — tenant-scoped AES-256-GCM storage and managed Steam, GOG, and
+  PSN retrieval without returning plaintext credentials
 - **MCP Server** — AI assistant integration via the [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ---
@@ -97,6 +102,11 @@ The Core service must be running (`docker compose up core`) before starting the 
 
 ## Quick Start
 
+The commands in this section describe the default local compatibility deployment. In active
+guarded multi-user mode, ordinary Core access uses GameHub JWTs through the frontend BFF and
+ordinary Ingest access uses Core tenant delegation; the compatibility API key does not bypass
+those policies.
+
 ### 1. Configure Secrets
 
 ```bash
@@ -116,6 +126,17 @@ Open `.env` and configure your credentials:
 | `GAMEHUB_JWT_REFRESH_TOKEN_DAYS` | Absolute refresh-session lifetime, from 1–90 days |
 | `GAMEHUB_FRONTEND_AUTH_ENABLED` | Set `true` to require the frontend login flow |
 | `GAMEHUB_AUTH_COOKIE_SECURE` | Set `true` only when browsers reach the frontend over HTTPS |
+| `GAMEHUB_MULTI_USER_ENABLED` | Explicit guarded multi-user switch; keep `false` through preparation |
+| `GAMEHUB_OIDC_ENABLED` | Enables provider-neutral OIDC independently from multi-user admission |
+| `GAMEHUB_OIDC_ISSUER` | Exact HTTPS issuer returned by provider discovery |
+| `GAMEHUB_OIDC_CLIENT_ID` | OIDC client ID and expected ID-token audience |
+| `GAMEHUB_OIDC_CLIENT_SECRET` | Optional confidential-client secret, stored outside the repository |
+| `GAMEHUB_OIDC_REDIRECT_URI` | Exact external HTTPS callback ending in `/api/auth/oidc/callback` |
+| `GAMEHUB_OIDC_SCOPES` | Space-separated scopes including `openid`; defaults to `openid profile email` |
+| `GAMEHUB_OIDC_METADATA_ADDRESS` | Optional exact HTTPS discovery-document address |
+| `GAMEHUB_OIDC_COOKIE_KEY` | Independent Base64-encoded 32-byte BFF transaction-cookie key |
+| `GAMEHUB_OIDC_BFF_SERVICE_KEY` | Independent BFF-to-Core OIDC service key |
+| `GAMEHUB_OIDC_ALLOWED_ALGORITHMS` | Explicit asymmetric ID-token allowlist; defaults to `RS256` |
 | `IGDB_CLIENT_ID` | Twitch Developer App Client ID (for IGDB enrichment) |
 | `IGDB_CLIENT_SECRET` | Twitch Developer App Client Secret |
 | `CORE_DB_PROVIDER` | Core database provider (`Postgres` or `Sqlite`) |
@@ -161,13 +182,15 @@ You can alternatively use Core Swagger's **Authorize** dialog and
 
 ### 4. Ingest Your Libraries
 
-**Option A: Admin Dashboard (auth-disabled local mode)**
+**Option A: Admin Dashboard**
 
-Navigate to `http://localhost:3000/admin` → **Ingestion** tab. Enter your platform credentials and click "Fetch & Ingest".
+Authenticated deployments manage encrypted Steam, GOG, and PSN credentials through the
+**Credential Vault** tab. The browser sends them only to Core's authenticated BFF; Ingest stores
+the tenant-scoped ciphertext and returns status metadata rather than plaintext. Epic remains a
+manual API/CLI ingestion path.
 
-> With Ingest API-key authentication enabled, use the CLI or direct API calls for
-> now. Trusted Core→Ingest tenant delegation and encrypted platform credentials are the next
-> multi-user milestone; provisioned tenants remain platform-sync disabled until then.
+Provisioned tenants start with platform sync disabled. Core enables it only after a fresh vault
+status verifies at least one supported credential for that exact tenant.
 
 **Option B: CLI**
 
@@ -180,6 +203,9 @@ gamehub-cli ingest psn --cookies '{"JSESSIONID":"...","sb-cdn.session":"..."}'
 ```
 
 **Option C: Direct API Calls**
+
+These direct Ingest calls are compatibility-mode operations. Use the authenticated GameHub
+Credential Vault and BFF paths for provisioned tenants.
 
 ```bash
 # Steam
@@ -203,6 +229,9 @@ curl -X POST http://localhost:5000/api/retrieve/psn \
 
 ### 5. Sync & Enrich
 
+The API-key examples below target local compatibility mode. In active guarded mode, use the
+authenticated Admin dashboard/BFF so Core receives the signed tenant account.
+
 ```bash
 # Trigger unification sync
 curl -X POST http://localhost:5001/api/library/sync \
@@ -225,15 +254,27 @@ The provided `docker-compose.yml` is a deployment-oriented baseline:
 - **Next.js Standalone**: The frontend builds a minimal `standalone` image for optimal size and caching.
 - **Non-Root Security**: All Dockerfiles drop root privileges (e.g., `USER $APP_UID` in .NET, `nextjs:nodejs` in Next.js).
 - **Resilient Orchestration**: Services feature `restart: unless-stopped` policies and strict `healthcheck` startup dependencies.
-- **PostgreSQL Ready**: The Compose setup defaults the Core service to use a bundled PostgreSQL container dynamically configurable via environment variables in `.env`.
+- **PostgreSQL Ready**: The Compose setup defaults the Core service to a bundled PostgreSQL
+  container configured through deployment environment variables.
 
-> Multi-user operation is not enabled yet. Core and Ingest data are tenant-isolated, internal
-> tenant delegation is authenticated, and an encrypted credential vault is available. Typed
-> fetcher integration and credential management are still required before provisioned tenants can
-> synchronize libraries.
+Production multi-user operation is implemented but deliberately defaults to disabled. OIDC
+configuration alone never activates provisioned tenants. Prepare and explicitly link every
+operator-provisioned account, confirm the secret-free readiness response, back up Core and Ingest,
+and only then set `GAMEHUB_MULTI_USER_ENABLED=true` consistently across all components.
+
+See the following guides before deployment:
+
+- [`docs/authentication.md`](docs/authentication.md) — authentication variables and session lifecycle
+- [`docs/guarded-multi-user-enablement.md`](docs/guarded-multi-user-enablement.md) — readiness,
+  activation, disable, rollback, and incident procedures
+- [`docs/keycloak-oidc-setup.md`](docs/keycloak-oidc-setup.md) — self-hosted Keycloak production
+  baseline and GameHub integration
+- [`docs/oidc-authentication-architecture.md`](docs/oidc-authentication-architecture.md) — protocol
+  flow and trust boundaries
 
 To run in production:
-1. Populate your `.env` file with secure real-world values (`POSTGRES_PASSWORD`, `GAMEHUB_API_KEY`, `GAMEHUB_INGEST_SERVICE_KEY`, etc.).
+1. Inject secure real-world values through the deployment's secret and configuration system. Do
+   not commit database, provider, GameHub, BFF, delegation, cookie, or vault keys.
 2. Launch in detached mode:
    ```bash
    docker compose up -d --build
@@ -244,7 +285,7 @@ To run in production:
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page with quick stats and feature highlights |
-| `/login` | Local-account login when frontend authentication is enabled |
+| `/login` | OIDC provider login plus disabled-mode local compatibility/first-link flow |
 | `/library` | Unified library grid with search, filters (tags, platforms, developer, publisher), sorting |
 | `/library/[id]` | Cinematic game detail page with metadata, screenshots, artworks |
 | `/stats` | Tenant-scoped library statistics and analytics |
@@ -274,6 +315,15 @@ To run in production:
 | `POST` | `/api/auth/token` | Exchange email/password for access and refresh tokens |
 | `POST` | `/api/auth/refresh` | Rotate a refresh token and issue a new token pair |
 | `POST` | `/api/auth/revoke` | Revoke a refresh session |
+| `POST` | `/api/auth/revoke-all` | Revoke every refresh session for the signed account |
+| `PUT` | `/api/auth/password` | Change the compatibility password and revoke refresh sessions |
+| `DELETE` | `/api/auth/account` | Retry-safe Core and Ingest account/tenant deletion |
+| `POST` | `/api/auth/oidc/token` | BFF-only exact issuer/subject OIDC exchange |
+| `POST` | `/api/auth/oidc/link` | Link a validated external identity to the signed account |
+| `GET` | `/api/auth/multi-user/status` | Operator-only secret-free guarded-mode readiness |
+| `GET` | `/api/platform-credentials` | Tenant-scoped secret-free credential status |
+| `PUT` | `/api/platform-credentials/{platform}` | Store one encrypted Steam, GOG, or PSN credential |
+| `DELETE` | `/api/platform-credentials/{platform}` | Delete one tenant credential and update sync policy |
 | `POST` | `/api/library/sync` | Trigger incremental sync from Ingest |
 | `GET` | `/api/library?search=&tags=&platforms=&sortBy=&page=&includeIgnored=false` | Query unified library (paginated) |
 | `GET` | `/api/library/{id}` | Full game detail with media arrays |
@@ -306,7 +356,7 @@ To run in production:
 | Services | ASP.NET Core (.NET 10), C# |
 | CLI | Go (Cobra + Viper) |
 | Database | SQLite (dev) / PostgreSQL (prod) via EF Core |
-| Auth | API key, local accounts, signed JWTs, rotating refresh tokens, HttpOnly BFF cookies |
+| Auth | API key compatibility, OIDC + PKCE, signed JWTs, rotating refresh tokens, HttpOnly BFF cookies |
 | Docker | Alpine-based images, Docker Compose |
 | Tests | xUnit with in-memory SQLite |
 
@@ -318,7 +368,7 @@ frontend/                   # Next.js web application
 │   ├── page.tsx            # Landing page
 │   ├── layout.tsx          # Root layout with Navbar
 │   ├── login/page.tsx      # Local-account login
-│   ├── api/auth/           # Login/logout BFF routes and HttpOnly cookies
+│   ├── api/auth/           # Login/logout/OIDC BFF routes and HttpOnly cookies
 │   ├── api/core/           # Authenticated Core proxy with refresh rotation
 │   ├── stats/page.tsx      # Statistics dashboard
 │   ├── admin/page.tsx      # Admin dashboard (enrichment, ingestion, sync)
@@ -347,7 +397,9 @@ services/
 │   └── Data/                # Tenant-filtered raw and audit storage
 ├── core/                   # Unified library service
 │   ├── Controllers/
-│   │   ├── AuthController.cs         # Bootstrap, provisioning, JWT/refresh lifecycle
+│   │   ├── AuthController.cs         # Provisioning, local lifecycle, OIDC exchange/link
+│   │   ├── MultiUserStatusController.cs # Operator readiness
+│   │   ├── PlatformCredentialsController.cs # Encrypted credential management
 │   │   ├── BackupController.cs       # JSON and CSV exports
 │   │   ├── BackupImportController.cs # Validation and transactional restore
 │   │   └── LibraryController.cs      # Library, enrichment, merge/split
@@ -358,6 +410,8 @@ services/
 │   │   ├── AccountService.cs         # Password hashing and tenant provisioning
 │   │   ├── JwtTokenService.cs        # Signed tenant-scoped access tokens
 │   │   ├── RefreshTokenService.cs    # Hashed, rotating, revocable sessions
+│   │   ├── OidcTokenValidator.cs     # Issuer/audience/nonce/JWKS validation
+│   │   ├── MultiUserEnablementService.cs # Fail-closed guarded readiness
 │   │   └── IngestClient.cs           # HTTP client for Ingest
 │   └── Data/                          # Tenant-filtered unified library and accounts
 ├── mcp/                    # MCP server (AI assistant integration)
@@ -366,8 +420,8 @@ services/
 │   ├── appsettings.json     # Default config (Core:BaseUrl, Core:ApiKey)
 │   └── Tools/
 │       └── LibraryTools.cs  # 7 MCP tools (search, get, rate, etc.)
-├── shared/                 # Shared DTOs, enums, auth handler
-│   └── Authentication/     # ApiKeyAuthenticationHandler
+├── shared/                 # Shared DTOs, enums, auth handlers and immutable mode state
+│   └── Authentication/     # API key, tenant delegation, claims, and session boundaries
 └── cli/                    # Go CLI
     └── cmd/
 
@@ -381,7 +435,8 @@ docs/                       # ROADMAP.md, DEBUGGING.md, ADRs
 - **Swagger:** Core UI is at `http://localhost:5001/swagger`; Ingest UI is served at
   `http://localhost:5000/`. Core Swagger supports both `X-Api-Key` and Bearer authorization.
 - **Health checks:** Both services expose `GET /health` with DB connectivity checks.
-- **Authentication:** Configure Compose through the `GAMEHUB_*` variables in `.env`. Leaving
-  API key, JWT key, and frontend auth disabled preserves legacy local mode.
+- **Authentication:** Configure deployment secrets through `GAMEHUB_*` variables. Leaving JWT,
+  frontend auth, OIDC, and guarded multi-user mode disabled preserves legacy local mode. Never
+  commit real keys or provider credentials.
 - **Tenant safety:** Tenant identity comes from trusted authentication claims, never request
   bodies. JSON backups remain intentionally tenant-neutral.
