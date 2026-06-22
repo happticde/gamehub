@@ -155,6 +155,50 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 
 ---
 
+## 🌐 Tier 5 — Multi-User Productization & SaaS
+
+These items are optional follow-up work after the completed guarded self-hosted multi-user mode in
+item #8. They are not prerequisites for operator-provisioned deployments and must not weaken the
+existing explicit tenant-mapping, isolation, lifecycle, or default-off activation boundaries.
+
+### 17. Controlled Registration & Invitations
+- **Goal**: Replace direct operator API calls with an auditable onboarding workflow when a
+  deployment intentionally permits additional users.
+- **Scope**: Invitation issuance, expiry, cancellation, single-use acceptance, verified-provider
+  identity binding, rate limits, abuse controls, and an operator administration surface.
+- **Security boundary**: Registration must never accept a caller-selected tenant or infer ownership
+  from email, organization, role, or other provider claims. Cross-tenant invitation and replay tests
+  are required before this can be enabled.
+- **Non-goal**: Guarded multi-user deployments remain closed and operator-provisioned by default;
+  this item does not imply anonymous public signup.
+
+### 18. JIT Provisioning & External Identity Lifecycle
+- **Goal**: Evaluate narrowly controlled just-in-time account/tenant provisioning and automated
+  identity lifecycle integration as an explicit opt-in capability.
+- **Scope**: Trusted provisioning authority, allowlists or assignment requirements, deterministic
+  issuer/subject handling, deprovisioning, disabled-user behavior, subject replacement recovery,
+  SCIM or provider-event evaluation, and reconciliation after missed events.
+- **Security boundary**: Provider email, groups, roles, organizations, and tenant-like claims remain
+  untrusted unless a future ADR defines their exact authority. Provisioning must be idempotent,
+  auditable, revocable, and covered by cross-tenant isolation and lifecycle tests.
+- **Dependency**: Requires a new architecture decision for provisioning and recovery trust; it
+  cannot be activated merely by configuring OIDC.
+
+### 19. SaaS Operations, Administration & Release Gate
+- **Goal**: Define and satisfy the additional security, reliability, privacy, and operational bar
+  required before claiming general SaaS readiness.
+- **Scope**: Tenant administration and roles, support-access controls, global incident/session
+  response, provider event and back-channel logout handling, audit retention, privacy and data
+  deletion obligations, quotas and abuse prevention, availability targets, disaster recovery,
+  key rotation, monitoring, capacity planning, and staged rollout controls.
+- **Release gate**: Complete threat modeling, external security review, restore and regional-failure
+  exercises, load and isolation testing, incident runbooks, and documented service ownership before
+  any unrestricted SaaS claim.
+- **Boundary**: This is an umbrella production gate, not evidence that public registration, JIT
+  provisioning, billing, tenant switching, or enterprise administration already exist.
+
+---
+
 ## Suggested Next Steps
 
 | Goal | Path |
@@ -167,3 +211,5 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
 | **Future platform integration** | #16 Epic authentication and stored retrieval |
+| **Controlled onboarding** | #17 Registration/invitations → #18 JIT provisioning and identity lifecycle |
+| **General SaaS readiness** | #19 operations, administration, security review, and release gate |
