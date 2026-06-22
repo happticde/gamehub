@@ -15,6 +15,7 @@ services:
       - INGEST_URL=http://ingest:8080
       - AUTH_ENABLED=${GAMEHUB_FRONTEND_AUTH_ENABLED:-false}
       - AUTH_COOKIE_SECURE=${GAMEHUB_AUTH_COOKIE_SECURE:-false}
+      - MULTI_USER_ENABLED=${GAMEHUB_MULTI_USER_ENABLED:-false}
       - OIDC_ENABLED=${GAMEHUB_OIDC_ENABLED:-false}
       - OIDC_ISSUER=${GAMEHUB_OIDC_ISSUER:-}
       - OIDC_CLIENT_ID=${GAMEHUB_OIDC_CLIENT_ID:-}
@@ -48,6 +49,7 @@ services:
       - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
       - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       - Authentication__ServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:-}
+      - MultiUser__Enabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
       - Credentials__ActiveKeyVersion=${GAMEHUB_CREDENTIAL_KEY_VERSION:-1}
       - Credentials__Keys__1=${GAMEHUB_CREDENTIAL_KEY_1:-}
     healthcheck:
@@ -74,12 +76,17 @@ services:
       - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       - Authentication__Jwt__SigningKey=${GAMEHUB_JWT_SIGNING_KEY:-}
       - Authentication__Jwt__RefreshTokenLifetimeDays=${GAMEHUB_JWT_REFRESH_TOKEN_DAYS:-30}
+      # Core validates these mirrored BFF states so a partial rollout cannot activate the gate.
+      - Authentication__Frontend__Enabled=${GAMEHUB_FRONTEND_AUTH_ENABLED:-false}
+      - Authentication__Frontend__SecureCookies=${GAMEHUB_AUTH_COOKIE_SECURE:-false}
+      - Authentication__Frontend__MultiUserEnabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
       - Authentication__Oidc__Enabled=${GAMEHUB_OIDC_ENABLED:-false}
       - Authentication__Oidc__Issuer=${GAMEHUB_OIDC_ISSUER:-}
       - Authentication__Oidc__Audience=${GAMEHUB_OIDC_CLIENT_ID:-}
       - Authentication__Oidc__MetadataAddress=${GAMEHUB_OIDC_METADATA_ADDRESS:-}
       - Authentication__Oidc__AllowedAlgorithms=${GAMEHUB_OIDC_ALLOWED_ALGORITHMS:-RS256}
       - Authentication__Oidc__BffServiceKey=${GAMEHUB_OIDC_BFF_SERVICE_KEY:-}
+      - MultiUser__Enabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
       - Igdb__ClientId=${IGDB_CLIENT_ID:-}
       - Igdb__ClientSecret=${IGDB_CLIENT_SECRET:-}
       - Logging__LogLevel__GameHub.Core.Services.IgdbClient=Warning

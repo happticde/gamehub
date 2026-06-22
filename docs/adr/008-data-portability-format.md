@@ -102,8 +102,8 @@ The wider Roadmap #8 isolation gate is also complete. The remaining Core audit v
 history and cursor paths (`ActivityLog`, `SyncAuditLog`, and `SyncMetadata`), their request and
 background-job boundaries, and tenant-specific scheduler status. SQLite and PostgreSQL upgrade
 tests prove that legacy operational rows retain their data and become owned by the default tenant.
-The complete path inventory and remaining account/rollout work are recorded in the
-[Core Tenant-Isolation Audit](../tenant-isolation-audit.md).
+The complete path inventory and the subsequently completed lifecycle, OIDC, and guarded rollout
+work are recorded in the [Core Tenant-Isolation Audit](../tenant-isolation-audit.md).
 
 ## Delivery Plan
 

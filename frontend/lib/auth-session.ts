@@ -17,6 +17,17 @@ export interface CoreTokenResponse {
     expiresAtUtc: string;
     refreshToken: string;
     refreshTokenExpiresAtUtc: string;
+    sessionPurpose: "full";
+}
+
+/** Short-lived Core response that can authorize only the first explicit OIDC link. */
+export interface CoreOidcLinkTokenResponse {
+    accessToken: string;
+    tokenType: "Bearer";
+    expiresAtUtc: string;
+    refreshToken: null;
+    refreshTokenExpiresAtUtc: null;
+    sessionPurpose: "oidc_link_only";
 }
 
 /** Structured error returned by Core authentication endpoints. */
@@ -45,6 +56,18 @@ export function setAuthCookies(response: NextResponse, tokens: CoreTokenResponse
         tokens.refreshToken,
         tokens.refreshTokenExpiresAtUtc,
     );
+}
+
+/**
+ * Stores only the restricted access JWT used for an immediate OIDC link. Core issues no refresh
+ * secret, and the cookie is cleared after the callback regardless of success or failure.
+ */
+export function setOidcLinkCookie(
+    response: NextResponse,
+    token: CoreOidcLinkTokenResponse,
+): void {
+    setTokenCookie(response, ACCESS_TOKEN_COOKIE, token.accessToken, token.expiresAtUtc);
+    response.cookies.set(REFRESH_TOKEN_COOKIE, "", expiredCookieOptions());
 }
 
 /** Deletes both browser-side session cookies after logout or failed refresh. */
@@ -107,8 +130,21 @@ export function isTokenResponse(value: unknown): value is CoreTokenResponse {
         token.tokenType === "Bearer" &&
         typeof token.expiresAtUtc === "string" &&
         typeof token.refreshToken === "string" &&
-        typeof token.refreshTokenExpiresAtUtc === "string"
+        typeof token.refreshTokenExpiresAtUtc === "string" &&
+        (token.sessionPurpose === undefined || token.sessionPurpose === "full")
     );
+}
+
+/** Runtime validation for the deliberately non-refreshable OIDC-link bootstrap response. */
+export function isOidcLinkTokenResponse(value: unknown): value is CoreOidcLinkTokenResponse {
+    if (!value || typeof value !== "object") return false;
+    const token = value as Partial<CoreOidcLinkTokenResponse>;
+    return typeof token.accessToken === "string"
+        && token.tokenType === "Bearer"
+        && typeof token.expiresAtUtc === "string"
+        && token.refreshToken === null
+        && token.refreshTokenExpiresAtUtc === null
+        && token.sessionPurpose === "oidc_link_only";
 }
 
 /** Accepts only an application-local redirect path, preventing open-redirect attacks. */

@@ -3,6 +3,7 @@ using GameHub.Core.Data;
 using GameHub.Core.Models.Backup;
 using GameHub.Core.Services;
 using GameHub.Shared;
+using GameHub.Shared.Authentication;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -542,12 +543,38 @@ public sealed class TenantIsolationTests : IDisposable
         await migrator.MigrateAsync();
         db.ChangeTracker.Clear();
 
+        // Guarded enablement is configuration-only. Add the explicit production identity after
+        // the historical upgrade, validate enabled readiness, and prove no upgraded row changes.
+        db.ExternalIdentities.Add(new ExternalIdentity
+        {
+            Id = Guid.NewGuid(),
+            Issuer = "https://identity.example.test",
+            Subject = "legacy-owner",
+            TenantId = TenantA,
+            UserAccountId = account.Id,
+            CreatedAtUtc = FixedNow.UtcDateTime
+        });
+        await db.SaveChangesAsync();
+        var enablement = new MultiUserEnablementService(
+            db,
+            new MultiUserEnablementSettings(new MultiUserMode(true), []),
+            new OidcSettings(
+                true,
+                "https://identity.example.test",
+                "gamehub-client",
+                "https://identity.example.test/.well-known/openid-configuration",
+                ["RS256"],
+                new string('B', 32)),
+            new TestMultiUserIngestReadinessProbe(enabled: true));
+        await enablement.ValidateStartupAsync();
+        db.ChangeTracker.Clear();
+
         Assert.Equal("preserved-password-hash", (await db.UserAccounts.SingleAsync()).PasswordHash);
         Assert.Equal(new string('A', 64), (await db.RefreshTokenSessions.SingleAsync()).TokenHash);
         Assert.Equal("Preserved game", (await db.UnifiedGames.SingleAsync()).Title);
         Assert.Equal("preserved-item", (await db.LibraryItems.SingleAsync()).ExternalId);
         Assert.Equal(TenantA, (await db.Tenants.SingleAsync()).Id);
-        Assert.Empty(db.ExternalIdentities);
+        Assert.Equal("legacy-owner", (await db.ExternalIdentities.SingleAsync()).Subject);
     }
 
     [Theory]

@@ -18,6 +18,15 @@
   tokens stay in HttpOnly cookies; browser components must never read or persist them directly.
 - React Server Components call `fetchCoreApi()` so the server forwards the same access token
   without creating a cross-tenant shared cache entry.
+- Guarded multi-user state is server-only configuration (`MULTI_USER_ENABLED`) and defaults false.
+  The BFF validates auth, Secure-cookie, and OIDC prerequisites; it never accepts enablement from
+  browser state or provider claims. Core remains authoritative and validates mirrored settings.
+- During disabled-mode rollout preparation, the local form is a first-link compatibility bridge.
+  A successful unlinked password check stores a short-lived HttpOnly link-purpose cookie,
+  immediately starts OIDC, then clears all session cookies after linking. Active mode hides the
+  local form and linked accounts use provider login only.
+- Operator readiness is intentionally not exposed to Client Components. The secret-free status API
+  is an operator API-key endpoint, not a tenant-facing admin dashboard.
 
 ## Mobile-First Conventions (2026-03-26)
 - **Viewport**: Always use `userScalable: false` in `layout.tsx` to prevent iOS input zoom.

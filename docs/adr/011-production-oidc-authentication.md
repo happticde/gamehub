@@ -88,8 +88,9 @@ production-ready account/recovery system. OIDC is separately opt-in and does not
 registration or multi-user mode.
 
 This ADR closes the production authentication/recovery design and implementation gate only.
-Roadmap #8 still requires an explicit guarded multi-user enablement mechanism and rollout review.
-Until that work is complete, GameHub must not enable or advertise production multi-user operation.
+ADR-012 subsequently adds the separate default-off guarded multi-user mechanism and rollout review.
+OIDC still never activates the mode by itself; an operator must satisfy readiness and explicitly
+enable it.
 
 ## Consequences
 

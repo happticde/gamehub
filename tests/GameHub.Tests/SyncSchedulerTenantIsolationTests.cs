@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using GameHub.Core.Data;
 using GameHub.Core.Services;
 using GameHub.Shared;
+using GameHub.Shared.Authentication;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -86,6 +87,7 @@ public sealed class SyncSchedulerTenantIsolationTests
         services.AddHttpContextAccessor();
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<TenantExecutionContext>();
+        services.AddSingleton(new MultiUserMode(true));
         services.AddScoped<ITenantContext, AuthenticatedTenantContext>();
         services.AddDbContext<CoreContext>(options => options.UseSqlite(connection));
         services.AddSingleton<ITenantJobRunner, TenantJobRunner>();

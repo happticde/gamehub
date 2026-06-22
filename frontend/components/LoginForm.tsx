@@ -10,6 +10,8 @@ interface LoginFormProps {
     returnTo: string;
     oidcEnabled: boolean;
     oidcFailed: boolean;
+    oidcLinked: boolean;
+    multiUserEnabled: boolean;
 }
 
 /**
@@ -17,7 +19,13 @@ interface LoginFormProps {
  * password goes directly to the same-origin BFF and is never stored in component state after
  * navigation. Access and refresh tokens return as HttpOnly cookies, not JSON visible here.
  */
-export function LoginForm({ returnTo, oidcEnabled, oidcFailed }: LoginFormProps) {
+export function LoginForm({
+    returnTo,
+    oidcEnabled,
+    oidcFailed,
+    oidcLinked,
+    multiUserEnabled,
+}: LoginFormProps) {
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(
@@ -48,6 +56,16 @@ export function LoginForm({ returnTo, oidcEnabled, oidcFailed }: LoginFormProps)
                 return;
             }
 
+            const payload = (await response.json()) as {
+                oidcLinkRequired?: boolean;
+            };
+            if (payload.oidcLinkRequired) {
+                window.location.assign(
+                    `/api/auth/oidc/start?intent=link&returnTo=${encodeURIComponent(returnTo)}`,
+                );
+                return;
+            }
+
             router.replace(returnTo);
             router.refresh();
         } catch {
@@ -67,47 +85,20 @@ export function LoginForm({ returnTo, oidcEnabled, oidcFailed }: LoginFormProps)
                             Sign in with identity provider
                         </a>
                     </Button>
-                    <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground">
-                        <span className="h-px flex-1 bg-border" />
-                        Local compatibility
-                        <span className="h-px flex-1 bg-border" />
-                    </div>
+                    {!multiUserEnabled && (
+                        <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground">
+                            <span className="h-px flex-1 bg-border" />
+                            Local compatibility
+                            <span className="h-px flex-1 bg-border" />
+                        </div>
+                    )}
                 </>
             )}
-            <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium">
-                    Email address
-                </label>
-                <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    required
-                    disabled={isSubmitting}
-                    placeholder="owner@example.com"
-                    className="h-11"
-                />
-            </div>
-
-            <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium">
-                    Password
-                </label>
-                <Input
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    disabled={isSubmitting}
-                    className="h-11"
-                />
-            </div>
-
+            {oidcLinked && (
+                <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground">
+                    Identity linked. Provider sign-in is available when the operator admits this tenant.
+                </div>
+            )}
             {error && (
                 <div
                     role="alert"
@@ -116,16 +107,51 @@ export function LoginForm({ returnTo, oidcEnabled, oidcFailed }: LoginFormProps)
                     {error}
                 </div>
             )}
+            {!multiUserEnabled && (
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="space-y-2">
+                        <label htmlFor="email" className="text-sm font-medium">
+                            Email address
+                        </label>
+                        <Input
+                            id="email"
+                            name="email"
+                            type="email"
+                            autoComplete="email"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            required
+                            disabled={isSubmitting}
+                            placeholder="owner@example.com"
+                            className="h-11"
+                        />
+                    </div>
 
-            <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
-                {isSubmitting ? (
-                    <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : (
-                    <LogIn aria-hidden="true" />
-                )}
-                {isSubmitting ? "Signing in…" : "Sign in"}
-            </Button>
-            </form>
+                    <div className="space-y-2">
+                        <label htmlFor="password" className="text-sm font-medium">
+                            Password
+                        </label>
+                        <Input
+                            id="password"
+                            name="password"
+                            type="password"
+                            autoComplete="current-password"
+                            required
+                            disabled={isSubmitting}
+                            className="h-11"
+                        />
+                    </div>
+
+                    <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
+                        {isSubmitting ? (
+                            <Loader2 className="animate-spin" aria-hidden="true" />
+                        ) : (
+                            <LogIn aria-hidden="true" />
+                        )}
+                        {isSubmitting ? "Signing in…" : "Sign in"}
+                    </Button>
+                </form>
+            )}
         </div>
     );
 }

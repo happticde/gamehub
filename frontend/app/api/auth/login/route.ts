@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
     CoreAuthError,
+    CoreOidcLinkTokenResponse,
     CoreTokenResponse,
     getCoreApiUrl,
     isFrontendAuthEnabled,
+    isOidcLinkTokenResponse,
     isTokenResponse,
     setAuthCookies,
+    setOidcLinkCookie,
 } from "@/lib/auth-session";
+import { validateFrontendMultiUserConfiguration } from "@/lib/multi-user";
 
 /** Browser-facing login endpoint. Core verifies the password; Next.js owns the cookies. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    try {
+        validateFrontendMultiUserConfiguration();
+    } catch {
+        return NextResponse.json(
+            { code: "authentication_unavailable", message: "Authentication is unavailable." },
+            { status: 503, headers: { "Cache-Control": "no-store" } },
+        );
+    }
     if (!isFrontendAuthEnabled()) {
         return NextResponse.json(
             { code: "frontend_auth_disabled", message: "Frontend authentication is disabled." },
@@ -54,6 +66,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const payload = (await coreResponse.json().catch(() => null)) as
         | CoreTokenResponse
+        | CoreOidcLinkTokenResponse
         | CoreAuthError
         | null;
     if (!coreResponse.ok) {
@@ -62,6 +75,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 ? payload
                 : { code: "login_failed", message: "Sign in failed." };
         return NextResponse.json(error, { status: coreResponse.status });
+    }
+    if (isOidcLinkTokenResponse(payload)) {
+        // Core has authenticated a provisioned account but has granted only the first explicit
+        // issuer/subject link. The browser receives no token JSON; it is sent directly into the
+        // server-side OIDC flow with a short-lived HttpOnly access cookie.
+        const response = NextResponse.json({ authenticated: false, oidcLinkRequired: true });
+        setOidcLinkCookie(response, payload);
+        return response;
     }
     if (!isTokenResponse(payload)) {
         return NextResponse.json(

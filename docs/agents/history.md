@@ -1,6 +1,46 @@
 # Session History
 
-## Current Session Summary (2026-06-21)
+## Current Session Summary (2026-06-22)
+
+### What Changed
+
+**Guarded Production Multi-User Enablement:**
+- Added ADR-012 and an operator guide defining OIDC/readiness/enablement as separate states. The
+  immutable `GAMEHUB_MULTI_USER_ENABLED` switch defaults to false and must agree across Core,
+  Ingest, and Frontend; OIDC configuration alone never activates provisioned tenants.
+- Core startup now validates complete JWT/OIDC trust, mirrored BFF auth/Secure-cookie/switch state,
+  strong independent operator/delegation/JWT/BFF keys, at least one live account, and an explicit
+  configured-issuer link for every live account. Ingest independently requires tenant delegation
+  and an active credential-vault key. Invalid enabled configuration fails closed.
+- Active-mode ordinary Core authorization is JWT-only and ordinary Ingest authorization is
+  tenant-delegation-only. The API key remains limited to explicitly declared operator endpoints.
+- Local passwords cannot issue normal production sessions. During disabled-mode preparation, an
+  unlinked operator-provisioned account can obtain only a ten-minute, non-refreshable JWT accepted
+  on the exact OIDC link POST; the BFF clears it after linking and requires a fresh OIDC login.
+  Active-mode provisioning is rejected until an operator performs a maintenance disable.
+- Disabling admission is non-destructive. Provisioned tenants cannot begin new login, their
+  background sync/enrichment stays dormant, and all tenant/account/identity/session/credential/raw
+  and library data remains intact. Existing GameHub sessions retain ADR-011 expiry/revocation.
+- Added an operator API-key-only, no-store readiness endpoint that reports safe states/blocker codes
+  without secrets, configured values, account/tenant data, counts, claims, credentials, or tokens.
+
+**Verification:**
+- Added direct configuration, local-bypass, link-purpose, readiness, non-mutation, claim
+  non-selection, background-admission, and BFF fail-closed tests.
+- The full .NET suite passes with 246 tests; BFF security passes with 10 tests. SQLite and three
+  real PostgreSQL migration tests preserve default tenant, account hash, explicit identity,
+  refresh session, unified game, and library item through latest-schema readiness validation.
+- No dependency or database migration was added.
+
+### Known State / Pending
+
+- Roadmap item #8 is technically complete. Production multi-user operation remains disabled until
+  an operator deliberately completes the provider/deployment checklist, sets the switch, and
+  restarts all components.
+- Public registration, JIT provisioning, multi-owner roles, tenant switching, provider-derived
+  authorization, and unrestricted SaaS readiness remain explicit non-goals.
+
+## Previous Session Summary (2026-06-21)
 
 ### What Changed
 

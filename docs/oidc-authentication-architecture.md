@@ -10,8 +10,8 @@ Operational configuration is documented in [authentication.md](authentication.md
 focuses on how and why the implementation works.
 
 > **Important scope:** OIDC is an opt-in production authentication path. It does not enable public
-> registration or production multi-user operation. Guarded multi-user enablement remains a
-> separate Roadmap #8 step.
+> registration or production multi-user operation. ADR-012 adds a separate default-off operator
+> gate; both readiness and `GAMEHUB_MULTI_USER_ENABLED=true` are required for provisioned tenants.
 
 ## 1. The mental model
 
@@ -124,6 +124,12 @@ Read the implementation in this order:
 9. [`frontend/lib/auth-session.ts`](../frontend/lib/auth-session.ts) and
    [`frontend/app/api/core/[...path]/route.ts`](../frontend/app/api/core/[...path]/route.ts)
    - Store, refresh, and forward the resulting GameHub session.
+10. [`services/core/Services/MultiUserEnablementService.cs`](../services/core/Services/MultiUserEnablementService.cs),
+    [`services/shared/Authentication/MultiUserMode.cs`](../services/shared/Authentication/MultiUserMode.cs),
+    and [`frontend/lib/multi-user.ts`](../frontend/lib/multi-user.ts)
+    - Keep OIDC readiness separate from immutable operator enablement.
+    - Fail startup/routes closed on missing or contradictory prerequisites.
+    - Restrict provisioned-tenant login, local linking, API-key compatibility, and background jobs.
 
 ## 5. Configuration flows through two servers
 
@@ -143,6 +149,7 @@ material and responsibilities differ.
 | `GAMEHUB_OIDC_METADATA_ADDRESS` | Uses standard issuer discovery path | Optional explicit metadata location |
 | `GAMEHUB_OIDC_ALLOWED_ALGORITHMS` | Not used for trust decisions | Closed asymmetric ID-token allowlist |
 | `GAMEHUB_JWT_SIGNING_KEY` | Never receives it | Signs GameHub access JWTs |
+| `GAMEHUB_MULTI_USER_ENABLED` | Enables the guarded BFF presentation only after its prerequisites pass | Activates provisioned-tenant admission only after Core readiness passes |
 
 OIDC startup is fail-closed:
 
@@ -192,7 +199,8 @@ Why encryption as well as cookie flags?
 OIDC login cannot succeed until an external identity is explicitly linked to an existing GameHub
 account. GameHub does not perform just-in-time provisioning and never searches by email.
 
-The user begins while already signed in through the local compatibility path:
+The user begins with a current full default-tenant session or a ten-minute local
+`oidc_link_only` bootstrap session issued to an unlinked operator-provisioned account:
 
 ```http
 GET /api/auth/oidc/start?intent=link&returnTo=/admin
@@ -229,7 +237,8 @@ sequenceDiagram
     B-->>U: Redirect to local return path, delete transaction cookie
 ```
 
-The destination account and tenant come only from the existing GameHub JWT. The linking request
+The destination account and tenant come only from the existing GameHub JWT. A link-purpose JWT is
+accepted only on this exact POST route and has no refresh session. The linking request
 contains no account ID or tenant ID, and provider claims cannot override them.
 
 The operation is idempotent for the same exact mapping. It rejects:
@@ -241,7 +250,7 @@ The operation is idempotent for the same exact mapping. It rejects:
 
 ## 8. Normal OIDC login flow
 
-After linking, the login page navigates to:
+After linking, the BFF clears any local bootstrap cookie. The login page then navigates to:
 
 ```http
 GET /api/auth/oidc/start?returnTo=/library
@@ -565,7 +574,8 @@ Before enabling a provider:
 - Verify reverse-proxy forwarded host/protocol behavior.
 - Bootstrap the existing GameHub owner and explicitly link the provider identity.
 - Run login, logout, refresh, pending-deletion, provider-outage, and key-rotation exercises.
-- Keep guarded multi-user enablement disabled.
+- Keep guarded multi-user enablement disabled until ADR-012 readiness and the operator rollout
+  checklist are complete.
 
 ## 20. Known boundaries and future work
 
@@ -575,8 +585,37 @@ Before enabling a provider:
 - There is no provider back-channel logout or provider-event-driven GameHub session revocation.
 - Provider access tokens are not retained or used for provider APIs.
 - Local account deletion still follows ADR-010's current-password confirmation path.
-- Production multi-user enablement remains deliberately separate and disabled.
+- Guarded multi-user enablement is implemented, deliberately separate, and disabled by default.
+- Active mode is self-hosted guarded operation, not public registration or unrestricted SaaS
+  readiness.
 
 These boundaries are intentional. Expanding them safely requires new decisions about
 reauthentication, recovery, administrative authority, tenant creation, provider event trust, and
 cross-tenant rollout controls—not merely additional buttons in the frontend.
+
+## 21. Guarded admission after OIDC validation
+
+OIDC proof and GameHub multi-user admission remain separate checks:
+
+```text
+valid OIDC ID token
+    -> exact persisted issuer/subject mapping
+    -> live account and tenant
+    -> default tenant OR immutable multi-user switch enabled
+    -> GameHub access/refresh session
+```
+
+While the switch is false, a valid mapping for a provisioned tenant still receives the same generic
+authentication failure. The default tenant remains available for upgrade-compatible single-user
+OIDC. When the switch is true, Core has already validated complete OIDC/JWT/BFF/operator/Ingest and
+Frontend configuration at startup and verified that every live account is linked.
+
+Core's active-mode default authorization policy accepts only GameHub JWTs. The API key is limited
+to endpoints that explicitly declare operator authentication. Ingest's active-mode default policy
+accepts only Core tenant delegation. Background sync and enrichment enumerate provisioned tenants
+only while the switch is enabled; disabling it leaves their rows intact but dormant.
+
+Existing GameHub sessions do not contact the provider on every request. Enabling or disabling the
+gate does not rewrite or revoke them; they continue under ADR-011 until normal expiry/revocation,
+subject to the live-account and pending-deletion database check. See
+[Guarded Multi-User Operations](guarded-multi-user-enablement.md) for rollout and recovery.

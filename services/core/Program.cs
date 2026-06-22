@@ -6,6 +6,7 @@ using GameHub.Core.Services;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -136,6 +137,17 @@ var oidcSettings = OidcSettings.FromConfiguration(builder.Configuration, jwtSett
 builder.Services.AddSingleton(oidcSettings);
 builder.Services.AddSingleton<IOidcMetadataProvider, OidcMetadataProvider>();
 builder.Services.AddSingleton<OidcTokenValidator>();
+// The guarded switch is independent from OIDC. It is parsed once and validates the mirrored BFF
+// state plus every Core trust secret before any request can run. OIDC configuration by itself
+// therefore never changes the active authorization policy.
+var multiUserSettings = MultiUserEnablementSettings.FromConfiguration(
+    builder.Configuration,
+    jwtSettings,
+    oidcSettings);
+builder.Services.AddSingleton(multiUserSettings);
+builder.Services.AddSingleton(multiUserSettings.Mode);
+builder.Services.AddScoped<MultiUserEnablementService>();
+builder.Services.AddScoped<IMultiUserIngestReadinessProbe, MultiUserIngestReadinessProbe>();
 // RefreshTokenService is scoped because rotation performs transactional database writes.
 // The JWT signing service stays singleton and contains no per-request state.
 builder.Services.AddScoped<RefreshTokenService>();
@@ -262,6 +274,34 @@ if (jwtSettings.IsEnabled)
                         return;
                     }
 
+                    // A locally verified password may bootstrap the first OIDC link for an
+                    // operator-provisioned account. Its signed purpose is intentionally narrower
+                    // than an ordinary GameHub session and can never authorize library, tenant,
+                    // lifecycle, backup, credential, or role operations.
+                    var sessionPurpose = principal?.FindFirstValue(GameHubClaimTypes.SessionPurpose);
+                    if (string.Equals(
+                            sessionPurpose,
+                            GameHubClaimTypes.OidcLinkOnlySessionPurpose,
+                            StringComparison.Ordinal)
+                        && !MultiUserSessionBoundary.AllowsOidcLinkOnlyRequest(
+                            context.HttpContext.Request.Method,
+                            context.HttpContext.Request.Path))
+                    {
+                        context.Fail("This session is restricted to OIDC identity linking.");
+                        return;
+                    }
+                    if (string.Equals(
+                            sessionPurpose,
+                            GameHubClaimTypes.AccountDeletionOnlySessionPurpose,
+                            StringComparison.Ordinal)
+                        && !MultiUserSessionBoundary.AllowsAccountDeletionOnlyRequest(
+                            context.HttpContext.Request.Method,
+                            context.HttpContext.Request.Path))
+                    {
+                        context.Fail("This session is restricted to account deletion retry.");
+                        return;
+                    }
+
                     // Keep a cryptographically valid, unexpired deletion request retryable even
                     // after its account row is gone. AccountDeletionService still checks that the
                     // signed pair cannot select another live account or tenant.
@@ -285,6 +325,20 @@ if (jwtSettings.IsEnabled)
                 }
             };
         });
+}
+
+if (multiUserSettings.Mode.IsEnabled)
+{
+    // In production multi-user mode, plain [Authorize] means a GameHub JWT. The API key remains
+    // available only to endpoints that explicitly name the operator scheme. Provisioning still
+    // requires a maintenance disable; readiness remains available without letting the legacy
+    // default-tenant key bypass user authentication.
+    builder.Services.AddAuthorization(options =>
+    {
+        options.DefaultPolicy = new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
+            .RequireAuthenticatedUser()
+            .Build();
+    });
 }
 
 // --- Database ---
@@ -316,6 +370,14 @@ builder.Services.AddDbContext<CoreContext>(o =>
 
 var app = builder.Build();
 
+app.Logger.LogInformation(
+    "Guarded multi-user mode is {MultiUserMode}; OIDC is {OidcMode}; configuration blockers: {Blockers}",
+    multiUserSettings.Mode.IsEnabled ? "enabled" : "disabled",
+    oidcSettings.IsEnabled ? "enabled" : "disabled",
+    multiUserSettings.ConfigurationBlockers.Count == 0
+        ? "none"
+        : string.Join(",", multiUserSettings.ConfigurationBlockers));
+
 // --- Swagger UI ---
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -329,6 +391,11 @@ using (var scope = app.Services.CreateScope())
     // have separate migration assemblies. Here we apply them based on 
     // the active provider to avoid conflicts between SQLite and Postgres.
     db.Database.Migrate();
+    // Database readiness is checked after migrations so an upgraded installation remains
+    // startable with the switch off, but an enabled deployment cannot start with unlinked live
+    // accounts. This validation is read-only and never provisions, links, deletes, or rewrites.
+    var multiUserEnablement = scope.ServiceProvider.GetRequiredService<MultiUserEnablementService>();
+    await multiUserEnablement.ValidateStartupAsync();
 }
 
 // --- Error Handling ---

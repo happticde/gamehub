@@ -4,8 +4,9 @@
 
 **Scope:** Roadmap item #8, user-owned Core service paths
 
-**Result:** Isolation, initial account lifecycle, and production OIDC authentication/recovery gates
-complete; multi-user operation remains disabled pending explicit guarded rollout work.
+**Result:** Isolation, account lifecycle, production OIDC authentication/recovery, and guarded
+multi-user enablement are complete. The production switch remains deliberately disabled by default
+and still requires explicit operator configuration.
 
 ## Audited paths
 
@@ -21,6 +22,7 @@ complete; multi-user operation remains disabled pending explicit guarded rollout
 | Identity and sessions | Account bootstrap/provisioning/login and rotating refresh sessions | Account discovery is intentionally global until credentials establish the tenant. Email uniqueness, password verification, unguessable token-hash lookup, rotation, expiry, and revocation form the trust boundary; request bodies cannot select an authenticated tenant. |
 | Account lifecycle | Password change, global refresh-session revocation, pending deletion, Core cleanup, and Core→Ingest deletion delegation | Signed account/tenant claims select the identity. Current-password confirmation protects password change and deletion. Pending deletion blocks ordinary JWT access; Ingest and Core cleanup are idempotent and tenant-filtered. |
 | Production identity | Next.js OIDC state/nonce/PKCE/callback handling, BFF-only Core exchange, Core ID-token validation, explicit external-identity linking, exact issuer/subject login, and local GameHub session issuance | The BFF uses an authenticated encrypted correlation cookie, exact redirect binding, and a separate Core service key. Core pins issuer, audience, algorithms, nonce, lifetime, and JWKS. A composite database relationship binds the linked account and tenant; email, roles, organization, and tenant-like claims are ignored for mapping. |
+| Guarded enablement | Core/Ingest/BFF startup configuration, OIDC admission, local bootstrap linking, API-key compatibility, operator readiness, and disable/rollback | An immutable default-off operator switch is independent from OIDC. Active mode requires complete trust/cookie/vault/link readiness, JWT-only ordinary Core authorization, delegation-only ordinary Ingest authorization, and OIDC-only full login. Disable is non-destructive. |
 
 ## Operational-history verification
 
@@ -66,11 +68,32 @@ Direct tests reject wrong issuer, audience, algorithm, nonce, state, callback re
 verifier, tampered/expired correlation cookies, foreign-tenant mapping, email collisions, provider
 outages, pending deletion, and deleted accounts.
 
-## Remaining Roadmap #8 work
+## Guarded enablement verification
 
-- ADR-011 defines and implements the provider-neutral production OIDC path. A deployment must still
-  select a trusted provider and configure its recovery, MFA, verification, and abuse-control policy.
-- Add an explicit guarded multi-user enablement path and rollout review. This must remain a separate
-  operator action and must not be inferred from OIDC configuration alone.
+- New installations and upgrades default the switch to false; invalid values fail instead of being
+  coerced. OIDC configuration by itself admits only the default compatibility tenant.
+- Core startup validates JWT/OIDC, mirrored BFF auth/Secure-cookie/switch state, strong independent
+  operator/delegation/JWT/BFF trust, and explicit issuer links for every live account.
+- Ingest independently requires delegation trust and an active vault key. Active-mode default
+  policies reject ordinary Core/Ingest API-key compatibility access. Core also probes an internal
+  secret-free Ingest readiness endpoint through the real delegation key, detecting mode drift,
+  vault unavailability, service-key mismatch, malformed responses, and outages.
+- Local password authentication creates a normal session only for the default tenant while the gate
+  is off. Otherwise, an unlinked account can receive only a ten-minute link-purpose JWT accepted on
+  the exact OIDC linking POST; linked accounts cannot use passwords as a production login bypass.
+  Active-mode provisioning is rejected until an operator disables the mode for maintenance. A
+  pending account can receive only a deletion-retry-purpose JWT for the exact deletion endpoint.
+- Provider email, roles, groups, organization, and tenant-like claims remain outside the mapping.
+  Pending-deletion and deleted accounts remain unavailable.
+- Background jobs enumerate provisioned tenants only while enabled. Disabling preserves every row,
+  stops new provisioned-tenant admission, and leaves existing sessions under ADR-011 expiry and
+  revocation behavior.
+- Secret-free operator status tests reject configured keys, tokens, account data, counts, and tenant
+  data in the response. Core configuration logs contain only safe state/blocker labels.
+- SQLite and real PostgreSQL upgrades preserve the default tenant, local password hash, explicit
+  external identity, refresh session, unified game, and library item while enabled readiness is
+  evaluated without writes. No new database migration was necessary.
 
-Until those items are complete, GameHub must not advertise or enable production multi-user operation.
+Roadmap #8 is technically complete. A deployment must still select and govern a trusted provider,
+exercise its recovery/MFA/abuse policies and GameHub rollback checklist, then deliberately set the
+default-off switch. This audit does not claim public registration or unrestricted SaaS readiness.

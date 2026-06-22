@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
     ACCESS_TOKEN_COOKIE,
+    clearAuthCookies,
     CoreAuthError,
     CoreTokenResponse,
     getCoreApiUrl,
@@ -118,9 +119,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             // A link operation changes only the durable mapping; the existing browser session
             // remains in place and no new tokens are exposed to browser JavaScript.
             if (!coreResponse.ok) throw new Error("identity_link_failed");
-            const destination = new URL(transaction.returnTo, request.url);
-            destination.searchParams.set("oidc", "linked");
+            // Linking never upgrades the restricted local bootstrap token into a full session.
+            // Clear every GameHub cookie and require a fresh provider login, preserving the
+            // original local destination only as a sanitized returnTo value.
+            const destination = new URL("/login", request.url);
+            destination.searchParams.set("oidcLinked", "true");
+            destination.searchParams.set("returnTo", transaction.returnTo);
             response = NextResponse.redirect(destination);
+            clearAuthCookies(response);
         } else {
             // A login operation receives GameHub's own access/refresh pair. Runtime shape checking
             // prevents malformed upstream JSON from reaching security-sensitive cookies.

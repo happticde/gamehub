@@ -57,7 +57,7 @@ Added 5-star ratings, Play Status tracking, and "Auto-Hide & Ignore" keyword log
 ### 7. CI/CD Pipeline ✅
 GitHub Actions: build → test → Docker build → push to registry.
 
-### 8. User Accounts & Multi-Tenancy
+### 8. User Accounts & Multi-Tenancy ✅
 Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth (Steam/PSN/GOG login).
 - **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, rotating/revocable refresh sessions, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. The current Steam/GOG/PSN credential-management scope is complete; multi-user operation is not enabled by default.
 - **Epic boundary**: Epic remains a fully manual Ingest flow through API or CLI. No Epic credentials
@@ -89,9 +89,22 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
   one account/tenant. Recovery, MFA, email verification, and provider credential security remain
   the configured trusted provider's responsibility. See [ADR-011](adr/011-production-oidc-authentication.md)
   and the [OIDC architecture walkthrough](oidc-authentication-architecture.md).
-- **Remaining rollout work**: Add an explicit, guarded multi-user enablement path only after the
-  now-complete isolation, portability, verification, lifecycle, and production-authentication
-  gates. OIDC configuration alone must never activate or advertise multi-user operation.
+- **Guarded production enablement (2026-06-22)**: ADR-012 adds the independent,
+  default-off `GAMEHUB_MULTI_USER_ENABLED` operator gate across Core, Ingest, and Frontend. OIDC
+  configuration alone cannot activate provisioned tenants. Startup validates JWT/OIDC, Secure
+  cookies, mirrored Core/BFF state, independent operator/BFF/delegation/signing trust, Ingest vault
+  readiness, and explicit issuer links for every live account. Active mode permits normal user
+  login only through OIDC; disabled-mode preparation may create only a short-lived,
+  non-refreshable first-link token for an unlinked operator-provisioned account. Active-mode
+  provisioning requires an explicit maintenance disable. API-key and Ingest compatibility access,
+  background jobs, disable/rollback, readiness, and data-preservation boundaries are directly
+  tested. See [ADR-012](adr/012-guarded-multi-user-enablement.md) and the
+  [operator guide](guarded-multi-user-enablement.md).
+- **Activation boundary**: Item #8 is technically complete, but production multi-user operation
+  remains disabled after installation and upgrade until an operator deliberately satisfies the
+  deployment/provider checklist, sets the guarded switch consistently, and restarts. This does not
+  add public registration, JIT provisioning, unlimited SaaS readiness, tenant switching, or
+  provider-derived authorization.
 
 ### 9. Notifications & Activity Feed
 `ActivityLog` table + activity endpoint for social sharing/feed.
@@ -149,7 +162,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 | **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
 | **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
-| **Multi-user readiness** | #8 guarded enablement (isolation + lifecycle + production auth/recovery gates complete) |
+| **Multi-user readiness** | #8 technically complete; operator activation remains explicit and default-off ✅ |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
