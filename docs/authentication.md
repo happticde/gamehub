@@ -12,6 +12,10 @@ For a source-oriented explanation with sequence diagrams, trust boundaries, data
 paths, and a guided reading order, see
 [OIDC Authentication Architecture](oidc-authentication-architecture.md).
 
+For a provider-specific production baseline, realm/client configuration, first-link walkthrough,
+backup/restore guidance, and failure matrix, see
+[Self-Hosted Keycloak OIDC Setup](keycloak-oidc-setup.md).
+
 ## Guarded Multi-User Enablement
 
 `GAMEHUB_MULTI_USER_ENABLED` is the only production multi-user enablement switch. It defaults to
