@@ -4,6 +4,7 @@ import { LoginForm } from "@/components/LoginForm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { safeReturnPath } from "@/lib/auth-session";
 import { isOidcEnabled } from "@/lib/oidc";
+import { getFrontendMultiUserMode } from "@/lib/multi-user";
 
 export const metadata: Metadata = {
     title: "Sign in — GameHub",
@@ -14,10 +15,15 @@ export const metadata: Metadata = {
 export default async function LoginPage({
     searchParams,
 }: {
-    searchParams: Promise<{ returnTo?: string | string[]; oidcError?: string | string[] }>;
+    searchParams: Promise<{
+        returnTo?: string | string[];
+        oidcError?: string | string[];
+        oidcLinked?: string | string[];
+    }>;
 }) {
     const params = await searchParams;
     const requestedPath = typeof params.returnTo === "string" ? params.returnTo : undefined;
+    const multiUserEnabled = getFrontendMultiUserMode();
 
     return (
         <div className="relative flex min-h-[calc(100vh-8rem)] items-center justify-center overflow-hidden px-4 py-12">
@@ -59,7 +65,9 @@ export default async function LoginPage({
                         </div>
                         <CardTitle className="text-2xl">Sign in</CardTitle>
                         <CardDescription>
-                            Use the configured identity provider or the local compatibility account.
+                            {multiUserEnabled
+                                ? "Use the configured identity provider."
+                                : "Use the configured identity provider or the local compatibility account."}
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -67,6 +75,8 @@ export default async function LoginPage({
                             returnTo={safeReturnPath(requestedPath)}
                             oidcEnabled={isOidcEnabled()}
                             oidcFailed={params.oidcError === "authentication_failed"}
+                            oidcLinked={params.oidcLinked === "true"}
+                            multiUserEnabled={multiUserEnabled}
                         />
                     </CardContent>
                 </Card>

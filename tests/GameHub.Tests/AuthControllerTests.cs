@@ -103,6 +103,31 @@ public sealed class AuthControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task ProvisionTenant_MultiUserEnabled_RequiresExplicitMaintenanceDisable()
+    {
+        var controller = CreateController(
+            apiKey: "configured",
+            jwtEnabled: true,
+            oidcEnabled: true,
+            multiUserEnabled: true);
+
+        var result = await controller.ProvisionTenant(
+            new ProvisionTenantRequest(
+                "Family Library",
+                "family@example.com",
+                Password,
+                "Family Owner"),
+            CancellationToken.None);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Equal(
+            "multi_user_provisioning_requires_disabled_mode",
+            Assert.IsType<AuthErrorResponse>(conflict.Value).Code);
+        Assert.Single(_db.Tenants);
+        Assert.Empty(_db.UserAccounts);
+    }
+
+    [Fact]
     public async Task Token_JwtNotConfigured_ReturnsServiceUnavailable()
     {
         var controller = CreateController(apiKey: "configured", jwtEnabled: false);
@@ -155,10 +180,10 @@ public sealed class AuthControllerTests : IDisposable
         Assert.Equal("Bearer", response.TokenType);
         Assert.NotEmpty(response.AccessToken);
         Assert.Equal(FixedNow.AddMinutes(60), response.ExpiresAtUtc);
-        Assert.NotEmpty(response.RefreshToken);
+        Assert.NotEmpty(response.RefreshToken!);
         Assert.Equal(FixedNow.AddDays(30), response.RefreshTokenExpiresAtUtc);
         Assert.DoesNotContain(
-            response.RefreshToken,
+            response.RefreshToken!,
             (await _db.RefreshTokenSessions.SingleAsync()).TokenHash,
             StringComparison.Ordinal);
     }
@@ -193,7 +218,7 @@ public sealed class AuthControllerTests : IDisposable
         var original = Assert.IsType<TokenResponse>(login.Value);
 
         var refreshed = Assert.IsType<OkObjectResult>(await controller.Refresh(
-            new RefreshTokenRequest(original.RefreshToken),
+            new RefreshTokenRequest(original.RefreshToken!),
             CancellationToken.None));
         var replacement = Assert.IsType<TokenResponse>(refreshed.Value);
 
@@ -204,7 +229,7 @@ public sealed class AuthControllerTests : IDisposable
             TenantDefaults.DefaultTenantId.ToString("D"),
             refreshedJwt.Claims.Single(claim => claim.Type == GameHubClaimTypes.TenantId).Value);
         var replay = Assert.IsType<UnauthorizedObjectResult>(await controller.Refresh(
-            new RefreshTokenRequest(original.RefreshToken),
+            new RefreshTokenRequest(original.RefreshToken!),
             CancellationToken.None));
         Assert.Equal(
             "invalid_refresh_token",
@@ -223,7 +248,131 @@ public sealed class AuthControllerTests : IDisposable
         Assert.IsType<NoContentResult>(result);
     }
 
-    private AuthController CreateController(string apiKey, bool jwtEnabled, bool oidcEnabled = false)
+    [Fact]
+    public async Task Token_MultiUserEnabledUnlinkedAccount_ReturnsOnlyRestrictedLinkSession()
+    {
+        await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner");
+        var controller = CreateController(
+            apiKey: "configured",
+            jwtEnabled: true,
+            oidcEnabled: true,
+            multiUserEnabled: true);
+
+        var result = await controller.Token(
+            new TokenRequest("owner@example.com", Password),
+            CancellationToken.None);
+
+        var response = Assert.IsType<TokenResponse>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(GameHubClaimTypes.OidcLinkOnlySessionPurpose, response.SessionPurpose);
+        Assert.Null(response.RefreshToken);
+        Assert.Null(response.RefreshTokenExpiresAtUtc);
+        Assert.Empty(_db.RefreshTokenSessions);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(response.AccessToken);
+        Assert.Equal(
+            GameHubClaimTypes.OidcLinkOnlySessionPurpose,
+            jwt.Claims.Single(claim => claim.Type == GameHubClaimTypes.SessionPurpose).Value);
+    }
+
+    [Fact]
+    public async Task Token_MultiUserEnabledLinkedAccount_CannotUseLocalPasswordAsLoginBypass()
+    {
+        var created = await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner");
+        var identities = new ExternalIdentityService(
+            _db,
+            new AccountServiceTests.FixedTimeProvider(FixedNow));
+        await identities.LinkAsync(
+            created.Account!.Id,
+            created.Account.TenantId,
+            new ValidatedOidcIdentity(
+                "https://identity.example.test",
+                "owner-subject",
+                "owner@example.com"));
+        var controller = CreateController(
+            apiKey: "configured",
+            jwtEnabled: true,
+            oidcEnabled: true,
+            multiUserEnabled: true);
+
+        var result = await controller.Token(
+            new TokenRequest("owner@example.com", Password),
+            CancellationToken.None);
+
+        var forbidden = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, forbidden.StatusCode);
+        Assert.Equal(
+            "local_login_not_allowed",
+            Assert.IsType<AuthErrorResponse>(forbidden.Value).Code);
+        Assert.Empty(_db.RefreshTokenSessions);
+    }
+
+    [Fact]
+    public async Task Refresh_EnablementChanged_ExistingLocalSessionStillRotates()
+    {
+        await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner");
+        var compatibilityController = CreateController(apiKey: "configured", jwtEnabled: true);
+        var login = Assert.IsType<TokenResponse>(Assert.IsType<OkObjectResult>(
+            await compatibilityController.Token(
+                new TokenRequest("owner@example.com", Password),
+                CancellationToken.None)).Value);
+        var enabledController = CreateController(
+            apiKey: "configured",
+            jwtEnabled: true,
+            oidcEnabled: true,
+            multiUserEnabled: true);
+
+        var result = await enabledController.Refresh(
+            new RefreshTokenRequest(login.RefreshToken!),
+            CancellationToken.None);
+
+        var replacement = Assert.IsType<TokenResponse>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.NotNull(replacement.RefreshToken);
+        Assert.Equal("full", replacement.SessionPurpose);
+    }
+
+    [Fact]
+    public async Task Token_PendingDeletion_ReturnsOnlyRestrictedDeletionRetrySession()
+    {
+        await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner");
+        var tenant = await _db.Tenants.SingleAsync();
+        tenant.DeletionRequestedAtUtc = FixedNow.UtcDateTime;
+        await _db.SaveChangesAsync();
+        var controller = CreateController(
+            apiKey: "configured",
+            jwtEnabled: true,
+            oidcEnabled: true,
+            multiUserEnabled: true);
+
+        var result = await controller.Token(
+            new TokenRequest("owner@example.com", Password),
+            CancellationToken.None);
+
+        var response = Assert.IsType<TokenResponse>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(GameHubClaimTypes.AccountDeletionOnlySessionPurpose, response.SessionPurpose);
+        Assert.Null(response.RefreshToken);
+        Assert.Empty(_db.RefreshTokenSessions);
+    }
+
+    private AuthController CreateController(
+        string apiKey,
+        bool jwtEnabled,
+        bool oidcEnabled = false,
+        bool multiUserEnabled = false)
     {
         var jwtSettings = jwtEnabled
             ? AccountServiceTests.CreateJwtSettings()
@@ -257,6 +406,9 @@ public sealed class AuthControllerTests : IDisposable
                 _db,
                 new AccountServiceTests.FixedTimeProvider(FixedNow)),
             oidcSettings,
+            new MultiUserEnablementSettings(
+                new MultiUserMode(multiUserEnabled),
+                []),
             null!,
             new DefaultTenantContext(),
             configuration,

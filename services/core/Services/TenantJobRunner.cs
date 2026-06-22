@@ -1,4 +1,5 @@
 using GameHub.Core.Data;
+using GameHub.Shared.Authentication;
 using Microsoft.EntityFrameworkCore;
 
 namespace GameHub.Core.Services;
@@ -20,15 +21,18 @@ public sealed class TenantJobRunner : ITenantJobRunner
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TenantExecutionContext _executionContext;
+    private readonly MultiUserMode _multiUserMode;
     private readonly ILogger<TenantJobRunner> _logger;
 
     public TenantJobRunner(
         IServiceScopeFactory scopeFactory,
         TenantExecutionContext executionContext,
+        MultiUserMode multiUserMode,
         ILogger<TenantJobRunner> logger)
     {
         _scopeFactory = scopeFactory;
         _executionContext = executionContext;
+        _multiUserMode = multiUserMode;
         _logger = logger;
     }
 
@@ -43,8 +47,17 @@ public sealed class TenantJobRunner : ITenantJobRunner
         using (var discoveryScope = _scopeFactory.CreateScope())
         {
             var db = discoveryScope.ServiceProvider.GetRequiredService<CoreContext>();
-            tenantIds = await db.Tenants
+            var tenants = db.Tenants
                 .AsNoTracking()
+                .Where(tenant => tenant.DeletionRequestedAtUtc == null);
+            if (!_multiUserMode.IsEnabled)
+            {
+                // Provisioned tenant rows and libraries remain intact while the gate is disabled,
+                // but scheduled sync/enrichment must not operate them as an implicit multi-user
+                // service. The seeded compatibility tenant continues its historical local work.
+                tenants = tenants.Where(tenant => tenant.Id == TenantDefaults.DefaultTenantId);
+            }
+            tenantIds = await tenants
                 .OrderBy(tenant => tenant.Id)
                 .Select(tenant => tenant.Id)
                 .ToListAsync(cancellationToken);

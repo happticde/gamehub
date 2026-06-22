@@ -135,6 +135,22 @@ public class ApiKeyAuthenticationTests
         Assert.Contains("Invalid", result.Failure?.Message);
     }
 
+    [Fact]
+    public async Task KeyConfigured_MultipleHeaderValues_FailsClosed()
+    {
+        var context = CreateHttpContext();
+        context.Request.Headers[ApiKeyAuthenticationHandler.HeaderName] =
+            new Microsoft.Extensions.Primitives.StringValues([TestApiKey, TestApiKey]);
+        var handler = await CreateHandler(
+            new Dictionary<string, string?> { { "Authentication:ApiKey", TestApiKey } },
+            context);
+
+        var result = await handler.AuthenticateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Missing", result.Failure?.Message);
+    }
+
     // =========================================================================
     // Scenario 4: Key configured, correct key → authenticated
     // =========================================================================

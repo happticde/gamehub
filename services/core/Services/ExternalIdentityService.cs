@@ -131,6 +131,21 @@ public sealed class ExternalIdentityService
         await _db.SaveChangesAsync(cancellationToken);
         return account;
     }
+
+    /// <summary>
+    /// Reports whether the account already owns a mapping for the configured issuer. This query
+    /// supports the local bootstrap boundary only; it never searches by email or accepts a tenant
+    /// selected by a request.
+    /// </summary>
+    public Task<bool> HasIssuerLinkAsync(
+        UserAccount account,
+        string issuer,
+        CancellationToken cancellationToken = default) =>
+        _db.ExternalIdentities.AsNoTracking().AnyAsync(
+            identity => identity.UserAccountId == account.Id
+                && identity.TenantId == account.TenantId
+                && identity.Issuer == issuer,
+            cancellationToken);
 }
 
 /// <summary>Stable outcomes for explicit external-identity linking.</summary>

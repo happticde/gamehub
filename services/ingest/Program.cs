@@ -2,6 +2,7 @@ using GameHub.Ingest.Data;
 using GameHub.Ingest.Services;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -66,6 +67,35 @@ builder.Services.AddScoped<PlatformCredentialService>();
 builder.Services.AddScoped<TenantDataDeletionService>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
+// Ingest independently reads the immutable operator switch. When enabled, internal tenant
+// delegation and a usable credential-vault key are mandatory; direct compatibility API-key
+// access is removed from the default policy so it cannot select the default tenant in production.
+var multiUserMode = MultiUserMode.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(multiUserMode);
+if (multiUserMode.IsEnabled)
+{
+    var serviceKey = builder.Configuration["Authentication:ServiceKey"]?.Trim() ?? "";
+    if (serviceKey.Length is < 32 or > 512
+        || serviceKey.Any(character => character is < '!' or > '~'))
+    {
+        throw new InvalidOperationException(
+            "MultiUser:Enabled requires a 32-512 character internal tenant-delegation service key.");
+    }
+    if (!platformCredentialKeyRing.IsConfigured)
+    {
+        throw new InvalidOperationException(
+            "MultiUser:Enabled requires a configured platform credential encryption key.");
+    }
+
+    builder.Services.AddAuthorization(options =>
+    {
+        options.DefaultPolicy = new AuthorizationPolicyBuilder(
+                TenantDelegationAuthenticationHandler.SchemeName)
+            .RequireAuthenticatedUser()
+            .Build();
+    });
+}
+
 // --- Database ---
 var dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";
 builder.Services.AddDbContext<IngestContext>(options =>
@@ -88,6 +118,11 @@ builder.Services.AddDbContext<IngestContext>(options =>
 });
 
 var app = builder.Build();
+
+app.Logger.LogInformation(
+    "Guarded multi-user mode is {MultiUserMode}; direct compatibility API-key access is {CompatibilityAccess}",
+    multiUserMode.IsEnabled ? "enabled" : "disabled",
+    multiUserMode.IsEnabled ? "disabled" : "enabled");
 
 // --- Database Initialization ---
 // Automatically applies any pending EF Core migrations on startup.

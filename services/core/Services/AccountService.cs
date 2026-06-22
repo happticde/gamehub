@@ -162,9 +162,8 @@ public sealed class AccountService
         {
             Id = Guid.NewGuid(),
             Name = canonicalTenantName,
-            // Ingest currently stores one shared set of platform records. Enabling sync here
-            // would copy the default owner's data into this new tenant, so the server—not the
-            // request—keeps it off until tenant-scoped Ingest storage is implemented.
+            // Provisioning never activates background retrieval. The server—not the request—keeps
+            // sync off until this exact tenant has a freshly verified supported vault credential.
             PlatformSyncEnabled = false,
             CreatedAtUtc = createdAtUtc
         };
@@ -218,6 +217,7 @@ public sealed class AccountService
         // tenant is trusted yet. The globally unique normalized email locates an account;
         // only successful password verification allows its TenantId into a signed token.
         var account = await _db.UserAccounts
+            .Include(candidate => candidate.Tenant)
             .SingleOrDefaultAsync(
                 candidate => candidate.NormalizedEmail == normalizedEmail,
                 cancellationToken);

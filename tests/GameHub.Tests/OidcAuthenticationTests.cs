@@ -277,7 +277,9 @@ public sealed class OidcAuthenticationTests : IDisposable
                 new Claim(JwtRegisteredClaimNames.Email, "shared@example.com"),
                 new Claim("nonce", nonce),
                 new Claim(GameHubClaimTypes.TenantId, Guid.NewGuid().ToString("D")),
-                new Claim(ClaimTypes.Role, "Administrator")
+                new Claim(ClaimTypes.Role, "Administrator"),
+                new Claim("groups", "provider-admins"),
+                new Claim("organization", "provider-tenant-b")
             ],
             notBefore: now.AddMinutes(-1),
             expires: now.AddMinutes(5),

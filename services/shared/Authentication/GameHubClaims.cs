@@ -12,6 +12,18 @@ public static class GameHubClaimTypes
     /// accepted only after an authentication handler validates the API key or JWT signature.
     /// </summary>
     public const string TenantId = "gamehub:tenant_id";
+
+    /// <summary>
+    /// Restricts a locally authenticated bootstrap session to explicit OIDC identity linking.
+    /// Absence means a normal historical/full session so upgrades do not invalidate issued JWTs.
+    /// </summary>
+    public const string SessionPurpose = "gamehub:session_purpose";
+
+    /// <summary>Value permitting only the Core OIDC linking callback.</summary>
+    public const string OidcLinkOnlySessionPurpose = "oidc_link_only";
+
+    /// <summary>Value permitting only an idempotent pending account-deletion retry.</summary>
+    public const string AccountDeletionOnlySessionPurpose = "account_deletion_only";
 }
 
 /// <summary>Stable identity used by existing single-user installations.</summary>

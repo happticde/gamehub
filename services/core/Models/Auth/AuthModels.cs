@@ -76,8 +76,21 @@ public sealed record TokenResponse(
     string AccessToken,
     string TokenType,
     DateTimeOffset ExpiresAtUtc,
-    string RefreshToken,
-    DateTimeOffset RefreshTokenExpiresAtUtc);
+    string? RefreshToken,
+    DateTimeOffset? RefreshTokenExpiresAtUtc,
+    string SessionPurpose = "full");
+
+/// <summary>
+/// Secret-free operator readiness response. Blockers are stable configuration/data-state codes;
+/// the response never contains configured values, identities, account counts, or tenant data.
+/// </summary>
+public sealed record MultiUserStatusResponse(
+    bool OidcEnabled,
+    bool ReadinessSatisfied,
+    bool MultiUserEnabled,
+    bool MultiUserActive,
+    string LocalPasswordMode,
+    IReadOnlyList<string> Blockers);
 
 /// <summary>Structured authentication error safe to return to API clients.</summary>
 public sealed record AuthErrorResponse(string Code, string Message);

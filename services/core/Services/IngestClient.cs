@@ -165,6 +165,24 @@ public class IngestClient
         await EnsurePlatformCredentialSuccessAsync(response, cancellationToken);
     }
 
+    /// <summary>
+    /// Probes Ingest through the real tenant-delegation trust boundary. The response contains only
+    /// process mode and vault readiness; no credential, account, tenant, or library data is read.
+    /// </summary>
+    public async Task<IngestMultiUserReadinessState> GetMultiUserReadinessAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var request = CreateDelegatedRequest(
+            HttpMethod.Get,
+            "/api/internal/multi-user/readiness");
+        using var response = await _http.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IngestMultiUserReadinessState>(
+                JsonOptions,
+                cancellationToken)
+            ?? throw new HttpRequestException("Ingest returned an invalid readiness response.");
+    }
+
     private static async Task EnsurePlatformCredentialSuccessAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
@@ -223,6 +241,11 @@ public class IngestClient
 
     private sealed record PlatformCredentialUpstreamError(string Message);
 }
+
+/// <summary>Secret-free Ingest guarded-mode state.</summary>
+public sealed record IngestMultiUserReadinessState(
+    bool MultiUserEnabled,
+    bool CredentialVaultReady);
 
 /// <summary>Sanitized failure returned by Ingest's credential vault API.</summary>
 public sealed class IngestPlatformCredentialException(

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { validateFrontendMultiUserConfiguration } from "@/lib/multi-user";
+
 /**
  * Provider-neutral OIDC configuration and discovery for the Next.js BFF.
  *
@@ -44,6 +46,7 @@ export function isOidcEnabled(): boolean {
  * configuration faults into a generic 503 instead of attempting an insecure fallback.
  */
 export function getOidcConfig(): OidcBffConfig {
+    validateFrontendMultiUserConfiguration();
     if (!isOidcEnabled()) throw new Error("oidc_disabled");
     if (process.env.AUTH_ENABLED?.toLowerCase() !== "true") throw new Error("oidc_requires_auth");
     if (process.env.AUTH_COOKIE_SECURE?.toLowerCase() !== "true") {

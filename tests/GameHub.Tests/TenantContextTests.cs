@@ -117,6 +117,25 @@ public sealed class TenantContextTests
         Assert.Single(exception.InnerExceptions);
     }
 
+    [Fact]
+    public async Task TenantJobRunner_MultiUserDisabled_VisitsOnlyDefaultTenant()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var serviceProvider = CreateServiceProvider(connection, multiUserEnabled: false);
+        await SeedSecondTenantAsync(serviceProvider);
+        var visited = new List<Guid>();
+
+        await serviceProvider.GetRequiredService<ITenantJobRunner>()
+            .RunForEachTenantAsync((_, tenantId, _) =>
+            {
+                visited.Add(tenantId);
+                return Task.CompletedTask;
+            });
+
+        Assert.Equal([TenantA], visited);
+    }
+
     private static AuthenticatedTenantContext CreateTenantContext(
         HttpContext? httpContext,
         TenantExecutionContext? executionContext = null) =>
@@ -133,12 +152,15 @@ public sealed class TenantContextTests
         return context;
     }
 
-    private static ServiceProvider CreateServiceProvider(SqliteConnection connection)
+    private static ServiceProvider CreateServiceProvider(
+        SqliteConnection connection,
+        bool multiUserEnabled = true)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHttpContextAccessor();
         services.AddSingleton<TenantExecutionContext>();
+        services.AddSingleton(new MultiUserMode(multiUserEnabled));
         services.AddScoped<ITenantContext, AuthenticatedTenantContext>();
         services.AddDbContext<CoreContext>(options => options.UseSqlite(connection));
         services.AddSingleton<ITenantJobRunner, TenantJobRunner>();

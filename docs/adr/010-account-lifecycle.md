@@ -47,7 +47,8 @@ endpoint in this lifecycle. Without a trusted email/identity provider, GameHub c
 that an anonymous requester owns an existing account. If the password and all live sessions are
 lost, recovery is an operator responsibility outside the public API, such as restoring a trusted
 database backup or deliberately reprovisioning the deployment. Production authentication must
-define a stronger recovery mechanism before guarded multi-user enablement.
+define a stronger recovery mechanism before guarded multi-user enablement. ADR-011 and ADR-012
+subsequently satisfy that requirement through a trusted OIDC provider and explicit operator gate.
 
 ### Account and tenant deletion
 
@@ -100,11 +101,11 @@ single-user installation can bootstrap a new owner. Provisioned tenant rows are 
   change or global refresh-session revocation.
 - There is no supported self-service account recovery yet.
 - Provisioning still relies on the deployment API key and one owner per tenant.
-- OAuth/external identity, production abuse controls, verified email ownership, account recovery,
-  and an explicit guarded multi-user rollout remain future Roadmap #8 work.
+- Provider authentication/recovery and guarded rollout are implemented by ADR-011/ADR-012. Public
+  registration, provider-derived roles, and unrestricted SaaS administration remain out of scope.
 
 ## Multi-user status
 
-This ADR completes the initial account-lifecycle gate only. It does not activate multi-user mode,
-make local JWT authentication production-ready, or authorize advertising GameHub as a multi-user
-service.
+This ADR completes the initial account-lifecycle gate only. ADR-012 later adds guarded multi-user
+activation without making local JWT authentication production-ready. The production switch remains
+default-off and does not authorize claims of public registration or unrestricted SaaS readiness.

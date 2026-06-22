@@ -4,9 +4,43 @@ GameHub keeps the existing API-key and local-account modes for compatibility and
 provider-neutral OIDC as the production authentication direction. Tenant identity always comes
 from a server-verified GameHub account mapping, never from request bodies or provider tenant claims.
 
+Production multi-user operation is guarded by a separate operator switch that defaults to false.
+See [Guarded Multi-User Operations](guarded-multi-user-enablement.md) and
+[ADR-012](adr/012-guarded-multi-user-enablement.md).
+
 For a source-oriented explanation with sequence diagrams, trust boundaries, data model, failure
 paths, and a guided reading order, see
 [OIDC Authentication Architecture](oidc-authentication-architecture.md).
+
+## Guarded Multi-User Enablement
+
+`GAMEHUB_MULTI_USER_ENABLED` is the only production multi-user enablement switch. It defaults to
+`false`, is read at process startup, and is mapped consistently to Core, Ingest, and Frontend by
+Compose. OIDC configuration alone never activates provisioned tenants.
+
+The operational states are distinct:
+
+- **OIDC enabled** means the provider protocol is configured.
+- **Readiness satisfied** means Core/BFF/Ingest trust settings are complete, the vault is ready,
+  and every live account has an explicit mapping for the configured issuer.
+- **Multi-user enabled** means the operator explicitly set the guarded switch to `true`.
+- **Multi-user active** requires both readiness and the explicit switch.
+
+Core requires mirrored Frontend auth, Secure-cookie, and switch states; independent strong API,
+Ingest delegation, JWT, and BFF keys; valid OIDC; and linked live accounts. Ingest independently
+requires the switch, delegation trust, and a configured vault encryption key. Missing, invalid,
+reused, or contradictory enabled configuration fails startup. Frontend authentication routes fail
+closed with a generic unavailable response.
+
+An operator can inspect secret-free readiness through `GET /api/auth/multi-user/status` using the
+configured operator API key. The response contains safe booleans and blocker codes only—never
+configured values, secrets, tokens, account/tenant identifiers, counts, claims, credentials, or
+library data. No readiness state is exposed to browser JavaScript.
+
+When active, ordinary Core endpoints require GameHub JWTs and ordinary Ingest endpoints require
+Core tenant delegation. The legacy API key remains accepted only by Core endpoints that explicitly
+name the operator scheme. Public registration, provider JIT provisioning, tenant switching, and
+claim-derived roles remain unavailable.
 
 ## Production OIDC
 
@@ -129,6 +163,21 @@ Content-Type: application/json
 
 Use the returned access token as `Authorization: Bearer <token>`. Tokens expire after 60 minutes by default, and token requests are limited to 10 attempts per minute per remote IP.
 
+This local token endpoint is a compatibility boundary, not active-mode production login:
+
+- With guarded multi-user mode disabled, the default tenant retains normal local access/refresh.
+- A provisioned tenant cannot obtain a full session while the gate is disabled.
+- With guarded multi-user mode disabled, an unlinked provisioned account may receive only a
+  ten-minute `oidc_link_only` access token. It has no refresh token and Core accepts it only for
+  `POST /api/auth/oidc/link`; this prepares the account before activation.
+- A linked account cannot use its local password to obtain a production session.
+- A pending-deletion account may receive only a ten-minute `account_deletion_only` token for the
+  exact idempotent deletion retry route.
+
+After the first link, the BFF clears the restricted cookie and requires a fresh OIDC login. Existing
+GameHub sessions issued before an enable/disable change retain ADR-011's normal local expiry,
+database live-account check, rotation, replay detection, and revocation behavior.
+
 The response also contains an opaque `refreshToken` and `refreshTokenExpiresAtUtc`. The access
 token is a readable, signed JWT carrying the trusted tenant claim; the refresh token contains
 only random bytes and is stored server-side as a SHA-256 hash.
@@ -197,6 +246,10 @@ email-reset, recovery-code, or administrative password-replacement API. Losing t
 all active sessions requires trusted operator recovery outside the public API. This must be
 revisited separately from provider recovery. See ADR-010 and ADR-011.
 
+In active mode the stored password hash remains only for rollback compatibility, the narrowly
+scoped first-link bridge, and current-password confirmation on existing lifecycle operations. It
+cannot create a normal production session after the account has an OIDC mapping.
+
 ## Frontend Session
 
 The Next.js frontend signs in through `POST /api/auth/login` on its own origin. Its BFF calls
@@ -211,6 +264,9 @@ The default Compose deployment uses plain HTTP and therefore sets
 `GAMEHUB_AUTH_COOKIE_SECURE=false`. Set it to `true` whenever a reverse proxy serves the frontend
 to browsers over HTTPS; browsers intentionally reject Secure cookies over plain HTTP.
 
-OIDC is stricter: enabling it while secure cookies are disabled is rejected. Neither enabling
-OIDC nor linking an identity activates production multi-user operation. The explicit guarded
-enablement and rollout gate remains open.
+OIDC is stricter: enabling it while secure cookies are disabled is rejected. Neither enabling OIDC
+nor linking an identity activates production multi-user operation. After all readiness checks pass,
+the operator must still explicitly set `GAMEHUB_MULTI_USER_ENABLED=true` across all components and
+restart. Disabling it later preserves all data, blocks new provisioned-tenant login, limits
+background jobs to the default tenant, and leaves existing sessions to expire or be revoked under
+ADR-011.

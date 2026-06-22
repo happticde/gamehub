@@ -31,6 +31,7 @@ public sealed class AuthController : ControllerBase
     private readonly OidcTokenValidator _oidcTokens;
     private readonly ExternalIdentityService _externalIdentities;
     private readonly OidcSettings _oidcSettings;
+    private readonly MultiUserEnablementSettings _multiUser;
     private readonly AccountDeletionService _deletion;
     private readonly ITenantContext _tenantContext;
     private readonly IConfiguration _configuration;
@@ -44,6 +45,7 @@ public sealed class AuthController : ControllerBase
         OidcTokenValidator oidcTokens,
         ExternalIdentityService externalIdentities,
         OidcSettings oidcSettings,
+        MultiUserEnablementSettings multiUser,
         AccountDeletionService deletion,
         ITenantContext tenantContext,
         IConfiguration configuration,
@@ -55,6 +57,7 @@ public sealed class AuthController : ControllerBase
         _oidcTokens = oidcTokens;
         _externalIdentities = externalIdentities;
         _oidcSettings = oidcSettings;
+        _multiUser = multiUser;
         _deletion = deletion;
         _tenantContext = tenantContext;
         _configuration = configuration;
@@ -88,6 +91,12 @@ public sealed class AuthController : ControllerBase
                 new AuthErrorResponse(
                     "api_key_required",
                     "Configure Authentication:ApiKey before bootstrapping an account."));
+        }
+        if (_multiUser.Mode.IsEnabled)
+        {
+            return Conflict(new AuthErrorResponse(
+                "multi_user_provisioning_requires_disabled_mode",
+                "Disable guarded multi-user mode before bootstrapping an account."));
         }
 
         // AuthenticatedTenantContext reads the tenant claim created by the API-key handler.
@@ -151,6 +160,15 @@ public sealed class AuthController : ControllerBase
                 new AuthErrorResponse(
                     "api_key_required",
                     "Configure Authentication:ApiKey before provisioning tenants."));
+        }
+        if (_multiUser.Mode.IsEnabled)
+        {
+            // Provisioning would make the all-live-accounts-linked startup invariant false while
+            // the process is already admitting tenants. Use an explicit maintenance window:
+            // disable, provision/link, re-check readiness, then enable again.
+            return Conflict(new AuthErrorResponse(
+                "multi_user_provisioning_requires_disabled_mode",
+                "Disable guarded multi-user mode before provisioning another tenant."));
         }
 
         var result = await _accounts.ProvisionTenantAsync(
@@ -231,17 +249,51 @@ public sealed class AuthController : ControllerBase
                 "Email or password is invalid."));
         }
 
-        // AuthenticateAsync returns a database account only after password verification.
-        // JwtTokenService copies the tenant from that trusted account and signs the result.
-        var token = _tokens.CreateToken(account);
-        // The JWT is self-contained and short-lived. The independent opaque refresh secret
-        // creates a revocable server-side session and is returned only in this response.
-        var refreshToken = await _refreshTokens.IssueAsync(account, cancellationToken);
-        _logger.LogInformation(
-            "Issued JWT for account {AccountId} and tenant {TenantId}",
-            account.Id,
-            account.TenantId);
-        return Ok(CreateTokenResponse(token, refreshToken));
+        if (account.Tenant?.DeletionRequestedAtUtc is not null)
+        {
+            // ADR-010 keeps partial deletion retryable after the original access JWT expires.
+            // This credential cannot become ordinary access or a refresh session in either mode.
+            var deletionToken = _tokens.CreateAccountDeletionToken(account);
+            _logger.LogInformation("Issued a restricted pending account-deletion retry session");
+            return Ok(CreateRestrictedTokenResponse(
+                deletionToken,
+                GameHubClaimTypes.AccountDeletionOnlySessionPurpose));
+        }
+
+        if (!_multiUser.Mode.IsEnabled && account.TenantId == TenantDefaults.DefaultTenantId)
+        {
+            // The default tenant keeps the historical local-session behavior while guarded
+            // multi-user mode is off. This is the upgrade-safe single-user compatibility path.
+            var token = _tokens.CreateToken(account);
+            var refreshToken = await _refreshTokens.IssueAsync(account, cancellationToken);
+            _logger.LogInformation("Issued a local compatibility session for the default tenant");
+            return Ok(CreateTokenResponse(token, refreshToken));
+        }
+
+        // Production multi-user mode never turns a password into normal library access. The sole
+        // compatibility exception is a ten-minute, non-refreshable JWT for an operator-created
+        // account that still needs its first explicit issuer/subject link. Bearer validation
+        // permits that signed purpose only on POST /api/auth/oidc/link.
+        var mayBootstrapLink = _oidcSettings.IsEnabled
+            && !await _externalIdentities.HasIssuerLinkAsync(
+                account,
+                _oidcSettings.Issuer,
+                cancellationToken);
+        if (mayBootstrapLink)
+        {
+            var linkToken = _tokens.CreateOidcLinkToken(account);
+            _logger.LogInformation("Issued a restricted OIDC-link bootstrap session");
+            return Ok(CreateRestrictedTokenResponse(
+                linkToken,
+                GameHubClaimTypes.OidcLinkOnlySessionPurpose));
+        }
+
+        _logger.LogWarning("Rejected local login outside the single-user compatibility boundary");
+        return StatusCode(
+            StatusCodes.Status403Forbidden,
+            new AuthErrorResponse(
+                "local_login_not_allowed",
+                "Local password login is not available for this account."));
     }
 
     /// <summary>
@@ -301,6 +353,17 @@ public sealed class AuthController : ControllerBase
         if (account is null)
         {
             // Unknown, pending-deletion, and deleted mappings intentionally share one response.
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        if (!_multiUser.AllowsOidcLogin(account.TenantId))
+        {
+            // OIDC readiness and the production switch are separate states. A fully valid linked
+            // provider identity still cannot activate a provisioned tenant while the operator
+            // switch is false.
+            _logger.LogWarning("Rejected a provisioned-tenant login while multi-user mode is disabled");
             return Unauthorized(new AuthErrorResponse(
                 "oidc_authentication_failed",
                 "External authentication failed."));
@@ -594,6 +657,17 @@ public sealed class AuthController : ControllerBase
             accessToken.ExpiresAtUtc,
             refreshToken.RefreshToken,
             refreshToken.ExpiresAtUtc);
+
+    private static TokenResponse CreateRestrictedTokenResponse(
+        IssuedJwtToken accessToken,
+        string sessionPurpose) =>
+        new(
+            accessToken.AccessToken,
+            "Bearer",
+            accessToken.ExpiresAtUtc,
+            null,
+            null,
+            sessionPurpose);
 
     private ObjectResult OidcUnavailable(string message) => StatusCode(
         StatusCodes.Status503ServiceUnavailable,

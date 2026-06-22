@@ -119,7 +119,28 @@ public sealed class JwtTokenService
     /// payload is readable by clients, so it must contain identity data only—never secrets.
     /// The signature makes payload modification detectable; it does not encrypt the payload.
     /// </summary>
-    public IssuedJwtToken CreateToken(UserAccount account)
+    public IssuedJwtToken CreateToken(UserAccount account) =>
+        CreateToken(account, _settings.LifetimeMinutes, sessionPurpose: null);
+
+    /// <summary>
+    /// Creates a short-lived, non-refreshable token whose authorization is restricted by the
+    /// bearer validation event to the explicit OIDC linking endpoint. This is the only local
+    /// password bridge retained while production multi-user mode is enabled.
+    /// </summary>
+    public IssuedJwtToken CreateOidcLinkToken(UserAccount account) =>
+        CreateToken(account, lifetimeMinutes: 10, GameHubClaimTypes.OidcLinkOnlySessionPurpose);
+
+    /// <summary>
+    /// Creates a short-lived, non-refreshable token accepted only by the idempotent deletion
+    /// endpoint. Pending deletion remains blocked everywhere else while ADR-010 retry stays usable.
+    /// </summary>
+    public IssuedJwtToken CreateAccountDeletionToken(UserAccount account) =>
+        CreateToken(account, lifetimeMinutes: 10, GameHubClaimTypes.AccountDeletionOnlySessionPurpose);
+
+    private IssuedJwtToken CreateToken(
+        UserAccount account,
+        int lifetimeMinutes,
+        string? sessionPurpose)
     {
         if (!_settings.IsEnabled)
         {
@@ -127,7 +148,7 @@ public sealed class JwtTokenService
         }
 
         var issuedAt = _timeProvider.GetUtcNow();
-        var expiresAt = issuedAt.AddMinutes(_settings.LifetimeMinutes);
+        var expiresAt = issuedAt.AddMinutes(lifetimeMinutes);
 
         // Claims are the authenticated facts carried by the token:
         //   sub / NameIdentifier: stable account identity
@@ -136,7 +157,7 @@ public sealed class JwtTokenService
         //   tenant_id: authorization boundary consumed by AuthenticatedTenantContext
         // The tenant ID is copied from the verified database account, never from the login
         // request, so a caller cannot choose which library a token grants access to.
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, account.Id.ToString("D")),
             new Claim(ClaimTypes.NameIdentifier, account.Id.ToString("D")),
@@ -145,6 +166,12 @@ public sealed class JwtTokenService
             new Claim(ClaimTypes.Name, account.DisplayName),
             new Claim(GameHubClaimTypes.TenantId, account.TenantId.ToString("D"))
         };
+        if (sessionPurpose is not null)
+        {
+            // The purpose is signed with the token. A request cannot add/remove it through a
+            // header, query string, or provider claim.
+            claims.Add(new Claim(GameHubClaimTypes.SessionPurpose, sessionPurpose));
+        }
         // notBefore and expires bound the validity window. SigningCredentials describes
         // how the header and payload are authenticated; HS256 is HMAC using SHA-256.
         var token = new JwtSecurityToken(

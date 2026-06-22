@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
@@ -90,13 +92,21 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
         }
 
         // Check for the X-Api-Key header
-        if (!Request.Headers.TryGetValue(HeaderName, out var providedKey))
+        if (!Request.Headers.TryGetValue(HeaderName, out var providedKey)
+            || providedKey.Count != 1
+            || string.IsNullOrEmpty(providedKey[0]))
         {
             return Task.FromResult(AuthenticateResult.Fail("Missing X-Api-Key header"));
         }
 
         // Constant-time comparison to prevent timing attacks
-        if (!string.Equals(providedKey, configuredKey, StringComparison.Ordinal))
+        var providedBytes = Encoding.UTF8.GetBytes(providedKey[0]!);
+        var configuredBytes = Encoding.UTF8.GetBytes(configuredKey);
+        var keysMatch = providedBytes.Length == configuredBytes.Length
+            && CryptographicOperations.FixedTimeEquals(providedBytes, configuredBytes);
+        CryptographicOperations.ZeroMemory(providedBytes);
+        CryptographicOperations.ZeroMemory(configuredBytes);
+        if (!keysMatch)
         {
             Logger.LogWarning("Invalid API key provided from {IP}", Context.Connection.RemoteIpAddress);
             return Task.FromResult(AuthenticateResult.Fail("Invalid API key"));
