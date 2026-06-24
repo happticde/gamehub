@@ -130,6 +130,78 @@ public sealed class AccountDeletionTests : IDisposable
         Assert.False(await _db.Tenants.AnyAsync(tenant => tenant.Id == accountA.TenantId));
     }
 
+    [Fact]
+    public async Task Delete_ExternalAccount_PersistsIdentityTombstoneAndBlocksJitRecreation()
+    {
+        var tenantId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var tenant = new Tenant
+        {
+            Id = tenantId,
+            Name = "External tenant",
+            PlatformSyncEnabled = false,
+            CreatedAtUtc = FixedNow.UtcDateTime
+        };
+        var account = new UserAccount
+        {
+            Id = accountId,
+            TenantId = tenantId,
+            Tenant = tenant,
+            AccountType = UserAccountType.ExternalOidc,
+            DisplayName = "OIDC Account",
+            CreatedAtUtc = FixedNow.UtcDateTime
+        };
+        _db.ExternalIdentities.Add(new ExternalIdentity
+        {
+            Id = Guid.NewGuid(),
+            Issuer = "https://identity.example.test",
+            Subject = "deleted-subject",
+            UserAccountId = accountId,
+            TenantId = tenantId,
+            UserAccount = account,
+            CreatedAtUtc = FixedNow.UtcDateTime
+        });
+        _tenantContext.TenantId = tenantId;
+        await _db.SaveChangesAsync();
+        var deletion = CreateDeletionService(
+            new SequenceHandler(new HttpResponseMessage(HttpStatusCode.NoContent)));
+
+        var result = await deletion.DeleteAsync(
+            accountId,
+            tenantId,
+            null,
+            authorization: AccountDeletionAuthorization.FreshExternalOidc);
+
+        Assert.Equal(AccountDeletionResult.Deleted, result);
+        var tombstone = await _db.DeletedExternalIdentities.SingleAsync();
+        Assert.Equal("https://identity.example.test", tombstone.Issuer);
+        Assert.Equal("deleted-subject", tombstone.Subject);
+        Assert.Empty(_db.ExternalIdentities);
+
+        var oidc = new OidcSettings(
+            true,
+            "https://identity.example.test",
+            "gamehub-client",
+            "https://identity.example.test/.well-known/openid-configuration",
+            ["RS256"],
+            new string('B', 32),
+            OidcProvisioningMode.PersonalTenantJit);
+        var jit = new OidcJitProvisioningService(
+            _db,
+            _refresh,
+            new TenantExecutionContext(),
+            oidc,
+            new MultiUserEnablementSettings(new MultiUserMode(true), []),
+            new AccountServiceTests.FixedTimeProvider(FixedNow),
+            NullLogger<OidcJitProvisioningService>.Instance);
+        var reprovision = await jit.ProvisionAsync(
+            new ValidatedOidcIdentity(oidc.Issuer, "deleted-subject", null));
+
+        Assert.False(reprovision.Succeeded);
+        Assert.False(await _db.UserAccounts.AnyAsync(candidate => candidate.Id == accountId));
+        Assert.False(await _db.Tenants.AnyAsync(candidate => candidate.Id == tenantId));
+    }
+
     private async Task<(UserAccount AccountA, UserAccount AccountB)> SeedTwoTenantsAsync()
     {
         var tenantA = await _accounts.ProvisionTenantAsync(

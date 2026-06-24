@@ -23,6 +23,7 @@ and still requires explicit operator configuration.
 | Account lifecycle | Password change, global refresh-session revocation, pending deletion, Core cleanup, and Core→Ingest deletion delegation | Signed account/tenant claims select the identity. Current-password confirmation protects password change and deletion. Pending deletion blocks ordinary JWT access; Ingest and Core cleanup are idempotent and tenant-filtered. |
 | Production identity | Next.js OIDC state/nonce/PKCE/callback handling, BFF-only Core exchange, Core ID-token validation, explicit external-identity linking, exact issuer/subject login, and local GameHub session issuance | The BFF uses an authenticated encrypted correlation cookie, exact redirect binding, and a separate Core service key. Core pins issuer, audience, algorithms, nonce, lifetime, and JWKS. A composite database relationship binds the linked account and tenant; email, roles, organization, and tenant-like claims are ignored for mapping. |
 | Guarded enablement | Core/Ingest/BFF startup configuration, OIDC admission, local bootstrap linking, API-key compatibility, operator readiness, and disable/rollback | An immutable default-off operator switch is independent from OIDC. Active mode requires complete trust/cookie/vault/link readiness, JWT-only ordinary Core authorization, delegation-only ordinary Ingest authorization, and OIDC-only full login. Disable is non-destructive. |
+| Personal-tenant JIT | Unknown-subject OIDC exchange, account/tenant creation, activity/session creation, deletion tombstones, and external reauthenticated deletion | JIT requires both an explicit provisioning mode and active guarded mode. Core generates every ID and commits tenant, external account, exact mapping, refresh session, and tenant activity atomically. Claims cannot select ownership; parallel first login and deleted subjects cannot create duplicates or orphans. |
 
 ## Operational-history verification
 
@@ -97,3 +98,23 @@ outages, pending deletion, and deleted accounts.
 Roadmap #8 is technically complete. A deployment must still select and govern a trusted provider,
 exercise its recovery/MFA/abuse policies and GameHub rollback checklist, then deliberately set the
 default-off switch. This audit does not claim public registration or unrestricted SaaS readiness.
+
+## Personal-tenant JIT verification
+
+The ADR-013 follow-up adds an explicit `Local` versus `ExternalOidc` account boundary. Existing
+rows migrate to `Local`; SQLite and PostgreSQL check constraints plus a filtered local-email index
+reject external password hashes/normalized emails and invalid local credentials. Upgrade tests
+preserve the default tenant, local email/hash, exact external identity, refresh session, unified
+game, library item, and pending-deletion timestamp.
+
+Direct tests cover default-off and invalid provisioning configuration, OIDC-only and gate-off
+non-provisioning, server-generated sync-disabled personal tenants, missing/equal provider email,
+provider claim non-selection, parallel first-login idempotency, no orphan rows, existing mapping
+login, pending/deleted blocking, local credential rejection, secret-free activity/readiness, and
+readiness without data mutation. Real PostgreSQL and SQLite fresh/upgrade paths exercise the same
+constraints.
+
+External deletion requires a fresh exact OIDC proof and produces only a deletion-purpose token
+accepted on one method and route. Completed deletion persists an issuer/subject tombstone before
+the live mapping cascades, so JIT cannot undo deletion. GameHub logout and Keycloak lifecycle remain
+separate; provider events and back-channel logout are not implemented.

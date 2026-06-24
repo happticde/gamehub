@@ -1,5 +1,49 @@
 # Session History
 
+## Current Session Summary (2026-06-24)
+
+### What Changed
+
+**Opt-in Personal-Tenant OIDC JIT Provisioning:**
+- Added ADR-013 and independent `Disabled`/`PersonalTenantJit` provisioning configuration. Missing
+  configuration stays disabled, unknown values fail startup, and JIT requires active guarded mode;
+  OIDC alone or a disabled gate creates nothing.
+- Added explicit `Local` and `ExternalOidc` account kinds. Existing rows migrate to `Local`;
+  external accounts have no normalized email or password hash. SQLite/PostgreSQL constraints and a
+  filtered local-email index enforce the credential boundary.
+- Unknown validated subjects can atomically receive one server-identified, sync-disabled personal
+  tenant, external owner, exact mapping, refresh session, and secret-free tenant activity. Unique
+  mapping constraints and transaction rollback prevent duplicate or orphan rows under parallel
+  first login.
+- Completed external deletion persists an exact identity tombstone, preventing JIT recreation.
+  Fresh BFF OIDC reauthentication uses `prompt=login`, `max_age=0`, nonce/PKCE/state, and recent
+  signed `auth_time`; Core issues only a short-lived deletion-purpose token for the exact DELETE
+  route. Pending cleanup has a fresh OIDC retry path.
+- JIT readiness may be satisfied with zero accounts when every technical prerequisite passes.
+  Once live accounts exist, every live account still requires an exact configured-issuer mapping.
+  Status exposes only the safe provisioning-mode label.
+
+### Verification
+
+- Direct tests cover default-off/invalid configuration, gate-off non-provisioning, exact mapping,
+  claim/email non-selection, server IDs, sync-disabled tenants, atomic activity/session creation,
+  parallel first login, tombstones, local credential rejection, restricted deletion, and read-only
+  readiness.
+- Provider-specific EF migrations and SQLite/real PostgreSQL fresh/upgrade tests preserve the
+  default tenant, local email/password hash, external identity, refresh session, unified game,
+  library item, and pending-deletion state while enforcing account-kind constraints.
+- Core and Ingest builds pass with zero warnings; the full .NET suite passes 258 tests and the BFF
+  security suite passes 15 tests. Frontend production build and changed-file lint pass. Repository
+  lint still reports only the pre-existing errors in unchanged frontend files.
+
+### Known State / Pending
+
+- `GAMEHUB_MULTI_USER_ENABLED` and personal JIT remain default-off. No production configuration or
+  provider instance was changed.
+- Public registration, shared tenants, invitations, roles, SCIM/provider-event lifecycle,
+  subject replacement, and back-channel logout remain unimplemented. This is not a general SaaS
+  readiness claim.
+
 ## Current Session Summary (2026-06-22)
 
 ### What Changed

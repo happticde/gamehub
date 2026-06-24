@@ -397,6 +397,10 @@ public sealed class AuthControllerTests : IDisposable
             new OidcMetadataProvider(oidcSettings),
             NullLogger<OidcTokenValidator>.Instance);
 
+        var multiUserSettings = new MultiUserEnablementSettings(
+            new MultiUserMode(multiUserEnabled),
+            []);
+        var tenantExecution = new TenantExecutionContext();
         var controller = new AuthController(
             _accounts,
             new JwtTokenService(jwtSettings, new AccountServiceTests.FixedTimeProvider(FixedNow)),
@@ -405,10 +409,16 @@ public sealed class AuthControllerTests : IDisposable
             new ExternalIdentityService(
                 _db,
                 new AccountServiceTests.FixedTimeProvider(FixedNow)),
+            new OidcJitProvisioningService(
+                _db,
+                _refreshTokens,
+                tenantExecution,
+                oidcSettings,
+                multiUserSettings,
+                new AccountServiceTests.FixedTimeProvider(FixedNow),
+                NullLogger<OidcJitProvisioningService>.Instance),
             oidcSettings,
-            new MultiUserEnablementSettings(
-                new MultiUserMode(multiUserEnabled),
-                []),
+            multiUserSettings,
             null!,
             new DefaultTenantContext(),
             configuration,

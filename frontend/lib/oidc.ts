@@ -1,6 +1,10 @@
 import "server-only";
 
 import { validateFrontendMultiUserConfiguration } from "@/lib/multi-user";
+import {
+    OidcProvisioningMode,
+    parseOidcProvisioningMode,
+} from "@/lib/oidc-provisioning-security";
 
 /**
  * Provider-neutral OIDC configuration and discovery for the Next.js BFF.
@@ -25,6 +29,8 @@ export interface OidcBffConfig {
     cookieKey: Buffer;
     /** Independent server-to-server credential that prevents direct Core OIDC exchange calls. */
     bffServiceKey: string;
+    /** Explicit account-creation mode mirrored from deployment configuration. */
+    provisioningMode: OidcProvisioningMode;
 }
 
 /** Minimal subset of discovery metadata used by the BFF. Core separately consumes JWKS metadata. */
@@ -72,6 +78,7 @@ export function getOidcConfig(): OidcBffConfig {
     if (bffServiceKey.length < 32 || bffServiceKey.length > 512 || !/^[!-~]+$/.test(bffServiceKey)) {
         throw new Error("invalid_oidc_bff_service_key");
     }
+    const provisioningMode = parseOidcProvisioningMode(process.env.OIDC_PROVISIONING_MODE);
 
     return {
         issuer,
@@ -81,6 +88,7 @@ export function getOidcConfig(): OidcBffConfig {
         scopes,
         cookieKey,
         bffServiceKey,
+        provisioningMode,
     };
 }
 

@@ -18,6 +18,63 @@ public sealed class PostgresTagRelationshipMigrationTests
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
     [Fact]
+    public async Task AccountTypeMigration_PostgresFreshInstallEnforcesExternalCredentialBoundary()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            await db.Database.MigrateAsync();
+            var externalTenantId = Guid.NewGuid();
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "Tenants"
+                    ("Id", "Name", "PlatformSyncEnabled", "DeletionRequestedAtUtc", "CreatedAtUtc")
+                VALUES
+                    ({externalTenantId}, {"External"}, {false}, NULL, {new DateTime(2026, 6, 24, 12, 0, 0, DateTimeKind.Utc)});
+                INSERT INTO "UserAccounts"
+                    ("Id", "TenantId", "AccountType", "Email", "NormalizedEmail", "DisplayName", "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
+                VALUES
+                    ({Guid.NewGuid()}, {externalTenantId}, {1}, NULL, NULL, {"OIDC Account"}, NULL, {new DateTime(2026, 6, 24, 12, 0, 0, DateTimeKind.Utc)}, NULL);
+                """);
+
+            var invalidTenantId = Guid.NewGuid();
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "Tenants"
+                    ("Id", "Name", "PlatformSyncEnabled", "DeletionRequestedAtUtc", "CreatedAtUtc")
+                VALUES
+                    ({invalidTenantId}, {"Invalid"}, {false}, NULL, {new DateTime(2026, 6, 24, 12, 0, 0, DateTimeKind.Utc)});
+                """);
+            await Assert.ThrowsAnyAsync<DbException>(() =>
+                db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO "UserAccounts"
+                        ("Id", "TenantId", "AccountType", "Email", "NormalizedEmail", "DisplayName", "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
+                    VALUES
+                        ({Guid.NewGuid()}, {invalidTenantId}, {1}, {"profile@example.com"}, {"PROFILE@EXAMPLE.COM"}, {"Invalid"}, {"forbidden-password-hash"}, {new DateTime(2026, 6, 24, 12, 0, 0, DateTimeKind.Utc)}, NULL);
+                    """));
+
+            Assert.Equal(3, await db.Tenants.CountAsync());
+            var account = await db.UserAccounts.SingleAsync();
+            Assert.Equal(UserAccountType.ExternalOidc, account.AccountType);
+            Assert.Null(account.Email);
+            Assert.Null(account.PasswordHash);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
     public async Task ExternalIdentityMigration_PostgresUpgradePreservesLocalAccountSessionAndLibrary()
     {
         var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
@@ -35,8 +92,9 @@ public sealed class PostgresTagRelationshipMigrationTests
         try
         {
             var migrator = db.Database.GetService<IMigrator>();
-            await migrator.MigrateAsync("20260621135445_AddTenantDeletionState");
+            await migrator.MigrateAsync("20260621183449_AddExternalIdentities");
             var accountId = Guid.NewGuid();
+            var pendingAtUtc = new DateTime(2026, 6, 21, 11, 30, 0, DateTimeKind.Utc);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO "UserAccounts"
                     ("Id", "TenantId", "Email", "NormalizedEmail", "DisplayName", "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
@@ -46,6 +104,13 @@ public sealed class PostgresTagRelationshipMigrationTests
                     ("Id", "UserAccountId", "TokenHash", "CreatedAtUtc", "ExpiresAtUtc", "ConsumedAtUtc", "RevokedAtUtc")
                 VALUES
                     ({Guid.NewGuid()}, {accountId}, {new string('A', 64)}, {new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)}, {new DateTime(2026, 7, 21, 12, 0, 0, DateTimeKind.Utc)}, NULL, NULL);
+                INSERT INTO "ExternalIdentities"
+                    ("Id", "Issuer", "Subject", "UserAccountId", "TenantId", "CreatedAtUtc", "LastLoginAtUtc")
+                VALUES
+                    ({Guid.NewGuid()}, {"https://identity.example.test"}, {"legacy-owner"}, {accountId}, {TenantA}, {new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)}, NULL);
+                UPDATE "Tenants"
+                SET "DeletionRequestedAtUtc" = {pendingAtUtc}
+                WHERE "Id" = {TenantA};
                 """);
             var game = new UnifiedGame { Title = "Preserved game", Slug = "preserved-game" };
             game.Items.Add(new LibraryItem
@@ -60,16 +125,6 @@ public sealed class PostgresTagRelationshipMigrationTests
             await migrator.MigrateAsync();
             db.ChangeTracker.Clear();
 
-            db.ExternalIdentities.Add(new ExternalIdentity
-            {
-                Id = Guid.NewGuid(),
-                Issuer = "https://identity.example.test",
-                Subject = "legacy-owner",
-                TenantId = TenantA,
-                UserAccountId = accountId,
-                CreatedAtUtc = new DateTime(2026, 6, 22, 12, 0, 0, DateTimeKind.Utc)
-            });
-            await db.SaveChangesAsync();
             var enablement = new MultiUserEnablementService(
                 db,
                 new MultiUserEnablementSettings(new MultiUserMode(true), []),
@@ -79,16 +134,23 @@ public sealed class PostgresTagRelationshipMigrationTests
                     "gamehub-client",
                     "https://identity.example.test/.well-known/openid-configuration",
                     ["RS256"],
-                    new string('B', 32)),
+                    new string('B', 32),
+                    OidcProvisioningMode.PersonalTenantJit),
                 new TestMultiUserIngestReadinessProbe(enabled: true));
             await enablement.ValidateStartupAsync();
             db.ChangeTracker.Clear();
 
-            Assert.Equal("preserved-password-hash", (await db.UserAccounts.SingleAsync()).PasswordHash);
+            var upgradedAccount = await db.UserAccounts.SingleAsync();
+            Assert.Equal(UserAccountType.Local, upgradedAccount.AccountType);
+            Assert.Equal("legacy@example.com", upgradedAccount.Email);
+            Assert.Equal("LEGACY@EXAMPLE.COM", upgradedAccount.NormalizedEmail);
+            Assert.Equal("preserved-password-hash", upgradedAccount.PasswordHash);
             Assert.Equal(new string('A', 64), (await db.RefreshTokenSessions.SingleAsync()).TokenHash);
             Assert.Equal("Preserved game", (await db.UnifiedGames.SingleAsync()).Title);
             Assert.Equal("preserved-item", (await db.LibraryItems.SingleAsync()).ExternalId);
-            Assert.Equal(TenantA, (await db.Tenants.SingleAsync()).Id);
+            var upgradedTenant = await db.Tenants.SingleAsync();
+            Assert.Equal(TenantA, upgradedTenant.Id);
+            Assert.Equal(pendingAtUtc, upgradedTenant.DeletionRequestedAtUtc);
             Assert.Equal("legacy-owner", (await db.ExternalIdentities.SingleAsync()).Subject);
         }
         finally

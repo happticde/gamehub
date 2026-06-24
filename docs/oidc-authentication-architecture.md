@@ -5,13 +5,15 @@ It explains the protocol, component boundaries, data model, source files, valida
 failure behavior, and tests in enough detail to follow one login from the browser to a
 tenant-authorized Core request.
 
-The normative architectural decision is [ADR-011](adr/011-production-oidc-authentication.md).
+The protocol decision is [ADR-011](adr/011-production-oidc-authentication.md); optional JIT
+provisioning and external deletion reauthentication are defined by
+[ADR-013](adr/013-personal-tenant-oidc-jit-provisioning.md).
 Operational configuration is documented in [authentication.md](authentication.md). This guide
 focuses on how and why the implementation works.
 
-> **Important scope:** OIDC is an opt-in production authentication path. It does not enable public
-> registration or production multi-user operation. ADR-012 adds a separate default-off operator
-> gate; both readiness and `GAMEHUB_MULTI_USER_ENABLED=true` are required for provisioned tenants.
+> **Important scope:** OIDC alone does not create accounts or enable production multi-user
+> operation. ADR-012 adds a separate default-off operator gate. ADR-013 adds a second independent,
+> default-off personal-tenant JIT mode; it is not public registration or general SaaS readiness.
 
 ## 1. The mental model
 
@@ -40,8 +42,8 @@ The central rule is:
 
 ```text
 validated provider (issuer, subject)
-    -> persisted ExternalIdentity mapping
-    -> existing GameHub UserAccount
+    -> exact persisted mapping OR active opt-in personal JIT transaction
+    -> server-owned GameHub UserAccount
     -> exactly one Tenant
     -> GameHub JWT containing the server-selected tenant_id
 ```
@@ -130,6 +132,11 @@ Read the implementation in this order:
     - Keep OIDC readiness separate from immutable operator enablement.
     - Fail startup/routes closed on missing or contradictory prerequisites.
     - Restrict provisioned-tenant login, local linking, API-key compatibility, and background jobs.
+11. [`services/core/Services/OidcJitProvisioningService.cs`](../services/core/Services/OidcJitProvisioningService.cs)
+    - Creates a personal tenant, external account, mapping, refresh session, and activity row in
+      one transaction only when both JIT and guarded mode are active.
+12. [`services/core/Data/DeletedExternalIdentity.cs`](../services/core/Data/DeletedExternalIdentity.cs)
+    - Prevents a deleted external subject from silently provisioning a replacement tenant.
 
 ## 5. Configuration flows through two servers
 
@@ -139,6 +146,7 @@ material and responsibilities differ.
 | Deployment variable | Next.js/BFF use | Core use |
 |---|---|---|
 | `GAMEHUB_OIDC_ENABLED` | Exposes the OIDC flow | Enables ID-token validation |
+| `GAMEHUB_OIDC_PROVISIONING_MODE` | Parses `Disabled` or `PersonalTenantJit` | Authorizes JIT only together with active guarded mode |
 | `GAMEHUB_OIDC_ISSUER` | Pins discovery issuer and constructs discovery URL | Pins discovery issuer and token `iss` |
 | `GAMEHUB_OIDC_CLIENT_ID` | Sends OAuth `client_id` | Requires ID-token audience |
 | `GAMEHUB_OIDC_CLIENT_SECRET` | Optional confidential-client token exchange | Never receives it |
@@ -196,8 +204,8 @@ Why encryption as well as cookie flags?
 
 ## 7. First-time identity linking flow
 
-OIDC login cannot succeed until an external identity is explicitly linked to an existing GameHub
-account. GameHub does not perform just-in-time provisioning and never searches by email.
+With provisioning mode `Disabled`, OIDC login cannot succeed until an external identity is
+explicitly linked to an existing GameHub account. This operator path never searches by email.
 
 The user begins with a current full default-tenant session or a ten-minute local
 `oidc_link_only` bootstrap session issued to an unlinked operator-provisioned account:
@@ -304,6 +312,29 @@ If the token references a signing key not present in the current cache, Core req
 metadata refresh. This supports normal provider key rotation without creating unbounded network
 retries. Every other validation failure remains closed.
 
+### Personal-tenant JIT branch
+
+After the same ID-token validation, an unknown identity takes one additional branch:
+
+```text
+unknown exact (issuer, subject)
+    -> provisioning mode is PersonalTenantJit
+    -> guarded multi-user mode is active
+    -> no deleted-identity tombstone exists
+    -> begin Core database transaction
+    -> generate tenant/account/mapping/session identifiers on the server
+    -> create sync-disabled Tenant + ExternalOidc UserAccount
+    -> create exact ExternalIdentity + RefreshTokenSession + tenant ActivityLog
+    -> commit all rows or roll back all rows
+```
+
+The unique issuer/subject index resolves concurrent first login. The losing request can load the
+winner or return the generic authentication failure, but its transaction cannot leave partial
+rows. Email and all provider authorization/profile claims remain outside this branch.
+
+If the mode is disabled, guarded mode is off, OIDC is unavailable, or the subject has a deletion
+tombstone, the result is the same generic unknown-identity response.
+
 ## 9. Why state, nonce, and PKCE are all required
 
 These values are related but not interchangeable:
@@ -335,8 +366,9 @@ erDiagram
     UserAccount {
         uuid Id PK
         uuid TenantId FK
-        string NormalizedEmail UK
-        string PasswordHash
+        int AccountType
+        string NormalizedEmail "nullable; Local only"
+        string PasswordHash "nullable; Local only"
     }
     ExternalIdentity {
         uuid Id PK
@@ -365,6 +397,11 @@ Relevant database invariants:
   with Account A and Tenant B.
 - Cascade delete removes external mappings and refresh sessions when the account is deleted.
 - No email or provider profile data participates in the relationship.
+- Local accounts require non-empty email, normalized email, and password hash. External accounts
+  require null normalized email and password hash; the normalized-email unique index is filtered
+  to local accounts on SQLite and PostgreSQL.
+- Deleted external issuer/subject tombstones have no account or tenant relationship and block JIT
+  recreation after completed account deletion.
 
 `ExternalIdentity` is deliberately not behind a tenant query filter because login starts before a
 tenant is trusted. That makes the exact global issuer/subject lookup security-sensitive; trust is
@@ -472,9 +509,23 @@ Only the signed deletion retry path remains available under ADR-010.
 
 ### Completed deletion
 
-Deleting `UserAccount` cascades to `ExternalIdentity` and `RefreshTokenSession`. A later provider
-login therefore finds no mapping and returns the same generic authentication failure as any unknown
-identity. OIDC does not reprovision the account or tenant.
+Before deleting `UserAccount`, Core stores the exact issuer/subject in
+`DeletedExternalIdentity`. The live mapping and refresh sessions then cascade with the account. A
+later provider login finds the tombstone and returns the generic authentication failure; JIT does
+not recreate the account or tenant.
+
+### External deletion reauthentication
+
+The BFF owns a distinct `delete` OIDC transaction. It adds `prompt=login` and `max_age=0` while
+retaining state, nonce, PKCE, exact callback, and sealed-cookie checks. Core repeats normal token
+validation, requires a signed `auth_time` no more than five minutes old, and resolves the exact
+mapping to the current external account. It then issues a ten-minute
+`account_deletion_only` GameHub token.
+
+The bearer boundary accepts that token only on `DELETE /api/auth/account`. The BFF consumes it
+server-to-server immediately, so neither provider tokens nor the restricted GameHub token reach
+browser JavaScript or `localStorage`. A `delete-retry` transaction can repeat this proof for an
+already pending account after a cross-service cleanup failure.
 
 ### Provider recovery
 
@@ -513,6 +564,12 @@ covers:
 - Tenant A being unable to claim Tenant B's identity;
 - manipulated cross-tenant database relationships;
 - pending-deletion and deleted account rejection.
+- fresh signed `auth_time` for deletion reauthentication.
+
+[`tests/GameHub.Tests/OidcJitProvisioningTests.cs`](../tests/GameHub.Tests/OidcJitProvisioningTests.cs)
+covers default-off/gate-off behavior, atomic personal creation, missing and equal email claims,
+server-generated ownership, sync-disabled policy, parallel first login, tombstones, external local
+credential rejection, database constraints, and zero-account read-only readiness.
 
 [`tests/GameHub.Tests/AuthControllerTests.cs`](../tests/GameHub.Tests/AuthControllerTests.cs) proves
 that direct Core callers without the BFF key cannot exchange an ID token.
@@ -522,8 +579,9 @@ SQLite and real PostgreSQL upgrade preservation are covered in:
 - [`tests/GameHub.Tests/TenantIsolationTests.cs`](../tests/GameHub.Tests/TenantIsolationTests.cs)
 - [`tests/GameHub.Tests/PostgresTagRelationshipMigrationTests.cs`](../tests/GameHub.Tests/PostgresTagRelationshipMigrationTests.cs)
 
-They verify that existing local accounts, refresh sessions, default tenant, unified games, and
-library items survive the external-identity migration.
+They verify that existing local accounts, email/password hashes, external mappings, refresh
+sessions, default tenant, pending-deletion state, unified games, and library items survive the
+account-type migration on SQLite and real PostgreSQL.
 
 ### BFF tests
 
@@ -580,7 +638,8 @@ Before enabling a provider:
 ## 20. Known boundaries and future work
 
 - One issuer/client configuration is supported per deployment.
-- There is no OIDC just-in-time tenant/account provisioning.
+- Personal-tenant JIT exists only through its explicit default-off provisioning mode and active
+  guarded mode; it is not public registration.
 - There is no unlink or subject-replacement flow.
 - There is no provider back-channel logout or provider-event-driven GameHub session revocation.
 - Provider access tokens are not retained or used for provider APIs.
@@ -599,7 +658,7 @@ OIDC proof and GameHub multi-user admission remain separate checks:
 
 ```text
 valid OIDC ID token
-    -> exact persisted issuer/subject mapping
+    -> exact persisted issuer/subject mapping OR permitted atomic personal JIT
     -> live account and tenant
     -> default tenant OR immutable multi-user switch enabled
     -> GameHub access/refresh session

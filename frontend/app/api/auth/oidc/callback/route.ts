@@ -5,6 +5,7 @@ import {
     CoreAuthError,
     CoreTokenResponse,
     getCoreApiUrl,
+    isAccountDeletionTokenResponse,
     isTokenResponse,
     setAuthCookies,
 } from "@/lib/auth-session";
@@ -98,14 +99,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
         // Step 4: delegate proof validation and mapping to Core. The independent service key makes
         // these endpoints BFF-only, so a direct caller cannot skip state/redirect/PKCE correlation.
-        const corePath = transaction.intent === "link" ? "/auth/oidc/link" : "/auth/oidc/token";
+        const deletionIntent = transaction.intent === "delete"
+            || transaction.intent === "delete-retry";
+        const corePath = transaction.intent === "link"
+            ? "/auth/oidc/link"
+            : deletionIntent
+                ? "/auth/oidc/account-deletion-token"
+                : "/auth/oidc/token";
         const coreHeaders = new Headers({ "Content-Type": "application/json" });
         coreHeaders.set("X-GameHub-Oidc-Bff-Key", config.bffServiceKey);
-        if (transaction.intent === "link") {
+        if (transaction.intent === "link" || transaction.intent === "delete") {
             // Linking additionally sends the current GameHub JWT. Core takes account and tenant
             // only from this signed token—not from the provider token or callback parameters.
             const accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
-            if (!accessToken) throw new Error("link_session_missing");
+            if (!accessToken) throw new Error("gamehub_session_missing");
             coreHeaders.set("Authorization", `Bearer ${accessToken}`);
         }
         const coreResponse = await fetch(getCoreApiUrl(corePath), {
@@ -126,6 +133,34 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             destination.searchParams.set("oidcLinked", "true");
             destination.searchParams.set("returnTo", transaction.returnTo);
             response = NextResponse.redirect(destination);
+            clearAuthCookies(response);
+        } else if (deletionIntent) {
+            const payload = (await coreResponse.json().catch(() => null)) as unknown;
+            if (!coreResponse.ok || !isAccountDeletionTokenResponse(payload)) {
+                throw new Error("account_deletion_reauthentication_failed");
+            }
+
+            // The restricted token never enters a browser cookie or JavaScript response. The BFF
+            // consumes it immediately on its one permitted Core method and route.
+            const deletionResponse = await fetch(getCoreApiUrl("/auth/account"), {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${payload.accessToken}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({}),
+                cache: "no-store",
+                signal: AbortSignal.timeout(15_000),
+            });
+            if (!deletionResponse.ok) {
+                const destination = new URL("/login", request.url);
+                destination.searchParams.set("accountDeletionPending", "true");
+                response = NextResponse.redirect(destination);
+            } else {
+                const destination = new URL("/login", request.url);
+                destination.searchParams.set("accountDeleted", "true");
+                response = NextResponse.redirect(destination);
+            }
             clearAuthCookies(response);
         } else {
             // A login operation receives GameHub's own access/refresh pair. Runtime shape checking

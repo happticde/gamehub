@@ -140,7 +140,13 @@ public sealed class MultiUserEnablementService(
                     cancellationToken);
             if (!hasActiveAccount)
             {
-                blockers.Add("no_active_account");
+                // A new personal-JIT deployment intentionally has no row until the first fully
+                // validated provider login. Operator-only mode retains the historical bootstrap
+                // requirement. This readiness check is read-only in both cases.
+                if (oidcSettings.ProvisioningMode != OidcProvisioningMode.PersonalTenantJit)
+                {
+                    blockers.Add("no_active_account");
+                }
             }
             else
             {

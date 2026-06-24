@@ -1,6 +1,10 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
+export {
+    isAccountDeletionTokenResponse,
+    type CoreAccountDeletionTokenResponse,
+} from "@/lib/auth-token-security";
 
 export const ACCESS_TOKEN_COOKIE = "gamehub_access_token";
 export const REFRESH_TOKEN_COOKIE = "gamehub_refresh_token";
@@ -29,6 +33,7 @@ export interface CoreOidcLinkTokenResponse {
     refreshTokenExpiresAtUtc: null;
     sessionPurpose: "oidc_link_only";
 }
+
 
 /** Structured error returned by Core authentication endpoints. */
 export interface CoreAuthError {

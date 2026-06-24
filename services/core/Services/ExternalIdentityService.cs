@@ -146,6 +146,30 @@ public sealed class ExternalIdentityService
                 && identity.TenantId == account.TenantId
                 && identity.Issuer == issuer,
             cancellationToken);
+
+    /// <summary>
+    /// Resolves the exact mapping for deletion reauthentication, including an already pending
+    /// account so failed cross-service cleanup can be retried. Deleted/tombstoned identities have
+    /// no live mapping and therefore return null.
+    /// </summary>
+    public async Task<UserAccount?> ResolveForDeletionAsync(
+        ValidatedOidcIdentity identity,
+        CancellationToken cancellationToken = default)
+    {
+        var mapping = await _db.ExternalIdentities
+            .AsNoTracking()
+            .Include(candidate => candidate.UserAccount)
+                .ThenInclude(account => account!.Tenant)
+            .SingleOrDefaultAsync(
+                candidate => candidate.Issuer == identity.Issuer
+                    && candidate.Subject == identity.Subject,
+                cancellationToken);
+        return mapping?.UserAccount is { AccountType: UserAccountType.ExternalOidc } account
+            && account.Tenant is not null
+            && mapping.TenantId == account.TenantId
+                ? account
+                : null;
+    }
 }
 
 /// <summary>Stable outcomes for explicit external-identity linking.</summary>

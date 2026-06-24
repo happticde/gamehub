@@ -20,13 +20,15 @@ public sealed class AccountDeletionService(
         Guid accountId,
         Guid tenantId,
         string? currentPassword,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        AccountDeletionAuthorization authorization = AccountDeletionAuthorization.LocalPassword)
     {
         var preparation = await accounts.PrepareDeletionAsync(
             accountId,
             tenantId,
             currentPassword,
-            cancellationToken);
+            cancellationToken,
+            authorization);
         switch (preparation)
         {
             case AccountDeletionPreparationResult.InvalidCurrentPassword:
@@ -49,8 +51,7 @@ public sealed class AccountDeletionService(
         {
             logger.LogWarning(
                 exception,
-                "Ingest cleanup failed for tenant {TenantId}; Core deletion remains pending",
-                tenantId);
+                "Ingest cleanup failed; Core account deletion remains pending");
             return AccountDeletionResult.IngestCleanupFailed;
         }
 
@@ -67,15 +68,11 @@ public sealed class AccountDeletionService(
         {
             logger.LogError(
                 exception,
-                "Core cleanup failed after Ingest cleanup for tenant {TenantId}; deletion remains retryable",
-                tenantId);
+                "Core cleanup failed after Ingest cleanup; account deletion remains retryable");
             return AccountDeletionResult.CoreCleanupFailed;
         }
 
-        logger.LogInformation(
-            "Deleted account {AccountId} and tenant data {TenantId}",
-            accountId,
-            tenantId);
+        logger.LogInformation("Deleted an account and its tenant data");
         return AccountDeletionResult.Deleted;
     }
 
@@ -114,6 +111,37 @@ public sealed class AccountDeletionService(
         await db.UnifiedGames.IgnoreQueryFilters()
             .Where(row => row.TenantId == tenantId)
             .ExecuteDeleteAsync(cancellationToken);
+
+        // Preserve only the exact external identity denial key before the account cascade removes
+        // its live mapping. This prevents a completed deletion from becoming an implicit JIT
+        // registration path while retaining no tenant/account/profile relationship.
+        var deletedAtUtc = DateTime.UtcNow;
+        var externalIdentities = await db.ExternalIdentities
+            .AsNoTracking()
+            .Where(row => row.UserAccountId == accountId && row.TenantId == tenantId)
+            .Select(row => new { row.Issuer, row.Subject })
+            .ToListAsync(cancellationToken);
+        foreach (var identity in externalIdentities)
+        {
+            if (!await db.DeletedExternalIdentities.AnyAsync(
+                    tombstone => tombstone.Issuer == identity.Issuer
+                        && tombstone.Subject == identity.Subject,
+                    cancellationToken))
+            {
+                db.DeletedExternalIdentities.Add(new DeletedExternalIdentity
+                {
+                    Id = Guid.NewGuid(),
+                    Issuer = identity.Issuer,
+                    Subject = identity.Subject,
+                    DeletedAtUtc = deletedAtUtc
+                });
+            }
+        }
+        if (externalIdentities.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         await db.RefreshTokenSessions
             .Where(row => row.UserAccountId == accountId)
             .ExecuteDeleteAsync(cancellationToken);

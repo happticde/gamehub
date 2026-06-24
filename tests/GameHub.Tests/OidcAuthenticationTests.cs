@@ -107,6 +107,57 @@ public sealed class OidcAuthenticationTests : IDisposable
     }
 
     [Fact]
+    public async Task ValidateAsync_DeletionReauthenticationRequiresRecentSignedAuthenticationTime()
+    {
+        using var rsa = RSA.Create(2048);
+        var key = new RsaSecurityKey(rsa) { KeyId = "test-key" };
+        var currentNow = DateTimeOffset.UtcNow;
+        var validator = CreateValidator(key);
+        var fresh = CreateToken(
+            key,
+            Issuer,
+            Audience,
+            Nonce,
+            "subject-a",
+            now: currentNow.UtcDateTime,
+            authenticationTime: currentNow.AddMinutes(-1));
+        var stale = CreateToken(
+            key,
+            Issuer,
+            Audience,
+            Nonce,
+            "subject-a",
+            now: currentNow.UtcDateTime,
+            authenticationTime: currentNow.AddMinutes(-10));
+        var missing = CreateToken(
+            key,
+            Issuer,
+            Audience,
+            Nonce,
+            "subject-a",
+            now: currentNow.UtcDateTime);
+
+        Assert.Equal(
+            OidcTokenValidationStatus.Succeeded,
+            (await validator.ValidateAsync(
+                fresh,
+                Nonce,
+                requireFreshAuthentication: true)).Status);
+        Assert.Equal(
+            OidcTokenValidationStatus.Invalid,
+            (await validator.ValidateAsync(
+                stale,
+                Nonce,
+                requireFreshAuthentication: true)).Status);
+        Assert.Equal(
+            OidcTokenValidationStatus.Invalid,
+            (await validator.ValidateAsync(
+                missing,
+                Nonce,
+                requireFreshAuthentication: true)).Status);
+    }
+
+    [Fact]
     public void Settings_EnabledWithMissingOrUnsafeConfiguration_Throws()
     {
         var jwt = AccountServiceTests.CreateJwtSettings();
@@ -136,6 +187,24 @@ public sealed class OidcAuthenticationTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => OidcSettings.FromConfiguration(missingAudience, jwt));
         Assert.Throws<InvalidOperationException>(() => OidcSettings.FromConfiguration(symmetricAlgorithm, jwt));
         Assert.Throws<InvalidOperationException>(() => OidcSettings.FromConfiguration(missingBffKey, jwt));
+    }
+
+    [Fact]
+    public void Settings_ProvisioningDefaultsOffAndUnknownValueFailsClosed()
+    {
+        var jwt = AccountServiceTests.CreateJwtSettings();
+        var defaults = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var invalid = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Authentication:Oidc:ProvisioningMode"] = "automatic"
+            }).Build();
+
+        Assert.Equal(
+            OidcProvisioningMode.Disabled,
+            OidcSettings.FromConfiguration(defaults, jwt).ProvisioningMode);
+        Assert.Throws<InvalidOperationException>(() =>
+            OidcSettings.FromConfiguration(invalid, jwt));
     }
 
     [Fact]
@@ -242,14 +311,17 @@ public sealed class OidcAuthenticationTests : IDisposable
         return (accountA, accountB);
     }
 
-    private static OidcTokenValidator CreateValidator(SecurityKey key)
+    private static OidcTokenValidator CreateValidator(
+        SecurityKey key,
+        TimeProvider? timeProvider = null)
     {
         var configuration = new OpenIdConnectConfiguration { Issuer = Issuer };
         configuration.SigningKeys.Add(key);
         return new OidcTokenValidator(
             CreateSettings(),
             new StaticMetadataProvider(configuration),
-            NullLogger<OidcTokenValidator>.Instance);
+            NullLogger<OidcTokenValidator>.Instance,
+            timeProvider);
     }
 
     private static OidcSettings CreateSettings() => new(
@@ -266,23 +338,35 @@ public sealed class OidcAuthenticationTests : IDisposable
         string audience,
         string nonce,
         string subject,
-        string algorithm = SecurityAlgorithms.RsaSha256)
+        string algorithm = SecurityAlgorithms.RsaSha256,
+        DateTime? now = null,
+        DateTimeOffset? authenticationTime = null)
     {
-        var now = DateTime.UtcNow;
+        var issuedAt = now ?? DateTime.UtcNow;
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, subject),
+            new(JwtRegisteredClaimNames.Email, "shared@example.com"),
+            new("nonce", nonce),
+            new(GameHubClaimTypes.TenantId, Guid.NewGuid().ToString("D")),
+            new(ClaimTypes.Role, "Administrator"),
+            new("groups", "provider-admins"),
+            new("organization", "provider-tenant-b")
+        };
+        if (authenticationTime is not null)
+        {
+            claims.Add(new Claim(
+                "auth_time",
+                authenticationTime.Value.ToUnixTimeSeconds().ToString(
+                    System.Globalization.CultureInfo.InvariantCulture),
+                ClaimValueTypes.Integer64));
+        }
         var token = new JwtSecurityToken(
             issuer,
             audience,
-            [
-                new Claim(JwtRegisteredClaimNames.Sub, subject),
-                new Claim(JwtRegisteredClaimNames.Email, "shared@example.com"),
-                new Claim("nonce", nonce),
-                new Claim(GameHubClaimTypes.TenantId, Guid.NewGuid().ToString("D")),
-                new Claim(ClaimTypes.Role, "Administrator"),
-                new Claim("groups", "provider-admins"),
-                new Claim("organization", "provider-tenant-b")
-            ],
-            notBefore: now.AddMinutes(-1),
-            expires: now.AddMinutes(5),
+            claims,
+            notBefore: issuedAt.AddMinutes(-1),
+            expires: issuedAt.AddMinutes(5),
             signingCredentials: new SigningCredentials(key, algorithm));
         return new JwtSecurityTokenHandler().WriteToken(token);
     }

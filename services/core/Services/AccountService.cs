@@ -95,6 +95,7 @@ public sealed class AccountService
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
+            AccountType = UserAccountType.Local,
             Email = canonicalEmail,
             NormalizedEmail = normalizedEmail,
             DisplayName = canonicalDisplayName,
@@ -172,6 +173,7 @@ public sealed class AccountService
             Id = Guid.NewGuid(),
             TenantId = tenant.Id,
             Tenant = tenant,
+            AccountType = UserAccountType.Local,
             Email = validation.CanonicalEmail!,
             NormalizedEmail = validation.NormalizedEmail!,
             DisplayName = validation.CanonicalDisplayName!,
@@ -219,7 +221,8 @@ public sealed class AccountService
         var account = await _db.UserAccounts
             .Include(candidate => candidate.Tenant)
             .SingleOrDefaultAsync(
-                candidate => candidate.NormalizedEmail == normalizedEmail,
+                candidate => candidate.AccountType == UserAccountType.Local
+                    && candidate.NormalizedEmail == normalizedEmail,
                 cancellationToken);
         if (account is null)
         {
@@ -228,6 +231,11 @@ public sealed class AccountService
 
         // VerifyHashedPassword extracts the salt and algorithm parameters from PasswordHash,
         // hashes the supplied password the same way, and compares the results safely.
+        if (string.IsNullOrEmpty(account.PasswordHash))
+        {
+            return null;
+        }
+
         var verification = _passwordHasher.VerifyHashedPassword(account, account.PasswordHash, password);
         if (verification == PasswordVerificationResult.Failed)
         {
@@ -275,6 +283,13 @@ public sealed class AccountService
             return PasswordChangeResult.Failed(
                 "account_identity_mismatch",
                 "The authenticated account no longer exists.");
+        }
+
+        if (account.AccountType != UserAccountType.Local)
+        {
+            return PasswordChangeResult.Failed(
+                "local_password_not_available",
+                "Local password changes are not available for this account.");
         }
 
         if (!VerifyPassword(account, currentPassword))
@@ -332,7 +347,8 @@ public sealed class AccountService
         Guid accountId,
         Guid tenantId,
         string? currentPassword,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        AccountDeletionAuthorization authorization = AccountDeletionAuthorization.LocalPassword)
     {
         var account = await _db.UserAccounts
             .Include(candidate => candidate.Tenant)
@@ -354,7 +370,15 @@ public sealed class AccountService
             return AccountDeletionPreparationResult.IdentityMismatch;
         }
 
-        if (!VerifyPassword(account, currentPassword))
+        var deletionConfirmed = account.AccountType switch
+        {
+            UserAccountType.Local => authorization == AccountDeletionAuthorization.LocalPassword
+                && VerifyPassword(account, currentPassword),
+            UserAccountType.ExternalOidc =>
+                authorization == AccountDeletionAuthorization.FreshExternalOidc,
+            _ => false
+        };
+        if (!deletionConfirmed)
         {
             return AccountDeletionPreparationResult.InvalidCurrentPassword;
         }
@@ -371,7 +395,10 @@ public sealed class AccountService
 
     private bool VerifyPassword(UserAccount account, string? password)
     {
-        if (string.IsNullOrEmpty(password) || password.Length > MaximumPasswordLength)
+        if (account.AccountType != UserAccountType.Local
+            || string.IsNullOrEmpty(account.PasswordHash)
+            || string.IsNullOrEmpty(password)
+            || password.Length > MaximumPasswordLength)
         {
             return false;
         }
@@ -511,4 +538,14 @@ public enum AccountDeletionPreparationResult
     AlreadyDeleted,
     InvalidCurrentPassword,
     IdentityMismatch
+}
+
+/// <summary>Server-established proof accepted when account deletion enters pending state.</summary>
+public enum AccountDeletionAuthorization
+{
+    /// <summary>A local account supplied and verified its current password.</summary>
+    LocalPassword,
+
+    /// <summary>An external account presented a fresh exact OIDC reauthentication proof.</summary>
+    FreshExternalOidc
 }

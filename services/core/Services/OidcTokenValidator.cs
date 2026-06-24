@@ -1,10 +1,33 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
 namespace GameHub.Core.Services;
+
+/// <summary>Explicit account-creation policy applied only after complete OIDC validation.</summary>
+public enum OidcProvisioningMode
+{
+    /// <summary>Unknown identities always receive the generic authentication failure.</summary>
+    Disabled,
+
+    /// <summary>Unknown identities may receive one personal tenant while guarded mode is active.</summary>
+    PersonalTenantJit
+}
+
+/// <summary>Safe stable labels for operator diagnostics and deployment documentation.</summary>
+public static class OidcProvisioningModeExtensions
+{
+    /// <summary>Returns a non-secret mode label without exposing configured values.</summary>
+    public static string ToSafeLabel(this OidcProvisioningMode mode) => mode switch
+    {
+        OidcProvisioningMode.Disabled => "disabled",
+        OidcProvisioningMode.PersonalTenantJit => "personal_tenant_jit",
+        _ => throw new InvalidOperationException("Unsupported OIDC provisioning mode.")
+    };
+}
 
 /// <summary>
 /// Validated, provider-neutral OIDC trust configuration used by Core.
@@ -24,7 +47,8 @@ public sealed record OidcSettings(
     string Audience,
     string MetadataAddress,
     IReadOnlyList<string> AllowedAlgorithms,
-    string BffServiceKey)
+    string BffServiceKey,
+    OidcProvisioningMode ProvisioningMode = OidcProvisioningMode.Disabled)
 {
     /// <summary>Configuration section containing production OIDC trust settings.</summary>
     public const string SectionName = "Authentication:Oidc";
@@ -53,11 +77,12 @@ public sealed record OidcSettings(
     public static OidcSettings FromConfiguration(IConfiguration configuration, JwtSettings jwtSettings)
     {
         var section = configuration.GetSection(SectionName);
+        var provisioningMode = ParseProvisioningMode(section["ProvisioningMode"]);
         var enabled = section.GetValue("Enabled", false);
         if (!enabled)
         {
             // Disabled is the only state in which the remaining OIDC values may be absent.
-            return new OidcSettings(false, "", "", "", [], "");
+            return new OidcSettings(false, "", "", "", [], "", provisioningMode);
         }
 
         if (!jwtSettings.IsEnabled)
@@ -121,7 +146,28 @@ public sealed record OidcSettings(
             audience,
             metadataAddress,
             configuredAlgorithms,
-            bffServiceKey);
+            bffServiceKey,
+            provisioningMode);
+    }
+
+    private static OidcProvisioningMode ParseProvisioningMode(string? configured)
+    {
+        var value = configured?.Trim();
+        if (string.IsNullOrEmpty(value)
+            || string.Equals(value, nameof(OidcProvisioningMode.Disabled), StringComparison.OrdinalIgnoreCase))
+        {
+            return OidcProvisioningMode.Disabled;
+        }
+        if (string.Equals(
+                value,
+                nameof(OidcProvisioningMode.PersonalTenantJit),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return OidcProvisioningMode.PersonalTenantJit;
+        }
+
+        throw new InvalidOperationException(
+            $"{SectionName}:ProvisioningMode must be 'Disabled' or 'PersonalTenantJit'.");
     }
 
     private static bool IsSecureAbsoluteUri(string value, out Uri? uri)
@@ -204,15 +250,18 @@ public sealed class OidcTokenValidator
     private readonly OidcSettings _settings;
     private readonly IOidcMetadataProvider _metadata;
     private readonly ILogger<OidcTokenValidator> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public OidcTokenValidator(
         OidcSettings settings,
         IOidcMetadataProvider metadata,
-        ILogger<OidcTokenValidator> logger)
+        ILogger<OidcTokenValidator> logger,
+        TimeProvider? timeProvider = null)
     {
         _settings = settings;
         _metadata = metadata;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -223,7 +272,8 @@ public sealed class OidcTokenValidator
     public async Task<OidcTokenValidationResult> ValidateAsync(
         string? idToken,
         string? expectedNonce,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool requireFreshAuthentication = false)
     {
         // Gate 1: no token processing occurs unless the complete configuration passed startup checks.
         if (!_settings.IsEnabled)
@@ -263,7 +313,11 @@ public sealed class OidcTokenValidator
         }
 
         // Gate 4: validate the token against the current metadata snapshot.
-        var validation = ValidateWithConfiguration(idToken, expectedNonce, configuration);
+        var validation = ValidateWithConfiguration(
+            idToken,
+            expectedNonce,
+            configuration,
+            requireFreshAuthentication);
         if (validation.Status != OidcTokenValidationStatus.SigningKeyUnavailable)
         {
             return validation;
@@ -275,7 +329,11 @@ public sealed class OidcTokenValidator
         {
             _metadata.RequestRefresh();
             configuration = await _metadata.GetAsync(cancellationToken);
-            return ValidateWithConfiguration(idToken, expectedNonce, configuration);
+            return ValidateWithConfiguration(
+                idToken,
+                expectedNonce,
+                configuration,
+                requireFreshAuthentication);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -287,7 +345,8 @@ public sealed class OidcTokenValidator
     private OidcTokenValidationResult ValidateWithConfiguration(
         string idToken,
         string expectedNonce,
-        OpenIdConnectConfiguration configuration)
+        OpenIdConnectConfiguration configuration,
+        bool requireFreshAuthentication)
     {
         try
         {
@@ -331,12 +390,42 @@ public sealed class OidcTokenValidator
                 return OidcTokenValidationResult.Invalid;
             }
 
+            DateTimeOffset? authenticatedAtUtc = null;
+            var authenticationTime = principal.FindFirstValue("auth_time");
+            if (long.TryParse(
+                    authenticationTime,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var authenticationTimeSeconds))
+            {
+                try
+                {
+                    authenticatedAtUtc = DateTimeOffset.FromUnixTimeSeconds(authenticationTimeSeconds);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    return OidcTokenValidationResult.Invalid;
+                }
+            }
+
+            if (requireFreshAuthentication)
+            {
+                var now = _timeProvider.GetUtcNow();
+                if (authenticatedAtUtc is null
+                    || authenticatedAtUtc > now.AddMinutes(1)
+                    || now - authenticatedAtUtc > TimeSpan.FromMinutes(5))
+                {
+                    return OidcTokenValidationResult.Invalid;
+                }
+            }
+
             // Deliberately project a narrow value. Provider tenant, organization, group, role, and
             // email-verification claims cannot accidentally flow into authorization code later.
             return OidcTokenValidationResult.Succeeded(new ValidatedOidcIdentity(
                 _settings.Issuer,
                 subject,
-                principal.FindFirstValue(JwtRegisteredClaimNames.Email)));
+                principal.FindFirstValue(JwtRegisteredClaimNames.Email),
+                authenticatedAtUtc));
         }
         catch (SecurityTokenSignatureKeyNotFoundException)
         {
@@ -358,7 +447,11 @@ public sealed class OidcTokenValidator
 /// <param name="Issuer">Exact validated OIDC issuer.</param>
 /// <param name="Subject">Provider-stable subject scoped to that issuer.</param>
 /// <param name="Email">Optional untrusted-for-linking display claim.</param>
-public sealed record ValidatedOidcIdentity(string Issuer, string Subject, string? Email);
+public sealed record ValidatedOidcIdentity(
+    string Issuer,
+    string Subject,
+    string? Email,
+    DateTimeOffset? AuthenticatedAtUtc = null);
 
 /// <summary>Outcome category used to distinguish invalid input from provider availability.</summary>
 public enum OidcTokenValidationStatus

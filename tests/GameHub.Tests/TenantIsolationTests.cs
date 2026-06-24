@@ -508,18 +508,30 @@ public sealed class TenantIsolationTests : IDisposable
             .Options;
         await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
         var migrator = db.Database.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260621135445_AddTenantDeletionState");
+        await migrator.MigrateAsync("20260621183449_AddExternalIdentities");
 
-        var account = new UserAccount
-        {
-            Id = Guid.NewGuid(),
-            TenantId = TenantA,
-            Email = "legacy@example.com",
-            NormalizedEmail = "LEGACY@EXAMPLE.COM",
-            DisplayName = "Legacy Owner",
-            PasswordHash = "preserved-password-hash",
-            CreatedAtUtc = FixedNow.UtcDateTime
-        };
+        var accountId = Guid.NewGuid();
+        var identityId = Guid.NewGuid();
+        var pendingAtUtc = FixedNow.AddMinutes(-30).UtcDateTime;
+        // Seed through the historical schema. The current EF model already knows AccountType,
+        // while this database intentionally stops immediately before that additive migration.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "UserAccounts"
+                ("Id", "TenantId", "Email", "NormalizedEmail", "DisplayName", "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
+            VALUES
+                ({accountId}, {TenantA}, {"legacy@example.com"}, {"LEGACY@EXAMPLE.COM"}, {"Legacy Owner"}, {"preserved-password-hash"}, {FixedNow.UtcDateTime}, NULL);
+            INSERT INTO "RefreshTokenSessions"
+                ("Id", "UserAccountId", "TokenHash", "CreatedAtUtc", "ExpiresAtUtc", "ConsumedAtUtc", "RevokedAtUtc")
+            VALUES
+                ({Guid.NewGuid()}, {accountId}, {new string('A', 64)}, {FixedNow.UtcDateTime}, {FixedNow.AddDays(30).UtcDateTime}, NULL, NULL);
+            INSERT INTO "ExternalIdentities"
+                ("Id", "Issuer", "Subject", "UserAccountId", "TenantId", "CreatedAtUtc", "LastLoginAtUtc")
+            VALUES
+                ({identityId}, {"https://identity.example.test"}, {"legacy-owner"}, {accountId}, {TenantA}, {FixedNow.UtcDateTime}, NULL);
+            UPDATE "Tenants"
+            SET "DeletionRequestedAtUtc" = {pendingAtUtc}
+            WHERE "Id" = {TenantA};
+            """);
         var game = new UnifiedGame { Title = "Preserved game", Slug = "preserved-game" };
         game.Items.Add(new LibraryItem
         {
@@ -527,34 +539,13 @@ public sealed class TenantIsolationTests : IDisposable
             ExternalId = "preserved-item",
             LastSynced = FixedNow.UtcDateTime
         });
-        db.AddRange(
-            account,
-            new RefreshTokenSession
-            {
-                Id = Guid.NewGuid(),
-                UserAccountId = account.Id,
-                TokenHash = new string('A', 64),
-                CreatedAtUtc = FixedNow.UtcDateTime,
-                ExpiresAtUtc = FixedNow.AddDays(30).UtcDateTime
-            },
-            game);
+        db.Add(game);
         await db.SaveChangesAsync();
 
         await migrator.MigrateAsync();
         db.ChangeTracker.Clear();
 
-        // Guarded enablement is configuration-only. Add the explicit production identity after
-        // the historical upgrade, validate enabled readiness, and prove no upgraded row changes.
-        db.ExternalIdentities.Add(new ExternalIdentity
-        {
-            Id = Guid.NewGuid(),
-            Issuer = "https://identity.example.test",
-            Subject = "legacy-owner",
-            TenantId = TenantA,
-            UserAccountId = account.Id,
-            CreatedAtUtc = FixedNow.UtcDateTime
-        });
-        await db.SaveChangesAsync();
+        // Personal-JIT readiness excludes the preserved pending account and remains read-only.
         var enablement = new MultiUserEnablementService(
             db,
             new MultiUserEnablementSettings(new MultiUserMode(true), []),
@@ -564,16 +555,23 @@ public sealed class TenantIsolationTests : IDisposable
                 "gamehub-client",
                 "https://identity.example.test/.well-known/openid-configuration",
                 ["RS256"],
-                new string('B', 32)),
+                new string('B', 32),
+                OidcProvisioningMode.PersonalTenantJit),
             new TestMultiUserIngestReadinessProbe(enabled: true));
         await enablement.ValidateStartupAsync();
         db.ChangeTracker.Clear();
 
-        Assert.Equal("preserved-password-hash", (await db.UserAccounts.SingleAsync()).PasswordHash);
+        var upgradedAccount = await db.UserAccounts.SingleAsync();
+        Assert.Equal(UserAccountType.Local, upgradedAccount.AccountType);
+        Assert.Equal("legacy@example.com", upgradedAccount.Email);
+        Assert.Equal("LEGACY@EXAMPLE.COM", upgradedAccount.NormalizedEmail);
+        Assert.Equal("preserved-password-hash", upgradedAccount.PasswordHash);
         Assert.Equal(new string('A', 64), (await db.RefreshTokenSessions.SingleAsync()).TokenHash);
         Assert.Equal("Preserved game", (await db.UnifiedGames.SingleAsync()).Title);
         Assert.Equal("preserved-item", (await db.LibraryItems.SingleAsync()).ExternalId);
-        Assert.Equal(TenantA, (await db.Tenants.SingleAsync()).Id);
+        var upgradedTenant = await db.Tenants.SingleAsync();
+        Assert.Equal(TenantA, upgradedTenant.Id);
+        Assert.Equal(pendingAtUtc, upgradedTenant.DeletionRequestedAtUtc);
         Assert.Equal("legacy-owner", (await db.ExternalIdentities.SingleAsync()).Subject);
     }
 

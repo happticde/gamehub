@@ -30,6 +30,7 @@ public sealed class AuthController : ControllerBase
     private readonly RefreshTokenService _refreshTokens;
     private readonly OidcTokenValidator _oidcTokens;
     private readonly ExternalIdentityService _externalIdentities;
+    private readonly OidcJitProvisioningService _jitProvisioning;
     private readonly OidcSettings _oidcSettings;
     private readonly MultiUserEnablementSettings _multiUser;
     private readonly AccountDeletionService _deletion;
@@ -44,6 +45,7 @@ public sealed class AuthController : ControllerBase
         RefreshTokenService refreshTokens,
         OidcTokenValidator oidcTokens,
         ExternalIdentityService externalIdentities,
+        OidcJitProvisioningService jitProvisioning,
         OidcSettings oidcSettings,
         MultiUserEnablementSettings multiUser,
         AccountDeletionService deletion,
@@ -56,6 +58,7 @@ public sealed class AuthController : ControllerBase
         _refreshTokens = refreshTokens;
         _oidcTokens = oidcTokens;
         _externalIdentities = externalIdentities;
+        _jitProvisioning = jitProvisioning;
         _oidcSettings = oidcSettings;
         _multiUser = multiUser;
         _deletion = deletion;
@@ -102,7 +105,7 @@ public sealed class AuthController : ControllerBase
         // AuthenticatedTenantContext reads the tenant claim created by the API-key handler.
         // There is intentionally no TenantId property in BootstrapAccountRequest.
         var tenantId = _tenantContext.TenantId;
-        _logger.LogInformation("Bootstrapping local account for tenant {TenantId}", tenantId);
+        _logger.LogInformation("Bootstrapping a local account");
         var result = await _accounts.BootstrapAsync(
             tenantId,
             request.Email,
@@ -121,17 +124,14 @@ public sealed class AuthController : ControllerBase
         }
 
         var account = result.Account!;
-        _logger.LogInformation(
-            "Created local account {AccountId} for tenant {TenantId}",
-            account.Id,
-            account.TenantId);
+        _logger.LogInformation("Created a local account");
         // Return only public profile fields. PasswordHash is never part of an API DTO.
         return StatusCode(
             StatusCodes.Status201Created,
             new AccountResponse(
                 account.Id,
                 account.TenantId,
-                account.Email,
+                account.Email!,
                 account.DisplayName,
                 account.CreatedAtUtc));
     }
@@ -187,10 +187,7 @@ public sealed class AuthController : ControllerBase
 
         var tenant = result.Tenant!;
         var account = result.Account!;
-        _logger.LogInformation(
-            "Provisioned tenant {TenantId} with owner account {AccountId}",
-            tenant.Id,
-            account.Id);
+        _logger.LogInformation("Provisioned a tenant with one local owner account");
         return StatusCode(
             StatusCodes.Status201Created,
             new TenantProvisioningResponse(
@@ -200,7 +197,7 @@ public sealed class AuthController : ControllerBase
                 new AccountResponse(
                     account.Id,
                     account.TenantId,
-                    account.Email,
+                    account.Email!,
                     account.DisplayName,
                     account.CreatedAtUtc)));
     }
@@ -350,12 +347,24 @@ public sealed class AuthController : ControllerBase
         var account = await _externalIdentities.AuthenticateAsync(
             validation.Identity!,
             cancellationToken);
+        IssuedRefreshToken? preissuedRefreshToken = null;
         if (account is null)
         {
-            // Unknown, pending-deletion, and deleted mappings intentionally share one response.
-            return Unauthorized(new AuthErrorResponse(
-                "oidc_authentication_failed",
-                "External authentication failed."));
+            // Unknown identities can reach JIT only through the independent explicit mode while
+            // guarded multi-user admission is active. Disabled mode, gate-off operation, deleted
+            // tombstones, and provisioning conflicts all preserve the same generic failure.
+            var provisioning = await _jitProvisioning.ProvisionAsync(
+                validation.Identity!,
+                cancellationToken);
+            if (!provisioning.Succeeded)
+            {
+                return Unauthorized(new AuthErrorResponse(
+                    "oidc_authentication_failed",
+                    "External authentication failed."));
+            }
+
+            account = provisioning.Account!;
+            preissuedRefreshToken = provisioning.RefreshToken;
         }
 
         if (!_multiUser.AllowsOidcLogin(account.TenantId))
@@ -372,11 +381,9 @@ public sealed class AuthController : ControllerBase
         // Layer 4: issue GameHub's own tenant-scoped access token and revocable refresh session.
         // Provider tokens do not authorize library APIs directly.
         var accessToken = _tokens.CreateToken(account);
-        var refreshToken = await _refreshTokens.IssueAsync(account, cancellationToken);
-        _logger.LogInformation(
-            "Issued GameHub session for external identity on account {AccountId} and tenant {TenantId}",
-            account.Id,
-            account.TenantId);
+        var refreshToken = preissuedRefreshToken
+            ?? await _refreshTokens.IssueAsync(account, cancellationToken);
+        _logger.LogInformation("Issued a GameHub session for a validated external identity");
         return Ok(CreateTokenResponse(accessToken, refreshToken));
     }
 
@@ -433,10 +440,7 @@ public sealed class AuthController : ControllerBase
             cancellationToken);
         if (result == ExternalIdentityLinkResult.Linked)
         {
-            _logger.LogInformation(
-                "Linked external identity to account {AccountId} and tenant {TenantId}",
-                accountId,
-                tenantId);
+            _logger.LogInformation("Linked a validated external identity");
             return NoContent();
         }
 
@@ -447,6 +451,79 @@ public sealed class AuthController : ControllerBase
             : Conflict(new AuthErrorResponse(
                 "external_identity_conflict",
                 "The external identity or provider is already linked."));
+    }
+
+    /// <summary>
+    /// POST: api/auth/oidc/account-deletion-token
+    /// Converts a fresh exact OIDC reauthentication into a ten-minute token accepted only by the
+    /// idempotent account deletion route. A live account additionally requires its current
+    /// GameHub session; an already pending external account may recover through fresh OIDC alone.
+    /// </summary>
+    [HttpPost("oidc/account-deletion-token")]
+    [AllowAnonymous]
+    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> CreateOidcAccountDeletionToken(
+        [FromBody] OidcTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsTrustedOidcBff() || !_tokens.IsEnabled)
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        var validation = await _oidcTokens.ValidateAsync(
+            request.IdToken,
+            request.Nonce,
+            cancellationToken,
+            requireFreshAuthentication: true);
+        if (validation.Status is OidcTokenValidationStatus.ProviderUnavailable
+            or OidcTokenValidationStatus.ConfigurationUnavailable)
+        {
+            return OidcUnavailable("OIDC authentication is unavailable.");
+        }
+        if (validation.Status != OidcTokenValidationStatus.Succeeded)
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        var account = await _externalIdentities.ResolveForDeletionAsync(
+            validation.Identity!,
+            cancellationToken);
+        if (account?.Tenant is null)
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        // A live deletion starts from the current GameHub session and must match the freshly
+        // authenticated subject. Once deletion is already pending, the same fresh exact provider
+        // proof may recover the narrowly scoped retry even though ordinary sessions are blocked.
+        if (account.Tenant.DeletionRequestedAtUtc is null
+            && (User.Identity?.IsAuthenticated != true
+                || !TryGetAuthenticatedIdentity(out var accountId, out var tenantId)
+                || account.Id != accountId
+                || account.TenantId != tenantId))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "oidc_authentication_failed",
+                "External authentication failed."));
+        }
+
+        var deletionToken = _tokens.CreateAccountDeletionToken(
+            account,
+            externalOidcReauthentication: true);
+        _logger.LogInformation("Issued a restricted external account-deletion session");
+        return Ok(CreateRestrictedTokenResponse(
+            deletionToken,
+            GameHubClaimTypes.AccountDeletionOnlySessionPurpose));
     }
 
     /// <summary>
@@ -485,10 +562,7 @@ public sealed class AuthController : ControllerBase
         }
 
         var accessToken = _tokens.CreateToken(rotation.Account!);
-        _logger.LogInformation(
-            "Rotated refresh session for account {AccountId} and tenant {TenantId}",
-            rotation.Account!.Id,
-            rotation.Account.TenantId);
+        _logger.LogInformation("Rotated a refresh session");
         return Ok(CreateTokenResponse(accessToken, rotation.RefreshToken!));
     }
 
@@ -555,10 +629,7 @@ public sealed class AuthController : ControllerBase
                 : BadRequest(error);
         }
 
-        _logger.LogInformation(
-            "Changed password and revoked refresh sessions for account {AccountId} in tenant {TenantId}",
-            accountId,
-            tenantId);
+        _logger.LogInformation("Changed a local password and revoked its refresh sessions");
         return NoContent();
     }
 
@@ -580,10 +651,7 @@ public sealed class AuthController : ControllerBase
                 "A current tenant account access token is required."));
         }
 
-        _logger.LogInformation(
-            "Revoked all refresh sessions for account {AccountId} in tenant {TenantId}",
-            accountId,
-            tenantId);
+        _logger.LogInformation("Revoked all refresh sessions for an account");
         return NoContent();
     }
 
@@ -610,11 +678,18 @@ public sealed class AuthController : ControllerBase
                 "A tenant account access token is required."));
         }
 
+        var externalOidcReauthentication = string.Equals(
+            User.FindFirstValue(GameHubClaimTypes.AccountDeletionAuthorization),
+            GameHubClaimTypes.ExternalOidcDeletionAuthorization,
+            StringComparison.Ordinal);
         var result = await _deletion.DeleteAsync(
             accountId,
             tenantId,
             request.CurrentPassword,
-            cancellationToken);
+            cancellationToken,
+            externalOidcReauthentication
+                ? AccountDeletionAuthorization.FreshExternalOidc
+                : AccountDeletionAuthorization.LocalPassword);
         return result switch
         {
             AccountDeletionResult.Deleted or AccountDeletionResult.AlreadyDeleted => NoContent(),

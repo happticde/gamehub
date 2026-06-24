@@ -11,6 +11,8 @@ interface LoginFormProps {
     oidcEnabled: boolean;
     oidcFailed: boolean;
     oidcLinked: boolean;
+    accountDeleted: boolean;
+    accountDeletionPending: boolean;
     multiUserEnabled: boolean;
 }
 
@@ -24,6 +26,8 @@ export function LoginForm({
     oidcEnabled,
     oidcFailed,
     oidcLinked,
+    accountDeleted,
+    accountDeletionPending,
     multiUserEnabled,
 }: LoginFormProps) {
     const router = useRouter();
@@ -97,6 +101,21 @@ export function LoginForm({
             {oidcLinked && (
                 <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground">
                     Identity linked. Provider sign-in is available when the operator admits this tenant.
+                </div>
+            )}
+            {accountDeleted && (
+                <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground">
+                    The GameHub account and personal tenant were deleted.
+                </div>
+            )}
+            {accountDeletionPending && (
+                <div className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-foreground">
+                    <p>Account cleanup is still pending. Reauthenticate to retry the same deletion.</p>
+                    <Button asChild variant="outline" className="w-full">
+                        <a href="/api/auth/oidc/start?intent=delete-retry&returnTo=/login">
+                            Retry account deletion
+                        </a>
+                    </Button>
                 </div>
             )}
             {error && (

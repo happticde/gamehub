@@ -24,6 +24,7 @@ services:
       - OIDC_SCOPES=${GAMEHUB_OIDC_SCOPES:-openid profile email}
       - OIDC_COOKIE_KEY=${GAMEHUB_OIDC_COOKIE_KEY:-}
       - OIDC_BFF_SERVICE_KEY=${GAMEHUB_OIDC_BFF_SERVICE_KEY:-}
+      - OIDC_PROVISIONING_MODE=${GAMEHUB_OIDC_PROVISIONING_MODE:-Disabled}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -86,6 +87,7 @@ services:
       - Authentication__Oidc__MetadataAddress=${GAMEHUB_OIDC_METADATA_ADDRESS:-}
       - Authentication__Oidc__AllowedAlgorithms=${GAMEHUB_OIDC_ALLOWED_ALGORITHMS:-RS256}
       - Authentication__Oidc__BffServiceKey=${GAMEHUB_OIDC_BFF_SERVICE_KEY:-}
+      - Authentication__Oidc__ProvisioningMode=${GAMEHUB_OIDC_PROVISIONING_MODE:-Disabled}
       - MultiUser__Enabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
       - Igdb__ClientId=${IGDB_CLIENT_ID:-}
       - Igdb__ClientSecret=${IGDB_CLIENT_SECRET:-}

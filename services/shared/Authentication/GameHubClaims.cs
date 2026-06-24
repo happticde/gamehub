@@ -24,6 +24,12 @@ public static class GameHubClaimTypes
 
     /// <summary>Value permitting only an idempotent pending account-deletion retry.</summary>
     public const string AccountDeletionOnlySessionPurpose = "account_deletion_only";
+
+    /// <summary>Records the server-validated proof used to authorize a deletion-only token.</summary>
+    public const string AccountDeletionAuthorization = "gamehub:account_deletion_authorization";
+
+    /// <summary>Value proving that Core accepted a fresh exact external OIDC reauthentication.</summary>
+    public const string ExternalOidcDeletionAuthorization = "external_oidc";
 }
 
 /// <summary>Stable identity used by existing single-user installations.</summary>

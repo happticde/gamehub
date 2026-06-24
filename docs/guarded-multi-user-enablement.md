@@ -3,7 +3,8 @@
 This guide describes how to prepare, enable, verify, disable, roll back, and recover GameHub's
 guarded production multi-user mode. The normative decision is
 [ADR-012](adr/012-guarded-multi-user-enablement.md). OIDC protocol details remain in
-[OIDC Authentication Architecture](oidc-authentication-architecture.md).
+[OIDC Authentication Architecture](oidc-authentication-architecture.md). The independent JIT
+decision is [ADR-013](adr/013-personal-tenant-oidc-jit-provisioning.md).
 
 ## State model
 
@@ -30,6 +31,7 @@ system without changing a checked-in or local `.env` file.
 | `GAMEHUB_FRONTEND_AUTH_ENABLED` | Enables BFF GameHub session handling; must be `true` before multi-user activation |
 | `GAMEHUB_AUTH_COOKIE_SECURE` | Requires HTTPS cookie transport; must be `true` |
 | `GAMEHUB_OIDC_ENABLED` | Separately enables OIDC; must be `true` |
+| `GAMEHUB_OIDC_PROVISIONING_MODE` | `Disabled` or explicit `PersonalTenantJit`; default `Disabled` |
 | `GAMEHUB_OIDC_ISSUER` | Exact HTTPS issuer |
 | `GAMEHUB_OIDC_CLIENT_ID` | Provider client and ID-token audience |
 | `GAMEHUB_OIDC_CLIENT_SECRET` | Optional provider confidential-client credential |
@@ -50,14 +52,26 @@ state into Core for startup comparison. Custom deployments must preserve that ex
 
 ## Safe initial enablement
 
+Choose exactly one provisioning model before following the activation checklist:
+
+- **Operator provisioning plus explicit first-link:** keep
+  `GAMEHUB_OIDC_PROVISIONING_MODE=Disabled`, provision every owner while the gate is off, and link
+  each account explicitly.
+- **Personal-tenant JIT:** set `GAMEHUB_OIDC_PROVISIONING_MODE=PersonalTenantJit`, keep the guarded
+  switch off until every technical prerequisite is ready, then activate the gate. The initial
+  database may contain zero accounts; the first validated login creates one personal tenant.
+
+Both options remain closed deployments. JIT access is controlled by Keycloak realm, client, and
+authentication policies; it is not public registration.
+
 1. Upgrade all components with `GAMEHUB_MULTI_USER_ENABLED=false` or absent.
 2. Confirm Core, Ingest, and Frontend start normally and apply existing migrations.
 3. Configure and verify OIDC, HTTPS callback routing, Secure cookies, JWT signing, independent BFF,
    operator, delegation, and vault keys.
-4. Bootstrap the default account and operator-provision every intended tenant. There is no public
-   registration endpoint.
-5. For every unlinked account, use the local credential once. Core returns only a ten-minute
-   OIDC-link-purpose session; the BFF completes the provider link and clears it.
+4. In operator mode, bootstrap the default account and provision every intended tenant. In JIT
+   mode, leave a new database empty or retain upgraded accounts; do not fabricate a bootstrap row.
+5. In operator mode, link every account through the local compatibility credential. In JIT mode,
+   verify Keycloak admission policy and the zero-account readiness state instead.
 6. Sign in through OIDC and exercise tenant-scoped library, credential, sync, backup, restore,
    session revocation, and account deletion behavior in a non-production environment.
 7. Call `GET /api/auth/multi-user/status` with the configured operator API key. Confirm
@@ -89,6 +103,21 @@ The provider callback cannot choose tenant, account, role, or organization. Core
 destination only from the signed link-purpose GameHub JWT and stores the validated exact
 issuer/subject. After success, the BFF deletes the restricted cookie and redirects to the login
 page for a fresh OIDC session.
+
+## Personal-tenant JIT flow
+
+JIT operates only when OIDC validation succeeds, `PersonalTenantJit` is selected, and guarded mode
+is active. Unknown identities otherwise receive the same generic authentication failure.
+
+Core generates every tenant/account identifier and transactionally creates the sync-disabled
+tenant, `ExternalOidc` owner, exact mapping, refresh session, and secret-free tenant activity row.
+Provider email is optional profile data and is not used; role, group, organization, and tenant
+claims are ignored. Unique issuer/subject ownership makes parallel first login idempotent, and a
+losing transaction cannot leave an orphan tenant.
+
+With JIT selected, zero accounts do not add `no_active_account` to readiness. As soon as live
+accounts exist, every one must still have an exact mapping for the configured issuer. Pending
+deletion remains excluded. Readiness performs no writes.
 
 ## Normal login and local compatibility
 
@@ -145,6 +174,7 @@ replay detection, and revocation behavior.
 no-store`. It reports only:
 
 - `oidcEnabled`
+- `oidcProvisioningMode` (`disabled` or `personal_tenant_jit`)
 - `readinessSatisfied`
 - `multiUserEnabled`
 - `multiUserActive`
@@ -213,7 +243,7 @@ No database migration or new dependency is required for guarded enablement.
 
 ## Known limits and non-goals
 
-Guarded enablement does not add public registration, invitations, JIT account/tenant creation,
+Guarded enablement plus optional ADR-013 JIT does not add public registration, invitations,
 multiple owners/roles per tenant, provider-derived authorization, account switching, tenant
 switching, unlink, subject replacement, back-channel logout, provider-event revocation, or a
 production admin console. It does not claim unrestricted SaaS readiness. These remain separate

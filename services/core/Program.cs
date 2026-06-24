@@ -122,6 +122,7 @@ builder.Services.AddSingleton<ITenantJobRunner, TenantJobRunner>();
 builder.Services.AddSingleton<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<ExternalIdentityService>();
+builder.Services.AddScoped<OidcJitProvisioningService>();
 
 // Parsing here makes invalid security configuration fail during startup rather than on
 // the first login request. An empty signing key is the deliberate opt-out switch, keeping
@@ -371,9 +372,10 @@ builder.Services.AddDbContext<CoreContext>(o =>
 var app = builder.Build();
 
 app.Logger.LogInformation(
-    "Guarded multi-user mode is {MultiUserMode}; OIDC is {OidcMode}; configuration blockers: {Blockers}",
+    "Guarded multi-user mode is {MultiUserMode}; OIDC is {OidcMode}; OIDC provisioning is {ProvisioningMode}; configuration blockers: {Blockers}",
     multiUserSettings.Mode.IsEnabled ? "enabled" : "disabled",
     oidcSettings.IsEnabled ? "enabled" : "disabled",
+    oidcSettings.ProvisioningMode.ToSafeLabel(),
     multiUserSettings.ConfigurationBlockers.Count == 0
         ? "none"
         : string.Join(",", multiUserSettings.ConfigurationBlockers));

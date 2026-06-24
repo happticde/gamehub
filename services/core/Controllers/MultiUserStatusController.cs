@@ -14,6 +14,7 @@ namespace GameHub.Core.Controllers;
 [Route("api/auth/multi-user")]
 public sealed class MultiUserStatusController(
     MultiUserEnablementService enablement,
+    OidcSettings oidcSettings,
     IConfiguration configuration) : ControllerBase
 {
     /// <summary>Returns safe enablement state and blocker codes to an authenticated operator.</summary>
@@ -38,6 +39,7 @@ public sealed class MultiUserStatusController(
         Response.Headers.CacheControl = "no-store";
         return Ok(new MultiUserStatusResponse(
             readiness.OidcEnabled,
+            oidcSettings.ProvisioningMode.ToSafeLabel(),
             readiness.ReadinessSatisfied,
             readiness.MultiUserEnabled,
             readiness.MultiUserEnabled && readiness.ReadinessSatisfied,

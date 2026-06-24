@@ -17,14 +17,15 @@ authorization:
 ```text
 Keycloak user authentication
     -> validated exact Keycloak (issuer, subject)
-    -> explicit GameHub external-identity link
-    -> existing GameHub account and tenant
+    -> explicit GameHub external-identity link OR opt-in personal-tenant JIT
+    -> server-selected GameHub account and tenant
     -> GameHub access JWT and rotating refresh session
 ```
 
-Configuring Keycloak does not create a GameHub account or tenant, does not enable public
-registration, and does not activate guarded multi-user mode. Every GameHub account must still be
-operator-provisioned and explicitly linked while `GAMEHUB_MULTI_USER_ENABLED=false`.
+Configuring Keycloak does not by itself create a GameHub account or tenant, does not enable public
+registration, and does not activate guarded multi-user mode. Operators must explicitly choose one
+of two models: operator provisioning plus first-link, or `PersonalTenantJit` together with active
+guarded mode. Both remain closed Keycloak-controlled deployments.
 
 GameHub currently supports one exact OIDC issuer/client per deployment. Use one dedicated Keycloak
 realm for GameHub and do not use profile, email, group, organization, or role claims to select a
@@ -252,6 +253,7 @@ GAMEHUB_FRONTEND_AUTH_ENABLED=true
 GAMEHUB_AUTH_COOKIE_SECURE=true
 
 GAMEHUB_OIDC_ENABLED=true
+GAMEHUB_OIDC_PROVISIONING_MODE=Disabled
 GAMEHUB_OIDC_ISSUER=https://auth.example.com/realms/gamehub
 GAMEHUB_OIDC_METADATA_ADDRESS=https://auth.example.com/realms/gamehub/.well-known/openid-configuration
 GAMEHUB_OIDC_CLIENT_ID=gamehub
@@ -277,13 +279,13 @@ inventory and backup policy.
 The reverse proxy in front of GameHub must preserve the external HTTPS scheme and host. Browsers
 will reject the required Secure cookies if they reach GameHub over plaintext HTTP.
 
-Start Keycloak first, then Ingest, Core, and Frontend. Keep the gate false until every account is
-provisioned and linked.
+Start Keycloak first, then Ingest, Core, and Frontend. Keep the gate false while validating either
+provisioning model.
 
-## 5. Provision and explicitly link accounts
+## 5A. Option 1: operator provisioning and explicit first-link
 
-GameHub does not create accounts from Keycloak users. Bootstrap the default owner once when it does
-not already exist:
+In this operator option, GameHub does not create accounts from Keycloak users. Bootstrap the
+default owner once when it does not already exist:
 
 ```http
 POST /api/auth/bootstrap
@@ -330,6 +332,37 @@ performing the flow chooses the durable Keycloak subject that will own that Game
 While the gate is false, the default tenant can exercise a complete OIDC login. A provisioned
 tenant remains blocked after linking until the operator deliberately activates guarded mode.
 
+## 5B. Option 2: opt-in personal-tenant JIT
+
+Use this option only when every Keycloak subject admitted by the dedicated realm/client is allowed
+to own a separate personal GameHub tenant. Set:
+
+```text
+GAMEHUB_OIDC_PROVISIONING_MODE=PersonalTenantJit
+GAMEHUB_MULTI_USER_ENABLED=false
+```
+
+Keep Keycloak self-registration disabled unless the operator has made a separate, explicit access
+policy decision. Restrict access through Keycloak realm membership, the GameHub client, browser
+authentication flows, MFA, and administrative policy. GameHub intentionally does not interpret
+email, verified-email, name, group, organization, role, or tenant claims as a JIT allowlist.
+
+A new Core database may contain zero accounts. With every technical prerequisite satisfied, the
+operator readiness response may still be satisfied in this mode. After the operator activates
+guarded mode consistently, the ordinary **Sign in with identity provider** button performs the
+normal flow. For an unknown validated subject, Core atomically creates:
+
+- one server-identified personal tenant with platform sync disabled;
+- one `ExternalOidc` owner without a local password;
+- one exact issuer/subject mapping;
+- one GameHub refresh session; and
+- one secret-free tenant activity row.
+
+Concurrent first logins cannot create duplicate or orphan tenants. A provider email claim is not
+required, equal email claims remain separate subjects, and provider claims cannot choose IDs or an
+existing tenant. This option is not anonymous signup, shared tenancy, invitations, roles, or a
+claim of general SaaS readiness.
+
 ## 6. Check readiness and activate
 
 Call the operator-only readiness endpoint without exposing the API key to browser JavaScript:
@@ -345,6 +378,7 @@ Before activation, expect:
 ```json
 {
   "oidcEnabled": true,
+  "oidcProvisioningMode": "disabled",
   "readinessSatisfied": true,
   "multiUserEnabled": false,
   "multiUserActive": false,
@@ -372,6 +406,7 @@ Restart Ingest first so its readiness endpoint is available, then Core, then Fro
 ```json
 {
   "oidcEnabled": true,
+  "oidcProvisioningMode": "disabled",
   "readinessSatisfied": true,
   "multiUserEnabled": true,
   "multiUserActive": true,
@@ -380,8 +415,10 @@ Restart Ingest first so its readiness endpoint is available, then Core, then Fro
 }
 ```
 
-Finally, test each linked account's login, access-token expiry, GameHub refresh rotation, logout,
-account-wide revocation, and tenant isolation. Local passwords cannot create normal active-mode
+Use `personal_tenant_jit` instead of `disabled` in those responses when Option 2 is selected.
+Finally, test each linked or JIT-created account's login, access-token expiry, GameHub refresh
+rotation, logout, account-wide revocation, external reauthenticated deletion, and tenant isolation.
+External accounts have no local password; local passwords cannot create normal active-mode
 sessions.
 
 ## 7. Backup, restore, rotation, and upgrades
@@ -441,6 +478,13 @@ account-wide revocation or account deletion path.
 GameHub logout revokes the local refresh session and clears GameHub cookies; it does not terminate
 the Keycloak browser SSO session. A later login can therefore authenticate silently at Keycloak.
 Use Keycloak's administrative session controls when the provider session must also end.
+
+Deleting an `ExternalOidc` GameHub account is different: the BFF starts a dedicated transaction
+with `prompt=login` and `max_age=0`. Core requires the exact linked subject and a recent signed
+`auth_time`, then issues only a short-lived deletion-purpose token for the existing idempotent
+deletion route. If cross-service cleanup remains pending, use the documented deletion-retry intent
+and complete another fresh Keycloak authentication. A completed deletion tombstones the subject,
+so the same identity cannot silently create a replacement tenant through JIT.
 
 To stop new provisioned-tenant admission, set `GAMEHUB_MULTI_USER_ENABLED=false` consistently and
 restart all GameHub components. This preserves tenants, links, sessions, Keycloak state,

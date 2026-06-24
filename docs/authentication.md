@@ -6,7 +6,8 @@ from a server-verified GameHub account mapping, never from request bodies or pro
 
 Production multi-user operation is guarded by a separate operator switch that defaults to false.
 See [Guarded Multi-User Operations](guarded-multi-user-enablement.md) and
-[ADR-012](adr/012-guarded-multi-user-enablement.md).
+[ADR-012](adr/012-guarded-multi-user-enablement.md). Optional personal-tenant JIT provisioning is
+defined separately by [ADR-013](adr/013-personal-tenant-oidc-jit-provisioning.md).
 
 For a source-oriented explanation with sequence diagrams, trust boundaries, data model, failure
 paths, and a guided reading order, see
@@ -43,8 +44,9 @@ library data. No readiness state is exposed to browser JavaScript.
 
 When active, ordinary Core endpoints require GameHub JWTs and ordinary Ingest endpoints require
 Core tenant delegation. The legacy API key remains accepted only by Core endpoints that explicitly
-name the operator scheme. Public registration, provider JIT provisioning, tenant switching, and
-claim-derived roles remain unavailable.
+name the operator scheme. Public registration, tenant switching, shared memberships, invitations,
+and claim-derived roles remain unavailable. Personal-tenant JIT is available only through its
+independent explicit provisioning mode.
 
 ## Production OIDC
 
@@ -55,6 +57,7 @@ it, create a provider client with the exact callback URI for
 | Variable | Required value |
 |---|---|
 | `GAMEHUB_OIDC_ENABLED` | `true` only after every value and provider policy below is ready |
+| `GAMEHUB_OIDC_PROVISIONING_MODE` | `Disabled` (default) or `PersonalTenantJit`; unknown values fail startup |
 | `GAMEHUB_OIDC_ISSUER` | Exact HTTPS issuer from provider discovery metadata |
 | `GAMEHUB_OIDC_CLIENT_ID` | Audience/client ID registered for GameHub |
 | `GAMEHUB_OIDC_CLIENT_SECRET` | Provider client secret when a confidential client is required; omit for a supported public PKCE client |
@@ -87,6 +90,26 @@ Core stores only an explicit `(issuer, subject) -> (account, tenant)` mapping. I
 email and never accepts a tenant, account, organization, or role choice from browser parameters or
 provider claims. Pending-deletion and deleted accounts cannot authenticate or relink.
 
+### Provisioning choices
+
+`GAMEHUB_OIDC_PROVISIONING_MODE` is independent from both OIDC enablement and the guarded switch:
+
+- `Disabled` keeps operator-only bootstrap/provisioning and the existing explicit first-link flow.
+  Unknown subjects receive the same generic authentication failure as before.
+- `PersonalTenantJit` permits a fully validated unknown subject from the exact configured issuer
+  to receive one server-identified personal tenant while guarded multi-user mode is active.
+
+OIDC alone, JIT with the gate disabled, and unknown configuration values create nothing. JIT
+creates the tenant, `ExternalOidc` account, exact mapping, normal refresh session, and one
+tenant-owned secret-free activity row in a single transaction. New tenants start platform sync
+disabled. Email, name, group, role, organization, and tenant-like provider claims select nothing;
+Keycloak realm/client/authentication policy controls who can reach this opt-in flow.
+
+External accounts have no normalized local email and no password hash. Provider email may be
+omitted and is never a login or linking key. Local token issuance, password change, and local
+recovery/deletion confirmation reject external accounts. Existing local and explicitly linked
+accounts remain unchanged.
+
 ### Recovery, MFA, and email verification
 
 The configured identity provider owns recovery, MFA, email verification, credential security, and
@@ -95,8 +118,8 @@ claim as account ownership. Provider recovery restores access only to the alread
 issuer/subject identity; it cannot choose or change a GameHub tenant.
 
 The provider must offer HTTPS discovery/JWKS, nonce-bearing signed ID tokens, and the selected
-asymmetric algorithm. This release supports one issuer/client configuration, no just-in-time
-provisioning, no unlink/subject replacement, and no provider back-channel logout. Provider outages
+asymmetric algorithm. This release supports one issuer/client configuration and optional personal
+JIT, but no unlink/subject replacement or provider back-channel logout. Provider outages
 fail closed for new login/link attempts; already-issued GameHub sessions retain their normal local
 expiry and revocation behavior. A reverse proxy must preserve the external HTTPS scheme and host so
 the BFF can compare the callback to the registered redirect URI exactly. See ADR-011.
@@ -233,7 +256,8 @@ expiry; clients must discard them. The GameHub BFF clears both HttpOnly cookies 
 
 ## Delete the Account and Tenant
 
-`DELETE /api/auth/account` requires a bearer token and `{ "currentPassword": "..." }`. Core first
+For local accounts, `DELETE /api/auth/account` requires a bearer token and
+`{ "currentPassword": "..." }`. Core first
 disables sync, records a pending-deletion state, and revokes refresh sessions. It then asks Ingest
 to delete all delegated raw data, audit rows, and encrypted platform credentials. Core deletes its
 library, operational history, account, and provisioned tenant only after Ingest succeeds.
@@ -242,6 +266,17 @@ An Ingest failure returns HTTP 502; a Core cleanup failure after Ingest returns 
 `account_deletion_incomplete`, never claim success, and are safe to retry. Pending tenants cannot
 use ordinary JWT-protected APIs. The seeded default tenant row is retained empty and disabled for
 single-user upgrade/bootstrap compatibility; all of its account-owned data is still removed.
+
+Local accounts continue to confirm deletion with their current password. An `ExternalOidc`
+account instead starts `/api/auth/oidc/start?intent=delete`. The BFF forces `prompt=login` and
+`max_age=0`; Core revalidates issuer, subject, audience, signature, nonce, lifetime, and a recent
+signed `auth_time`, then requires the exact existing mapping. Core issues only a ten-minute
+`account_deletion_only` token, which the BFF immediately consumes on `DELETE /api/auth/account`.
+Bearer validation rejects that token on every other method or route. A pending cleanup can be
+retried through `intent=delete-retry` after another fresh OIDC authentication.
+
+Deletion stores an exact external-identity tombstone before cascading the live mapping. The same
+deleted subject therefore cannot silently JIT-provision a replacement tenant.
 
 ## Local Compatibility Recovery Boundary
 
@@ -269,8 +304,13 @@ The default Compose deployment uses plain HTTP and therefore sets
 to browsers over HTTPS; browsers intentionally reject Secure cookies over plain HTTP.
 
 OIDC is stricter: enabling it while secure cookies are disabled is rejected. Neither enabling OIDC
-nor linking an identity activates production multi-user operation. After all readiness checks pass,
+nor selecting JIT activates production multi-user operation. After all readiness checks pass,
 the operator must still explicitly set `GAMEHUB_MULTI_USER_ENABLED=true` across all components and
 restart. Disabling it later preserves all data, blocks new provisioned-tenant login, limits
 background jobs to the default tenant, and leaves existing sessions to expire or be revoked under
 ADR-011.
+
+GameHub logout does not terminate the Keycloak SSO session. Disabling or deleting a Keycloak user
+does not immediately revoke GameHub sessions already issued for that subject. Use GameHub
+revoke-all or account deletion when immediate local termination is required. Back-channel logout
+and provider-event lifecycle synchronization remain future work.

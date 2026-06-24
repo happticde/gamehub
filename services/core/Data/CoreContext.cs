@@ -23,6 +23,9 @@ public class CoreContext : DbContext
     /// <summary>Stable OIDC issuer/subject mappings to existing account and tenant pairs.</summary>
     public DbSet<ExternalIdentity> ExternalIdentities => Set<ExternalIdentity>();
 
+    /// <summary>Deleted external identities that JIT must never silently recreate.</summary>
+    public DbSet<DeletedExternalIdentity> DeletedExternalIdentities => Set<DeletedExternalIdentity>();
+
     // --- Unified Tables (Owned by Core) ---
     public DbSet<UnifiedGame> UnifiedGames => Set<UnifiedGame>();
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
@@ -74,9 +77,15 @@ public class CoreContext : DbContext
             entity.Property(account => account.NormalizedEmail).HasMaxLength(320);
             entity.Property(account => account.DisplayName).HasMaxLength(100);
             entity.Property(account => account.PasswordHash).HasMaxLength(1024);
-            // Global email uniqueness provides one unambiguous login identity. TenantId is
-            // unique because this initial account model supports one owner account per tenant.
-            entity.HasIndex(account => account.NormalizedEmail).IsUnique();
+            // Only local accounts own a normalized login key. External profile emails may be
+            // absent or duplicated and therefore never participate in identity resolution.
+            entity.HasIndex(account => account.NormalizedEmail)
+                .IsUnique()
+                .HasFilter("\"AccountType\" = 0 AND \"NormalizedEmail\" IS NOT NULL");
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_UserAccounts_AccountTypeCredentials",
+                "(\"AccountType\" = 0 AND \"Email\" IS NOT NULL AND length(\"Email\") > 0 AND \"NormalizedEmail\" IS NOT NULL AND length(\"NormalizedEmail\") > 0 AND \"PasswordHash\" IS NOT NULL AND length(\"PasswordHash\") > 0) OR (\"AccountType\" = 1 AND \"NormalizedEmail\" IS NULL AND \"PasswordHash\" IS NULL)"));
+            // TenantId is unique because the current account model supports one owner per tenant.
             entity.HasIndex(account => account.TenantId).IsUnique();
             entity.HasAlternateKey(account => new { account.TenantId, account.Id });
             entity.HasOne(account => account.Tenant)
@@ -118,6 +127,15 @@ public class CoreContext : DbContext
                 .HasForeignKey(identity => new { identity.TenantId, identity.UserAccountId })
                 .HasPrincipalKey(account => new { account.TenantId, account.Id })
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DeletedExternalIdentity>(entity =>
+        {
+            // Tombstones intentionally outlive both account and tenant and are global because JIT
+            // begins before a trusted tenant exists.
+            entity.Property(identity => identity.Issuer).HasMaxLength(2048);
+            entity.Property(identity => identity.Subject).HasMaxLength(255);
+            entity.HasIndex(identity => new { identity.Issuer, identity.Subject }).IsUnique();
         });
 
         ConfigureTenantOwned(modelBuilder.Entity<UnifiedGame>());
