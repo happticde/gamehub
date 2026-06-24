@@ -120,7 +120,7 @@ public sealed class JwtTokenService
     /// The signature makes payload modification detectable; it does not encrypt the payload.
     /// </summary>
     public IssuedJwtToken CreateToken(UserAccount account) =>
-        CreateToken(account, _settings.LifetimeMinutes, sessionPurpose: null);
+        CreateToken(account, _settings.LifetimeMinutes, sessionPurpose: null, deletionAuthorization: null);
 
     /// <summary>
     /// Creates a short-lived, non-refreshable token whose authorization is restricted by the
@@ -128,19 +128,32 @@ public sealed class JwtTokenService
     /// password bridge retained while production multi-user mode is enabled.
     /// </summary>
     public IssuedJwtToken CreateOidcLinkToken(UserAccount account) =>
-        CreateToken(account, lifetimeMinutes: 10, GameHubClaimTypes.OidcLinkOnlySessionPurpose);
+        CreateToken(
+            account,
+            lifetimeMinutes: 10,
+            GameHubClaimTypes.OidcLinkOnlySessionPurpose,
+            deletionAuthorization: null);
 
     /// <summary>
     /// Creates a short-lived, non-refreshable token accepted only by the idempotent deletion
     /// endpoint. Pending deletion remains blocked everywhere else while ADR-010 retry stays usable.
     /// </summary>
-    public IssuedJwtToken CreateAccountDeletionToken(UserAccount account) =>
-        CreateToken(account, lifetimeMinutes: 10, GameHubClaimTypes.AccountDeletionOnlySessionPurpose);
+    public IssuedJwtToken CreateAccountDeletionToken(
+        UserAccount account,
+        bool externalOidcReauthentication = false) =>
+        CreateToken(
+            account,
+            lifetimeMinutes: 10,
+            GameHubClaimTypes.AccountDeletionOnlySessionPurpose,
+            externalOidcReauthentication
+                ? GameHubClaimTypes.ExternalOidcDeletionAuthorization
+                : null);
 
     private IssuedJwtToken CreateToken(
         UserAccount account,
         int lifetimeMinutes,
-        string? sessionPurpose)
+        string? sessionPurpose,
+        string? deletionAuthorization)
     {
         if (!_settings.IsEnabled)
         {
@@ -161,16 +174,27 @@ public sealed class JwtTokenService
         {
             new Claim(JwtRegisteredClaimNames.Sub, account.Id.ToString("D")),
             new Claim(ClaimTypes.NameIdentifier, account.Id.ToString("D")),
-            new Claim(JwtRegisteredClaimNames.Email, account.Email),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
             new Claim(ClaimTypes.Name, account.DisplayName),
             new Claim(GameHubClaimTypes.TenantId, account.TenantId.ToString("D"))
         };
+        if (!string.IsNullOrWhiteSpace(account.Email))
+        {
+            // External email is optional profile data only. Its presence in a signed display claim
+            // never changes the account/tenant mapping selected from the database.
+            claims.Add(new Claim(JwtRegisteredClaimNames.Email, account.Email));
+        }
         if (sessionPurpose is not null)
         {
             // The purpose is signed with the token. A request cannot add/remove it through a
             // header, query string, or provider claim.
             claims.Add(new Claim(GameHubClaimTypes.SessionPurpose, sessionPurpose));
+        }
+        if (deletionAuthorization is not null)
+        {
+            claims.Add(new Claim(
+                GameHubClaimTypes.AccountDeletionAuthorization,
+                deletionAuthorization));
         }
         // notBefore and expires bound the validity window. SigningCredentials describes
         // how the header and payload are authenticated; HS256 is HMAC using SHA-256.

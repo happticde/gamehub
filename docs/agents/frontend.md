@@ -25,6 +25,12 @@
   A successful unlinked password check stores a short-lived HttpOnly link-purpose cookie,
   immediately starts OIDC, then clears all session cookies after linking. Active mode hides the
   local form and linked accounts use provider login only.
+- `OIDC_PROVISIONING_MODE` is server-only and defaults to `Disabled`; unknown values fail closed.
+  Active-mode login remains the normal OIDC button for linked and personal-JIT accounts. No
+  provider token or provisioning decision reaches a Client Component.
+- External deletion uses sealed `delete`/`delete-retry` OIDC transactions. The BFF requests fresh
+  provider login, obtains a restricted Core token, and immediately consumes it server-to-server;
+  provider and deletion tokens never enter JavaScript, JSON responses, or `localStorage`.
 - Operator readiness is intentionally not exposed to Client Components. The secret-free status API
   is an operator API-key endpoint, not a tenant-facing admin dashboard.
 

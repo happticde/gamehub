@@ -77,3 +77,13 @@ test("expired transaction is rejected", () => {
         /expired_oidc_transaction/,
     );
 });
+
+test("account deletion transaction preserves its server-owned intent", () => {
+    const key = randomBytes(32);
+    const transaction = createOidcTransaction(redirectUri, "/admin", "delete", createdAt);
+
+    const opened = openOidcTransaction(sealOidcTransaction(transaction, key), key);
+
+    assert.equal(opened.intent, "delete");
+    validateOidcCallback(opened, transaction.state, redirectUri, createdAt + 1_000);
+});

@@ -19,7 +19,7 @@ export const OIDC_TRANSACTION_COOKIE = "gamehub_oidc_transaction";
 export const OIDC_TRANSACTION_MAX_AGE_SECONDS = 10 * 60;
 const TRANSACTION_AAD = Buffer.from("gamehub-oidc-transaction-v1", "utf8");
 
-export type OidcIntent = "login" | "link";
+export type OidcIntent = "login" | "link" | "delete" | "delete-retry";
 
 /**
  * Server-owned state carried across the browser redirect to the identity provider.
@@ -189,6 +189,9 @@ function isOidcTransaction(value: Partial<OidcTransaction>): value is OidcTransa
         && typeof value.codeChallenge === "string" && value.codeChallenge.length === 43
         && typeof value.redirectUri === "string" && value.redirectUri.startsWith("https://")
         && typeof value.returnTo === "string" && value.returnTo.startsWith("/")
-        && (value.intent === "login" || value.intent === "link")
+        && (value.intent === "login"
+            || value.intent === "link"
+            || value.intent === "delete"
+            || value.intent === "delete-retry")
         && typeof value.createdAt === "number" && Number.isFinite(value.createdAt);
 }

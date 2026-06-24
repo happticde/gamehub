@@ -50,9 +50,9 @@ never an identity key.
 - Login performs an exact issuer/subject lookup. It never falls back to email, `email_verified`,
   tenant, organization, group, or role claims. Equal emails under different subjects or issuers
   remain separate and unlinked.
-- OIDC does not provision accounts or tenants. Existing operator-controlled local provisioning
-  and an authenticated explicit link are required. This preserves the default tenant and avoids
-  turning external login into public registration.
+- Under this ADR's default operator mode, OIDC does not provision accounts or tenants; existing
+  local provisioning and authenticated explicit link are required. ADR-013 later adds a separate
+  default-off personal-tenant JIT mode without turning OIDC itself into public registration.
 - Pending-deletion accounts cannot link or authenticate. Account deletion cascades to external
   mappings, so a deleted identity cannot recreate or regain access to a tenant.
 
@@ -108,7 +108,8 @@ enable it.
 
 - One OIDC issuer/client configuration is supported per deployment.
 - Only explicitly configured asymmetric signing algorithms are accepted.
-- Account creation remains operator controlled; there is no OIDC just-in-time provisioning.
+- Account creation remains operator controlled by default. ADR-013 adds optional personal-tenant
+  JIT only through an independent mode and active guarded gate.
 - Linking requires a current GameHub session. There is no unlink or subject-replacement endpoint;
   those operations need a separate reauthentication and recovery design.
 - Provider logout, back-channel logout, token revocation events, and session synchronization are
@@ -119,6 +120,7 @@ enable it.
 ## References
 
 - [GameHub OIDC Authentication Architecture](../oidc-authentication-architecture.md)
+- [ADR-013: Opt-in Personal-Tenant OIDC JIT Provisioning](013-personal-tenant-oidc-jit-provisioning.md)
 - [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
 - [OAuth 2.0 Authorization Code Grant](https://www.rfc-editor.org/rfc/rfc6749#section-4.1)
 - [Proof Key for Code Exchange (RFC 7636)](https://www.rfc-editor.org/rfc/rfc7636)

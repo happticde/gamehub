@@ -56,6 +56,13 @@ Two ASP.NET Core microservices:
   Next.js BFF and independent ID-token validation in Core. Core pins exact issuer, audience,
   asymmetric algorithms, nonce, lifetime, and JWKS, then resolves only a persisted issuer/subject
   mapping. Email and provider tenant/role claims never select an account. See ADR-011.
+- OIDC provisioning: `Authentication:Oidc:ProvisioningMode` accepts only `Disabled` (default) or
+  `PersonalTenantJit`. JIT requires active guarded mode and atomically creates a server-identified,
+  sync-disabled tenant, `ExternalOidc` owner, exact mapping, refresh session, and secret-free
+  tenant activity. Deleted external identities are tombstoned and cannot JIT-recreate a tenant.
+- Account kinds are explicit. `Local` rows require email, normalized email, and password hash;
+  `ExternalOidc` rows have no normalized email or password hash. Local authentication, password
+  change, and local recovery/deletion confirmation reject external accounts.
 - The learning-oriented implementation walkthrough, sequence diagrams, trust boundaries, failure
   matrix, and source-file map live in `docs/oidc-authentication-architecture.md`.
 - External identities are linked only from a live signed GameHub account and use a composite
@@ -73,6 +80,9 @@ Two ASP.NET Core microservices:
   and blocker codes, never configured values, secrets, identities, tenant data, or counts. Core
   uses the normal delegation key to query Ingest's internal mode/vault booleans, so mismatch,
   outage, or trust failure also blocks readiness.
+- External account deletion starts a BFF-owned OIDC intent with `prompt=login` and `max_age=0`.
+  Core requires a recent signed `auth_time` and exact mapping, then issues only an
+  `account_deletion_only` token accepted on `DELETE /api/auth/account`.
 
 ## Conventions
 - All controllers have `ILogger` injection with structured logging (`{Platform}`, `{Count}`, etc.).

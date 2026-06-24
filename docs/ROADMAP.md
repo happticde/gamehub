@@ -103,8 +103,8 @@ Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth
 - **Activation boundary**: Item #8 is technically complete, but production multi-user operation
   remains disabled after installation and upgrade until an operator deliberately satisfies the
   deployment/provider checklist, sets the guarded switch consistently, and restarts. This does not
-  add public registration, JIT provisioning, unlimited SaaS readiness, tenant switching, or
-  provider-derived authorization.
+  add public registration, unlimited SaaS readiness, tenant switching, or provider-derived
+  authorization. The later optional personal-tenant JIT scope is tracked separately in item #18.
 
 ### 9. Notifications & Activity Feed
 `ActivityLog` table + activity endpoint for social sharing/feed.
@@ -172,17 +172,24 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Non-goal**: Guarded multi-user deployments remain closed and operator-provisioned by default;
   this item does not imply anonymous public signup.
 
-### 18. JIT Provisioning & External Identity Lifecycle
-- **Goal**: Evaluate narrowly controlled just-in-time account/tenant provisioning and automated
-  identity lifecycle integration as an explicit opt-in capability.
-- **Scope**: Trusted provisioning authority, allowlists or assignment requirements, deterministic
-  issuer/subject handling, deprovisioning, disabled-user behavior, subject replacement recovery,
-  SCIM or provider-event evaluation, and reconciliation after missed events.
+### 18. JIT Provisioning & External Identity Lifecycle — Personal-Tenant JIT Implemented
+- **Implemented (2026-06-24)**: ADR-013 adds independent default-off
+  `Disabled`/`PersonalTenantJit` modes. Active guarded mode can atomically create one server-owned,
+  sync-disabled personal tenant, `ExternalOidc` owner, exact issuer/subject mapping, refresh
+  session, and secret-free activity entry. Account-type constraints, parallel first-login
+  idempotency, deleted-identity tombstones, zero-account JIT readiness, and fresh OIDC
+  reauthentication for deletion are implemented and verified on SQLite and PostgreSQL.
+- **Access boundary**: Every authenticated subject of the exact configured issuer is eligible only
+  when JIT is selected; Keycloak realm/client/authentication policy limits admission. Email, name,
+  groups, roles, organizations, and tenant claims never select or link a GameHub tenant.
+- **Remaining scope**: Automated provider lifecycle integration, disabled-user events, subject
+  replacement recovery, SCIM/provider-event evaluation, missed-event reconciliation, and
+  back-channel logout remain future work.
 - **Security boundary**: Provider email, groups, roles, organizations, and tenant-like claims remain
   untrusted unless a future ADR defines their exact authority. Provisioning must be idempotent,
   auditable, revocable, and covered by cross-tenant isolation and lifecycle tests.
-- **Dependency**: Requires a new architecture decision for provisioning and recovery trust; it
-  cannot be activated merely by configuring OIDC.
+- **Dependency status**: [ADR-013](adr/013-personal-tenant-oidc-jit-provisioning.md) defines the
+  implemented trust boundary. OIDC configuration alone still cannot activate provisioning.
 
 ### 19. SaaS Operations, Administration & Release Gate
 - **Goal**: Define and satisfy the additional security, reliability, privacy, and operational bar
@@ -211,5 +218,5 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
 | **Future platform integration** | #16 Epic authentication and stored retrieval |
-| **Controlled onboarding** | #17 Registration/invitations → #18 JIT provisioning and identity lifecycle |
+| **Controlled onboarding** | #17 Registration/invitations → #18 provider lifecycle follow-ups (personal JIT implemented) |
 | **General SaaS readiness** | #19 operations, administration, security review, and release gate |

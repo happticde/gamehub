@@ -27,16 +27,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
         // Step 2: select the server-defined operation. Unknown intent values deliberately become
         // normal login; callers cannot invent another callback behavior.
-        const intent: OidcIntent = request.nextUrl.searchParams.get("intent") === "link"
-            ? "link"
+        const requestedIntent = request.nextUrl.searchParams.get("intent");
+        const intent: OidcIntent = requestedIntent === "link"
+            || requestedIntent === "delete"
+            || requestedIntent === "delete-retry"
+            ? requestedIntent
             : "login";
 
         // Linking changes a durable identity mapping, so it starts only when a GameHub session
         // cookie exists. Core later validates that JWT and remains authoritative; this early check
         // merely avoids sending an unauthenticated user through the provider unnecessarily.
-        if (intent === "link" && !request.cookies.get(ACCESS_TOKEN_COOKIE)?.value) {
+        if ((intent === "link" || intent === "delete")
+            && !request.cookies.get(ACCESS_TOKEN_COOKIE)?.value) {
             return NextResponse.json(
-                { code: "authentication_required", message: "Sign in before linking an identity." },
+                { code: "authentication_required", message: "A current GameHub session is required." },
                 { status: 401 },
             );
         }
@@ -60,6 +64,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         authorizationUrl.searchParams.set("nonce", transaction.nonce);
         authorizationUrl.searchParams.set("code_challenge", transaction.codeChallenge);
         authorizationUrl.searchParams.set("code_challenge_method", "S256");
+        if (intent === "delete" || intent === "delete-retry") {
+            // Force a new provider authentication ceremony. Core independently requires a recent
+            // signed auth_time before it can issue the deletion-only GameHub token.
+            authorizationUrl.searchParams.set("prompt", "login");
+            authorizationUrl.searchParams.set("max_age", "0");
+        }
 
         // Step 5: store the encrypted transaction in a narrow, short-lived browser cookie and
         // redirect. HttpOnly hides it from JavaScript, Secure restricts it to HTTPS, SameSite=Lax

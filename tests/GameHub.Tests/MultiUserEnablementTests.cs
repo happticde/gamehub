@@ -218,7 +218,10 @@ public sealed class MultiUserEnablementTests : IDisposable
                 CreateOidcSettings()),
             CreateOidcSettings(),
             new TestMultiUserIngestReadinessProbe(enabled: false));
-        var controller = new MultiUserStatusController(service, configuration)
+        var controller = new MultiUserStatusController(
+            service,
+            CreateOidcSettings(),
+            configuration)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -227,6 +230,7 @@ public sealed class MultiUserEnablementTests : IDisposable
 
         var response = Assert.IsType<MultiUserStatusResponse>(
             Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal("disabled", response.OidcProvisioningMode);
         var json = JsonSerializer.Serialize(response);
         Assert.Contains("no_active_account", response.Blockers);
         Assert.DoesNotContain(new string('A', 32), json, StringComparison.Ordinal);

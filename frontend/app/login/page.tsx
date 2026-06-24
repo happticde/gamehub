@@ -19,6 +19,8 @@ export default async function LoginPage({
         returnTo?: string | string[];
         oidcError?: string | string[];
         oidcLinked?: string | string[];
+        accountDeleted?: string | string[];
+        accountDeletionPending?: string | string[];
     }>;
 }) {
     const params = await searchParams;
@@ -76,6 +78,8 @@ export default async function LoginPage({
                             oidcEnabled={isOidcEnabled()}
                             oidcFailed={params.oidcError === "authentication_failed"}
                             oidcLinked={params.oidcLinked === "true"}
+                            accountDeleted={params.accountDeleted === "true"}
+                            accountDeletionPending={params.accountDeletionPending === "true"}
                             multiUserEnabled={multiUserEnabled}
                         />
                     </CardContent>

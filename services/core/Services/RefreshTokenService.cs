@@ -38,11 +38,21 @@ public sealed class RefreshTokenService
         UserAccount account,
         CancellationToken cancellationToken = default)
     {
+        var token = StageIssue(account);
+        await _db.SaveChangesAsync(cancellationToken);
+        return token;
+    }
+
+    /// <summary>
+    /// Stages a new refresh session without saving it. Transactional workflows use this method so
+    /// account, mapping, activity, and session rows can commit in one atomic SaveChanges call.
+    /// </summary>
+    public IssuedRefreshToken StageIssue(UserAccount account)
+    {
         ArgumentNullException.ThrowIfNull(account);
 
         var issued = CreateSession(account.Id);
         _db.RefreshTokenSessions.Add(issued.Session);
-        await _db.SaveChangesAsync(cancellationToken);
         return issued.Token;
     }
 

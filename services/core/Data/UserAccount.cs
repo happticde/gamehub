@@ -1,9 +1,19 @@
 namespace GameHub.Core.Data;
 
+/// <summary>Credential boundary for a tenant owner account.</summary>
+public enum UserAccountType
+{
+    /// <summary>Account with a canonical email and usable local password hash.</summary>
+    Local = 0,
+
+    /// <summary>OIDC-only account whose identity is resolved exclusively through an exact mapping.</summary>
+    ExternalOidc = 1
+}
+
 /// <summary>
-/// Local credentials for the single account that owns a tenant library. This identity model
-/// is intentionally separate from tenant-owned game data: login must locate an account by
-/// email before any tenant is trusted, then successful password verification reveals TenantId.
+/// The single owner account for a tenant library. This identity model is intentionally separate
+/// from tenant-owned game data: local login establishes ownership through a password, while OIDC
+/// login establishes it through an exact external mapping before TenantId is trusted.
 /// </summary>
 public sealed class UserAccount
 {
@@ -16,25 +26,31 @@ public sealed class UserAccount
     /// <summary>Navigation to the tenant; never serialized by authentication DTOs.</summary>
     public Tenant? Tenant { get; set; }
 
-    /// <summary>Canonical email retained for display and the JWT email claim.</summary>
-    public string Email { get; set; } = "";
+    /// <summary>Determines whether local password operations are permitted for this account.</summary>
+    public UserAccountType AccountType { get; set; } = UserAccountType.Local;
 
-    /// <summary>Uppercase lookup key with a global unique index for case-insensitive login.</summary>
-    public string NormalizedEmail { get; set; } = "";
+    /// <summary>
+    /// Canonical local-login email or optional external profile email. External email is never a
+    /// lookup, uniqueness, linking, or authorization key.
+    /// </summary>
+    public string? Email { get; set; }
+
+    /// <summary>Uppercase local-login key. It is always null for external OIDC accounts.</summary>
+    public string? NormalizedEmail { get; set; }
 
     /// <summary>Human-readable name written into the principal's name claim.</summary>
     public string DisplayName { get; set; } = "";
 
     /// <summary>
-    /// Versioned, salted ASP.NET password hash. This is not encrypted password data and cannot
-    /// be turned back into the original password; it must never be returned by an API.
+    /// Versioned, salted ASP.NET password hash for local accounts. External accounts keep this
+    /// null. A hash cannot be reversed and must never be returned by an API.
     /// </summary>
-    public string PasswordHash { get; set; } = "";
+    public string? PasswordHash { get; set; }
 
     /// <summary>UTC timestamp at which bootstrap persisted this account.</summary>
     public DateTime CreatedAtUtc { get; set; }
 
-    /// <summary>UTC timestamp of the latest successful password verification.</summary>
+    /// <summary>UTC timestamp of the latest successful local or external authentication.</summary>
     public DateTime? LastLoginAtUtc { get; set; }
 
     /// <summary>

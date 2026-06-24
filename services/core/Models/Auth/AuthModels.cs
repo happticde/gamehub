@@ -51,7 +51,7 @@ public sealed record ChangePasswordRequest(string CurrentPassword, string NewPas
 /// Current password confirmation for destructive account and tenant deletion. Tenant and
 /// account identifiers are deliberately absent and come only from the signed JWT.
 /// </summary>
-public sealed record DeleteAccountRequest(string CurrentPassword);
+public sealed record DeleteAccountRequest(string? CurrentPassword = null);
 
 /// <summary>Public account data returned after bootstrap.</summary>
 public sealed record AccountResponse(
@@ -86,6 +86,7 @@ public sealed record TokenResponse(
 /// </summary>
 public sealed record MultiUserStatusResponse(
     bool OidcEnabled,
+    string OidcProvisioningMode,
     bool ReadinessSatisfied,
     bool MultiUserEnabled,
     bool MultiUserActive,

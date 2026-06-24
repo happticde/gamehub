@@ -47,6 +47,8 @@ A unified game library aggregator that ingests data from **Steam**, **PSN**, **G
 - **Tenant isolation** — tenant-scoped Core and Ingest storage, queries, writes, and constraints
 - **Guarded multi-user mode** — an immutable, default-off operator gate with Core/Ingest/BFF
   readiness checks, OIDC-only production login, and non-destructive disable/rollback behavior
+- **Optional personal-tenant OIDC JIT** — an independent default-off mode that atomically creates
+  one OIDC-only owner and sync-disabled personal tenant after exact provider validation
 - **Encrypted credential vault** — tenant-scoped AES-256-GCM storage and managed Steam, GOG, and
   PSN retrieval without returning plaintext credentials
 - **MCP Server** — AI assistant integration via the [Model Context Protocol](https://modelcontextprotocol.io/)
@@ -128,6 +130,7 @@ Open `.env` and configure your credentials:
 | `GAMEHUB_AUTH_COOKIE_SECURE` | Set `true` only when browsers reach the frontend over HTTPS |
 | `GAMEHUB_MULTI_USER_ENABLED` | Explicit guarded multi-user switch; keep `false` through preparation |
 | `GAMEHUB_OIDC_ENABLED` | Enables provider-neutral OIDC independently from multi-user admission |
+| `GAMEHUB_OIDC_PROVISIONING_MODE` | `Disabled` (default) or explicit `PersonalTenantJit`; effective only in active guarded mode |
 | `GAMEHUB_OIDC_ISSUER` | Exact HTTPS issuer returned by provider discovery |
 | `GAMEHUB_OIDC_CLIENT_ID` | OIDC client ID and expected ID-token audience |
 | `GAMEHUB_OIDC_CLIENT_SECRET` | Optional confidential-client secret, stored outside the repository |
@@ -258,9 +261,11 @@ The provided `docker-compose.yml` is a deployment-oriented baseline:
   container configured through deployment environment variables.
 
 Production multi-user operation is implemented but deliberately defaults to disabled. OIDC
-configuration alone never activates provisioned tenants. Prepare and explicitly link every
-operator-provisioned account, confirm the secret-free readiness response, back up Core and Ingest,
-and only then set `GAMEHUB_MULTI_USER_ENABLED=true` consistently across all components.
+configuration alone never activates tenants or creates accounts. Choose either operator
+provisioning plus explicit first-link (`GAMEHUB_OIDC_PROVISIONING_MODE=Disabled`) or the separate
+opt-in personal-tenant JIT mode. Confirm the secret-free readiness response, back up Core and
+Ingest, and only then set `GAMEHUB_MULTI_USER_ENABLED=true` consistently across all components.
+Personal JIT is not public registration, shared tenancy, or general SaaS readiness.
 
 See the following guides before deployment:
 
@@ -320,6 +325,7 @@ To run in production:
 | `DELETE` | `/api/auth/account` | Retry-safe Core and Ingest account/tenant deletion |
 | `POST` | `/api/auth/oidc/token` | BFF-only exact issuer/subject OIDC exchange |
 | `POST` | `/api/auth/oidc/link` | Link a validated external identity to the signed account |
+| `POST` | `/api/auth/oidc/account-deletion-token` | BFF-only fresh OIDC reauthentication for restricted deletion |
 | `GET` | `/api/auth/multi-user/status` | Operator-only secret-free guarded-mode readiness |
 | `GET` | `/api/platform-credentials` | Tenant-scoped secret-free credential status |
 | `PUT` | `/api/platform-credentials/{platform}` | Store one encrypted Steam, GOG, or PSN credential |
@@ -436,7 +442,7 @@ docs/                       # ROADMAP.md, DEBUGGING.md, ADRs
   `http://localhost:5000/`. Core Swagger supports both `X-Api-Key` and Bearer authorization.
 - **Health checks:** Both services expose `GET /health` with DB connectivity checks.
 - **Authentication:** Configure deployment secrets through `GAMEHUB_*` variables. Leaving JWT,
-  frontend auth, OIDC, and guarded multi-user mode disabled preserves legacy local mode. Never
-  commit real keys or provider credentials.
+  frontend auth, OIDC, JIT provisioning, and guarded multi-user mode disabled preserves legacy
+  local mode. Never commit real keys or provider credentials.
 - **Tenant safety:** Tenant identity comes from trusted authentication claims, never request
   bodies. JSON backups remain intentionally tenant-neutral.
