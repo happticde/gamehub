@@ -23,7 +23,7 @@ export default function GlobalSearchBar() {
     const [isOpen, setIsOpen] = useState(false);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     const [selectedIndex, setSelectedIndex] = useState(-1);
-    const [isPending, startTransition] = useTransition();
+    const [, startTransition] = useTransition();
 
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);

@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2, Link2 } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
+import type { ApiMessageResponse } from "@/types/api";
 
 interface SearchResult {
     providerId: number;
@@ -36,10 +38,10 @@ export default function FixMatchDialog({ gameId, initialTitle }: { gameId: numbe
         try {
             const res = await fetch(`/api/core/library/enrichment/search?title=${encodeURIComponent(query)}&limit=10`);
             if (!res.ok) throw new Error("Search failed");
-            const data = await res.json();
+            const data: SearchResult[] = await res.json();
             setResults(data || []);
-        } catch (err: any) {
-            setError(err.message || "Failed to search.");
+        } catch (caughtError: unknown) {
+            setError(getErrorMessage(caughtError, "Failed to search."));
         } finally {
             setIsSearching(false);
         }
@@ -57,14 +59,14 @@ export default function FixMatchDialog({ gameId, initialTitle }: { gameId: numbe
             });
 
             if (!res.ok) {
-                const data = await res.json();
+                const data: ApiMessageResponse = await res.json();
                 throw new Error(data?.message || "Failed to override.");
             }
 
             setOpen(false);
             router.refresh(); // Refresh page to reflect new data
-        } catch (err: any) {
-            setError(err.message || "An error occurred applying the match.");
+        } catch (caughtError: unknown) {
+            setError(getErrorMessage(caughtError, "An error occurred applying the match."));
             setIsApplying(null);
         }
     };

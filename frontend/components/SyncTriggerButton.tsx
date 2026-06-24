@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
+import type { ApiMessageResponse } from "@/types/api";
 
 export function SyncTriggerButton() {
     const router = useRouter();
@@ -23,10 +25,10 @@ export function SyncTriggerButton() {
             });
 
             if (!res.ok) {
-                const data = await res.json().catch(() => null) as { message?: string } | null;
+                const data: ApiMessageResponse | null = await res.json().catch(() => null);
                 setResultMsg(data?.message || `Sync failed with status: ${res.status}`);
             } else {
-                const data = await res.json();
+                const data: ApiMessageResponse = await res.json();
                 setResultMsg(data.Message || "Sync completed successfully.");
 
                 // Refresh the server component to pull the fresh sync-history
@@ -34,8 +36,8 @@ export function SyncTriggerButton() {
                     router.refresh();
                 });
             }
-        } catch (error: any) {
-            setResultMsg(`Error: ${error.message}`);
+        } catch (caughtError: unknown) {
+            setResultMsg(`Error: ${getErrorMessage(caughtError, "The sync request failed.")}`);
         } finally {
             setIsSyncing(false);
         }

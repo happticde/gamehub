@@ -8,6 +8,7 @@ import FixMatchDialog from "@/components/library/FixMatchDialog";
 import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
 import CoverImageClient from "@/components/library/CoverImageClient";
 import { fetchCoreApi } from "@/lib/core-api";
+import { getErrorMessage } from "@/lib/errors";
 
 // Extended payload type for the game detail view
 interface ExpandedGame {
@@ -64,9 +65,10 @@ export default async function GameDetailPage({
             }
             throw new Error(`Failed to fetch game details: ${res.statusText}`);
         }
-        game = await res.json();
-    } catch (e: any) {
-        error = e.message || "An unexpected error occurred.";
+        const gameDetails: ExpandedGame = await res.json();
+        game = gameDetails;
+    } catch (caughtError: unknown) {
+        error = getErrorMessage(caughtError, "An unexpected error occurred.");
         console.error("Fetch Game Detail Error:", error);
     }
 

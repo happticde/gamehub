@@ -83,6 +83,17 @@ export interface IngestAuditLog {
     errorMessage: string | null;
 }
 
+/** Single row from GET /api/library/sync-history. */
+export interface SyncAuditLog {
+    id: number;
+    timestamp: string;
+    platform: Platform;
+    status: "Success" | "Failed" | "Skipped" | "In_Progress";
+    itemsProcessed: number;
+    newGamesCreated: number;
+    errorMessage: string | null;
+}
+
 /** Secret-free state returned by Core for one encrypted platform credential. */
 export interface PlatformCredentialStatus {
     platform: Platform;

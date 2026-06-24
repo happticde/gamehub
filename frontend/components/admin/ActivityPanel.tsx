@@ -23,6 +23,7 @@ import {
     GitBranch,
     Activity,
 } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 /** Shape of a single activity log entry from the API. */
 interface ActivityEntry {
@@ -114,10 +115,11 @@ export function ActivityPanel() {
                 setError(`Failed to fetch activity (Status ${res.status})`);
                 return;
             }
-            setEntries(await res.json());
+            const activityEntries: ActivityEntry[] = await res.json();
+            setEntries(activityEntries);
             setError(null);
-        } catch (err: any) {
-            setError(err.message || "Unknown error");
+        } catch (caughtError: unknown) {
+            setError(getErrorMessage(caughtError, "Unknown error"));
         } finally {
             setIsLoading(false);
         }

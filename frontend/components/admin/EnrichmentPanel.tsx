@@ -46,6 +46,8 @@ import {
     Database,
 } from "lucide-react";
 import type { EnrichmentStats, EnrichmentAuditLog } from "@/types/game";
+import type { ApiMessageResponse } from "@/types/api";
+import { getErrorMessage } from "@/lib/errors";
 
 export function EnrichmentPanel() {
     // -------------------------------------------------------
@@ -69,7 +71,10 @@ export function EnrichmentPanel() {
         setIsLoadingStats(true);
         try {
             const res = await fetch("/api/core/library/enrichment-stats");
-            if (res.ok) setStats(await res.json());
+            if (res.ok) {
+                const enrichmentStats: EnrichmentStats = await res.json();
+                setStats(enrichmentStats);
+            }
         } catch {
             // Swallow — stats cards will show placeholders
         } finally {
@@ -83,7 +88,10 @@ export function EnrichmentPanel() {
             const params = new URLSearchParams({ limit: "100" });
             if (statusFilter !== "all") params.set("status", statusFilter);
             const res = await fetch(`/api/core/library/enrichment-history?${params}`);
-            if (res.ok) setLogs(await res.json());
+            if (res.ok) {
+                const enrichmentLogs: EnrichmentAuditLog[] = await res.json();
+                setLogs(enrichmentLogs);
+            }
         } catch {
             // Swallow — table will show empty state
         } finally {
@@ -109,13 +117,13 @@ export function EnrichmentPanel() {
         setResultMsg("");
         try {
             const res = await fetch(url, { method });
-            const data = await res.json();
+            const data: ApiMessageResponse = await res.json();
             setResultMsg(data.Message || data.message || "Done.");
             // Refresh data after action completes
             fetchStats();
             fetchLogs();
-        } catch (err: any) {
-            setResultMsg(`Error: ${err.message}`);
+        } catch (caughtError: unknown) {
+            setResultMsg(`Error: ${getErrorMessage(caughtError, "The enrichment request failed.")}`);
         } finally {
             setActionLoading(null);
         }
@@ -129,13 +137,13 @@ export function EnrichmentPanel() {
         setReEnrichingId(gameId);
         try {
             const res = await fetch(`/api/core/library/enrich/${gameId}?force=true`, { method: "POST" });
-            const data = await res.json();
+            const data: ApiMessageResponse = await res.json();
             setResultMsg(data.Message || data.message || "Re-enriched.");
             // Refresh stats and logs to reflect the update
             fetchStats();
             fetchLogs();
-        } catch (err: any) {
-            setResultMsg(`Error re-enriching game ${gameId}: ${err.message}`);
+        } catch (caughtError: unknown) {
+            setResultMsg(`Error re-enriching game ${gameId}: ${getErrorMessage(caughtError, "The enrichment request failed.")}`);
         } finally {
             setReEnrichingId(null);
         }
