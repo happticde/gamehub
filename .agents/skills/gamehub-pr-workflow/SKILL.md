@@ -1,6 +1,6 @@
 ---
 name: gamehub-pr-workflow
-description: Standard GameHub pull-request workflow for repository changes. Use when a task should be implemented on a task-specific codex branch with protected-main safety, Docker-only verification, environment-file safeguards, dependency/configuration checks, an English commit, branch push, and a prefilled pull request link.
+description: Standard GameHub PR workflow for repository changes that need a codex branch, Docker-only verification, env-file safeguards, dependency/config checks, an English commit, push, and prefilled PR link.
 ---
 
 # GameHub PR Workflow

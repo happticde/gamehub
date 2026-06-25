@@ -47,7 +47,7 @@ Before starting work, use `view_file` on the relevant file(s):
 
 ## Reusable Workflow Skills
 
-- Use [gamehub-pr-workflow](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/.agents/skills/gamehub-pr-workflow/SKILL.md) for PR-bound repository changes. It centralizes the standard protected-branch setup, Docker-only verification, environment-file safeguards, dependency/configuration checks, English commit/pull request handoff, and prefilled PR link expectations.
+- Use [gamehub-pr-workflow](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/.agents/skills/gamehub-pr-workflow/SKILL.md) for PR-bound changes: protected branch setup, Docker verification, env-file safeguards, dependency/config checks, English commit, push, and prefilled PR link.
 
 ## 🚨 Critical AI Agent Rules 🚨
 
