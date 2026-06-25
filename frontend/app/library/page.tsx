@@ -1,9 +1,9 @@
 import { PagedResult, UnifiedGame } from "@/types/game";
-import GameCard from "@/components/GameCard";
 import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
 import LibraryViewControls from "@/components/LibraryViewControls";
 import { fetchCoreApi } from "@/lib/core-api";
+import { getErrorMessage } from "@/lib/errors";
 
 /**
  * Library page — a React Server Component (RSC).
@@ -113,8 +113,8 @@ export default async function LibraryPage({
         if (tagsRes.ok) tagsList = await tagsRes.json();
         if (devsRes.ok) developersList = await devsRes.json();
         if (pubsRes.ok) publishersList = await pubsRes.json();
-    } catch (e: any) {
-        error = e.message || "An unexpected error occurred while fetching your library.";
+    } catch (caughtError: unknown) {
+        error = getErrorMessage(caughtError, "An unexpected error occurred while fetching your library.");
         console.error("Fetch Library Error:", error);
     }
 

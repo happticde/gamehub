@@ -23,6 +23,9 @@ import { SyncHistoryTable } from "@/components/SyncHistoryTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Clock, Activity, CalendarClock, CheckCircle2, XCircle, Timer } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
+import type { RetroactiveIgnoreResponse } from "@/types/api";
+import type { SyncAuditLog } from "@/types/game";
 
 /** Shape returned by GET /api/library/sync/status */
 interface SyncSchedulerStatus {
@@ -65,7 +68,7 @@ function timeUntil(iso: string | null): string | null {
 }
 
 export function SyncPanel() {
-    const [logs, setLogs] = useState([]);
+    const [logs, setLogs] = useState<SyncAuditLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -82,10 +85,11 @@ export function SyncPanel() {
             if (!res.ok) {
                 setError(`Failed to fetch history (Status ${res.status})`);
             } else {
-                setLogs(await res.json());
+                const syncLogs: SyncAuditLog[] = await res.json();
+                setLogs(syncLogs);
             }
-        } catch (err: any) {
-            setError(err.message || "Unknown error");
+        } catch (caughtError: unknown) {
+            setError(getErrorMessage(caughtError, "Unknown error"));
         } finally {
             setIsLoading(false);
         }
@@ -95,13 +99,14 @@ export function SyncPanel() {
         try {
             const res = await fetch("/api/core/library/sync/status");
             if (res.ok) {
-                setStatus(await res.json());
+                const schedulerStatus: SyncSchedulerStatus = await res.json();
+                setStatus(schedulerStatus);
                 setStatusError(null);
             } else {
                 setStatusError(`Status ${res.status}`);
             }
-        } catch (err: any) {
-            setStatusError(err.message || "Unknown error");
+        } catch (caughtError: unknown) {
+            setStatusError(getErrorMessage(caughtError, "Unknown error"));
         }
     }, []);
 
@@ -251,14 +256,14 @@ export function SyncPanel() {
                         try {
                             const res = await fetch("/api/core/library/retroactive-ignore", { method: "POST" });
                             if (res.ok) {
-                                const data = await res.json();
+                                const data: RetroactiveIgnoreResponse = await res.json();
                                 alert(`Success: Found and hid ${data.newlyIgnoredCount} games.`);
                                 fetchLogs(); // just to refresh UI if needed
                             } else {
                                 alert("Failed to run retroactive ignore script.");
                             }
-                        } catch (e: any) {
-                            alert(e.message);
+                        } catch (caughtError: unknown) {
+                            alert(getErrorMessage(caughtError, "Failed to run the retroactive ignore script."));
                         }
                     }}
                     className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2"
@@ -294,4 +299,3 @@ export function SyncPanel() {
         </div>
     );
 }
-

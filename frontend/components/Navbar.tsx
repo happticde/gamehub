@@ -20,14 +20,17 @@ export default function Navbar({ showLogout }: { showLogout: boolean }) {
     const pathname = usePathname();
     const isLoginPage = pathname === "/login";
     const { theme, setTheme } = useTheme();
-    const [mobileOpen, setMobileOpen] = useState(false);
+    const [mobileMenu, setMobileMenu] = useState({ pathname, isOpen: false });
     const [desktopThemeOpen, setDesktopThemeOpen] = useState(false);
     const [mobileThemeOpen, setMobileThemeOpen] = useState(false);
 
-    // Auto-close mobile menu on route change
-    useEffect(() => {
-        setMobileOpen(false);
-    }, [pathname]);
+    // React immediately restarts this render, keeping route-derived state out of an Effect.
+    if (mobileMenu.pathname !== pathname) {
+        setMobileMenu({ pathname, isOpen: false });
+    }
+
+    const mobileOpen = mobileMenu.pathname === pathname && mobileMenu.isOpen;
+    const setMobileOpen = (isOpen: boolean) => setMobileMenu({ pathname, isOpen });
 
     // Prevent body scrolling when mobile menu is open
     useEffect(() => {

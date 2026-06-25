@@ -1,14 +1,4 @@
-import { Platform } from "@/types/game";
-
-interface SyncAuditLog {
-    id: number;
-    timestamp: string;
-    platform: Platform;
-    status: "Success" | "Failed" | "Skipped" | "In_Progress";
-    itemsProcessed: number;
-    newGamesCreated: number;
-    errorMessage: string | null;
-}
+import type { SyncAuditLog } from "@/types/game";
 
 interface SyncHistoryTableProps {
     logs: SyncAuditLog[];

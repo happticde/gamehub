@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { UnifiedGame, PlayStatus } from "@/types/game";
+import { UnifiedGame } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import { Star } from "lucide-react";
 

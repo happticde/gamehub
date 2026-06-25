@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useRef, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Maximize2 } from "lucide-react";
 import { ImageLightbox } from "./ImageLightbox";
 
 interface ScreenshotCarouselProps {

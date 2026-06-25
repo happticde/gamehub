@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react";
 import { UnifiedGame } from "@/types/game";
 import { LayoutGrid, Grid3X3, List } from "lucide-react";
 import GameCard from "./GameCard";
@@ -9,28 +9,60 @@ import GameListRow from "./GameListRow";
 
 type ViewMode = "grid" | "compact" | "list";
 
+const DEFAULT_VIEW_MODE: ViewMode = "grid";
+const VIEW_MODE_STORAGE_KEY = "libraryView";
+const VIEW_MODE_CHANGE_EVENT = "gamehub:library-view-change";
+const VIEW_MODES: readonly ViewMode[] = ["grid", "compact", "list"];
+
+function isViewMode(value: string | null): value is ViewMode {
+    return value !== null && VIEW_MODES.some((mode) => mode === value);
+}
+
+function getStoredViewMode(): ViewMode {
+    const savedView = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    return isViewMode(savedView) ? savedView : DEFAULT_VIEW_MODE;
+}
+
+function subscribeToViewMode(onStoreChange: () => void): () => void {
+    const handleStorage = (event: StorageEvent) => {
+        if (event.key === VIEW_MODE_STORAGE_KEY) onStoreChange();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(VIEW_MODE_CHANGE_EVENT, onStoreChange);
+
+    return () => {
+        window.removeEventListener("storage", handleStorage);
+        window.removeEventListener(VIEW_MODE_CHANGE_EVENT, onStoreChange);
+    };
+}
+
+const subscribeToHydration = () => () => {};
+const getHydratedSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
+const getServerViewModeSnapshot = () => DEFAULT_VIEW_MODE;
+
 interface LibraryViewControlsProps {
     games: UnifiedGame[];
     filters: React.ReactNode;
 }
 
 export default function LibraryViewControls({ games, filters }: LibraryViewControlsProps) {
-    const [viewMode, setViewMode] = useState<ViewMode>("grid");
-    const [mounted, setMounted] = useState(false);
+    const viewMode = useSyncExternalStore(
+        subscribeToViewMode,
+        getStoredViewMode,
+        getServerViewModeSnapshot
+    );
+    const mounted = useSyncExternalStore(
+        subscribeToHydration,
+        getHydratedSnapshot,
+        getServerHydrationSnapshot
+    );
 
-    // Read initial state from localStorage on mount
-    useEffect(() => {
-        const savedView = localStorage.getItem("libraryView") as ViewMode | null;
-        if (savedView && ["grid", "compact", "list"].includes(savedView)) {
-            setViewMode(savedView);
-        }
-        setMounted(true);
-    }, []);
-
-    // Save state to localStorage on change
+    // The custom event updates this tab; the storage event keeps other tabs synchronized.
     const updateViewMode = (mode: ViewMode) => {
-        setViewMode(mode);
-        localStorage.setItem("libraryView", mode);
+        localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+        window.dispatchEvent(new Event(VIEW_MODE_CHANGE_EVENT));
     };
 
     return (

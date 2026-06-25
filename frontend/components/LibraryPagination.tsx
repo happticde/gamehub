@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTransition, useState, useEffect } from "react";
+import { useTransition } from "react";
 import {
     Pagination,
     PaginationContent,
@@ -24,12 +24,6 @@ export default function LibraryPagination({ currentPage, totalPages, className =
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
-    const [pageInputValue, setPageInputValue] = useState(currentPage.toString());
-
-    // Update local input if external page changes
-    useEffect(() => {
-        setPageInputValue(currentPage.toString());
-    }, [currentPage]);
 
     // Helper to generate the new URL string for a specific page
     const createPageURL = (pageNumber: number) => {
@@ -50,18 +44,6 @@ export default function LibraryPagination({ currentPage, totalPages, className =
         startTransition(() => {
             router.push(createPageURL(pageNumber));
         });
-    };
-
-    const handleInputSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const page = parseInt(pageInputValue, 10);
-        if (!isNaN(page) && page >= 1 && page <= totalPages && page !== currentPage) {
-            startTransition(() => {
-                router.push(createPageURL(page));
-            });
-        } else {
-            setPageInputValue(currentPage.toString()); // reset on invalid
-        }
     };
 
     if (totalPages <= 1) return null;
@@ -129,9 +111,9 @@ export default function LibraryPagination({ currentPage, totalPages, className =
                         <div className="flex items-center gap-2">
                             <span className="text-sm text-muted-foreground whitespace-nowrap">Page</span>
                             <select
-                                value={pageInputValue}
+                                key={currentPage}
+                                defaultValue={currentPage.toString()}
                                 onChange={(e) => {
-                                    setPageInputValue(e.target.value);
                                     const page = parseInt(e.target.value, 10);
                                     if (!isNaN(page) && page >= 1 && page <= totalPages && page !== currentPage) {
                                         startTransition(() => {

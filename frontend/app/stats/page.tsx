@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -25,7 +26,8 @@ import {
     TrendingUp,
     PlayCircle,
 } from "lucide-react";
-import type { LibraryStats, PlayStatus } from "@/types/game";
+import type { LibraryStats } from "@/types/game";
+import { getErrorMessage } from "@/lib/errors";
 
 /** Maps a platform name to a distinct hex color for chart bars */
 function getPlatformHex(platform: string): string {
@@ -51,9 +53,10 @@ export default function StatsPage() {
                     setError(`Failed to load stats (Status ${res.status})`);
                     return;
                 }
-                setStats(await res.json());
-            } catch (err: any) {
-                setError(err.message || "Failed to fetch stats");
+                const libraryStats: LibraryStats = await res.json();
+                setStats(libraryStats);
+            } catch (caughtError: unknown) {
+                setError(getErrorMessage(caughtError, "Failed to fetch stats"));
             } finally {
                 setIsLoading(false);
             }
@@ -209,7 +212,7 @@ export default function StatsPage() {
                             {!stats.playStatusCounts || stats.playStatusCounts.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">No play status data yet.</p>
                             ) : (
-                                stats.playStatusCounts.map((p, i) => (
+                                stats.playStatusCounts.map((p) => (
                                     <div key={p.status} className="space-y-1">
                                         <div className="flex items-center justify-between text-sm">
                                             <span className="font-medium">{p.status}</span>
@@ -291,10 +294,13 @@ export default function StatsPage() {
 
                                             {/* Cover */}
                                             {game.coverUrl ? (
-                                                <img
+                                                <Image
                                                     src={game.coverUrl}
-                                                    alt={game.title}
+                                                    alt={`${game.title} cover art`}
+                                                    width={36}
+                                                    height={48}
                                                     className="h-12 w-9 rounded object-cover flex-shrink-0"
+                                                    unoptimized
                                                 />
                                             ) : (
                                                 <div className="h-12 w-9 rounded bg-muted flex-shrink-0 flex items-center justify-center">
@@ -349,10 +355,13 @@ export default function StatsPage() {
                                         >
                                             {/* Cover */}
                                             {game.coverUrl ? (
-                                                <img
+                                                <Image
                                                     src={game.coverUrl}
-                                                    alt={game.title}
+                                                    alt={`${game.title} cover art`}
+                                                    width={36}
+                                                    height={48}
                                                     className="h-12 w-9 rounded object-cover flex-shrink-0"
+                                                    unoptimized
                                                 />
                                             ) : (
                                                 <div className="h-12 w-9 rounded bg-muted flex-shrink-0 flex items-center justify-center">
