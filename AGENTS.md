@@ -45,6 +45,10 @@ Before starting work, use `view_file` on the relevant file(s):
 - `frontend/`: Next.js application.
 - `docs/`: [ROADMAP.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/ROADMAP.md), [DEBUGGING.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/DEBUGGING.md), [adr/](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/adr/)
 
+## Reusable Workflow Skills
+
+- Use [gamehub-pr-workflow](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/.agents/skills/gamehub-pr-workflow/SKILL.md) for PR-bound changes: protected branch setup, Docker verification, env-file safeguards, dependency/config checks, English commit, push, and prefilled PR link.
+
 ## 🚨 Critical AI Agent Rules 🚨
 
 1. **NEVER quietly ignore failed code edits.** If a code edit tool returns an error, you MUST halt, re-read the file, and apply the edit successfully.
