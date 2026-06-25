@@ -1,0 +1,4 @@
+interface:
+  display_name: "GameHub PR Workflow"
+  short_description: "Standard branch, verify, commit, PR flow"
+  default_prompt: "Use $gamehub-pr-workflow for this GameHub repository task."
