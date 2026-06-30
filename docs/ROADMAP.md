@@ -153,6 +153,26 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Boundary**: This work is not a missing part of the Steam/GOG/PSN credential-management feature
   and does not block that feature from being considered complete.
 
+### 17. Guided Platform Account Connect for GOG & PSN
+- **Goal**: Replace the current manual DevTools cookie-copy workflow with a guided "Connect GOG" and
+  "Connect PlayStation" experience that feels like account linking from the frontend.
+- **Preferred approach**: Use a local, user-visible browser helper/assistant for self-hosted
+  deployments. The user signs in directly with GOG or PlayStation, including MFA/captcha when
+  required; the helper extracts only the required session cookie/token from that controlled browser
+  context and hands it to GameHub for encrypted tenant-scoped vault storage.
+- **Non-goals**: Do not collect GOG/PSN usernames and passwords in a GameHub form, do not build a
+  server-side hidden/headless password login flow, and do not claim official OAuth support unless
+  GOG or Sony provide an appropriate public library-access authorization flow.
+- **Security boundary**: Provider session material must be treated like existing platform
+  credentials: plaintext may flow only through the minimal capture/upsert path, must never be
+  returned by status APIs, and must remain tenant-scoped in the Ingest credential vault. This must
+  preserve the future multi-tenant isolation rules from ADR-008 and the credential-vault boundaries
+  introduced for item #8.
+- **Implementation notes**: Start with a vertical GOG proof of concept because the existing ingest
+  path needs the `gog-al` cookie plus username. PSN should follow after the helper contract is stable
+  because its store cookies are more brittle and may require several cookie names. The UI should keep
+  the manual credential entry as a fallback and provide clear "session expired, reconnect" handling.
+
 ---
 
 ## 🌐 Tier 5 — Multi-User Productization & SaaS
@@ -161,7 +181,7 @@ These items are optional follow-up work after the completed guarded self-hosted 
 item #8. They are not prerequisites for operator-provisioned deployments and must not weaken the
 existing explicit tenant-mapping, isolation, lifecycle, or default-off activation boundaries.
 
-### 17. Controlled Registration & Invitations
+### 18. Controlled Registration & Invitations
 - **Goal**: Replace direct operator API calls with an auditable onboarding workflow when a
   deployment intentionally permits additional users.
 - **Scope**: Invitation issuance, expiry, cancellation, single-use acceptance, verified-provider
@@ -172,7 +192,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Non-goal**: Guarded multi-user deployments remain closed and operator-provisioned by default;
   this item does not imply anonymous public signup.
 
-### 18. JIT Provisioning & External Identity Lifecycle — Personal-Tenant JIT Implemented
+### 19. JIT Provisioning & External Identity Lifecycle — Personal-Tenant JIT Implemented
 - **Implemented (2026-06-24)**: ADR-013 adds independent default-off
   `Disabled`/`PersonalTenantJit` modes. Active guarded mode can atomically create one server-owned,
   sync-disabled personal tenant, `ExternalOidc` owner, exact issuer/subject mapping, refresh
@@ -191,7 +211,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Dependency status**: [ADR-013](adr/013-personal-tenant-oidc-jit-provisioning.md) defines the
   implemented trust boundary. OIDC configuration alone still cannot activate provisioning.
 
-### 19. SaaS Operations, Administration & Release Gate
+### 20. SaaS Operations, Administration & Release Gate
 - **Goal**: Define and satisfy the additional security, reliability, privacy, and operational bar
   required before claiming general SaaS readiness.
 - **Scope**: Tenant administration and roles, support-access controls, global incident/session
@@ -217,6 +237,6 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
-| **Future platform integration** | #16 Epic authentication and stored retrieval |
-| **Controlled onboarding** | #17 Registration/invitations → #18 provider lifecycle follow-ups (personal JIT implemented) |
-| **General SaaS readiness** | #19 operations, administration, security review, and release gate |
+| **Future platform integration** | #16 Epic authentication and stored retrieval → #17 guided GOG/PSN account connect |
+| **Controlled onboarding** | #18 Registration/invitations → #19 provider lifecycle follow-ups (personal JIT implemented) |
+| **General SaaS readiness** | #20 operations, administration, security review, and release gate |
