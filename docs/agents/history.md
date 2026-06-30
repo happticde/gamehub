@@ -1,5 +1,28 @@
 # Session History
 
+## Current Session Summary (2026-06-30)
+
+### What Changed
+
+**Guided GOG/PSN Account Connect Roadmap:**
+- Captured the product intent to replace manual DevTools cookie extraction with a guided
+  "Connect GOG" and "Connect PlayStation" experience.
+- Added Roadmap item #17 for a local, user-visible browser helper/assistant that lets the user sign
+  in directly with GOG or PlayStation, handles provider MFA/captcha in the provider UI, extracts only
+  the required session cookie/token from that controlled browser context, and stores it through the
+  existing encrypted tenant-scoped credential vault.
+- Documented the boundary that GameHub should not ask for GOG/PSN passwords in its own forms, should
+  not build a hidden server-side headless password-login flow, and should not claim official OAuth
+  support unless GOG or Sony provide an appropriate public library-access authorization flow.
+- Preserved manual credential entry as the fallback path, with GOG as the recommended first vertical
+  proof of concept and PSN as a follow-up once the helper contract is stable.
+
+### Known State / Pending
+
+- No implementation was added in this session.
+- Future implementation must preserve existing credential-vault secrecy, tenant isolation, and
+  status-API no-plaintext boundaries.
+
 ## Current Session Summary (2026-06-24)
 
 ### What Changed
