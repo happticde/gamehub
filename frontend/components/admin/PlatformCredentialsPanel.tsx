@@ -347,6 +347,15 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         }
     };
 
+    const launchProtocolHelper = () => {
+        const url = new URL("gamehub-helper://connect/gog");
+        url.searchParams.set("origin", window.location.origin);
+        setHandoffError(null);
+        setHelperError(null);
+        setHandoffMessage("If the local protocol handler is installed, your browser will ask to open GameHub Helper. Paste the handoff URL from the helper Terminal window below.");
+        window.location.href = url.toString();
+    };
+
     const pollHandoffUrl = async () => {
         const parsedUrl = parseGogHandoffUrl(handoffUrl);
         if (parsedUrl instanceof Error) {
@@ -438,15 +447,34 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 {status?.isConfigured ? "Reconnect GOG" : "Connect GOG"}
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                Run the helper from a host terminal, sign in with GOG in the visible
-                                browser, then paste the local handoff URL here.
+                                After installing the local protocol handler, launch the helper here,
+                                sign in with GOG in the visible browser, then paste the local
+                                handoff URL printed by the helper Terminal window.
                             </p>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect gog --handoff-server --origin {pageOrigin}
+                                gamehub-cli helper install-protocol-handler
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                The handoff URL contains a one-time local nonce. The gog-al cookie is fetched only from 127.0.0.1 and is stored immediately.
+                                The launch URL contains only this Admin page origin, never the gog-al cookie.
                             </p>
+                        </div>
+                        <Button
+                            variant="default"
+                            size="sm"
+                            className="w-full"
+                            disabled={busy || handoffPolling}
+                            onClick={launchProtocolHelper}
+                        >
+                            <PlugZap className="mr-2 h-4 w-4" />
+                            Launch local helper
+                        </Button>
+                        <div>
+                            <p className="text-xs leading-5 text-muted-foreground">
+                                Terminal fallback if the protocol handler is not installed:
+                            </p>
+                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+                                cd services/cli && go run . connect gog --handoff-server --origin {pageOrigin}
+                            </code>
                         </div>
                         <Input
                             aria-label="GOG local helper handoff URL"
