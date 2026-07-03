@@ -8,8 +8,33 @@ Ingest fetcher.
 
 ## Implemented Local Helper
 
-The local helper is the existing Go CLI. The portable recommended flow is the loopback handoff
-mode:
+The local helper is the existing Go CLI. The recommended installed flow is:
+
+```bash
+cd services/cli
+go build -o gamehub-cli .
+./gamehub-cli helper install-protocol-handler
+```
+
+On macOS this installs a small local `GameHub Helper.app` in `~/Applications` and registers the
+`gamehub-helper://` URI scheme with Launch Services. After installation, the Admin UI can launch:
+
+```text
+gamehub-helper://connect/gog?origin=http%3A%2F%2Flocalhost%3A3005
+```
+
+The handler opens Terminal and runs the same secure helper path:
+
+```bash
+gamehub-cli helper launch 'gamehub-helper://connect/gog?origin=http%3A%2F%2Flocalhost%3A3005'
+```
+
+`helper launch` validates the custom URI, rejects secret-looking query parameters, starts
+`connect gog --handoff-server`, and prints the local one-shot handoff URL in Terminal. The user still
+signs in directly with GOG in a visible browser. The Admin UI then polls the pasted local handoff URL
+and stores the captured credential through the existing Core/Ingest vault upsert.
+
+The portable manual launch fallback remains the loopback handoff mode:
 
 ```bash
 cd services/cli
@@ -69,6 +94,73 @@ The helper must run on the user's host machine, not inside the devcontainer, bec
 open a visible local browser. It requires a locally installed Chrome or Chromium browser discoverable
 by `chromedp`.
 
+## Protocol Handler Contract
+
+The only supported custom URI for this slice is:
+
+```text
+gamehub-helper://connect/gog?origin={url-encoded-admin-origin}
+```
+
+Allowed query parameters:
+
+- `origin`: optional, non-secret browser origin such as `http://localhost:3005`. When present, it is
+  passed to the loopback helper as the exact CORS origin allowed to read the one-time result.
+
+Rejected query parameters include `cookie`, `gog-al`, `gogAl`, `gogAlCookie`, `password`, and
+`token`. Unknown parameters are rejected too. This keeps the protocol surface deliberately narrow
+and prevents future UI code from accidentally moving provider session material into browser history,
+OS URL-handler logs, or shell history.
+
+The handler target is local launch only. It does not carry the handoff result, does not carry the
+random loopback nonce, and does not store credential material. The actual `gog-al` transfer remains
+the existing loopback handoff or JSON fallback.
+
+## Installer and Registration
+
+### macOS
+
+Build the CLI on the host and install the handler:
+
+```bash
+cd services/cli
+go build -o gamehub-cli .
+./gamehub-cli helper install-protocol-handler
+```
+
+Optional installer flags:
+
+- `--cli-path /absolute/path/to/gamehub-cli`: register a specific durable binary path. This is
+  required if the command is run from a temporary `go run` binary.
+- `--app-path "$HOME/Applications/GameHub Helper.app"`: choose a different app-bundle path.
+
+The installer creates an AppleScript app bundle and registers it with Launch Services. The app
+handles `gamehub-helper://` links by opening Terminal and running:
+
+```bash
+gamehub-cli helper launch '<custom-uri>'
+```
+
+To reset or uninstall the handler app:
+
+```bash
+./gamehub-cli helper uninstall-protocol-handler
+```
+
+If a browser or macOS caches the old handler, running `install-protocol-handler` again refreshes the
+Launch Services registration.
+
+### OS Support Matrix
+
+| OS | Status | Notes |
+|----|--------|-------|
+| macOS | Implemented MVP | Installs `~/Applications/GameHub Helper.app` and registers `gamehub-helper://` through Launch Services. |
+| Windows | Follow-up | Needs a small installer or registry registration under `HKCU\Software\Classes\gamehub-helper`. |
+| Linux | Follow-up | Needs a `.desktop` file, MIME/scheme registration through `xdg-mime`, and desktop-environment verification. |
+
+All OSes keep the same custom URI contract and must launch the same visible-browser, loopback-handoff
+helper flow.
+
 ## Loopback Handoff Protocol
 
 Loopback handoff mode starts an HTTP server bound only to `127.0.0.1` on a random port. It creates a
@@ -112,18 +204,16 @@ the TTL expires, or when the helper exits.
 
 ## Browser-to-GameHub Boundary
 
-Future Admin UI or installer work may introduce this custom URI:
+The Admin UI may launch this custom URI:
 
 ```text
-gamehub-helper://connect/gog
+gamehub-helper://connect/gog?origin=http%3A%2F%2Flocalhost%3A3005
 ```
 
-The repository does not install or register that URI scheme. The current Admin UI therefore does not
-claim that `gamehub-helper://connect/gog` is available. Until a platform-specific installer exists,
-the documented local command above is the portable launch path. Any future URI handler must invoke
-the same helper behavior: open a user-visible browser context for `gog.com`; simply opening GOG from
-the GameHub web page is not enough because browser same-origin rules prevent GameHub from reading
-`gog.com` cookies.
+The Admin UI does not claim the handler is installed. It offers the launch action and keeps the
+handoff URL paste field, JSON paste, and manual credential fields as fallbacks. The custom URI only
+starts the host helper; simply opening GOG from the GameHub web page is not enough because browser
+same-origin rules prevent GameHub from reading `gog.com` cookies.
 
 After loopback capture or JSON fallback, the Admin credential UI immediately converts the helper
 result into the existing authenticated Core credential upsert:
@@ -177,6 +267,10 @@ Accepted aliases during the POC:
 
 - GameHub must not ask for the user's GOG password.
 - GameHub must not run a hidden server-side headless GOG password login.
+- The custom URI must contain only non-secret launch metadata. In this slice, `origin` is the only
+  accepted query parameter.
+- The custom URI must never contain `gog-al`, another provider cookie, a password, a token, or the
+  loopback result payload.
 - The helper must not put the `gog-al` cookie in `localStorage`, query strings, logs, or status APIs.
 - In JSON fallback mode, the Go helper writes progress messages to stderr and writes the cookie only
   in the final stdout JSON payload intended for immediate copy/paste into the Admin UI.
@@ -191,11 +285,10 @@ Accepted aliases during the POC:
 
 ## Known Limitations
 
-- The local helper still has to be started from a host terminal. Portable
-  `gamehub-helper://connect/gog` registration is not implemented because it needs OS-specific
-  installer work.
-- The Admin UI cannot discover the random loopback port automatically without a registered helper or
-  another local discovery mechanism, so the user pastes the handoff URL printed by the helper.
+- Protocol-handler installation is implemented only for macOS in this MVP. Windows and Linux need
+  their own registration installers.
+- The protocol handler starts the helper but does not yet return the random loopback URL directly to
+  the Admin UI. The user still pastes the handoff URL printed by the helper Terminal window.
 - Browser CORS allows only the exact configured frontend origins. If GameHub runs at a different
   local origin, pass that origin with `--origin`.
 - If the UI reads the one-time result but the Core upsert fails, the UI keeps the captured username
