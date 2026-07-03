@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -41,6 +41,13 @@ type GogConnectResult = {
     cookie: string;
     expired: boolean;
 };
+type GogHelperLaunchStatus = {
+    status: "starting" | "handoff_ready" | "failed";
+    handoffUrl?: string;
+    message?: string;
+};
+
+const gogHelperLaunchStatusUrl = "http://127.0.0.1:53935/connect/gog/launch-status";
 
 /**
  * Tenant credential management through Core's authenticated BFF route. Secret values live only
@@ -307,6 +314,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     const [helperPayload, setHelperPayload] = useState("");
     const [handoffUrl, setHandoffUrl] = useState("");
     const [handoffPolling, setHandoffPolling] = useState(false);
+    const [helperLaunching, setHelperLaunching] = useState(false);
     const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
     const [handoffError, setHandoffError] = useState<string | null>(null);
     const [helperError, setHelperError] = useState<string | null>(null);
@@ -347,17 +355,42 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         }
     };
 
-    const launchProtocolHelper = () => {
+    const launchProtocolHelper = async () => {
+        const launchId = newHelperLaunchId();
         const url = new URL("gamehub-helper://connect/gog");
         url.searchParams.set("origin", window.location.origin);
+        url.searchParams.set("launchId", launchId);
+
+        const attempt = handoffAttemptRef.current + 1;
+        handoffAttemptRef.current = attempt;
         setHandoffError(null);
         setHelperError(null);
-        setHandoffMessage("If the local protocol handler is installed, your browser will ask to open GameHub Helper. Paste the handoff URL from the helper Terminal window below.");
+        setHandoffUrl("");
+        setHelperLaunching(true);
+        setHandoffMessage("Waiting for the local helper to start. If your browser asks, allow it to open GameHub Helper.");
         window.location.href = url.toString();
+
+        try {
+            const launchedHandoffUrl = await waitForHelperLaunchStatus(launchId, attempt, handoffAttemptRef);
+            if (handoffAttemptRef.current !== attempt) return;
+
+            setHandoffUrl(launchedHandoffUrl);
+            setHandoffMessage("Local helper started. Waiting for the visible GOG sign-in…");
+            await pollHandoffUrl(launchedHandoffUrl);
+        } catch (caught) {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffError(localLaunchErrorMessage(caught));
+                setHandoffMessage(null);
+            }
+        } finally {
+            if (handoffAttemptRef.current === attempt) {
+                setHelperLaunching(false);
+            }
+        }
     };
 
-    const pollHandoffUrl = async () => {
-        const parsedUrl = parseGogHandoffUrl(handoffUrl);
+    async function pollHandoffUrl(candidateUrl = handoffUrl) {
+        const parsedUrl = parseGogHandoffUrl(candidateUrl);
         if (parsedUrl instanceof Error) {
             setHandoffError(parsedUrl.message);
             return;
@@ -366,6 +399,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         const attempt = handoffAttemptRef.current + 1;
         handoffAttemptRef.current = attempt;
         setHandoffPolling(true);
+        setHelperLaunching(false);
         setHandoffError(null);
         setHelperError(null);
         setHandoffMessage("Waiting for the local helper to capture your GOG session…");
@@ -422,11 +456,12 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                 setHandoffPolling(false);
             }
         }
-    };
+    }
 
     const stopHandoffPolling = () => {
         handoffAttemptRef.current += 1;
         setHandoffPolling(false);
+        setHelperLaunching(false);
         setHandoffMessage(null);
     };
 
@@ -448,29 +483,33 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
                                 After installing the local protocol handler, launch the helper here,
-                                sign in with GOG in the visible browser, then paste the local
-                                handoff URL printed by the helper Terminal window.
+                                sign in with GOG in the visible browser, and GameHub will import the
+                                local handoff automatically.
                             </p>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
                                 gamehub-cli helper install-protocol-handler
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                The launch URL contains only this Admin page origin, never the gog-al cookie.
+                                The launch URL contains only this Admin page origin and a one-time launch ID, never the gog-al cookie.
                             </p>
                         </div>
                         <Button
                             variant="default"
                             size="sm"
                             className="w-full"
-                            disabled={busy || handoffPolling}
-                            onClick={launchProtocolHelper}
+                            disabled={busy || handoffPolling || helperLaunching}
+                            onClick={() => void launchProtocolHelper()}
                         >
-                            <PlugZap className="mr-2 h-4 w-4" />
-                            Launch local helper
+                            {helperLaunching ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <PlugZap className="mr-2 h-4 w-4" />
+                            )}
+                            {helperLaunching ? "Starting helper…" : "Connect GOG"}
                         </Button>
                         <div>
                             <p className="text-xs leading-5 text-muted-foreground">
-                                Terminal fallback if the protocol handler is not installed:
+                                Fallback if the protocol handler is not installed:
                             </p>
                             <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
                                 cd services/cli && go run . connect gog --handoff-server --origin {pageOrigin}
@@ -485,7 +524,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 setHandoffUrl(event.target.value);
                                 setHandoffError(null);
                             }}
-                            disabled={handoffPolling}
+                            disabled={handoffPolling || helperLaunching}
                         />
                         {(handoffMessage || handoffError) && (
                             <p
@@ -502,7 +541,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             variant="outline"
                             size="sm"
                             className="w-full"
-                            disabled={busy || handoffPolling || !handoffUrl.trim()}
+                            disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
                             onClick={() => void pollHandoffUrl()}
                         >
                             {handoffPolling ? (
@@ -512,7 +551,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             )}
                             {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
                         </Button>
-                        {handoffPolling && (
+                        {(handoffPolling || helperLaunching) && (
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -710,8 +749,60 @@ async function readError(response: Response): Promise<string> {
     }
 }
 
+async function waitForHelperLaunchStatus(
+    launchId: string,
+    attempt: number,
+    handoffAttemptRef: RefObject<number>,
+): Promise<string> {
+    const deadline = Date.now() + 45 * 1000;
+    const statusUrl = new URL(gogHelperLaunchStatusUrl);
+    statusUrl.searchParams.set("launchId", launchId);
+    statusUrl.searchParams.set("origin", window.location.origin);
+
+    while (Date.now() < deadline && handoffAttemptRef.current === attempt) {
+        let response: Response;
+        try {
+            response = await fetch(statusUrl, { cache: "no-store" });
+        } catch {
+            await delay(1000);
+            continue;
+        }
+
+        if (response.status === 202) {
+            await delay(1000);
+            continue;
+        }
+        if (!response.ok) {
+            throw new Error(`The local helper launch status returned ${response.status}.`);
+        }
+
+        const parsed = parseGogHelperLaunchStatus(await response.json());
+        if (parsed instanceof Error) {
+            throw parsed;
+        }
+        if (parsed.status === "failed") {
+            throw new Error(parsed.message ?? "The local helper could not start.");
+        }
+        if (parsed.status === "handoff_ready" && parsed.handoffUrl) {
+            return parsed.handoffUrl;
+        }
+
+        await delay(1000);
+    }
+
+    throw new Error("Timed out waiting for the local helper to start.");
+}
+
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "The credential request failed.";
+}
+
+function localLaunchErrorMessage(error: unknown): string {
+    const message = errorMessage(error);
+    if (message.toLowerCase().includes("timed out")) {
+        return "GameHub could not reach the local helper. Install or reinstall the protocol handler, allow the browser prompt to open GameHub Helper, or use the fallback command below.";
+    }
+    return message;
 }
 
 function localHandoffErrorMessage(error: unknown): string {
@@ -765,6 +856,23 @@ function parseGogConnectObject(parsed: Record<string, unknown>): GogConnectResul
     return { user, cookie, expired: isExpired };
 }
 
+function parseGogHelperLaunchStatus(parsed: unknown): GogHelperLaunchStatus | Error {
+    if (!isObjectRecord(parsed)) {
+        return new Error("The local helper launch status response was not valid.");
+    }
+
+    const status = readOptionalText(parsed.status);
+    if (status !== "starting" && status !== "handoff_ready" && status !== "failed") {
+        return new Error("The local helper launch status response was not recognized.");
+    }
+
+    return {
+        status,
+        handoffUrl: readOptionalText(parsed.handoffUrl) ?? undefined,
+        message: readOptionalText(parsed.message) ?? undefined,
+    };
+}
+
 function parseGogHandoffUrl(value: string): string | Error {
     const match = value.trim().match(/https?:\/\/\S+/);
     if (!match) {
@@ -792,6 +900,16 @@ function parseGogHandoffUrl(value: string): string | Error {
 
 function delay(milliseconds: number): Promise<void> {
     return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function newHelperLaunchId(): string {
+    if (typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function readCookieValue(value: unknown, name: string): string | null {
