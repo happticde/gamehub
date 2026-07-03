@@ -172,6 +172,10 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   path needs the `gog-al` cookie plus username. PSN should follow after the helper contract is stable
   because its store cookies are more brittle and may require several cookie names. The UI should keep
   the manual credential entry as a fallback and provide clear "session expired, reconnect" handling.
+- **#17A GOG POC**: The first slice keeps the existing Core/Ingest credential vault boundary and
+  prepares a user-visible local-helper handoff for GOG. See
+  [GOG Connect Helper Contract](gog-connect-helper-contract.md) for the one-time helper payload,
+  BFF/Core upsert target, and security invariants.
 
 ---
 

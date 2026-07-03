@@ -16,15 +16,31 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { getPlatformColor } from "@/lib/platform-colors";
 import type {
     Platform,
     PlatformCredentialManagement,
     PlatformCredentialStatus,
 } from "@/types/game";
-import { CheckCircle2, KeyRound, Loader2, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import {
+    CheckCircle2,
+    ExternalLink,
+    KeyRound,
+    Loader2,
+    PlugZap,
+    Plus,
+    RefreshCw,
+    ShieldCheck,
+    Trash2,
+} from "lucide-react";
 
 type CredentialPayload = Record<string, unknown>;
+type GogConnectResult = {
+    user: string;
+    cookie: string;
+    expired: boolean;
+};
 
 /**
  * Tenant credential management through Core's authenticated BFF route. Secret values live only
@@ -288,6 +304,8 @@ function SteamCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
 function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     const [cookie, setCookie] = useState("");
     const [user, setUser] = useState("");
+    const [helperPayload, setHelperPayload] = useState("");
+    const [helperError, setHelperError] = useState<string | null>(null);
 
     const submit = async () => {
         if (await onSave({ cookie, user })) {
@@ -296,17 +314,114 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         }
     };
 
+    const saveHelperPayload = async () => {
+        setHelperError(null);
+
+        const result = parseGogConnectPayload(helperPayload);
+        if (result instanceof Error) {
+            setHelperError(result.message);
+            return;
+        }
+
+        if (result.expired) {
+            setHelperError("The GOG session is already expired. Reconnect GOG and try again.");
+            return;
+        }
+
+        if (await onSave({ cookie: result.cookie, user: result.user })) {
+            setHelperPayload("");
+        }
+    };
+
     return (
         <CredentialCard
             platform="Gog"
-            description="GOG username and gog-al cookie"
+            description="Guided connect flow with manual credential fallback"
             status={status}
             busy={busy}
             onDelete={onDelete}
         >
-            <CredentialInput label="GOG username" value={user} onChange={setUser} />
-            <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
-            <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
+            <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="flex items-start gap-2">
+                    <PlugZap className="mt-0.5 h-4 w-4 text-primary" />
+                    <div className="space-y-2">
+                        <div>
+                            <h4 className="text-sm font-medium text-foreground">
+                                {status?.isConfigured ? "Reconnect GOG" : "Connect GOG"}
+                            </h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                Start the local browser helper, sign in with GOG there, then paste its
+                                one-time capture result here. A normal GOG tab cannot give GameHub the
+                                session cookie automatically.
+                            </p>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => {
+                                window.location.href = "gamehub-helper://connect/gog";
+                            }}
+                        >
+                            <PlugZap className="mr-2 h-4 w-4" />
+                            Launch local GOG helper
+                        </Button>
+                        <Textarea
+                            aria-label="GOG helper result"
+                            className="min-h-24 font-mono text-xs"
+                            placeholder='{"provider":"gog","user":"gog-user","cookies":{"gog-al":"..."}}'
+                            value={helperPayload}
+                            onChange={(event) => {
+                                setHelperPayload(event.target.value);
+                                setHelperError(null);
+                            }}
+                        />
+                        {helperError && (
+                            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                                {helperError}
+                            </p>
+                        )}
+                        <Button
+                            className="w-full"
+                            disabled={busy || !helperPayload.trim()}
+                            onClick={() => void saveHelperPayload()}
+                        >
+                            {busy ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : status?.isConfigured ? (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                            ) : (
+                                <PlugZap className="mr-2 h-4 w-4" />
+                            )}
+                            {busy
+                                ? "Saving…"
+                                : status?.isConfigured
+                                    ? "Store refreshed GOG session"
+                                    : "Store GOG session"}
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-3 border-t pt-4">
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">Manual fallback</p>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                            window.open("https://www.gog.com/account", "_blank", "noopener,noreferrer");
+                        }}
+                    >
+                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                        Open GOG
+                    </Button>
+                </div>
+                <CredentialInput label="GOG username" value={user} onChange={setUser} />
+                <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
+                <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
+            </div>
         </CredentialCard>
     );
 }
@@ -424,6 +539,58 @@ async function readError(response: Response): Promise<string> {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "The credential request failed.";
+}
+
+function parseGogConnectPayload(value: string): GogConnectResult | Error {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(value);
+    } catch {
+        return new Error("Paste the JSON result returned by the local GOG helper.");
+    }
+
+    if (!isObjectRecord(parsed)) {
+        return new Error("The GOG helper result must be a JSON object.");
+    }
+
+    const provider = readOptionalText(parsed.provider ?? parsed.platform);
+    if (provider && provider.toLowerCase() !== "gog") {
+        return new Error("This helper result is not for GOG.");
+    }
+
+    const status = readOptionalText(parsed.status ?? parsed.error)?.toLowerCase();
+    const user = readOptionalText(parsed.user ?? parsed.username);
+    const cookie = readOptionalText(
+        parsed.cookie ?? parsed.gogAl ?? parsed.gogAlCookie ?? parsed["gog-al"],
+    )
+        ?? readCookieValue(parsed.cookies, "gog-al");
+
+    if (!user) {
+        return new Error("The GOG helper result is missing the user field.");
+    }
+    if (!cookie) {
+        return new Error("The GOG helper result is missing the gog-al cookie.");
+    }
+
+    const expiresAt = readOptionalText(parsed.expiresAtUtc ?? parsed.expiresAt);
+    const isExpired = status === "session_expired"
+        || status === "expired"
+        || (expiresAt ? Date.parse(expiresAt) <= Date.now() : false);
+
+    return { user, cookie, expired: isExpired };
+}
+
+function readCookieValue(value: unknown, name: string): string | null {
+    if (!isObjectRecord(value)) return null;
+    return readOptionalText(value[name]);
+}
+
+function readOptionalText(value: unknown): string | null {
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function platformLabel(platform: Platform): string {
