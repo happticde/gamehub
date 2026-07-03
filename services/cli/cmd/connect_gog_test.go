@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -44,5 +47,74 @@ func TestNewGogConnectPayload_WithSessionCookie_OmitsExpiry(t *testing.T) {
 
 	if payload.ExpiresAtUTC != "" {
 		t.Fatalf("ExpiresAtUTC = %q, want empty for a session cookie", payload.ExpiresAtUTC)
+	}
+}
+
+func TestGogHandoffHandler_PendingResult_RequiresAllowedOrigin(t *testing.T) {
+	state := newGogHandoffState()
+	handler := state.handler("nonce", "http://localhost:3005")
+
+	disallowedRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
+	disallowedRequest.Header.Set("Origin", "http://malicious.test")
+	disallowedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(disallowedResponse, disallowedRequest)
+
+	if disallowedResponse.Code != http.StatusForbidden {
+		t.Fatalf("disallowed origin status = %d, want %d", disallowedResponse.Code, http.StatusForbidden)
+	}
+
+	allowedRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
+	allowedRequest.Header.Set("Origin", "http://localhost:3005")
+	allowedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(allowedResponse, allowedRequest)
+
+	if allowedResponse.Code != http.StatusAccepted {
+		t.Fatalf("pending handoff status = %d, want %d", allowedResponse.Code, http.StatusAccepted)
+	}
+	if allowedResponse.Header().Get("Access-Control-Allow-Origin") != "http://localhost:3005" {
+		t.Fatalf("allowed origin CORS header was not set")
+	}
+}
+
+func TestGogHandoffHandler_CompletedResult_IsAvailableOnce(t *testing.T) {
+	state := newGogHandoffState()
+	state.complete(newGogConnectPayload(
+		"gog-user",
+		"secret-cookie",
+		float64(time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC).Unix()),
+		time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC),
+	))
+	handler := state.handler("nonce", "http://localhost:3005")
+
+	firstRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
+	firstRequest.Header.Set("Origin", "http://localhost:3005")
+	firstResponse := httptest.NewRecorder()
+	handler.ServeHTTP(firstResponse, firstRequest)
+
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first handoff status = %d, want %d", firstResponse.Code, http.StatusOK)
+	}
+
+	var payload gogConnectPayload
+	if err := json.Unmarshal(firstResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode first handoff payload: %v", err)
+	}
+	if payload.Cookies["gog-al"] != "secret-cookie" {
+		t.Fatalf("handoff cookie was not returned in the one-time payload")
+	}
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := state.waitConsumed(waitCtx); err != nil {
+		t.Fatalf("handoff state was not marked consumed: %v", err)
+	}
+
+	secondRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
+	secondRequest.Header.Set("Origin", "http://localhost:3005")
+	secondResponse := httptest.NewRecorder()
+	handler.ServeHTTP(secondResponse, secondRequest)
+
+	if secondResponse.Code != http.StatusGone {
+		t.Fatalf("second handoff status = %d, want %d", secondResponse.Code, http.StatusGone)
 	}
 }
