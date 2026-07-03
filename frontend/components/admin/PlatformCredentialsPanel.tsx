@@ -400,7 +400,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             throw new Error("Timed out waiting for the local helper result.");
         } catch (caught) {
             if (handoffAttemptRef.current === attempt) {
-                setHandoffError(errorMessage(caught));
+                setHandoffError(localHandoffErrorMessage(caught));
                 setHandoffMessage(null);
             }
         } finally {
@@ -437,7 +437,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 browser, then paste the local handoff URL here.
                             </p>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect gog --handoff-server --origin http://localhost:3005
+                                cd services/cli && go run . connect gog --handoff-server
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
                                 The handoff URL contains a one-time local nonce. The gog-al cookie is fetched only from 127.0.0.1 and is stored immediately.
@@ -679,6 +679,14 @@ async function readError(response: Response): Promise<string> {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "The credential request failed.";
+}
+
+function localHandoffErrorMessage(error: unknown): string {
+    const message = errorMessage(error);
+    if (message.toLowerCase() === "failed to fetch") {
+        return "The browser could not read the local helper. Make sure the helper is still running, the handoff URL has not expired, and the helper --origin matches this Admin page origin.";
+    }
+    return message;
 }
 
 function parseGogConnectPayload(value: string): GogConnectResult | Error {

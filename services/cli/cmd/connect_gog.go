@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -84,7 +85,12 @@ func runConnectGog(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("handoff result ttl must be greater than zero")
 		}
 
-		handoffURL, state, shutdown, err := startGogHandoffServer(strings.TrimSpace(gogHandoffOrigin))
+		allowedOrigins, err := parseGogHandoffOrigins(gogHandoffOrigin)
+		if err != nil {
+			return err
+		}
+
+		handoffURL, state, shutdown, err := startGogHandoffServer(allowedOrigins)
 		if err != nil {
 			return err
 		}
@@ -283,12 +289,12 @@ func (state *gogHandoffState) waitConsumed(ctx context.Context) error {
 	}
 }
 
-func (state *gogHandoffState) handler(expectedNonce string, allowedOrigin string) http.HandlerFunc {
+func (state *gogHandoffState) handler(expectedNonce string, allowedOrigins map[string]struct{}) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("Cache-Control", "no-store")
 		response.Header().Set("Content-Type", "application/json")
 
-		if !applyGogHandoffCors(response, request, allowedOrigin) {
+		if !applyGogHandoffCors(response, request, allowedOrigins) {
 			http.Error(response, `{"status":"forbidden"}`, http.StatusForbidden)
 			return
 		}
@@ -339,23 +345,26 @@ func (state *gogHandoffState) take() (*gogConnectPayload, string, int) {
 	return &payload, "", http.StatusOK
 }
 
-func applyGogHandoffCors(response http.ResponseWriter, request *http.Request, allowedOrigin string) bool {
+func applyGogHandoffCors(response http.ResponseWriter, request *http.Request, allowedOrigins map[string]struct{}) bool {
 	origin := request.Header.Get("Origin")
 	if origin == "" {
 		return true
 	}
-	if allowedOrigin == "" || origin != allowedOrigin {
+	if _, ok := allowedOrigins[origin]; !ok {
 		return false
 	}
 
-	response.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+	response.Header().Set("Access-Control-Allow-Origin", origin)
 	response.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	response.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if request.Header.Get("Access-Control-Request-Private-Network") == "true" {
+		response.Header().Set("Access-Control-Allow-Private-Network", "true")
+	}
 	response.Header().Set("Vary", "Origin")
 	return true
 }
 
-func startGogHandoffServer(allowedOrigin string) (string, *gogHandoffState, func(context.Context) error, error) {
+func startGogHandoffServer(allowedOrigins map[string]struct{}) (string, *gogHandoffState, func(context.Context) error, error) {
 	nonce, err := newGogHandoffNonce()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to create local handoff nonce: %w", err)
@@ -368,7 +377,7 @@ func startGogHandoffServer(allowedOrigin string) (string, *gogHandoffState, func
 
 	state := newGogHandoffState()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/connect/gog/result", state.handler(nonce, allowedOrigin))
+	mux.HandleFunc("/connect/gog/result", state.handler(nonce, allowedOrigins))
 
 	server := &http.Server{
 		Handler:           mux,
@@ -399,6 +408,31 @@ func newGogHandoffNonce() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(bytes[:]), nil
 }
 
+func parseGogHandoffOrigins(value string) (map[string]struct{}, error) {
+	origins := make(map[string]struct{})
+	for _, candidate := range strings.Split(value, ",") {
+		origin := strings.TrimSpace(candidate)
+		if origin == "" {
+			continue
+		}
+
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("handoff origin %q must be an origin like http://localhost:3005", origin)
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return nil, fmt.Errorf("handoff origin %q must use http or https", origin)
+		}
+
+		origins[parsed.Scheme+"://"+parsed.Host] = struct{}{}
+	}
+
+	if len(origins) == 0 {
+		return nil, fmt.Errorf("at least one handoff origin is required")
+	}
+	return origins, nil
+}
+
 func init() {
 	rootCmd.AddCommand(connectCmd)
 	connectCmd.AddCommand(connectGogCmd)
@@ -406,6 +440,6 @@ func init() {
 	connectGogCmd.Flags().DurationVar(&gogConnectTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible GOG login")
 	connectGogCmd.Flags().StringVar(&gogConnectUser, "user", "", "optional GOG username override when userData.json cannot report it")
 	connectGogCmd.Flags().BoolVar(&gogHandoffServer, "handoff-server", false, "serve the captured GOG result once over a local loopback URL instead of printing the cookie JSON")
-	connectGogCmd.Flags().StringVar(&gogHandoffOrigin, "origin", "http://localhost:3005", "allowed GameHub frontend origin for local handoff CORS")
-	connectGogCmd.Flags().DurationVar(&gogHandoffTTL, "handoff-result-ttl", 2*time.Minute, "maximum time to keep a captured local handoff result available")
+	connectGogCmd.Flags().StringVar(&gogHandoffOrigin, "origin", "http://localhost:3005,http://127.0.0.1:3005", "comma-separated GameHub frontend origins allowed for local handoff CORS")
+	connectGogCmd.Flags().DurationVar(&gogHandoffTTL, "handoff-result-ttl", 10*time.Minute, "maximum time to keep a captured local handoff result available")
 }

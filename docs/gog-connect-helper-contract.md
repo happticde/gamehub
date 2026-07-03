@@ -13,14 +13,14 @@ mode:
 
 ```bash
 cd services/cli
-go run . connect gog --handoff-server --origin http://localhost:3005
+go run . connect gog --handoff-server
 ```
 
 For repeated use, build the CLI and run the same command from the binary:
 
 ```bash
 go build -o gamehub-cli .
-./gamehub-cli connect gog --handoff-server --origin http://localhost:3005
+./gamehub-cli connect gog --handoff-server
 ```
 
 The helper prints a local handoff URL to stdout before opening GOG:
@@ -59,9 +59,10 @@ Supported flags:
   username even though the cookie was captured.
 - `--handoff-server`: starts the local one-shot loopback result server instead of printing the
   cookie JSON to stdout.
-- `--origin http://localhost:3005`: exact browser Origin allowed to read the loopback result through
-  CORS. Use the frontend origin shown in the browser if it differs.
-- `--handoff-result-ttl 2m`: maximum time to keep a captured result available after login before
+- `--origin http://localhost:3005,http://127.0.0.1:3005`: comma-separated exact browser Origins
+  allowed to read the loopback result through CORS. Use the frontend origin shown in the browser if
+  it differs.
+- `--handoff-result-ttl 10m`: maximum time to keep a captured result available after login before
   discarding it.
 
 The helper must run on the user's host machine, not inside the devcontainer, because it needs to
@@ -81,6 +82,13 @@ GET http://127.0.0.1:{random-port}/connect/gog/result?nonce={random-nonce}
 Origin: http://localhost:3005
 ```
 
+The default allowed origins also include `http://127.0.0.1:3005`. If the Admin UI is running on a
+different host or port, start the helper with that exact browser origin, for example:
+
+```bash
+go run . connect gog --handoff-server --origin http://localhost:3000
+```
+
 Responses:
 
 - `202 Accepted` with `{"status":"pending"}` while the visible browser login is still in progress.
@@ -89,11 +97,12 @@ Responses:
 - `404 Not Found` with `{"status":"invalid_nonce"}` for the wrong nonce.
 - `403 Forbidden` when a browser Origin is present and does not exactly match `--origin`.
 
-The server also sets `Cache-Control: no-store` and grants CORS only to the configured origin. The
-nonce is not a credential by itself, but it gates access to the one-time plaintext result while the
-helper is running, so it should be treated as a short-lived handoff secret. The result is stored only
-in helper memory and is removed when the first successful read returns it, when the TTL expires, or
-when the helper exits.
+The server also sets `Cache-Control: no-store`, grants CORS only to configured origins, and responds
+to browser Private Network Access preflight checks for those same allowed origins. The nonce is not a
+credential by itself, but it gates access to the one-time plaintext result while the helper is
+running, so it should be treated as a short-lived handoff secret. The result is stored only in helper
+memory and is removed when the first successful read returns it, when the TTL expires, or when the
+helper exits.
 
 ## Browser-to-GameHub Boundary
 
@@ -181,7 +190,7 @@ Accepted aliases during the POC:
   installer work.
 - The Admin UI cannot discover the random loopback port automatically without a registered helper or
   another local discovery mechanism, so the user pastes the handoff URL printed by the helper.
-- Browser CORS allows only the exact configured frontend origin. If GameHub runs at a different
+- Browser CORS allows only the exact configured frontend origins. If GameHub runs at a different
   local origin, pass that origin with `--origin`.
 - If the UI reads the one-time result but the Core upsert fails, the UI keeps the captured username
   and cookie in transient React state so the user can retry the existing manual save without

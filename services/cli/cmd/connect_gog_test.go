@@ -52,7 +52,7 @@ func TestNewGogConnectPayload_WithSessionCookie_OmitsExpiry(t *testing.T) {
 
 func TestGogHandoffHandler_PendingResult_RequiresAllowedOrigin(t *testing.T) {
 	state := newGogHandoffState()
-	handler := state.handler("nonce", "http://localhost:3005")
+	handler := state.handler("nonce", mustParseGogHandoffOrigins(t, "http://localhost:3005,http://127.0.0.1:3005"))
 
 	disallowedRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
 	disallowedRequest.Header.Set("Origin", "http://malicious.test")
@@ -64,15 +64,19 @@ func TestGogHandoffHandler_PendingResult_RequiresAllowedOrigin(t *testing.T) {
 	}
 
 	allowedRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
-	allowedRequest.Header.Set("Origin", "http://localhost:3005")
+	allowedRequest.Header.Set("Origin", "http://127.0.0.1:3005")
+	allowedRequest.Header.Set("Access-Control-Request-Private-Network", "true")
 	allowedResponse := httptest.NewRecorder()
 	handler.ServeHTTP(allowedResponse, allowedRequest)
 
 	if allowedResponse.Code != http.StatusAccepted {
 		t.Fatalf("pending handoff status = %d, want %d", allowedResponse.Code, http.StatusAccepted)
 	}
-	if allowedResponse.Header().Get("Access-Control-Allow-Origin") != "http://localhost:3005" {
+	if allowedResponse.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:3005" {
 		t.Fatalf("allowed origin CORS header was not set")
+	}
+	if allowedResponse.Header().Get("Access-Control-Allow-Private-Network") != "true" {
+		t.Fatalf("private network access header was not set")
 	}
 }
 
@@ -84,7 +88,7 @@ func TestGogHandoffHandler_CompletedResult_IsAvailableOnce(t *testing.T) {
 		float64(time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC).Unix()),
 		time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC),
 	))
-	handler := state.handler("nonce", "http://localhost:3005")
+	handler := state.handler("nonce", mustParseGogHandoffOrigins(t, "http://localhost:3005"))
 
 	firstRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
 	firstRequest.Header.Set("Origin", "http://localhost:3005")
@@ -117,4 +121,19 @@ func TestGogHandoffHandler_CompletedResult_IsAvailableOnce(t *testing.T) {
 	if secondResponse.Code != http.StatusGone {
 		t.Fatalf("second handoff status = %d, want %d", secondResponse.Code, http.StatusGone)
 	}
+}
+
+func TestParseGogHandoffOrigins_RejectsInvalidOrigin(t *testing.T) {
+	if _, err := parseGogHandoffOrigins("http://localhost:3005/path"); err == nil {
+		t.Fatalf("expected invalid handoff origin to fail")
+	}
+}
+
+func mustParseGogHandoffOrigins(t *testing.T, value string) map[string]struct{} {
+	t.Helper()
+	origins, err := parseGogHandoffOrigins(value)
+	if err != nil {
+		t.Fatalf("failed to parse test handoff origins: %v", err)
+	}
+	return origins
 }
