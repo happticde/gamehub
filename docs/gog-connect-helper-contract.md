@@ -6,17 +6,49 @@ GOG browser session, lets the user complete password, MFA, captcha, or provider 
 with GOG, and captures only the `gog-al` cookie value plus the GOG username needed by the existing
 Ingest fetcher.
 
+## Implemented POC Helper
+
+The first local helper is the existing Go CLI:
+
+```bash
+cd services/cli
+go run . connect gog
+```
+
+For repeated use, build the CLI and run the same command from the binary:
+
+```bash
+go build -o gamehub-cli .
+./gamehub-cli connect gog
+```
+
+The command opens a temporary, user-visible Chrome/Chromium browser profile at GOG. The user signs
+in directly with GOG in that browser window, including MFA or captcha prompts. The helper polls the
+controlled browser context until it can read the `gog-al` cookie and the GOG username, prints the
+one-time JSON result to stdout, then removes the temporary browser profile.
+
+Supported flags:
+
+- `--timeout 10m`: maximum wait time for login and capture.
+- `--user gog-user`: optional username override if GOG's `userData.json` endpoint cannot report the
+  username even though the cookie was captured.
+
+The helper must run on the user's host machine, not inside the devcontainer, because it needs to
+open a visible local browser. It requires a locally installed Chrome or Chromium browser discoverable
+by `chromedp`.
+
 ## Browser-to-GameHub Boundary
 
-The Admin credential UI launches the local helper through this custom URI:
+The Admin credential UI can attempt this custom URI:
 
 ```text
 gamehub-helper://connect/gog
 ```
 
-The helper is expected to register that URI scheme on the user's machine or document an equivalent
-local launch command. It must open a user-visible browser context for `gog.com`; simply opening GOG
-from the GameHub web page is not enough because browser same-origin rules prevent GameHub from
+The repository does not yet install or register that URI scheme. Until a platform-specific installer
+exists, the documented local command above is the portable launch path. Any future URI handler must
+invoke the same helper behavior: open a user-visible browser context for `gog.com`; simply opening
+GOG from the GameHub web page is not enough because browser same-origin rules prevent GameHub from
 reading `gog.com` cookies.
 
 After capture, the Admin credential UI accepts a one-time JSON result from the helper. The UI
@@ -56,6 +88,9 @@ The first UI slice accepts this helper output:
 }
 ```
 
+The current Go helper emits `provider`, `user`, `cookies`, `capturedAtUtc`, and `expiresAtUtc` when
+the browser reports a persistent cookie expiry. Session cookies omit `expiresAtUtc`.
+
 Accepted aliases during the POC:
 
 - `provider` or `platform`, when present, must be `gog`.
@@ -69,6 +104,8 @@ Accepted aliases during the POC:
 - GameHub must not ask for the user's GOG password.
 - GameHub must not run a hidden server-side headless GOG password login.
 - The helper must not put the `gog-al` cookie in `localStorage`, query strings, logs, or status APIs.
+- The Go helper writes progress messages to stderr and writes the cookie only in the final stdout
+  JSON payload intended for immediate copy/paste into the Admin UI.
 - Plaintext session material may exist only in the helper capture, transient React state, the
   BFF/Core upsert request body, and Ingest's immediate encryption path.
 - Core and Ingest must keep the existing authenticated, tenant-scoped credential-management and

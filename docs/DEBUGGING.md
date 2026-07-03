@@ -70,7 +70,12 @@ To see pagination details and request URLs, set `GameHub` to `Debug`.
 | JSON parse error | GOG returned HTML (login page) | Cookie invalid — you're getting redirected to login |
 | Missing `_embedded.items` | Empty library or wrong username | Verify the username in the URL |
 
-**How to get the `gog-al` cookie:**
+**Preferred GOG capture path:**
+1. From a host terminal, run `cd services/cli && go run . connect gog`
+2. Sign in with GOG in the visible browser window
+3. Paste the helper JSON into the Admin credential UI
+
+**Manual fallback for the `gog-al` cookie:**
 1. Log in to [gog.com](https://www.gog.com)
 2. Open DevTools → Application → Cookies → `gog.com`
 3. Copy the `gog-al` value

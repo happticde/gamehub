@@ -350,9 +350,14 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 {status?.isConfigured ? "Reconnect GOG" : "Connect GOG"}
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                Start the local browser helper, sign in with GOG there, then paste its
-                                one-time capture result here. A normal GOG tab cannot give GameHub the
-                                session cookie automatically.
+                                Run the helper from a host terminal, sign in with GOG in the visible
+                                browser, then paste the one-time JSON result here.
+                            </p>
+                            <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+                                cd services/cli && go run . connect gog
+                            </code>
+                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                                The URI button is only useful after a local handler is registered.
                             </p>
                         </div>
                         <Button
@@ -364,7 +369,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             }}
                         >
                             <PlugZap className="mr-2 h-4 w-4" />
-                            Launch local GOG helper
+                            Try registered GOG helper URI
                         </Button>
                         <Textarea
                             aria-label="GOG helper result"
