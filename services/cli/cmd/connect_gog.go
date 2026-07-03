@@ -41,6 +41,7 @@ var (
 	gogHandoffServer  bool
 	gogHandoffOrigin  string
 	gogHandoffTTL     time.Duration
+	gogHandoffURLHook func(string)
 )
 
 type gogConnectPayload struct {
@@ -103,6 +104,9 @@ func runConnectGog(cmd *cobra.Command, args []string) error {
 		}()
 
 		fmt.Fprintln(cmd.OutOrStdout(), handoffURL)
+		if gogHandoffURLHook != nil {
+			gogHandoffURLHook(handoffURL)
+		}
 		fmt.Fprintln(os.Stderr, "Paste this local handoff URL into the GameHub Admin GOG connector. It contains only a one-time local nonce, not the GOG cookie.")
 	}
 
