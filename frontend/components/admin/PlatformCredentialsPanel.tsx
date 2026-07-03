@@ -310,10 +310,15 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
     const [handoffError, setHandoffError] = useState<string | null>(null);
     const [helperError, setHelperError] = useState<string | null>(null);
+    const [pageOrigin, setPageOrigin] = useState("http://localhost:3005");
     const handoffAttemptRef = useRef(0);
 
     useEffect(() => () => {
         handoffAttemptRef.current += 1;
+    }, []);
+
+    useEffect(() => {
+        setPageOrigin(window.location.origin);
     }, []);
 
     const submit = async () => {
@@ -437,7 +442,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 browser, then paste the local handoff URL here.
                             </p>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect gog --handoff-server
+                                cd services/cli && go run . connect gog --handoff-server --origin {pageOrigin}
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
                                 The handoff URL contains a one-time local nonce. The gog-al cookie is fetched only from 127.0.0.1 and is stored immediately.
@@ -753,6 +758,7 @@ function parseGogHandoffUrl(value: string): string | Error {
         return new Error("The helper handoff URL does not match the GOG loopback result endpoint.");
     }
 
+    url.searchParams.set("origin", window.location.origin);
     return url.toString();
 }
 

@@ -78,7 +78,7 @@ placed in the URL, query string, browser history, logs, or status APIs.
 The Admin UI sends:
 
 ```http
-GET http://127.0.0.1:{random-port}/connect/gog/result?nonce={random-nonce}
+GET http://127.0.0.1:{random-port}/connect/gog/result?nonce={random-nonce}&origin={admin-origin}
 Origin: http://localhost:3005
 ```
 
@@ -89,20 +89,26 @@ different host or port, start the helper with that exact browser origin, for exa
 go run . connect gog --handoff-server --origin http://localhost:3000
 ```
 
+The `origin` query parameter is not secret and never contains the GOG cookie. It lets the UI attach
+the exact Admin page origin that the browser will send in the CORS `Origin` header. The helper uses
+that value only when the nonce is correct, the query origin exactly matches the browser header, and
+the origin host is loopback, private-network, or explicitly configured through `--origin`.
+
 Responses:
 
 - `202 Accepted` with `{"status":"pending"}` while the visible browser login is still in progress.
 - `200 OK` with the helper result JSON exactly once after capture.
 - `410 Gone` with `{"status":"consumed"}` after the result has already been read.
 - `404 Not Found` with `{"status":"invalid_nonce"}` for the wrong nonce.
-- `403 Forbidden` when a browser Origin is present and does not exactly match `--origin`.
+- `403 Forbidden` when a browser Origin is present and is neither configured nor a matching
+  nonce-bound local/private origin.
 
-The server also sets `Cache-Control: no-store`, grants CORS only to configured origins, and responds
-to browser Private Network Access preflight checks for those same allowed origins. The nonce is not a
-credential by itself, but it gates access to the one-time plaintext result while the helper is
-running, so it should be treated as a short-lived handoff secret. The result is stored only in helper
-memory and is removed when the first successful read returns it, when the TTL expires, or when the
-helper exits.
+The server also sets `Cache-Control: no-store`, grants CORS only to configured or nonce-bound local
+origins, and responds to browser Private Network Access preflight checks for those same allowed
+origins. The nonce is not a credential by itself, but it gates access to the one-time plaintext
+result while the helper is running, so it should be treated as a short-lived handoff secret. The
+result is stored only in helper memory and is removed when the first successful read returns it, when
+the TTL expires, or when the helper exits.
 
 ## Browser-to-GameHub Boundary
 

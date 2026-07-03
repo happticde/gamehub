@@ -80,6 +80,37 @@ func TestGogHandoffHandler_PendingResult_RequiresAllowedOrigin(t *testing.T) {
 	}
 }
 
+func TestGogHandoffHandler_AllowsNonceBoundPrivateOrigin(t *testing.T) {
+	state := newGogHandoffState()
+	handler := state.handler("nonce", mustParseGogHandoffOrigins(t, "http://localhost:3005"))
+
+	request := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce&origin=http%3A%2F%2F192.168.1.25%3A3005", nil)
+	request.Header.Set("Origin", "http://192.168.1.25:3005")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("private origin handoff status = %d, want %d", response.Code, http.StatusAccepted)
+	}
+	if response.Header().Get("Access-Control-Allow-Origin") != "http://192.168.1.25:3005" {
+		t.Fatalf("private origin CORS header was not set")
+	}
+}
+
+func TestGogHandoffHandler_RejectsMismatchedNonceBoundOrigin(t *testing.T) {
+	state := newGogHandoffState()
+	handler := state.handler("nonce", mustParseGogHandoffOrigins(t, "http://localhost:3005"))
+
+	request := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce&origin=http%3A%2F%2F192.168.1.25%3A3005", nil)
+	request.Header.Set("Origin", "http://192.168.1.26:3005")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("mismatched origin status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
 func TestGogHandoffHandler_CompletedResult_IsAvailableOnce(t *testing.T) {
 	state := newGogHandoffState()
 	state.complete(newGogConnectPayload(

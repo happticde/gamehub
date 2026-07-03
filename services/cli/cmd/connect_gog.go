@@ -294,6 +294,11 @@ func (state *gogHandoffState) handler(expectedNonce string, allowedOrigins map[s
 		response.Header().Set("Cache-Control", "no-store")
 		response.Header().Set("Content-Type", "application/json")
 
+		if request.URL.Query().Get("nonce") != expectedNonce {
+			http.Error(response, `{"status":"invalid_nonce"}`, http.StatusNotFound)
+			return
+		}
+
 		if !applyGogHandoffCors(response, request, allowedOrigins) {
 			http.Error(response, `{"status":"forbidden"}`, http.StatusForbidden)
 			return
@@ -305,10 +310,6 @@ func (state *gogHandoffState) handler(expectedNonce string, allowedOrigins map[s
 		}
 		if request.Method != http.MethodGet {
 			http.Error(response, `{"status":"method_not_allowed"}`, http.StatusMethodNotAllowed)
-			return
-		}
-		if request.URL.Query().Get("nonce") != expectedNonce {
-			http.Error(response, `{"status":"invalid_nonce"}`, http.StatusNotFound)
 			return
 		}
 
@@ -350,11 +351,13 @@ func applyGogHandoffCors(response http.ResponseWriter, request *http.Request, al
 	if origin == "" {
 		return true
 	}
-	if _, ok := allowedOrigins[origin]; !ok {
+
+	allowedOrigin, ok := allowedGogHandoffOrigin(request, allowedOrigins)
+	if !ok {
 		return false
 	}
 
-	response.Header().Set("Access-Control-Allow-Origin", origin)
+	response.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 	response.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	response.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	if request.Header.Get("Access-Control-Request-Private-Network") == "true" {
@@ -362,6 +365,26 @@ func applyGogHandoffCors(response http.ResponseWriter, request *http.Request, al
 	}
 	response.Header().Set("Vary", "Origin")
 	return true
+}
+
+func allowedGogHandoffOrigin(request *http.Request, allowedOrigins map[string]struct{}) (string, bool) {
+	origin := request.Header.Get("Origin")
+	if origin == "" {
+		return "", true
+	}
+	if _, ok := allowedOrigins[origin]; ok {
+		return origin, true
+	}
+
+	queryOrigin, parsed, err := normalizeGogHandoffOrigin(request.URL.Query().Get("origin"))
+	if err != nil || queryOrigin != origin {
+		return "", false
+	}
+	if !isLocalOrPrivateGogHandoffOrigin(parsed) {
+		return "", false
+	}
+
+	return origin, true
 }
 
 func startGogHandoffServer(allowedOrigins map[string]struct{}) (string, *gogHandoffState, func(context.Context) error, error) {
@@ -411,26 +434,44 @@ func newGogHandoffNonce() (string, error) {
 func parseGogHandoffOrigins(value string) (map[string]struct{}, error) {
 	origins := make(map[string]struct{})
 	for _, candidate := range strings.Split(value, ",") {
-		origin := strings.TrimSpace(candidate)
-		if origin == "" {
+		if strings.TrimSpace(candidate) == "" {
 			continue
 		}
 
-		parsed, err := url.Parse(origin)
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-			return nil, fmt.Errorf("handoff origin %q must be an origin like http://localhost:3005", origin)
+		origin, _, err := normalizeGogHandoffOrigin(candidate)
+		if err != nil {
+			return nil, err
 		}
-		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			return nil, fmt.Errorf("handoff origin %q must use http or https", origin)
-		}
-
-		origins[parsed.Scheme+"://"+parsed.Host] = struct{}{}
+		origins[origin] = struct{}{}
 	}
 
 	if len(origins) == 0 {
 		return nil, fmt.Errorf("at least one handoff origin is required")
 	}
 	return origins, nil
+}
+
+func normalizeGogHandoffOrigin(value string) (string, *url.URL, error) {
+	origin := strings.TrimSpace(value)
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", nil, fmt.Errorf("handoff origin %q must be an origin like http://localhost:3005", origin)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", nil, fmt.Errorf("handoff origin %q must use http or https", origin)
+	}
+
+	return parsed.Scheme + "://" + parsed.Host, parsed, nil
+}
+
+func isLocalOrPrivateGogHandoffOrigin(origin *url.URL) bool {
+	hostname := strings.ToLower(origin.Hostname())
+	if hostname == "localhost" {
+		return true
+	}
+
+	ip := net.ParseIP(hostname)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified())
 }
 
 func init() {
