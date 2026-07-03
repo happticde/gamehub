@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -305,7 +305,21 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     const [cookie, setCookie] = useState("");
     const [user, setUser] = useState("");
     const [helperPayload, setHelperPayload] = useState("");
+    const [handoffUrl, setHandoffUrl] = useState("");
+    const [handoffPolling, setHandoffPolling] = useState(false);
+    const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
+    const [handoffError, setHandoffError] = useState<string | null>(null);
     const [helperError, setHelperError] = useState<string | null>(null);
+    const [pageOrigin, setPageOrigin] = useState("http://localhost:3005");
+    const handoffAttemptRef = useRef(0);
+
+    useEffect(() => () => {
+        handoffAttemptRef.current += 1;
+    }, []);
+
+    useEffect(() => {
+        setPageOrigin(window.location.origin);
+    }, []);
 
     const submit = async () => {
         if (await onSave({ cookie, user })) {
@@ -333,6 +347,80 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         }
     };
 
+    const pollHandoffUrl = async () => {
+        const parsedUrl = parseGogHandoffUrl(handoffUrl);
+        if (parsedUrl instanceof Error) {
+            setHandoffError(parsedUrl.message);
+            return;
+        }
+
+        const attempt = handoffAttemptRef.current + 1;
+        handoffAttemptRef.current = attempt;
+        setHandoffPolling(true);
+        setHandoffError(null);
+        setHelperError(null);
+        setHandoffMessage("Waiting for the local helper to capture your GOG session…");
+
+        try {
+            const deadline = Date.now() + 10 * 60 * 1000;
+            while (Date.now() < deadline && handoffAttemptRef.current === attempt) {
+                const response = await fetch(parsedUrl, { cache: "no-store" });
+                if (handoffAttemptRef.current !== attempt) return;
+
+                if (response.status === 202) {
+                    setHandoffMessage("Helper is still waiting for the visible GOG sign-in…");
+                    await delay(1500);
+                    continue;
+                }
+
+                if (response.status === 410) {
+                    throw new Error("This local helper result was already imported. Run the helper again for a fresh handoff URL.");
+                }
+                if (!response.ok) {
+                    throw new Error(`The local helper returned status ${response.status}.`);
+                }
+
+                const result = parseGogConnectObject(await response.json());
+                if (result instanceof Error) {
+                    throw result;
+                }
+                if (result.expired) {
+                    throw new Error("The GOG session is already expired. Reconnect GOG and try again.");
+                }
+
+                setHandoffMessage("GOG session captured. Storing it in the encrypted vault…");
+                if (await onSave({ cookie: result.cookie, user: result.user })) {
+                    setHandoffUrl("");
+                    setHelperPayload("");
+                    setHandoffMessage("GOG session imported from the local helper.");
+                    return;
+                }
+
+                setCookie(result.cookie);
+                setUser(result.user);
+                setHandoffError("The helper result was captured, but storing it failed. The manual fields below are filled so you can retry.");
+                return;
+            }
+
+            throw new Error("Timed out waiting for the local helper result.");
+        } catch (caught) {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffError(localHandoffErrorMessage(caught));
+                setHandoffMessage(null);
+            }
+        } finally {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffPolling(false);
+            }
+        }
+    };
+
+    const stopHandoffPolling = () => {
+        handoffAttemptRef.current += 1;
+        setHandoffPolling(false);
+        setHandoffMessage(null);
+    };
+
     return (
         <CredentialCard
             platform="Gog"
@@ -351,26 +439,78 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
                                 Run the helper from a host terminal, sign in with GOG in the visible
-                                browser, then paste the one-time JSON result here.
+                                browser, then paste the local handoff URL here.
                             </p>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect gog
+                                cd services/cli && go run . connect gog --handoff-server --origin {pageOrigin}
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                The URI button is only useful after a local handler is registered.
+                                The handoff URL contains a one-time local nonce. The gog-al cookie is fetched only from 127.0.0.1 and is stored immediately.
                             </p>
                         </div>
+                        <Input
+                            aria-label="GOG local helper handoff URL"
+                            className="font-mono text-xs"
+                            placeholder="http://127.0.0.1:12345/connect/gog/result?nonce=..."
+                            value={handoffUrl}
+                            onChange={(event) => {
+                                setHandoffUrl(event.target.value);
+                                setHandoffError(null);
+                            }}
+                            disabled={handoffPolling}
+                        />
+                        {(handoffMessage || handoffError) && (
+                            <p
+                                className={`rounded-md border px-3 py-2 text-xs ${
+                                    handoffError
+                                        ? "border-destructive/30 bg-destructive/10 text-destructive"
+                                        : "border-primary/30 bg-primary/10 text-primary"
+                                }`}
+                            >
+                                {handoffError ?? handoffMessage}
+                            </p>
+                        )}
                         <Button
                             variant="outline"
                             size="sm"
                             className="w-full"
-                            onClick={() => {
-                                window.location.href = "gamehub-helper://connect/gog";
-                            }}
+                            disabled={busy || handoffPolling || !handoffUrl.trim()}
+                            onClick={() => void pollHandoffUrl()}
                         >
-                            <PlugZap className="mr-2 h-4 w-4" />
-                            Try registered GOG helper URI
+                            {handoffPolling ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <PlugZap className="mr-2 h-4 w-4" />
+                            )}
+                            {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
                         </Button>
+                        {handoffPolling && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full"
+                                onClick={stopHandoffPolling}
+                            >
+                                Stop waiting
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex items-start gap-2">
+                    <KeyRound className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="space-y-2">
+                        <div>
+                            <h4 className="text-sm font-medium text-foreground">
+                                JSON fallback
+                            </h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                If the loopback handoff is unavailable, run the helper without
+                                --handoff-server and paste its one-time JSON result here.
+                            </p>
+                        </div>
                         <Textarea
                             aria-label="GOG helper result"
                             className="min-h-24 font-mono text-xs"
@@ -402,7 +542,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 ? "Saving…"
                                 : status?.isConfigured
                                     ? "Store refreshed GOG session"
-                                    : "Store GOG session"}
+                                    : "Store JSON helper result"}
                         </Button>
                     </div>
                 </div>
@@ -546,6 +686,14 @@ function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "The credential request failed.";
 }
 
+function localHandoffErrorMessage(error: unknown): string {
+    const message = errorMessage(error);
+    if (message.toLowerCase() === "failed to fetch") {
+        return "The browser could not read the local helper. Make sure the helper is still running, the handoff URL has not expired, and the helper --origin matches this Admin page origin.";
+    }
+    return message;
+}
+
 function parseGogConnectPayload(value: string): GogConnectResult | Error {
     let parsed: unknown;
     try {
@@ -558,6 +706,10 @@ function parseGogConnectPayload(value: string): GogConnectResult | Error {
         return new Error("The GOG helper result must be a JSON object.");
     }
 
+    return parseGogConnectObject(parsed);
+}
+
+function parseGogConnectObject(parsed: Record<string, unknown>): GogConnectResult | Error {
     const provider = readOptionalText(parsed.provider ?? parsed.platform);
     if (provider && provider.toLowerCase() !== "gog") {
         return new Error("This helper result is not for GOG.");
@@ -583,6 +735,35 @@ function parseGogConnectPayload(value: string): GogConnectResult | Error {
         || (expiresAt ? Date.parse(expiresAt) <= Date.now() : false);
 
     return { user, cookie, expired: isExpired };
+}
+
+function parseGogHandoffUrl(value: string): string | Error {
+    const match = value.trim().match(/https?:\/\/\S+/);
+    if (!match) {
+        return new Error("Paste the local handoff URL printed by the GOG helper.");
+    }
+
+    let url: URL;
+    try {
+        url = new URL(match[0]);
+    } catch {
+        return new Error("The local handoff URL is not valid.");
+    }
+
+    const isLoopbackHost = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    if (url.protocol !== "http:" || !isLoopbackHost) {
+        return new Error("The helper handoff URL must be an http://127.0.0.1 or http://localhost URL.");
+    }
+    if (url.pathname !== "/connect/gog/result" || !url.searchParams.get("nonce")) {
+        return new Error("The helper handoff URL does not match the GOG loopback result endpoint.");
+    }
+
+    url.searchParams.set("origin", window.location.origin);
+    return url.toString();
+}
+
+function delay(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function readCookieValue(value: unknown, name: string): string | null {
