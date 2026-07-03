@@ -8,8 +8,19 @@ Ingest fetcher.
 
 ## Browser-to-GameHub Boundary
 
-The Admin credential UI accepts a one-time JSON result from the helper. The UI immediately converts
-that result into the existing authenticated Core credential upsert:
+The Admin credential UI launches the local helper through this custom URI:
+
+```text
+gamehub-helper://connect/gog
+```
+
+The helper is expected to register that URI scheme on the user's machine or document an equivalent
+local launch command. It must open a user-visible browser context for `gog.com`; simply opening GOG
+from the GameHub web page is not enough because browser same-origin rules prevent GameHub from
+reading `gog.com` cookies.
+
+After capture, the Admin credential UI accepts a one-time JSON result from the helper. The UI
+immediately converts that result into the existing authenticated Core credential upsert:
 
 ```http
 PUT /api/core/platform-credentials/Gog

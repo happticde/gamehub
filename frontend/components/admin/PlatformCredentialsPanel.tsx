@@ -350,9 +350,9 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 {status?.isConfigured ? "Reconnect GOG" : "Connect GOG"}
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                Sign in through a visible GOG browser helper, then paste its one-time
-                                capture result here. GameHub only stores the gog-al session cookie in
-                                the encrypted tenant vault.
+                                Start the local browser helper, sign in with GOG there, then paste its
+                                one-time capture result here. A normal GOG tab cannot give GameHub the
+                                session cookie automatically.
                             </p>
                         </div>
                         <Button
@@ -360,11 +360,11 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             size="sm"
                             className="w-full"
                             onClick={() => {
-                                window.open("https://www.gog.com/account", "_blank", "noopener,noreferrer");
+                                window.location.href = "gamehub-helper://connect/gog";
                             }}
                         >
-                            <ExternalLink className="mr-2 h-4 w-4" />
-                            Open GOG sign-in
+                            <PlugZap className="mr-2 h-4 w-4" />
+                            Launch local GOG helper
                         </Button>
                         <Textarea
                             aria-label="GOG helper result"
@@ -404,7 +404,20 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             </div>
 
             <div className="space-y-3 border-t pt-4">
-                <p className="text-xs font-medium text-muted-foreground">Manual fallback</p>
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">Manual fallback</p>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                            window.open("https://www.gog.com/account", "_blank", "noopener,noreferrer");
+                        }}
+                    >
+                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                        Open GOG
+                    </Button>
+                </div>
                 <CredentialInput label="GOG username" value={user} onChange={setUser} />
                 <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
                 <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
