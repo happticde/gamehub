@@ -233,7 +233,12 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 			return psnConnectPayload{}, fmt.Errorf("failed to read PlayStation browser cookies: %w", err)
 		}
 
-		if len(cookies) > 0 {
+		currentURL, err := readCurrentPsnBrowserURL(browserCtx)
+		if err != nil {
+			return psnConnectPayload{}, fmt.Errorf("failed to read PlayStation browser location: %w", err)
+		}
+
+		if len(cookies) > 0 && isPsnCookieCaptureReady(currentURL) {
 			if diagnostics != nil {
 				diagnostics.recordCookieCapture(cookies)
 			}
@@ -585,6 +590,28 @@ func readPsnSessionCookies(ctx context.Context) (map[string]string, float64, err
 	}
 
 	return captured, earliestPersistentExpiry, nil
+}
+
+func readCurrentPsnBrowserURL(ctx context.Context) (string, error) {
+	currentURL := ""
+	if err := chromedp.Run(ctx, chromedp.Location(&currentURL)); err != nil {
+		return "", err
+	}
+	return currentURL, nil
+}
+
+func isPsnCookieCaptureReady(currentURL string) bool {
+	parsed, err := neturl.Parse(strings.TrimSpace(currentURL))
+	if err != nil {
+		return false
+	}
+
+	hostname := strings.ToLower(parsed.Hostname())
+	if hostname == "" {
+		return false
+	}
+
+	return hostname != "my.account.sony.com" && hostname != "ca.account.sony.com"
 }
 
 func newPsnConnectPayload(cookies map[string]string, expires float64, capturedAt time.Time) psnConnectPayload {

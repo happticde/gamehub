@@ -158,6 +158,33 @@ func TestSanitizePsnDiagnosticURL_RemovesSecrets(t *testing.T) {
 	}
 }
 
+func TestIsPsnCookieCaptureReady_WaitsUntilBrowserLeavesSonyAccountLogin(t *testing.T) {
+	blockedURLs := []string{
+		"https://my.account.sony.com/sonyacct/signin/",
+		"https://ca.account.sony.com/api/authz/v3/oauth/authorize",
+	}
+	for _, currentURL := range blockedURLs {
+		t.Run(currentURL, func(t *testing.T) {
+			if isPsnCookieCaptureReady(currentURL) {
+				t.Fatalf("expected %q to wait for a post-login PlayStation page", currentURL)
+			}
+		})
+	}
+
+	readyURLs := []string{
+		"https://store.playstation.com/",
+		"https://web.np.playstation.com/api/session/v1/ssocookie",
+		"https://www.playstation.com/",
+	}
+	for _, currentURL := range readyURLs {
+		t.Run(currentURL, func(t *testing.T) {
+			if !isPsnCookieCaptureReady(currentURL) {
+				t.Fatalf("expected %q to be ready for PSN cookie capture", currentURL)
+			}
+		})
+	}
+}
+
 func TestPsnConnectDiagnostics_WritesSanitizedJSONLines(t *testing.T) {
 	path := t.TempDir() + "/psn-diagnostics.jsonl"
 	diagnostics, err := newPsnConnectDiagnostics(path)
