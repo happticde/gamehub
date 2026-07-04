@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -105,5 +109,38 @@ func TestNormalizePsnRemoteDebugURL_RejectsRemoteHosts(t *testing.T) {
 	}
 	if _, err := normalizePsnRemoteDebugURL("https://127.0.0.1:9222"); err == nil {
 		t.Fatalf("expected unsupported scheme to be rejected")
+	}
+}
+
+func TestResolvePsnRemoteDebugURL_ReadsBrowserWebSocketURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/json/version" {
+			t.Fatalf("requested path = %q, want /json/version", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"webSocketDebuggerUrl":"ws://127.0.0.1:9222/devtools/browser/test-browser"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	wsURL, err := resolvePsnRemoteDebugURL(context.Background(), server.URL)
+	if err != nil {
+		t.Fatalf("resolvePsnRemoteDebugURL returned error: %v", err)
+	}
+	if wsURL != "ws://127.0.0.1:9222/devtools/browser/test-browser" {
+		t.Fatalf("wsURL = %q, want browser websocket URL", wsURL)
+	}
+}
+
+func TestResolvePsnRemoteDebugURL_ExplainsBadDebugEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not chrome", http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := resolvePsnRemoteDebugURL(context.Background(), server.URL)
+	if err == nil {
+		t.Fatalf("expected bad debug endpoint to be rejected")
+	}
+	if !strings.Contains(err.Error(), "/json/version") {
+		t.Fatalf("error = %q, want /json/version hint", err.Error())
 	}
 }

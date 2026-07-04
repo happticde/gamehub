@@ -859,11 +859,14 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         </div>
                         <div>
                             <p className="text-xs leading-5 text-muted-foreground">
-                                If Sony blocks the helper login, sign in through a normal Chrome debug profile first:
+                                If Sony blocks the helper login, use this instead of the Connect PlayStation button:
                             </p>
                             <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
                                 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/gamehub-psn-chrome https://store.playstation.com/
                             </code>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                Sign in there, keep Chrome open, then run this and paste its handoff URL below:
+                            </p>
                             <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
                                 cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:9222 --handoff-server --origin {pageOrigin}
                             </code>

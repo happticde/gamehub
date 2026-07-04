@@ -139,7 +139,8 @@ go build -o gamehub-cli .
 ```
 
 If Sony blocks the helper-launched PlayStation login before MFA/2FA, use a normal local Chrome debug
-profile as a safer fallback. First start Chrome yourself and sign in there:
+profile as a safer fallback. This replaces the normal GameHub "Connect PlayStation" launch for this
+attempt. First start Chrome yourself and sign in there:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
@@ -147,6 +148,10 @@ profile as a safer fallback. First start Chrome yourself and sign in there:
   --user-data-dir=/tmp/gamehub-psn-chrome \
   https://store.playstation.com/
 ```
+
+If `http://127.0.0.1:9222/json/version` does not return Chrome debug JSON, the debug profile is not
+reachable. On macOS, quit all Chrome windows and start the command again so the
+`--remote-debugging-port` flag is not handed to an already running Chrome instance.
 
 After the normal Chrome profile is signed in, keep it open and run:
 
@@ -156,6 +161,10 @@ After the normal Chrome profile is signed in, keep it open and run:
   --handoff-server \
   --origin http://localhost:3005
 ```
+
+Paste the local handoff URL printed by this command into the PlayStation connector field. Do not
+click the normal GameHub Connect PlayStation button again during this fallback attempt, because that
+starts a fresh helper-launched Sony login flow.
 
 This fallback still uses a one-time local handoff and the existing Core/Ingest vault upsert. It does
 not put PSN cookies into the custom URI, query strings, localStorage, logs, or status APIs.

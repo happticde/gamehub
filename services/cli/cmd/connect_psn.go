@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -219,11 +220,11 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 
 func newPsnBrowserAllocator(parent context.Context, profileDir string, remoteDebugURL string) (context.Context, context.CancelFunc, bool, error) {
 	if strings.TrimSpace(remoteDebugURL) != "" {
-		normalizedURL, err := normalizePsnRemoteDebugURL(remoteDebugURL)
+		browserWSURL, err := resolvePsnRemoteDebugURL(parent, remoteDebugURL)
 		if err != nil {
 			return nil, nil, false, err
 		}
-		allocatorCtx, cancelAllocator := chromedp.NewRemoteAllocator(parent, normalizedURL)
+		allocatorCtx, cancelAllocator := chromedp.NewRemoteAllocator(parent, browserWSURL, chromedp.NoModifyURL)
 		return allocatorCtx, cancelAllocator, false, nil
 	}
 
@@ -253,6 +254,62 @@ func normalizePsnRemoteDebugURL(value string) (string, error) {
 	}
 
 	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+func resolvePsnRemoteDebugURL(ctx context.Context, value string) (string, error) {
+	normalizedURL, err := normalizePsnRemoteDebugURL(value)
+	if err != nil {
+		return "", err
+	}
+
+	parsed, err := neturl.Parse(normalizedURL)
+	if err != nil {
+		return "", fmt.Errorf("remote debugging URL must be an endpoint like http://127.0.0.1:9222")
+	}
+
+	versionURL := "http://" + parsed.Host + "/json/version"
+	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, versionURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare remote debugging health check: %w", err)
+	}
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s did not answer %s: %w. Make sure Chrome is still open and really started with --remote-debugging-port=9222; on macOS, quit all Chrome windows before starting the debug profile if this endpoint is not reachable", normalizedURL, versionURL, err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s returned HTTP %d for %s. Make sure the URL points to a Chrome instance started with --remote-debugging-port=9222", normalizedURL, response.StatusCode, versionURL)
+	}
+
+	var version struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&version); err != nil {
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s did not return valid /json/version JSON: %w", normalizedURL, err)
+	}
+
+	browserWSURL := strings.TrimSpace(version.WebSocketDebuggerURL)
+	if browserWSURL == "" {
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s did not expose webSocketDebuggerUrl in /json/version", normalizedURL)
+	}
+
+	wsURL, err := neturl.Parse(browserWSURL)
+	if err != nil || wsURL.Scheme != "ws" || wsURL.Host == "" || !strings.Contains(wsURL.Path, "/devtools/browser/") {
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s returned an unsupported browser websocket URL", normalizedURL)
+	}
+
+	hostname := strings.ToLower(wsURL.Hostname())
+	ip := net.ParseIP(hostname)
+	if hostname != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s returned a non-loopback browser websocket URL", normalizedURL)
+	}
+
+	return browserWSURL, nil
 }
 
 func isPsnLoginRateLimit(url string, status int) bool {
