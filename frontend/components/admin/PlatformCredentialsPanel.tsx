@@ -707,7 +707,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         setHelperError(null);
         setHandoffUrl("");
         setHelperLaunching(true);
-        setHandoffMessage("Waiting for the local helper to start. If your browser asks, allow it to open GameHub Helper.");
+        setHandoffMessage("Waiting for the local helper to attach to Chrome. If your browser asks, allow it to open GameHub Helper.");
         window.location.href = url.toString();
 
         try {
@@ -715,7 +715,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
-            setHandoffMessage("Local helper started. Waiting for the visible PlayStation sign-in…");
+            setHandoffMessage("Local helper attached. Waiting for PlayStation session cookies from Chrome…");
             await pollHandoffUrl(launchedHandoffUrl);
         } catch (caught) {
             if (handoffAttemptRef.current === attempt) {
@@ -742,7 +742,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         setHelperLaunching(false);
         setHandoffError(null);
         setHelperError(null);
-        setHandoffMessage("Waiting for the local helper to capture your PlayStation session…");
+        setHandoffMessage("Waiting for the local helper to capture your PlayStation session from Chrome…");
 
         try {
             const deadline = Date.now() + 10 * 60 * 1000;
@@ -751,7 +751,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                 if (handoffAttemptRef.current !== attempt) return;
 
                 if (response.status === 202) {
-                    setHandoffMessage("Helper is still waiting for the visible PlayStation sign-in…");
+                    setHandoffMessage("Helper is still waiting for Chrome to expose PlayStation session cookies…");
                     await delay(1500);
                     continue;
                 }
@@ -810,7 +810,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     return (
         <CredentialCard
             platform="Psn"
-            description="Guided connect flow with manual cookie fallback"
+            description="Existing Chrome handoff with manual cookie fallback"
             status={status}
             busy={busy}
             onDelete={onDelete}
@@ -824,15 +824,20 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 {status?.isConfigured ? "Reconnect PlayStation" : "Connect PlayStation"}
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                After installing the local protocol handler, launch the helper here,
-                                sign in with Sony/PlayStation in the visible browser, and GameHub
-                                will import the local handoff automatically.
+                                Start your normal Chrome profile with local debugging, sign in with
+                                Sony/PlayStation there if needed, keep Chrome open, then launch the
+                                GameHub helper here.
                             </p>
+                            <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+                                /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 https://store.playstation.com/
+                            </code>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
                                 gamehub-cli helper install-protocol-handler
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                The launch URL contains only this Admin page origin and a one-time launch ID, never PSN cookies.
+                                The launch URL contains only this Admin page origin and a one-time
+                                launch ID. GameHub never asks for your PSN password; cookies stay in
+                                a local one-time handoff before encrypted vault storage.
                             </p>
                         </div>
                         <Button
@@ -854,21 +859,17 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 Fallback if the protocol handler is not installed:
                             </p>
                             <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect psn --handoff-server --origin {pageOrigin}
+                                cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin {pageOrigin}
                             </code>
                         </div>
                         <div>
                             <p className="text-xs leading-5 text-muted-foreground">
-                                If Sony blocks the helper login, use this instead of the Connect PlayStation button:
+                                Diagnostic only: the fresh helper-launched browser is known to be
+                                provider-fragile because Sony can return 429 at the final ssocookie
+                                step.
                             </p>
                             <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=/tmp/gamehub-psn-chrome https://store.playstation.com/
-                            </code>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                Sign in there, keep Chrome open, then run this and paste its handoff URL below:
-                            </p>
-                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin {pageOrigin}
+                                cd services/cli && go run . connect psn --handoff-server --origin {pageOrigin} --diagnostics-file /tmp/gamehub-psn-login.jsonl
                             </code>
                         </div>
                         <Input
@@ -930,8 +931,8 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 JSON fallback
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                If the loopback handoff is unavailable, run the helper without
-                                --handoff-server and paste its one-time JSON result here.
+                                If the loopback handoff is unavailable, run the Chrome debugging
+                                helper without --handoff-server and paste its one-time JSON result here.
                             </p>
                         </div>
                         <Textarea

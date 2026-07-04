@@ -32,6 +32,7 @@ var (
 	helperInstallCliPath string
 	helperLaunchTimeout  time.Duration
 	helperLaunchUser     string
+	helperLaunchPsnDebug string
 	helperLaunchTTL      time.Duration
 )
 
@@ -183,10 +184,13 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 		}()
 		runErr = runConnectGog(cmd, nil)
 	case "psn":
-		psnConnectTimeout = helperLaunchTimeout
-		psnHandoffServer = true
-		psnHandoffOrigin = handoffOrigin
-		psnHandoffTTL = helperLaunchTTL
+		restorePsnLaunch := configurePsnHelperLaunch(
+			helperLaunchTimeout,
+			helperLaunchTTL,
+			handoffOrigin,
+			helperLaunchPsnDebug,
+		)
+		defer restorePsnLaunch()
 
 		previousHook := psnHandoffURLHook
 		if launchStatus != nil {
@@ -205,6 +209,31 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 		return runErr
 	}
 	return nil
+}
+
+func configurePsnHelperLaunch(timeout time.Duration, handoffTTL time.Duration, handoffOrigin string, remoteDebugURL string) func() {
+	previousTimeout := psnConnectTimeout
+	previousHandoffServer := psnHandoffServer
+	previousHandoffOrigin := psnHandoffOrigin
+	previousHandoffTTL := psnHandoffTTL
+	previousRemoteDebugURL := psnRemoteDebugURL
+
+	psnConnectTimeout = timeout
+	psnHandoffServer = true
+	psnHandoffOrigin = handoffOrigin
+	psnHandoffTTL = handoffTTL
+	psnRemoteDebugURL = strings.TrimSpace(remoteDebugURL)
+	if psnRemoteDebugURL == "" {
+		psnRemoteDebugURL = defaultPsnRemoteDebugURL
+	}
+
+	return func() {
+		psnConnectTimeout = previousTimeout
+		psnHandoffServer = previousHandoffServer
+		psnHandoffOrigin = previousHandoffOrigin
+		psnHandoffTTL = previousHandoffTTL
+		psnRemoteDebugURL = previousRemoteDebugURL
+	}
 }
 
 func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
@@ -569,5 +598,6 @@ func init() {
 	helperUninstallCmd.Flags().StringVar(&helperInstallAppPath, "app-path", "", "macOS helper app path (default ~/Applications/GameHub Helper.app)")
 	helperLaunchCmd.Flags().DurationVar(&helperLaunchTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible provider login")
 	helperLaunchCmd.Flags().StringVar(&helperLaunchUser, "user", "", "optional GOG username override when userData.json cannot report it")
+	helperLaunchCmd.Flags().StringVar(&helperLaunchPsnDebug, "psn-remote-debugging-url", defaultPsnRemoteDebugURL, "local Chrome debugging endpoint used by PlayStation helper launches")
 	helperLaunchCmd.Flags().DurationVar(&helperLaunchTTL, "handoff-result-ttl", 10*time.Minute, "maximum time to keep a captured local handoff result available")
 }

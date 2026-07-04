@@ -87,10 +87,36 @@ To see pagination details and request URLs, set `GameHub` to `Debug`.
 | Unexpected response structure | API version changed | Check if the GraphQL hash needs updating |
 | Timeout | PSN API is slow | Retry, or increase the timeout in `PsnFetcher` |
 
-**How to get PSN cookies:**
+**Preferred PlayStation capture path:**
+1. Start your regular Chrome profile with local debugging enabled:
+   ```bash
+   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 https://store.playstation.com/
+   ```
+2. Sign in with Sony/PlayStation in that Chrome window if needed, including MFA or captcha.
+3. From the Admin credential UI, use **Connect PlayStation**. If the protocol handler is not
+   installed, run:
+   ```bash
+   cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin http://localhost:3005
+   ```
+4. Paste the loopback handoff URL into the Admin credential UI when using the manual helper command.
+
+If Chrome was already open and `http://127.0.0.1:49333/json/version` does not answer, quit all
+Chrome windows and start it again with the command above. GameHub never asks for the PSN password;
+the helper reads local session cookies only for a one-time handoff into the encrypted vault. The
+validated cookie for the current PlayStation flow is `pdccws_p`.
+
+**Diagnostic-only helper-launched browser:**
+```bash
+cd services/cli && go run . connect psn --handoff-server --origin http://localhost:3005 --diagnostics-file /tmp/gamehub-psn-login.jsonl
+```
+This fresh-profile path is known to be provider-fragile: Sony can allow OAuth, passkey, telemetry,
+and fingerprinting requests but still return `429 Too Many Requests` for
+`ca.account.sony.com/api/v1/ssocookie`, preventing the final `pdccws_p` cookie from being minted.
+
+**Manual cookie fallback:**
 1. Log in to [store.playstation.com](https://store.playstation.com)
 2. Open DevTools → Network → find any API request
-3. Copy all cookies from the request headers
+3. Copy the required PlayStation cookies from the request headers
 
 ---
 

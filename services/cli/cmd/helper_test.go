@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseHelperLaunchURL_GogWithOrigin_NormalizesOrigin(t *testing.T) {
@@ -106,6 +107,42 @@ func TestMacOSHelperAppleScript_StartsLaunchCommandWithoutTerminalOrCookieData(t
 	}
 	if strings.Contains(script, "gog-al") || strings.Contains(script, "cookie") {
 		t.Fatalf("AppleScript should not embed cookie-related data")
+	}
+}
+
+func TestConfigurePsnHelperLaunch_DefaultsToExistingChromeDebugEndpoint(t *testing.T) {
+	psnRemoteDebugURL = ""
+	psnHandoffServer = false
+	psnHandoffOrigin = ""
+	psnHandoffTTL = 0
+	psnConnectTimeout = 0
+
+	restore := configurePsnHelperLaunch(5*time.Minute, 7*time.Minute, "http://localhost:3005", "")
+	defer restore()
+
+	if psnRemoteDebugURL != defaultPsnRemoteDebugURL {
+		t.Fatalf("psnRemoteDebugURL = %q, want %q", psnRemoteDebugURL, defaultPsnRemoteDebugURL)
+	}
+	if !psnHandoffServer {
+		t.Fatalf("psnHandoffServer = false, want true")
+	}
+	if psnHandoffOrigin != "http://localhost:3005" {
+		t.Fatalf("psnHandoffOrigin = %q, want http://localhost:3005", psnHandoffOrigin)
+	}
+	if psnConnectTimeout != 5*time.Minute {
+		t.Fatalf("psnConnectTimeout = %s, want 5m", psnConnectTimeout)
+	}
+	if psnHandoffTTL != 7*time.Minute {
+		t.Fatalf("psnHandoffTTL = %s, want 7m", psnHandoffTTL)
+	}
+}
+
+func TestConfigurePsnHelperLaunch_AllowsCustomDebugEndpoint(t *testing.T) {
+	restore := configurePsnHelperLaunch(time.Minute, time.Minute, "http://localhost:3005", " http://127.0.0.1:49444 ")
+	defer restore()
+
+	if psnRemoteDebugURL != "http://127.0.0.1:49444" {
+		t.Fatalf("psnRemoteDebugURL = %q, want custom endpoint", psnRemoteDebugURL)
 	}
 }
 
