@@ -24,8 +24,8 @@ PSN provider behavior is more fragile than GOG's single-cookie flow. Sony may ch
 domains, login redirects, or the GraphQL session requirements without notice. The current helper
 therefore validates that at least one known PlayStation session cookie was captured, stores the full
 named cookie map through the existing vault upsert, and preserves manual cookie entry as the
-fallback. The PSN helper intentionally uses provider-specific, less automated Chrome launch flags
-because Sony's sign-in can reject browser sessions that advertise the usual automation defaults.
+fallback. The PSN helper intentionally avoids the broad `chromedp` automation-default flag set
+because Sony's sign-in can reject browser sessions that advertise unusual command-line behavior.
 
 ## Implemented Local Helper
 
@@ -457,7 +457,8 @@ Accepted PlayStation aliases during this slice:
 - PlayStation's cookie names and browser-store session state are more brittle than GOG's single
   `gog-al` cookie. If Sony changes the required cookies, the helper allowlist and docs may need an
   update while the Core/Ingest vault schema can remain `{ "cookies": { ... } }`.
-- Sony sign-in may show a provider-owned "Can't connect to the server" error when it rejects the
-  helper browser session. The helper starts PSN with a visible, non-headless, less automated browser
-  profile, but manual JSON or cookie fallback remains the escape hatch if Sony blocks the local
-  helper window for a particular account, region, browser build, or network.
+- Sony sign-in may show a provider-owned "Can't connect to the server" or "Something went wrong"
+  error when it rejects the helper browser session. The helper starts PSN with a visible,
+  non-headless browser profile and avoids unsupported automation-related Chrome flags, but manual
+  JSON or cookie fallback remains the escape hatch if Sony blocks the local helper window for a
+  particular account, region, browser build, or network.

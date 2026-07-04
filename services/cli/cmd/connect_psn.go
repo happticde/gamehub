@@ -192,7 +192,6 @@ func psnBrowserAllocatorOptions(profileDir string) ([]chromedp.ExecAllocatorOpti
 		chromedp.Flag("disable-gpu", false),
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("remote-debugging-port", strconv.Itoa(debuggingPort)),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.UserDataDir(profileDir),
 	}, nil
 }
