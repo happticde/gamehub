@@ -55,7 +55,10 @@ var connectPsnCmd = &cobra.Command{
 
 Sign in to PlayStation/Sony in that browser window, including any MFA or captcha prompts. The
 helper waits until it can read known PlayStation session cookies from that controlled browser
-context, prints one JSON payload to stdout, and then removes the temporary profile.`),
+context, prints one JSON payload to stdout, and then removes the temporary profile.
+
+If Sony blocks the helper-launched login redirects, use --remote-debugging-url to attach to an
+already running local Chrome debug profile where PlayStation is signed in.`),
 	RunE: runConnectPsn,
 }
 

@@ -139,9 +139,10 @@ go build -o gamehub-cli .
 ./gamehub-cli connect psn
 ```
 
-If Sony blocks the helper-launched PlayStation login before MFA/2FA, use a normal local Chrome debug
-profile as a safer fallback. This replaces the normal GameHub "Connect PlayStation" launch for this
-attempt. First start Chrome yourself and sign in there:
+If Sony blocks the helper-launched PlayStation login before MFA/2FA, use the validated normal Chrome
+debug-profile fallback. This replaces the normal GameHub "Connect PlayStation" launch for this
+attempt and reads the already signed-in browser session, including the observed `pdccws_p` cookie.
+First start Chrome yourself and sign in there:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
