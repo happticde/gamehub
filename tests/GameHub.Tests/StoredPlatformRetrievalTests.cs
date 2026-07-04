@@ -101,6 +101,7 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
     {
         await StorePsn(TenantA, new Dictionary<string, string>
         {
+            ["pdccws_p"] = "secret-pdccws-a",
             ["npsso"] = "secret-npsso-a",
             ["sb-cdn.session"] = "secret-session-a"
         });
@@ -115,9 +116,11 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         var result = await controller.RetrieveStored(Platform.Psn, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("secret-pdccws-a", psn.Cookies?["pdccws_p"]);
         Assert.Equal("secret-npsso-a", psn.Cookies?["npsso"]);
         Assert.Equal("secret-session-a", psn.Cookies?["sb-cdn.session"]);
         var responseJson = JsonSerializer.Serialize(ok.Value);
+        Assert.DoesNotContain("secret-pdccws-a", responseJson, StringComparison.Ordinal);
         Assert.DoesNotContain("secret-npsso-a", responseJson, StringComparison.Ordinal);
         Assert.DoesNotContain("secret-npsso-b", responseJson, StringComparison.Ordinal);
     }

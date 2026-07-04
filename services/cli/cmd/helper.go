@@ -231,7 +231,7 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 	for name := range values {
 		switch strings.ToLower(name) {
 		case "origin", "launchid":
-		case "cookie", "cookies", "gog-al", "gogal", "gogalcookie", "npsso", "psnauthbearertoken", "psnauthrefreshtoken", "jsessionid", "sb-cdn.session", "psn-csrf-token", "session", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
+		case "cookie", "cookies", "gog-al", "gogal", "gogalcookie", "npsso", "psnauthbearertoken", "psnauthrefreshtoken", "jsessionid", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "session", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
 			return helperLaunchRequest{}, fmt.Errorf("helper URL must not contain secret parameter %q", name)
 		default:
 			return helperLaunchRequest{}, fmt.Errorf("unsupported helper URL parameter %q", name)

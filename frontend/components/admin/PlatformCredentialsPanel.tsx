@@ -937,7 +937,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         <Textarea
                             aria-label="PlayStation helper result"
                             className="min-h-24 font-mono text-xs"
-                            placeholder='{"provider":"psn","cookies":{"npsso":"...","sb-cdn.session":"..."}}'
+                            placeholder='{"provider":"psn","cookies":{"pdccws_p":"..."}}'
                             value={helperPayload}
                             onChange={(event) => {
                                 setHelperPayload(event.target.value);

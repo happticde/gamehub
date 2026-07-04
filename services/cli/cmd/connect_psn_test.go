@@ -19,6 +19,7 @@ func TestNewPsnConnectPayload_WithPersistentCookie_IncludesContractFields(t *tes
 	payload := newPsnConnectPayload(
 		map[string]string{
 			"npsso":          "secret-npsso",
+			"pdccws_p":       "secret-pdccws",
 			"sb-cdn.session": "secret-session",
 		},
 		float64(expiresAt.Unix()),
@@ -30,6 +31,9 @@ func TestNewPsnConnectPayload_WithPersistentCookie_IncludesContractFields(t *tes
 	}
 	if payload.Cookies["npsso"] != "secret-npsso" {
 		t.Fatalf("npsso cookie was not preserved in the helper payload")
+	}
+	if payload.Cookies["pdccws_p"] != "secret-pdccws" {
+		t.Fatalf("pdccws_p cookie was not preserved in the helper payload")
 	}
 	if payload.CapturedAtUTC != "2026-07-03T12:00:00Z" {
 		t.Fatalf("CapturedAtUTC = %q, want 2026-07-03T12:00:00Z", payload.CapturedAtUTC)

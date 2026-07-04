@@ -36,6 +36,7 @@ var psnSessionCookieNames = []string{
 	"psnAuthBearerToken",
 	"psnAuthRefreshToken",
 	"JSESSIONID",
+	"pdccws_p",
 	"sb-cdn.session",
 	"psn-csrf-token",
 }

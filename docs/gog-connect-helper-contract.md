@@ -14,6 +14,7 @@ which expects schema-v1 credentials shaped as:
 ```json
 {
   "cookies": {
+    "pdccws_p": "provider-cookie-value",
     "npsso": "provider-cookie-value",
     "sb-cdn.session": "provider-cookie-value"
   }
@@ -220,8 +221,8 @@ Allowed query parameters:
   present, the helper exposes launch readiness only to callers that provide the same ID.
 
 Rejected query parameters include `cookie`, `cookies`, `gog-al`, `gogAl`, `gogAlCookie`, `npsso`,
-`psnAuthBearerToken`, `psnAuthRefreshToken`, `JSESSIONID`, `sb-cdn.session`, `psn-csrf-token`,
-`password`, `session`, and `token`, as well as handoff/result aliases such as `nonce`,
+`psnAuthBearerToken`, `psnAuthRefreshToken`, `JSESSIONID`, `pdccws_p`, `sb-cdn.session`,
+`psn-csrf-token`, `password`, `session`, and `token`, as well as handoff/result aliases such as `nonce`,
 `handoffUrl`, and `resultUrl`. Unknown parameters are rejected too. This keeps the protocol surface
 deliberately narrow and prevents future UI code from accidentally moving provider session material
 into browser history, OS URL-handler logs, or shell history.
@@ -395,6 +396,7 @@ Content-Type: application/json
   "schemaVersion": 1,
   "credentials": {
     "cookies": {
+      "pdccws_p": "provider-cookie-value",
       "npsso": "provider-cookie-value",
       "sb-cdn.session": "provider-cookie-value"
     }
@@ -440,6 +442,7 @@ The PlayStation helper output uses the same envelope but does not include a user
 {
   "provider": "psn",
   "cookies": {
+    "pdccws_p": "provider-cookie-value",
     "npsso": "provider-cookie-value",
     "sb-cdn.session": "provider-cookie-value"
   },
