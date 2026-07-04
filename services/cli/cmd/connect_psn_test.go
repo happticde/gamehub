@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"net"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -49,4 +51,20 @@ func TestNewPsnConnectPayload_WithSessionCookie_OmitsExpiry(t *testing.T) {
 	if payload.ExpiresAtUTC != "" {
 		t.Fatalf("ExpiresAtUTC = %q, want empty for a session cookie", payload.ExpiresAtUTC)
 	}
+}
+
+func TestReserveLocalTCPPort_ReturnsUsableLoopbackPort(t *testing.T) {
+	port, err := reserveLocalTCPPort()
+	if err != nil {
+		t.Fatalf("reserveLocalTCPPort returned error: %v", err)
+	}
+	if port <= 0 {
+		t.Fatalf("port = %d, want positive port", port)
+	}
+
+	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		t.Fatalf("reserved port was not reusable after release: %v", err)
+	}
+	_ = listener.Close()
 }

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -136,13 +138,10 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, timeout
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	options := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", false),
-		chromedp.Flag("disable-gpu", false),
-		chromedp.NoDefaultBrowserCheck,
-		chromedp.NoFirstRun,
-		chromedp.UserDataDir(profileDir),
-	)
+	options, err := psnBrowserAllocatorOptions(profileDir)
+	if err != nil {
+		return psnConnectPayload{}, err
+	}
 
 	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(ctx, options...)
 	defer cancelAllocator()
@@ -176,6 +175,40 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, timeout
 		case <-ticker.C:
 		}
 	}
+}
+
+func psnBrowserAllocatorOptions(profileDir string) ([]chromedp.ExecAllocatorOption, error) {
+	debuggingPort, err := reserveLocalTCPPort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to reserve local browser debugging port: %w", err)
+	}
+
+	// Sony's login can reject browsers that advertise the usual automation defaults. PSN keeps a
+	// provider-specific allocator so the working GOG helper path remains unchanged.
+	return []chromedp.ExecAllocatorOption{
+		chromedp.NoDefaultBrowserCheck,
+		chromedp.NoFirstRun,
+		chromedp.Flag("headless", false),
+		chromedp.Flag("disable-gpu", false),
+		chromedp.Flag("enable-automation", false),
+		chromedp.Flag("remote-debugging-port", strconv.Itoa(debuggingPort)),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.UserDataDir(profileDir),
+	}, nil
+}
+
+func reserveLocalTCPPort() (int, error) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("reserved listener did not return a TCP address")
+	}
+	return tcpAddr.Port, nil
 }
 
 func readPsnSessionCookies(ctx context.Context) (map[string]string, float64, error) {
