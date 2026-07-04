@@ -190,9 +190,11 @@ not put PSN cookies into the custom URI, query strings, localStorage, logs, or s
 The normal guided modes open a temporary, user-visible Chrome/Chromium browser profile at the
 provider. The user signs in directly in that browser window, including MFA or captcha prompts. The
 helper polls the controlled browser context until it can read the provider-specific session
-material, then removes the temporary browser profile when the command exits. The PSN
-`--remote-debugging-url` fallback does not create or remove a browser profile; it only attaches to
-the already running local Chrome debugging endpoint.
+material, then removes the temporary browser profile when the command exits. The PSN launched
+browser intentionally uses a hardened minimal Chrome flag set and avoids chromedp's default
+Puppeteer-style automation flags such as `--enable-automation`, `--disable-extensions`, and
+`--disable-sync`. The PSN `--remote-debugging-url` fallback does not create or remove a browser
+profile; it only attaches to the already running local Chrome debugging endpoint.
 
 Supported flags:
 

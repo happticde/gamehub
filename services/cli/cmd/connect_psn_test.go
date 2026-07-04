@@ -78,6 +78,38 @@ func TestReserveLocalTCPPort_ReturnsUsableLoopbackPort(t *testing.T) {
 	_ = listener.Close()
 }
 
+func TestPsnBrowserLaunchFlags_UsesMinimalChromeFingerprint(t *testing.T) {
+	flags := psnBrowserLaunchFlags("/tmp/gamehub-psn-connect-test", 49333)
+	values := make(map[string]any)
+	for _, flag := range flags {
+		values[flag.Name] = flag.Value
+	}
+
+	if values["remote-debugging-address"] != "127.0.0.1" {
+		t.Fatalf("remote-debugging-address = %v, want 127.0.0.1", values["remote-debugging-address"])
+	}
+	if values["remote-debugging-port"] != "49333" {
+		t.Fatalf("remote-debugging-port = %v, want 49333", values["remote-debugging-port"])
+	}
+	if values["user-data-dir"] != "/tmp/gamehub-psn-connect-test" {
+		t.Fatalf("user-data-dir = %v, want test profile dir", values["user-data-dir"])
+	}
+
+	rejectedFlags := []string{
+		"disable-blink-features",
+		"disable-extensions",
+		"disable-sync",
+		"enable-automation",
+		"headless",
+		"metrics-recording-only",
+	}
+	for _, flag := range rejectedFlags {
+		if _, ok := values[flag]; ok {
+			t.Fatalf("PSN browser launch unexpectedly includes %s", flag)
+		}
+	}
+}
+
 func TestIsPsnLoginRateLimit_DetectsSonyAccount429(t *testing.T) {
 	if !isPsnLoginRateLimit("https://ca.account.sony.com/api/v1/ssocookie", 429) {
 		t.Fatalf("expected Sony account 429 to be detected")

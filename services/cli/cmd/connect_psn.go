@@ -51,6 +51,11 @@ type psnConnectPayload struct {
 	ExpiresAtUTC  string            `json:"expiresAtUtc,omitempty"`
 }
 
+type psnBrowserLaunchFlag struct {
+	Name  string
+	Value any
+}
+
 var connectPsnCmd = &cobra.Command{
 	Use:   "psn",
 	Short: "Open a visible PlayStation login session and print the GameHub helper JSON",
@@ -527,17 +532,24 @@ func psnBrowserAllocatorOptions(profileDir string) ([]chromedp.ExecAllocatorOpti
 		return nil, fmt.Errorf("failed to reserve local browser debugging port: %w", err)
 	}
 
-	// Sony's login can reject browsers that advertise the usual automation defaults. PSN keeps a
-	// provider-specific allocator so the working GOG helper path remains unchanged.
-	return []chromedp.ExecAllocatorOption{
-		chromedp.NoDefaultBrowserCheck,
-		chromedp.NoFirstRun,
-		chromedp.Flag("headless", false),
-		chromedp.Flag("disable-gpu", false),
-		chromedp.Flag("enable-automation", false),
-		chromedp.Flag("remote-debugging-port", strconv.Itoa(debuggingPort)),
-		chromedp.UserDataDir(profileDir),
-	}, nil
+	flags := psnBrowserLaunchFlags(profileDir, debuggingPort)
+	options := make([]chromedp.ExecAllocatorOption, 0, len(flags))
+	for _, flag := range flags {
+		options = append(options, chromedp.Flag(flag.Name, flag.Value))
+	}
+
+	return options, nil
+}
+
+func psnBrowserLaunchFlags(profileDir string, debuggingPort int) []psnBrowserLaunchFlag {
+	// Keep PSN's launched Chrome as close as possible to a user-started browser. The chromedp
+	// default allocator intentionally adds Puppeteer-style flags such as --enable-automation,
+	// --disable-extensions, and --disable-sync; those are avoided for Sony's risk checks.
+	return []psnBrowserLaunchFlag{
+		{Name: "remote-debugging-address", Value: "127.0.0.1"},
+		{Name: "remote-debugging-port", Value: strconv.Itoa(debuggingPort)},
+		{Name: "user-data-dir", Value: profileDir},
+	}
 }
 
 func reserveLocalTCPPort() (int, error) {
