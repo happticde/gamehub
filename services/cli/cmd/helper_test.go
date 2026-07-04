@@ -39,11 +39,28 @@ func TestParseHelperLaunchURL_GogWithoutOrigin_UsesDefaultLater(t *testing.T) {
 	}
 }
 
+func TestParseHelperLaunchURL_PsnWithOrigin_NormalizesOrigin(t *testing.T) {
+	request, err := parseHelperLaunchURL("gamehub-helper://connect/psn?origin=http%3A%2F%2Flocalhost%3A3005&launchId=launch-1234567890")
+	if err != nil {
+		t.Fatalf("parseHelperLaunchURL returned error: %v", err)
+	}
+
+	if request.Platform != "psn" {
+		t.Fatalf("Platform = %q, want psn", request.Platform)
+	}
+	if request.Origin != "http://localhost:3005" {
+		t.Fatalf("Origin = %q, want http://localhost:3005", request.Origin)
+	}
+	if request.LaunchID != "launch-1234567890" {
+		t.Fatalf("LaunchID = %q, want launch-1234567890", request.LaunchID)
+	}
+}
+
 func TestParseHelperLaunchURL_RejectsSecretParameters(t *testing.T) {
-	secretParameters := []string{"cookie", "gog-al", "gogAl", "gogAlCookie", "password", "token", "nonce", "handoffUrl", "resultUrl"}
+	secretParameters := []string{"cookie", "cookies", "gog-al", "gogAl", "gogAlCookie", "npsso", "psnAuthBearerToken", "JSESSIONID", "sb-cdn.session", "psn-csrf-token", "password", "token", "nonce", "handoffUrl", "resultUrl"}
 	for _, parameter := range secretParameters {
 		t.Run(parameter, func(t *testing.T) {
-			_, err := parseHelperLaunchURL("gamehub-helper://connect/gog?" + parameter + "=secret")
+			_, err := parseHelperLaunchURL("gamehub-helper://connect/psn?" + parameter + "=secret")
 			if err == nil {
 				t.Fatalf("expected %q parameter to be rejected", parameter)
 			}
@@ -62,7 +79,7 @@ func TestParseHelperLaunchURL_RejectsInvalidLaunchID(t *testing.T) {
 }
 
 func TestParseHelperLaunchURL_RejectsUnsupportedTarget(t *testing.T) {
-	_, err := parseHelperLaunchURL("gamehub-helper://connect/psn?origin=http%3A%2F%2Flocalhost%3A3005")
+	_, err := parseHelperLaunchURL("gamehub-helper://connect/epic?origin=http%3A%2F%2Flocalhost%3A3005")
 	if err == nil {
 		t.Fatalf("expected unsupported target to fail")
 	}
@@ -127,5 +144,14 @@ func TestHelperLaunchStatusHandler_ReturnsHandoffURLWithoutCookieData(t *testing
 	}
 	if strings.Contains(readyResponse.Body.String(), "gog-al") || strings.Contains(readyResponse.Body.String(), "secret-cookie") {
 		t.Fatalf("launch status response must not contain provider cookie data")
+	}
+}
+
+func TestHelperLaunchStatusPath_UsesProviderSpecificPath(t *testing.T) {
+	if helperLaunchStatusPath("gog") != "/connect/gog/launch-status" {
+		t.Fatalf("unexpected GOG launch status path")
+	}
+	if helperLaunchStatusPath("psn") != "/connect/psn/launch-status" {
+		t.Fatalf("unexpected PSN launch status path")
 	}
 }

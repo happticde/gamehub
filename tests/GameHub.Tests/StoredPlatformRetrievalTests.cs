@@ -96,6 +96,32 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         Assert.IsType<BadRequestObjectResult>(result);
     }
 
+    [Fact]
+    public async Task StoredPsnRetrieve_UsesDelegatedTenantCookieMapWithoutReturningSecrets()
+    {
+        await StorePsn(TenantA, new Dictionary<string, string>
+        {
+            ["npsso"] = "secret-npsso-a",
+            ["sb-cdn.session"] = "secret-session-a"
+        });
+        await StorePsn(TenantB, new Dictionary<string, string>
+        {
+            ["npsso"] = "secret-npsso-b"
+        });
+        await using var db = CreateContext(TenantA);
+        var psn = new CapturingPsnFetcher();
+        var controller = CreateController(db, TenantA, new CapturingSteamFetcher(), psn);
+
+        var result = await controller.RetrieveStored(Platform.Psn, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("secret-npsso-a", psn.Cookies?["npsso"]);
+        Assert.Equal("secret-session-a", psn.Cookies?["sb-cdn.session"]);
+        var responseJson = JsonSerializer.Serialize(ok.Value);
+        Assert.DoesNotContain("secret-npsso-a", responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-npsso-b", responseJson, StringComparison.Ordinal);
+    }
+
     private async Task StoreSteam(Guid tenantId, string apiKey, string steamId)
     {
         await using var db = CreateContext(tenantId);
@@ -107,15 +133,32 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
             document.RootElement.Clone());
     }
 
+    private async Task StorePsn(Guid tenantId, Dictionary<string, string> cookies)
+    {
+        await using var db = CreateContext(tenantId);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new { cookies }));
+        await CreateCredentialService(db, tenantId).UpsertAsync(
+            Platform.Psn,
+            1,
+            document.RootElement.Clone());
+    }
+
     private RetrieveController CreateController(
         IngestContext db,
         Guid tenantId,
         ISteamFetcher steamFetcher) =>
+        CreateController(db, tenantId, steamFetcher, new UnusedPsnFetcher());
+
+    private RetrieveController CreateController(
+        IngestContext db,
+        Guid tenantId,
+        ISteamFetcher steamFetcher,
+        IPsnFetcher psnFetcher) =>
         new(
             db,
             steamFetcher,
             new UnusedGogFetcher(),
-            new UnusedPsnFetcher(),
+            psnFetcher,
             CreateCredentialService(db, tenantId),
             NullLogger<RetrieveController>.Instance,
             NullLoggerFactory.Instance);
@@ -172,5 +215,16 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
     {
         public Task<List<JsonElement>> FetchGamesAsync(Dictionary<string, string> cookies) =>
             throw new InvalidOperationException("PSN fetcher must not be called in this test.");
+    }
+
+    private sealed class CapturingPsnFetcher : IPsnFetcher
+    {
+        public Dictionary<string, string>? Cookies { get; private set; }
+
+        public Task<List<JsonElement>> FetchGamesAsync(Dictionary<string, string> cookies)
+        {
+            Cookies = new Dictionary<string, string>(cookies);
+            return Task.FromResult(new List<JsonElement>());
+        }
     }
 }
