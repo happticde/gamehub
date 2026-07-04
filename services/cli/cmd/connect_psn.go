@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -22,6 +23,7 @@ const psnConnectStartURL = "https://store.playstation.com/"
 
 var (
 	psnConnectTimeout time.Duration
+	psnRemoteDebugURL string
 	psnHandoffServer  bool
 	psnHandoffOrigin  string
 	psnHandoffTTL     time.Duration
@@ -60,11 +62,15 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("timeout must be greater than zero")
 	}
 
-	profileDir, err := os.MkdirTemp("", "gamehub-psn-connect-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary browser profile: %w", err)
+	profileDir := ""
+	if strings.TrimSpace(psnRemoteDebugURL) == "" {
+		var err error
+		profileDir, err = os.MkdirTemp("", "gamehub-psn-connect-*")
+		if err != nil {
+			return fmt.Errorf("failed to create temporary browser profile: %w", err)
+		}
+		defer os.RemoveAll(profileDir)
 	}
-	defer os.RemoveAll(profileDir)
 
 	var handoff *gogHandoffState
 	var shutdownHandoff func(context.Context) error
@@ -97,14 +103,18 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "Paste this local handoff URL into the GameHub Admin PlayStation connector. It contains only a one-time local nonce, not PSN cookies.")
 	}
 
-	fmt.Fprintln(os.Stderr, "Opening a visible PlayStation browser session. Sign in there; no PSN password is entered into GameHub.")
+	if strings.TrimSpace(psnRemoteDebugURL) != "" {
+		fmt.Fprintln(os.Stderr, "Connecting to an existing Chrome debugging session. Sign in there with PlayStation if needed; no PSN password is entered into GameHub.")
+	} else {
+		fmt.Fprintln(os.Stderr, "Opening a visible PlayStation browser session. Sign in there; no PSN password is entered into GameHub.")
+	}
 	if psnHandoffServer {
 		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will be held in memory for a one-time local handoff.")
 	} else {
 		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will only be printed in the final JSON payload.")
 	}
 
-	payload, err := capturePsnConnectPayload(cmd.Context(), profileDir, psnConnectTimeout)
+	payload, err := capturePsnConnectPayload(cmd.Context(), profileDir, strings.TrimSpace(psnRemoteDebugURL), psnConnectTimeout)
 	if err != nil {
 		if handoff != nil {
 			handoff.fail(err)
@@ -144,16 +154,14 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 	return encoder.Encode(payload)
 }
 
-func capturePsnConnectPayload(parent context.Context, profileDir string, timeout time.Duration) (psnConnectPayload, error) {
+func capturePsnConnectPayload(parent context.Context, profileDir string, remoteDebugURL string, timeout time.Duration) (psnConnectPayload, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	options, err := psnBrowserAllocatorOptions(profileDir)
+	allocatorCtx, cancelAllocator, shouldNavigate, err := newPsnBrowserAllocator(ctx, profileDir, remoteDebugURL)
 	if err != nil {
 		return psnConnectPayload{}, err
 	}
-
-	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(ctx, options...)
 	defer cancelAllocator()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
@@ -174,8 +182,13 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, timeout
 		}
 	})
 
-	if err := chromedp.Run(browserCtx, network.Enable(), chromedp.Navigate(psnConnectStartURL)); err != nil {
-		return psnConnectPayload{}, fmt.Errorf("failed to open PlayStation browser session: %w", err)
+	if err := chromedp.Run(browserCtx, network.Enable()); err != nil {
+		return psnConnectPayload{}, fmt.Errorf("failed to prepare PlayStation browser session: %w", err)
+	}
+	if shouldNavigate {
+		if err := chromedp.Run(browserCtx, chromedp.Navigate(psnConnectStartURL)); err != nil {
+			return psnConnectPayload{}, fmt.Errorf("failed to open PlayStation browser session: %w", err)
+		}
 	}
 
 	ticker := time.NewTicker(2 * time.Second)
@@ -202,6 +215,44 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, timeout
 		case <-ticker.C:
 		}
 	}
+}
+
+func newPsnBrowserAllocator(parent context.Context, profileDir string, remoteDebugURL string) (context.Context, context.CancelFunc, bool, error) {
+	if strings.TrimSpace(remoteDebugURL) != "" {
+		normalizedURL, err := normalizePsnRemoteDebugURL(remoteDebugURL)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		allocatorCtx, cancelAllocator := chromedp.NewRemoteAllocator(parent, normalizedURL)
+		return allocatorCtx, cancelAllocator, false, nil
+	}
+
+	options, err := psnBrowserAllocatorOptions(profileDir)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(parent, options...)
+	return allocatorCtx, cancelAllocator, true, nil
+}
+
+func normalizePsnRemoteDebugURL(value string) (string, error) {
+	remoteURL := strings.TrimSpace(value)
+	parsed, err := neturl.Parse(remoteURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("remote debugging URL must be an endpoint like http://127.0.0.1:9222")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "ws" {
+		return "", fmt.Errorf("remote debugging URL must use http or ws")
+	}
+
+	hostname := strings.ToLower(parsed.Hostname())
+	ip := net.ParseIP(hostname)
+	if hostname != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return "", fmt.Errorf("remote debugging URL must point to localhost or 127.0.0.1")
+	}
+
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func isPsnLoginRateLimit(url string, status int) bool {
@@ -304,6 +355,7 @@ func init() {
 	connectCmd.AddCommand(connectPsnCmd)
 
 	connectPsnCmd.Flags().DurationVar(&psnConnectTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible PlayStation login")
+	connectPsnCmd.Flags().StringVar(&psnRemoteDebugURL, "remote-debugging-url", "", "connect to an existing Chrome debugging endpoint such as http://127.0.0.1:9222 instead of opening a new PlayStation login browser")
 	connectPsnCmd.Flags().BoolVar(&psnHandoffServer, "handoff-server", false, "serve the captured PlayStation result once over a local loopback URL instead of printing the cookie JSON")
 	connectPsnCmd.Flags().StringVar(&psnHandoffOrigin, "origin", defaultGogHandoffOriginList, "comma-separated GameHub frontend origins allowed for local handoff CORS")
 	connectPsnCmd.Flags().DurationVar(&psnHandoffTTL, "handoff-result-ttl", 10*time.Minute, "maximum time to keep a captured local handoff result available")

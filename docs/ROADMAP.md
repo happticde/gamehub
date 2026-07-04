@@ -181,8 +181,9 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   fragility, including `429 Too Many Requests` on Sony account endpoints after repeated helper
   attempts. Before marking PSN guided connect done, re-test after the rate limit clears, verify that
   captured cookies can be stored and used for stored PSN retrieval, and decide whether PSN should
-  remain manual-first or gain a safer fallback that reads an already signed-in normal browser
-  session.
+  remain manual-first. A loopback-only Chrome remote-debugging fallback is available as the next
+  validation path for reading an already signed-in normal browser session without repeating Sony's
+  fragile helper-launched login redirects.
 
 ---
 

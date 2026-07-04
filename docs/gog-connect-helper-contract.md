@@ -138,10 +138,34 @@ go build -o gamehub-cli .
 ./gamehub-cli connect psn
 ```
 
-Both modes open a temporary, user-visible Chrome/Chromium browser profile at the provider. The user
-signs in directly in that browser window, including MFA or captcha prompts. The helper polls the
-controlled browser context until it can read the provider-specific session material, then removes
-the temporary browser profile when the command exits.
+If Sony blocks the helper-launched PlayStation login before MFA/2FA, use a normal local Chrome debug
+profile as a safer fallback. First start Chrome yourself and sign in there:
+
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/gamehub-psn-chrome \
+  https://store.playstation.com/
+```
+
+After the normal Chrome profile is signed in, keep it open and run:
+
+```bash
+./gamehub-cli connect psn \
+  --remote-debugging-url http://127.0.0.1:9222 \
+  --handoff-server \
+  --origin http://localhost:3005
+```
+
+This fallback still uses a one-time local handoff and the existing Core/Ingest vault upsert. It does
+not put PSN cookies into the custom URI, query strings, localStorage, logs, or status APIs.
+
+The normal guided modes open a temporary, user-visible Chrome/Chromium browser profile at the
+provider. The user signs in directly in that browser window, including MFA or captcha prompts. The
+helper polls the controlled browser context until it can read the provider-specific session
+material, then removes the temporary browser profile when the command exits. The PSN
+`--remote-debugging-url` fallback does not create or remove a browser profile; it only attaches to
+the already running local Chrome debugging endpoint.
 
 Supported flags:
 
@@ -155,6 +179,10 @@ Supported flags:
   it differs.
 - `--handoff-result-ttl 10m`: maximum time to keep a captured result available after login before
   discarding it.
+- `--remote-debugging-url http://127.0.0.1:9222`: PSN-only fallback that connects to an already
+  running local Chrome debugging endpoint instead of opening a fresh PlayStation login browser. The
+  URL must point to loopback (`localhost` or `127.0.0.1`) and may be useful when Sony blocks the
+  helper-launched login flow before MFA/2FA.
 
 The helper must run on the user's host machine, not inside the devcontainer, because it needs to
 open a visible local browser. It requires a locally installed Chrome or Chromium browser discoverable

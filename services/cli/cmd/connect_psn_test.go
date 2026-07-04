@@ -80,3 +80,30 @@ func TestIsPsnLoginRateLimit_DetectsSonyAccount429(t *testing.T) {
 		t.Fatalf("expected unrelated 429 response to be ignored")
 	}
 }
+
+func TestNormalizePsnRemoteDebugURL_AllowsLoopbackHTTPAndWS(t *testing.T) {
+	httpURL, err := normalizePsnRemoteDebugURL("http://127.0.0.1:9222/json/version")
+	if err != nil {
+		t.Fatalf("normalizePsnRemoteDebugURL returned error: %v", err)
+	}
+	if httpURL != "http://127.0.0.1:9222" {
+		t.Fatalf("httpURL = %q, want http://127.0.0.1:9222", httpURL)
+	}
+
+	wsURL, err := normalizePsnRemoteDebugURL("ws://localhost:9222")
+	if err != nil {
+		t.Fatalf("normalizePsnRemoteDebugURL returned error: %v", err)
+	}
+	if wsURL != "ws://localhost:9222" {
+		t.Fatalf("wsURL = %q, want ws://localhost:9222", wsURL)
+	}
+}
+
+func TestNormalizePsnRemoteDebugURL_RejectsRemoteHosts(t *testing.T) {
+	if _, err := normalizePsnRemoteDebugURL("http://192.168.1.10:9222"); err == nil {
+		t.Fatalf("expected private non-loopback remote debugging URL to be rejected")
+	}
+	if _, err := normalizePsnRemoteDebugURL("https://127.0.0.1:9222"); err == nil {
+		t.Fatalf("expected unsupported scheme to be rejected")
+	}
+}
