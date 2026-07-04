@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,6 +35,17 @@ var (
 	helperLaunchUser     string
 	helperLaunchPsnDebug string
 	helperLaunchTTL      time.Duration
+)
+
+var (
+	helperRuntimeGOOS           = runtime.GOOS
+	psnRemoteDebugEndpointReady = func(ctx context.Context, remoteDebugURL string) bool {
+		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_, err := resolvePsnRemoteDebugURL(checkCtx, remoteDebugURL)
+		return err == nil
+	}
+	startPsnRemoteDebugChrome = defaultStartPsnRemoteDebugChrome
 )
 
 type helperLaunchRequest struct {
@@ -199,6 +211,10 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 		defer func() {
 			psnHandoffURLHook = previousHook
 		}()
+		if err := preparePsnRemoteDebugChrome(cmd.Context(), psnRemoteDebugURL, cmd.ErrOrStderr()); err != nil {
+			runErr = err
+			break
+		}
 		runErr = runConnectPsn(cmd, nil)
 	}
 
@@ -234,6 +250,62 @@ func configurePsnHelperLaunch(timeout time.Duration, handoffTTL time.Duration, h
 		psnHandoffTTL = previousHandoffTTL
 		psnRemoteDebugURL = previousRemoteDebugURL
 	}
+}
+
+func preparePsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string, stderr io.Writer) error {
+	if strings.TrimSpace(remoteDebugURL) == "" || psnRemoteDebugEndpointReady(ctx, remoteDebugURL) {
+		return nil
+	}
+	if helperRuntimeGOOS != "darwin" {
+		return nil
+	}
+
+	fmt.Fprintf(stderr, "Chrome debugging endpoint %s is not ready. Opening Chrome with local remote debugging enabled.\n", remoteDebugURL)
+	if err := startPsnRemoteDebugChrome(ctx, remoteDebugURL); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(25 * time.Second)
+	for time.Now().Before(deadline) {
+		if psnRemoteDebugEndpointReady(ctx, remoteDebugURL) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+
+	return fmt.Errorf("Chrome did not expose %s after launch. Quit all Chrome windows, then use Connect PlayStation again so the helper can start Chrome with remote debugging enabled", remoteDebugURL)
+}
+
+func defaultStartPsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string) error {
+	normalizedURL, err := normalizePsnRemoteDebugURL(remoteDebugURL)
+	if err != nil {
+		return err
+	}
+	parsed, err := url.Parse(normalizedURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse PlayStation Chrome debugging URL: %w", err)
+	}
+	port := parsed.Port()
+	if port == "" {
+		return fmt.Errorf("PlayStation Chrome debugging URL must include a port")
+	}
+
+	chromePath := "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+	command := exec.CommandContext(
+		ctx,
+		chromePath,
+		"--remote-debugging-address=127.0.0.1",
+		"--remote-debugging-port="+port,
+		psnConnectStartURL,
+	)
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("failed to open Chrome for PlayStation connect: %w", err)
+	}
+	return nil
 }
 
 func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {

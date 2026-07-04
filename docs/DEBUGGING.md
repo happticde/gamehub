@@ -88,17 +88,25 @@ To see pagination details and request URLs, set `GameHub` to `Debug`.
 | Timeout | PSN API is slow | Retry, or increase the timeout in `PsnFetcher` |
 
 **Preferred PlayStation capture path:**
+1. Install the local helper protocol handler once:
+   ```bash
+   cd services/cli && go run . helper install-protocol-handler
+   ```
+2. From the Admin credential UI, use **Connect PlayStation**.
+3. The helper opens or attaches to your normal Chrome profile with local debugging enabled. Sign in
+   with Sony/PlayStation in that Chrome window if needed, including MFA or captcha.
+
+If the protocol handler is not installed, or if Chrome was already running without the debug port,
+use the manual fallback:
 1. Start your regular Chrome profile with local debugging enabled:
    ```bash
    /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 https://store.playstation.com/
    ```
-2. Sign in with Sony/PlayStation in that Chrome window if needed, including MFA or captcha.
-3. From the Admin credential UI, use **Connect PlayStation**. If the protocol handler is not
-   installed, run:
+2. Run the helper against that Chrome endpoint:
    ```bash
    cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin http://localhost:3005
    ```
-4. Paste the loopback handoff URL into the Admin credential UI when using the manual helper command.
+3. Paste the loopback handoff URL into the Admin credential UI.
 
 If Chrome was already open and `http://127.0.0.1:49333/json/version` does not answer, quit all
 Chrome windows and start it again with the command above. GameHub never asks for the PSN password;

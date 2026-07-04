@@ -176,9 +176,11 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   vault boundary and provide user-visible local-helper handoff flows for GOG and PlayStation. See
   [Platform Connect Helper Contract](gog-connect-helper-contract.md) for the one-time helper
   payloads, BFF/Core upsert targets, and security invariants.
-- **PSN validation status (2026-07-04)**: The PlayStation Admin connector now treats an existing
-  local Chrome remote-debugging session as the primary guided path. Real Sony sign-in testing showed
-  that a helper-launched fresh Chrome profile can complete the earlier OAuth, passkey, telemetry, and
+- **PSN validation status (2026-07-04)**: The PlayStation Admin connector now treats a normal local
+  Chrome profile exposed through loopback remote debugging as the primary guided path. The protocol
+  helper opens or attaches to Chrome on `127.0.0.1:49333`, then hands the captured cookies back
+  through the same one-time local handoff used by GOG. Real Sony sign-in testing showed that a
+  helper-launched fresh Chrome profile can complete the earlier OAuth, passkey, telemetry, and
   fingerprinting calls, but still fail at the final `ca.account.sony.com/api/v1/ssocookie` mint with
   `429 Too Many Requests`. A normal Chrome session exposed through loopback remote debugging was
   validated as the working path for reading the already-issued `pdccws_p` cookie. Keep the broader

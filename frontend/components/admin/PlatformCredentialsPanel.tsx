@@ -824,13 +824,10 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 {status?.isConfigured ? "Reconnect PlayStation" : "Connect PlayStation"}
                             </h4>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                Start your normal Chrome profile with local debugging, sign in with
-                                Sony/PlayStation there if needed, keep Chrome open, then launch the
-                                GameHub helper here.
+                                After installing the local protocol handler, launch the helper here.
+                                It opens or attaches to your normal Chrome profile with local debugging,
+                                then imports the PlayStation handoff automatically.
                             </p>
-                            <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 https://store.playstation.com/
-                            </code>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
                                 gamehub-cli helper install-protocol-handler
                             </code>
@@ -856,8 +853,12 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         </Button>
                         <div>
                             <p className="text-xs leading-5 text-muted-foreground">
-                                Fallback if the protocol handler is not installed:
+                                Fallback if the protocol handler is not installed, or if Chrome was
+                                already running without the debug port:
                             </p>
+                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+                                /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 https://store.playstation.com/
+                            </code>
                             <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
                                 cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin {pageOrigin}
                             </code>
