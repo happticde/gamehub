@@ -252,7 +252,7 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 			return psnConnectPayload{}, fmt.Errorf("failed to read PlayStation browser location: %w", err)
 		}
 
-		if len(cookies) > 0 && isPsnCookieCaptureReady(currentURL) {
+		if isPsnCookieCaptureComplete(cookies, currentURL) {
 			if diagnostics != nil {
 				diagnostics.recordCookieCapture(cookies)
 			}
@@ -437,7 +437,7 @@ func newPsnBrowserAllocator(parent context.Context, profileDir string, remoteDeb
 			return nil, nil, false, err
 		}
 		allocatorCtx, cancelAllocator := chromedp.NewRemoteAllocator(parent, browserWSURL, chromedp.NoModifyURL)
-		return allocatorCtx, cancelAllocator, false, nil
+		return allocatorCtx, cancelAllocator, true, nil
 	}
 
 	options, err := psnBrowserAllocatorOptions(profileDir)
@@ -584,6 +584,7 @@ func readPsnSessionCookies(ctx context.Context) (map[string]string, float64, err
 				"https://store.playstation.com",
 				"https://www.playstation.com",
 				"https://my.account.sony.com",
+				"https://ca.account.sony.com",
 				"https://web.np.playstation.com",
 			}).
 			Do(ctx)
@@ -633,6 +634,16 @@ func isPsnCookieCaptureReady(currentURL string) bool {
 	}
 
 	return hostname != "my.account.sony.com" && hostname != "ca.account.sony.com"
+}
+
+func isPsnCookieCaptureComplete(cookies map[string]string, currentURL string) bool {
+	if len(cookies) == 0 {
+		return false
+	}
+	if strings.TrimSpace(cookies["pdccws_p"]) != "" {
+		return true
+	}
+	return isPsnCookieCaptureReady(currentURL)
 }
 
 func newPsnConnectPayload(cookies map[string]string, expires float64, capturedAt time.Time) psnConnectPayload {
