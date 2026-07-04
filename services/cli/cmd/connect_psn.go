@@ -241,7 +241,7 @@ func normalizePsnRemoteDebugURL(value string) (string, error) {
 	remoteURL := strings.TrimSpace(value)
 	parsed, err := neturl.Parse(remoteURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("remote debugging URL must be an endpoint like http://127.0.0.1:9222")
+		return "", fmt.Errorf("remote debugging URL must be an endpoint like http://127.0.0.1:49333")
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "ws" {
 		return "", fmt.Errorf("remote debugging URL must use http or ws")
@@ -264,7 +264,7 @@ func resolvePsnRemoteDebugURL(ctx context.Context, value string) (string, error)
 
 	parsed, err := neturl.Parse(normalizedURL)
 	if err != nil {
-		return "", fmt.Errorf("remote debugging URL must be an endpoint like http://127.0.0.1:9222")
+		return "", fmt.Errorf("remote debugging URL must be an endpoint like http://127.0.0.1:49333")
 	}
 
 	versionURL := "http://" + parsed.Host + "/json/version"
@@ -278,12 +278,12 @@ func resolvePsnRemoteDebugURL(ctx context.Context, value string) (string, error)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return "", fmt.Errorf("remote Chrome debugging endpoint %s did not answer %s: %w. Make sure Chrome is still open and really started with --remote-debugging-port=9222; on macOS, quit all Chrome windows before starting the debug profile if this endpoint is not reachable", normalizedURL, versionURL, err)
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s did not answer %s: %w. Make sure Chrome is still open and really started with the same --remote-debugging-port value used in --remote-debugging-url; on macOS, quit all Chrome windows before starting the debug profile if this endpoint is not reachable", normalizedURL, versionURL, err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("remote Chrome debugging endpoint %s returned HTTP %d for %s. Make sure the URL points to a Chrome instance started with --remote-debugging-port=9222", normalizedURL, response.StatusCode, versionURL)
+		return "", fmt.Errorf("remote Chrome debugging endpoint %s returned HTTP %d for %s. Make sure the URL points to a Chrome instance started with the same --remote-debugging-port value", normalizedURL, response.StatusCode, versionURL)
 	}
 
 	var version struct {
@@ -412,7 +412,7 @@ func init() {
 	connectCmd.AddCommand(connectPsnCmd)
 
 	connectPsnCmd.Flags().DurationVar(&psnConnectTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible PlayStation login")
-	connectPsnCmd.Flags().StringVar(&psnRemoteDebugURL, "remote-debugging-url", "", "connect to an existing Chrome debugging endpoint such as http://127.0.0.1:9222 instead of opening a new PlayStation login browser")
+	connectPsnCmd.Flags().StringVar(&psnRemoteDebugURL, "remote-debugging-url", "", "connect to an existing Chrome debugging endpoint such as http://127.0.0.1:49333 instead of opening a new PlayStation login browser")
 	connectPsnCmd.Flags().BoolVar(&psnHandoffServer, "handoff-server", false, "serve the captured PlayStation result once over a local loopback URL instead of printing the cookie JSON")
 	connectPsnCmd.Flags().StringVar(&psnHandoffOrigin, "origin", defaultGogHandoffOriginList, "comma-separated GameHub frontend origins allowed for local handoff CORS")
 	connectPsnCmd.Flags().DurationVar(&psnHandoffTTL, "handoff-result-ttl", 10*time.Minute, "maximum time to keep a captured local handoff result available")

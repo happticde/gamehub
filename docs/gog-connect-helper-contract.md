@@ -144,20 +144,23 @@ attempt. First start Chrome yourself and sign in there:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --remote-debugging-port=9222 \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=49333 \
   --user-data-dir=/tmp/gamehub-psn-chrome \
   https://store.playstation.com/
 ```
 
-If `http://127.0.0.1:9222/json/version` does not return Chrome debug JSON, the debug profile is not
+If `http://127.0.0.1:49333/json/version` does not return Chrome debug JSON, the debug profile is not
 reachable. On macOS, quit all Chrome windows and start the command again so the
-`--remote-debugging-port` flag is not handed to an already running Chrome instance.
+`--remote-debugging-port` flag is not handed to an already running Chrome instance. A `404 Not
+Found` response usually means another local service or another browser process is answering on that
+port; choose a different unused loopback port and use the same port in both commands.
 
 After the normal Chrome profile is signed in, keep it open and run:
 
 ```bash
 ./gamehub-cli connect psn \
-  --remote-debugging-url http://127.0.0.1:9222 \
+  --remote-debugging-url http://127.0.0.1:49333 \
   --handoff-server \
   --origin http://localhost:3005
 ```
@@ -188,7 +191,7 @@ Supported flags:
   it differs.
 - `--handoff-result-ttl 10m`: maximum time to keep a captured result available after login before
   discarding it.
-- `--remote-debugging-url http://127.0.0.1:9222`: PSN-only fallback that connects to an already
+- `--remote-debugging-url http://127.0.0.1:49333`: PSN-only fallback that connects to an already
   running local Chrome debugging endpoint instead of opening a fresh PlayStation login browser. The
   URL must point to loopback (`localhost` or `127.0.0.1`) and may be useful when Sony blocks the
   helper-launched login flow before MFA/2FA.
