@@ -462,3 +462,7 @@ Accepted PlayStation aliases during this slice:
   non-headless browser profile and avoids unsupported automation-related Chrome flags, but manual
   JSON or cookie fallback remains the escape hatch if Sony blocks the local helper window for a
   particular account, region, browser build, or network.
+- If Sony returns HTTP `429 Too Many Requests` from account endpoints such as
+  `ca.account.sony.com/api/v1/ssocookie`, the helper fails fast with a rate-limit message instead of
+  waiting until timeout. Repeated immediate retries can extend the block; wait for Sony's limit to
+  clear before trying the guided helper again.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -149,6 +150,21 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, timeout
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
 	defer cancelBrowser()
 
+	rateLimit := make(chan string, 1)
+	chromedp.ListenTarget(browserCtx, func(event any) {
+		responseEvent, ok := event.(*network.EventResponseReceived)
+		if !ok || responseEvent.Response == nil {
+			return
+		}
+		if !isPsnLoginRateLimit(responseEvent.Response.URL, int(responseEvent.Response.Status)) {
+			return
+		}
+		select {
+		case rateLimit <- responseEvent.Response.URL:
+		default:
+		}
+	})
+
 	if err := chromedp.Run(browserCtx, network.Enable(), chromedp.Navigate(psnConnectStartURL)); err != nil {
 		return psnConnectPayload{}, fmt.Errorf("failed to open PlayStation browser session: %w", err)
 	}
@@ -167,6 +183,8 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, timeout
 		}
 
 		select {
+		case url := <-rateLimit:
+			return psnConnectPayload{}, fmt.Errorf("Sony returned HTTP 429 during PlayStation sign-in at %s. Wait before retrying, or use the manual cookie fallback with an already signed-in normal browser session", url)
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return psnConnectPayload{}, fmt.Errorf("timed out waiting for PlayStation login after %s", timeout)
@@ -175,6 +193,17 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, timeout
 		case <-ticker.C:
 		}
 	}
+}
+
+func isPsnLoginRateLimit(url string, status int) bool {
+	if status != http.StatusTooManyRequests {
+		return false
+	}
+
+	normalizedURL := strings.ToLower(strings.TrimSpace(url))
+	return strings.Contains(normalizedURL, "account.sony.com") ||
+		strings.Contains(normalizedURL, "my.account.sony.com") ||
+		strings.Contains(normalizedURL, "ca.account.sony.com")
 }
 
 func psnBrowserAllocatorOptions(profileDir string) ([]chromedp.ExecAllocatorOption, error) {

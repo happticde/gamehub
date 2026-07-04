@@ -68,3 +68,15 @@ func TestReserveLocalTCPPort_ReturnsUsableLoopbackPort(t *testing.T) {
 	}
 	_ = listener.Close()
 }
+
+func TestIsPsnLoginRateLimit_DetectsSonyAccount429(t *testing.T) {
+	if !isPsnLoginRateLimit("https://ca.account.sony.com/api/v1/ssocookie", 429) {
+		t.Fatalf("expected Sony account 429 to be detected")
+	}
+	if isPsnLoginRateLimit("https://ca.account.sony.com/api/v1/ssocookie", 200) {
+		t.Fatalf("expected non-429 Sony account response to be ignored")
+	}
+	if isPsnLoginRateLimit("https://example.test/api", 429) {
+		t.Fatalf("expected unrelated 429 response to be ignored")
+	}
+}
