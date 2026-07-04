@@ -11,8 +11,10 @@ import (
 	neturl "net/url"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
@@ -23,12 +25,13 @@ import (
 const psnConnectStartURL = "https://store.playstation.com/"
 
 var (
-	psnConnectTimeout time.Duration
-	psnRemoteDebugURL string
-	psnHandoffServer  bool
-	psnHandoffOrigin  string
-	psnHandoffTTL     time.Duration
-	psnHandoffURLHook func(string)
+	psnConnectTimeout  time.Duration
+	psnDiagnosticsFile string
+	psnRemoteDebugURL  string
+	psnHandoffServer   bool
+	psnHandoffOrigin   string
+	psnHandoffTTL      time.Duration
+	psnHandoffURLHook  func(string)
 )
 
 var psnSessionCookieNames = []string{
@@ -108,6 +111,15 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "Paste this local handoff URL into the GameHub Admin PlayStation connector. It contains only a one-time local nonce, not PSN cookies.")
 	}
 
+	diagnostics, err := newPsnConnectDiagnostics(strings.TrimSpace(psnDiagnosticsFile))
+	if err != nil {
+		return err
+	}
+	if diagnostics != nil {
+		defer diagnostics.Close()
+		fmt.Fprintf(os.Stderr, "Writing sanitized PlayStation login diagnostics to %s. Cookies, headers, query strings, and fragments are not recorded.\n", psnDiagnosticsFile)
+	}
+
 	if strings.TrimSpace(psnRemoteDebugURL) != "" {
 		fmt.Fprintln(os.Stderr, "Connecting to an existing Chrome debugging session. Sign in there with PlayStation if needed; no PSN password is entered into GameHub.")
 	} else {
@@ -119,7 +131,7 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will only be printed in the final JSON payload.")
 	}
 
-	payload, err := capturePsnConnectPayload(cmd.Context(), profileDir, strings.TrimSpace(psnRemoteDebugURL), psnConnectTimeout)
+	payload, err := capturePsnConnectPayload(cmd.Context(), profileDir, strings.TrimSpace(psnRemoteDebugURL), psnConnectTimeout, diagnostics)
 	if err != nil {
 		if handoff != nil {
 			handoff.fail(err)
@@ -159,7 +171,7 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 	return encoder.Encode(payload)
 }
 
-func capturePsnConnectPayload(parent context.Context, profileDir string, remoteDebugURL string, timeout time.Duration) (psnConnectPayload, error) {
+func capturePsnConnectPayload(parent context.Context, profileDir string, remoteDebugURL string, timeout time.Duration, diagnostics *psnConnectDiagnostics) (psnConnectPayload, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
@@ -174,16 +186,31 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 
 	rateLimit := make(chan string, 1)
 	chromedp.ListenTarget(browserCtx, func(event any) {
-		responseEvent, ok := event.(*network.EventResponseReceived)
-		if !ok || responseEvent.Response == nil {
-			return
-		}
-		if !isPsnLoginRateLimit(responseEvent.Response.URL, int(responseEvent.Response.Status)) {
-			return
-		}
-		select {
-		case rateLimit <- responseEvent.Response.URL:
+		switch typedEvent := event.(type) {
+		case *network.EventRequestWillBeSent:
+			if diagnostics != nil {
+				diagnostics.recordRequest(typedEvent)
+			}
+		case *network.EventResponseReceived:
+			if typedEvent.Response == nil {
+				return
+			}
+			if diagnostics != nil {
+				diagnostics.recordResponse(typedEvent)
+			}
+			if !isPsnLoginRateLimit(typedEvent.Response.URL, int(typedEvent.Response.Status)) {
+				return
+			}
+			select {
+			case rateLimit <- typedEvent.Response.URL:
+			default:
+			}
+		case *network.EventLoadingFailed:
+			if diagnostics != nil {
+				diagnostics.recordLoadingFailed(typedEvent)
+			}
 		default:
+			return
 		}
 	})
 
@@ -206,6 +233,9 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 		}
 
 		if len(cookies) > 0 {
+			if diagnostics != nil {
+				diagnostics.recordCookieCapture(cookies)
+			}
 			return newPsnConnectPayload(cookies, expiresAt, time.Now().UTC()), nil
 		}
 
@@ -220,6 +250,157 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 		case <-ticker.C:
 		}
 	}
+}
+
+type psnConnectDiagnostics struct {
+	mu          sync.Mutex
+	encoder     *json.Encoder
+	file        *os.File
+	startedAt   time.Time
+	requestURLs map[network.RequestID]string
+}
+
+type psnDiagnosticEvent struct {
+	AtUTC          string   `json:"atUtc"`
+	ElapsedMs      int64    `json:"elapsedMs"`
+	Event          string   `json:"event"`
+	RequestID      string   `json:"requestId,omitempty"`
+	Method         string   `json:"method,omitempty"`
+	URL            string   `json:"url,omitempty"`
+	Status         int      `json:"status,omitempty"`
+	StatusText     string   `json:"statusText,omitempty"`
+	ResourceType   string   `json:"resourceType,omitempty"`
+	HasUserGesture *bool    `json:"hasUserGesture,omitempty"`
+	ErrorText      string   `json:"errorText,omitempty"`
+	Canceled       *bool    `json:"canceled,omitempty"`
+	BlockedReason  string   `json:"blockedReason,omitempty"`
+	CookieNames    []string `json:"cookieNames,omitempty"`
+}
+
+func newPsnConnectDiagnostics(path string) (*psnConnectDiagnostics, error) {
+	if path == "" {
+		return nil, nil
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PlayStation diagnostics file: %w", err)
+	}
+
+	return &psnConnectDiagnostics{
+		encoder:     json.NewEncoder(file),
+		file:        file,
+		startedAt:   time.Now().UTC(),
+		requestURLs: make(map[network.RequestID]string),
+	}, nil
+}
+
+func (diagnostics *psnConnectDiagnostics) Close() {
+	if diagnostics == nil || diagnostics.file == nil {
+		return
+	}
+	_ = diagnostics.file.Close()
+}
+
+func (diagnostics *psnConnectDiagnostics) record(event psnDiagnosticEvent) {
+	if diagnostics == nil {
+		return
+	}
+
+	diagnostics.mu.Lock()
+	defer diagnostics.mu.Unlock()
+
+	now := time.Now().UTC()
+	event.AtUTC = now.Format(time.RFC3339Nano)
+	event.ElapsedMs = now.Sub(diagnostics.startedAt).Milliseconds()
+	_ = diagnostics.encoder.Encode(event)
+}
+
+func (diagnostics *psnConnectDiagnostics) recordRequest(event *network.EventRequestWillBeSent) {
+	requestURL := ""
+	method := ""
+	if event.Request != nil {
+		requestURL = event.Request.URL
+		method = event.Request.Method
+	}
+
+	diagnostics.mu.Lock()
+	diagnostics.requestURLs[event.RequestID] = requestURL
+	diagnostics.mu.Unlock()
+
+	if event.RedirectResponse != nil {
+		diagnostics.record(psnDiagnosticEvent{
+			Event:        "redirect",
+			RequestID:    string(event.RequestID),
+			URL:          sanitizePsnDiagnosticURL(event.RedirectResponse.URL),
+			Status:       int(event.RedirectResponse.Status),
+			StatusText:   event.RedirectResponse.StatusText,
+			ResourceType: string(event.Type),
+		})
+	}
+
+	hasUserGesture := event.HasUserGesture
+	diagnostics.record(psnDiagnosticEvent{
+		Event:          "request",
+		RequestID:      string(event.RequestID),
+		Method:         method,
+		URL:            sanitizePsnDiagnosticURL(requestURL),
+		ResourceType:   string(event.Type),
+		HasUserGesture: &hasUserGesture,
+	})
+}
+
+func (diagnostics *psnConnectDiagnostics) recordResponse(event *network.EventResponseReceived) {
+	diagnostics.record(psnDiagnosticEvent{
+		Event:        "response",
+		RequestID:    string(event.RequestID),
+		URL:          sanitizePsnDiagnosticURL(event.Response.URL),
+		Status:       int(event.Response.Status),
+		StatusText:   event.Response.StatusText,
+		ResourceType: string(event.Type),
+	})
+}
+
+func (diagnostics *psnConnectDiagnostics) recordLoadingFailed(event *network.EventLoadingFailed) {
+	diagnostics.mu.Lock()
+	requestURL := diagnostics.requestURLs[event.RequestID]
+	diagnostics.mu.Unlock()
+
+	canceled := event.Canceled
+	diagnostics.record(psnDiagnosticEvent{
+		Event:         "loading_failed",
+		RequestID:     string(event.RequestID),
+		URL:           sanitizePsnDiagnosticURL(requestURL),
+		ResourceType:  string(event.Type),
+		ErrorText:     event.ErrorText,
+		Canceled:      &canceled,
+		BlockedReason: string(event.BlockedReason),
+	})
+}
+
+func (diagnostics *psnConnectDiagnostics) recordCookieCapture(cookies map[string]string) {
+	cookieNames := make([]string, 0, len(cookies))
+	for name := range cookies {
+		cookieNames = append(cookieNames, name)
+	}
+	sort.Strings(cookieNames)
+
+	diagnostics.record(psnDiagnosticEvent{
+		Event:       "cookie_capture",
+		CookieNames: cookieNames,
+	})
+}
+
+func sanitizePsnDiagnosticURL(value string) string {
+	parsed, err := neturl.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 func newPsnBrowserAllocator(parent context.Context, profileDir string, remoteDebugURL string) (context.Context, context.CancelFunc, bool, error) {
@@ -416,6 +597,7 @@ func init() {
 	connectCmd.AddCommand(connectPsnCmd)
 
 	connectPsnCmd.Flags().DurationVar(&psnConnectTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible PlayStation login")
+	connectPsnCmd.Flags().StringVar(&psnDiagnosticsFile, "diagnostics-file", "", "write sanitized PlayStation login network diagnostics as JSON lines to this file")
 	connectPsnCmd.Flags().StringVar(&psnRemoteDebugURL, "remote-debugging-url", "", "connect to an existing Chrome debugging endpoint such as http://127.0.0.1:49333 instead of opening a new PlayStation login browser")
 	connectPsnCmd.Flags().BoolVar(&psnHandoffServer, "handoff-server", false, "serve the captured PlayStation result once over a local loopback URL instead of printing the cookie JSON")
 	connectPsnCmd.Flags().StringVar(&psnHandoffOrigin, "origin", defaultGogHandoffOriginList, "comma-separated GameHub frontend origins allowed for local handoff CORS")

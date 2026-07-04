@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -146,5 +147,41 @@ func TestResolvePsnRemoteDebugURL_ExplainsBadDebugEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "/json/version") {
 		t.Fatalf("error = %q, want /json/version hint", err.Error())
+	}
+}
+
+func TestSanitizePsnDiagnosticURL_RemovesSecrets(t *testing.T) {
+	sanitized := sanitizePsnDiagnosticURL("https://ca.account.sony.com/api/v1/ssocookie?token=secret#fragment")
+
+	if sanitized != "https://ca.account.sony.com/api/v1/ssocookie" {
+		t.Fatalf("sanitized = %q, want URL without query or fragment", sanitized)
+	}
+}
+
+func TestPsnConnectDiagnostics_WritesSanitizedJSONLines(t *testing.T) {
+	path := t.TempDir() + "/psn-diagnostics.jsonl"
+	diagnostics, err := newPsnConnectDiagnostics(path)
+	if err != nil {
+		t.Fatalf("newPsnConnectDiagnostics returned error: %v", err)
+	}
+
+	diagnostics.record(psnDiagnosticEvent{
+		Event:  "response",
+		URL:    sanitizePsnDiagnosticURL("https://ca.account.sony.com/api/v1/ssocookie?token=secret#fragment"),
+		Status: 429,
+	})
+	diagnostics.recordCookieCapture(map[string]string{"pdccws_p": "secret-cookie-value"})
+	diagnostics.Close()
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read diagnostics file: %v", err)
+	}
+	text := string(content)
+	if strings.Contains(text, "secret") || strings.Contains(text, "token=") || strings.Contains(text, "#fragment") {
+		t.Fatalf("diagnostics leaked a secret-bearing URL or cookie value: %s", text)
+	}
+	if !strings.Contains(text, `"status":429`) || !strings.Contains(text, `"pdccws_p"`) {
+		t.Fatalf("diagnostics did not include expected sanitized status and cookie name: %s", text)
 	}
 }

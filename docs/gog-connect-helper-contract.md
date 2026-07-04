@@ -85,6 +85,15 @@ cd services/cli
 go run . connect psn --handoff-server
 ```
 
+To investigate Sony-side failures such as HTTP 429 responses without recording cookies, headers,
+query strings, or fragments, add a sanitized diagnostics file:
+
+```bash
+go run . connect psn \
+  --handoff-server \
+  --diagnostics-file /tmp/gamehub-psn-login.jsonl
+```
+
 For repeated use, build the CLI and run the same command from the binary:
 
 ```bash
@@ -193,6 +202,9 @@ Supported flags:
   it differs.
 - `--handoff-result-ttl 10m`: maximum time to keep a captured result available after login before
   discarding it.
+- `--diagnostics-file /tmp/gamehub-psn-login.jsonl`: writes sanitized PSN login network diagnostics
+  as JSON lines. The trace includes request/response/failure events, status codes, sanitized URLs,
+  and captured cookie names only; it omits cookies, headers, query strings, and fragments.
 - `--remote-debugging-url http://127.0.0.1:49333`: PSN-only fallback that connects to an already
   running local Chrome debugging endpoint instead of opening a fresh PlayStation login browser. The
   URL must point to loopback (`localhost` or `127.0.0.1`) and may be useful when Sony blocks the
