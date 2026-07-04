@@ -90,7 +90,9 @@ To see pagination details and request URLs, set `GameHub` to `Debug`.
 **Preferred PlayStation capture path:**
 1. Install the local helper protocol handler once:
    ```bash
-   cd services/cli && go run . helper install-protocol-handler
+   cd services/cli
+   go build -o gamehub-cli .
+   ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"
    ```
 2. From the Admin credential UI, use **Connect PlayStation**.
 3. The helper opens or attaches to your normal Chrome profile with local debugging enabled. Sign in

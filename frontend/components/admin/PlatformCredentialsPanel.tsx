@@ -493,7 +493,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 local handoff automatically.
                             </p>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                gamehub-cli helper install-protocol-handler
+                                cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path &quot;$PWD/gamehub-cli&quot;
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
                                 The launch URL contains only this Admin page origin and a one-time launch ID, never the gog-al cookie.
@@ -829,7 +829,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                                 then imports the PlayStation handoff automatically.
                             </p>
                             <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                gamehub-cli helper install-protocol-handler
+                                cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path &quot;$PWD/gamehub-cli&quot;
                             </code>
                             <p className="mt-2 text-xs leading-5 text-muted-foreground">
                                 The launch URL contains only this Admin page origin and a one-time

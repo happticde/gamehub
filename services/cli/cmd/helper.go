@@ -99,7 +99,7 @@ func runHelperInstallProtocolHandler(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if isLikelyGoRunBinary(cliPath) && strings.TrimSpace(helperInstallCliPath) == "" {
-		return fmt.Errorf("refusing to register a temporary go run binary; build gamehub-cli first or pass --cli-path")
+		return fmt.Errorf("refusing to register a temporary go run binary; run `go build -o gamehub-cli .` and then `./gamehub-cli helper install-protocol-handler --cli-path <absolute-path-to-gamehub-cli>`")
 	}
 
 	if err := installMacOSProtocolHandler(appPath, cliPath); err != nil {
