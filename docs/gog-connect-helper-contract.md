@@ -14,6 +14,7 @@ which expects schema-v1 credentials shaped as:
 ```json
 {
   "cookies": {
+    "pdccws_p": "provider-cookie-value",
     "npsso": "provider-cookie-value",
     "sb-cdn.session": "provider-cookie-value"
   }
@@ -84,6 +85,19 @@ cd services/cli
 go run . connect psn --handoff-server
 ```
 
+To investigate Sony-side failures such as HTTP 429 responses without recording cookies, headers,
+query strings, or fragments, add a sanitized diagnostics file:
+
+```bash
+go run . connect psn \
+  --handoff-server \
+  --diagnostics-file /tmp/gamehub-psn-login.jsonl
+```
+
+When diagnostics are enabled, a Sony HTTP 429 is recorded but does not immediately close the helper
+browser. The helper keeps the browser open until cookies are captured, `--timeout` expires, or the
+user stops the command, which makes redirect and MFA behavior easier to inspect.
+
 For repeated use, build the CLI and run the same command from the binary:
 
 ```bash
@@ -138,10 +152,49 @@ go build -o gamehub-cli .
 ./gamehub-cli connect psn
 ```
 
-Both modes open a temporary, user-visible Chrome/Chromium browser profile at the provider. The user
-signs in directly in that browser window, including MFA or captcha prompts. The helper polls the
-controlled browser context until it can read the provider-specific session material, then removes
-the temporary browser profile when the command exits.
+If Sony blocks the helper-launched PlayStation login before MFA/2FA, use the validated normal Chrome
+debug-profile fallback. This replaces the normal GameHub "Connect PlayStation" launch for this
+attempt and reads the already signed-in browser session, including the observed `pdccws_p` cookie.
+First start Chrome yourself and sign in there:
+
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=49333 \
+  --user-data-dir=/tmp/gamehub-psn-chrome \
+  https://store.playstation.com/
+```
+
+If `http://127.0.0.1:49333/json/version` does not return Chrome debug JSON, the debug profile is not
+reachable. On macOS, quit all Chrome windows and start the command again so the
+`--remote-debugging-port` flag is not handed to an already running Chrome instance. A `404 Not
+Found` response usually means another local service or another browser process is answering on that
+port; choose a different unused loopback port and use the same port in both commands.
+
+After the normal Chrome profile is signed in, keep it open and run:
+
+```bash
+./gamehub-cli connect psn \
+  --remote-debugging-url http://127.0.0.1:49333 \
+  --handoff-server \
+  --origin http://localhost:3005
+```
+
+Paste the local handoff URL printed by this command into the PlayStation connector field. Do not
+click the normal GameHub Connect PlayStation button again during this fallback attempt, because that
+starts a fresh helper-launched Sony login flow.
+
+This fallback still uses a one-time local handoff and the existing Core/Ingest vault upsert. It does
+not put PSN cookies into the custom URI, query strings, localStorage, logs, or status APIs.
+
+The normal guided modes open a temporary, user-visible Chrome/Chromium browser profile at the
+provider. The user signs in directly in that browser window, including MFA or captcha prompts. The
+helper polls the controlled browser context until it can read the provider-specific session
+material, then removes the temporary browser profile when the command exits. The PSN launched
+browser intentionally uses a hardened minimal Chrome flag set and avoids chromedp's default
+Puppeteer-style automation flags such as `--enable-automation`, `--disable-extensions`, and
+`--disable-sync`. The PSN `--remote-debugging-url` fallback does not create or remove a browser
+profile; it only attaches to the already running local Chrome debugging endpoint.
 
 Supported flags:
 
@@ -155,6 +208,13 @@ Supported flags:
   it differs.
 - `--handoff-result-ttl 10m`: maximum time to keep a captured result available after login before
   discarding it.
+- `--diagnostics-file /tmp/gamehub-psn-login.jsonl`: writes sanitized PSN login network diagnostics
+  as JSON lines. The trace includes request/response/failure events, status codes, sanitized URLs,
+  and captured cookie names only; it omits cookies, headers, query strings, and fragments.
+- `--remote-debugging-url http://127.0.0.1:49333`: PSN-only fallback that connects to an already
+  running local Chrome debugging endpoint instead of opening a fresh PlayStation login browser. The
+  URL must point to loopback (`localhost` or `127.0.0.1`) and may be useful when Sony blocks the
+  helper-launched login flow before MFA/2FA.
 
 The helper must run on the user's host machine, not inside the devcontainer, because it needs to
 open a visible local browser. It requires a locally installed Chrome or Chromium browser discoverable
@@ -180,8 +240,8 @@ Allowed query parameters:
   present, the helper exposes launch readiness only to callers that provide the same ID.
 
 Rejected query parameters include `cookie`, `cookies`, `gog-al`, `gogAl`, `gogAlCookie`, `npsso`,
-`psnAuthBearerToken`, `psnAuthRefreshToken`, `JSESSIONID`, `sb-cdn.session`, `psn-csrf-token`,
-`password`, `session`, and `token`, as well as handoff/result aliases such as `nonce`,
+`psnAuthBearerToken`, `psnAuthRefreshToken`, `JSESSIONID`, `pdccws_p`, `sb-cdn.session`,
+`psn-csrf-token`, `password`, `session`, and `token`, as well as handoff/result aliases such as `nonce`,
 `handoffUrl`, and `resultUrl`. Unknown parameters are rejected too. This keeps the protocol surface
 deliberately narrow and prevents future UI code from accidentally moving provider session material
 into browser history, OS URL-handler logs, or shell history.
@@ -355,6 +415,7 @@ Content-Type: application/json
   "schemaVersion": 1,
   "credentials": {
     "cookies": {
+      "pdccws_p": "provider-cookie-value",
       "npsso": "provider-cookie-value",
       "sb-cdn.session": "provider-cookie-value"
     }
@@ -400,6 +461,7 @@ The PlayStation helper output uses the same envelope but does not include a user
 {
   "provider": "psn",
   "cookies": {
+    "pdccws_p": "provider-cookie-value",
     "npsso": "provider-cookie-value",
     "sb-cdn.session": "provider-cookie-value"
   },

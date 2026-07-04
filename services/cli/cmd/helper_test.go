@@ -57,7 +57,7 @@ func TestParseHelperLaunchURL_PsnWithOrigin_NormalizesOrigin(t *testing.T) {
 }
 
 func TestParseHelperLaunchURL_RejectsSecretParameters(t *testing.T) {
-	secretParameters := []string{"cookie", "cookies", "gog-al", "gogAl", "gogAlCookie", "npsso", "psnAuthBearerToken", "JSESSIONID", "sb-cdn.session", "psn-csrf-token", "password", "token", "nonce", "handoffUrl", "resultUrl"}
+	secretParameters := []string{"cookie", "cookies", "gog-al", "gogAl", "gogAlCookie", "npsso", "psnAuthBearerToken", "JSESSIONID", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "password", "token", "nonce", "handoffUrl", "resultUrl"}
 	for _, parameter := range secretParameters {
 		t.Run(parameter, func(t *testing.T) {
 			_, err := parseHelperLaunchURL("gamehub-helper://connect/psn?" + parameter + "=secret")

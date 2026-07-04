@@ -177,12 +177,14 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   [Platform Connect Helper Contract](gog-connect-helper-contract.md) for the one-time helper
   payloads, BFF/Core upsert targets, and security invariants.
 - **PSN validation status (2026-07-04)**: The PSN guided-connect implementation is mergeable as an
-  integration slice, but it is not considered complete. Real Sony sign-in testing hit provider
-  fragility, including `429 Too Many Requests` on Sony account endpoints after repeated helper
-  attempts. Before marking PSN guided connect done, re-test after the rate limit clears, verify that
-  captured cookies can be stored and used for stored PSN retrieval, and decide whether PSN should
-  remain manual-first or gain a safer fallback that reads an already signed-in normal browser
-  session.
+  integration slice, but the helper-launched Sony login remains provider-fragile. Real Sony sign-in
+  testing hit `429 Too Many Requests` on Sony account endpoints after repeated helper attempts, and
+  a normal Chrome remote-debugging fallback was validated as the working path for reading an already
+  signed-in browser session. The validated cookie key for this flow is `pdccws_p`; keep the broader
+  cookie map support in place because Sony may vary cookie names by surface or account state. Before
+  marking PSN guided connect fully done, verify stored PSN retrieval end-to-end with the captured
+  `pdccws_p` credential and decide whether the helper-launched Sony login should remain secondary to
+  the remote-debugging fallback.
 
 ---
 

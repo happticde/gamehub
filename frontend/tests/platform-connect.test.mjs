@@ -25,6 +25,7 @@ test("PSN helper payload maps cookies to the vault credential shape", () => {
     const result = parsePsnConnectPayload(JSON.stringify({
         provider: "psn",
         cookies: {
+            pdccws_p: "secret-pdccws",
             npsso: "secret-npsso",
             "sb-cdn.session": "secret-session",
         },
@@ -33,6 +34,7 @@ test("PSN helper payload maps cookies to the vault credential shape", () => {
 
     assert.equal(result.provider, "psn");
     assert.deepEqual(result.cookies, {
+        pdccws_p: "secret-pdccws",
         npsso: "secret-npsso",
         "sb-cdn.session": "secret-session",
     });
