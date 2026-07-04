@@ -1090,7 +1090,7 @@ async function waitForHelperLaunchStatus(
             continue;
         }
         if (!response.ok) {
-            throw new Error(`The local helper launch status returned ${response.status}.`);
+            throw new Error(await readLocalHelperFailure(response));
         }
 
         const parsed = parseHelperLaunchStatus(await response.json());
