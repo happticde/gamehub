@@ -225,6 +225,7 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	reportedDiagnosticRateLimit := false
 
 	for {
 		cookies, expiresAt, err := readPsnSessionCookies(browserCtx)
@@ -241,6 +242,13 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 
 		select {
 		case url := <-rateLimit:
+			if diagnostics != nil {
+				if !reportedDiagnosticRateLimit {
+					fmt.Fprintf(os.Stderr, "Sony returned HTTP 429 during PlayStation sign-in at %s. Diagnostics mode will keep the browser open until cookies are captured, the timeout is reached, or you stop the helper.\n", url)
+					reportedDiagnosticRateLimit = true
+				}
+				continue
+			}
 			return psnConnectPayload{}, fmt.Errorf("Sony returned HTTP 429 during PlayStation sign-in at %s. Wait before retrying, or use the manual cookie fallback with an already signed-in normal browser session", url)
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {

@@ -94,6 +94,10 @@ go run . connect psn \
   --diagnostics-file /tmp/gamehub-psn-login.jsonl
 ```
 
+When diagnostics are enabled, a Sony HTTP 429 is recorded but does not immediately close the helper
+browser. The helper keeps the browser open until cookies are captured, `--timeout` expires, or the
+user stops the command, which makes redirect and MFA behavior easier to inspect.
+
 For repeated use, build the CLI and run the same command from the binary:
 
 ```bash
