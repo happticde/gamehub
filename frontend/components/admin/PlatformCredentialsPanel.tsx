@@ -18,6 +18,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getPlatformColor } from "@/lib/platform-colors";
+import {
+    parseGogConnectObject,
+    parseGogConnectPayload,
+    parseHandoffUrl,
+    parseHelperLaunchStatus,
+    parsePsnConnectObject,
+    parsePsnConnectPayload,
+} from "@/lib/platform-connect";
 import type {
     Platform,
     PlatformCredentialManagement,
@@ -36,18 +44,9 @@ import {
 } from "lucide-react";
 
 type CredentialPayload = Record<string, unknown>;
-type GogConnectResult = {
-    user: string;
-    cookie: string;
-    expired: boolean;
-};
-type GogHelperLaunchStatus = {
-    status: "starting" | "handoff_ready" | "failed";
-    handoffUrl?: string;
-    message?: string;
-};
+type ConnectProvider = "gog" | "psn";
 
-const gogHelperLaunchStatusUrl = "http://127.0.0.1:53935/connect/gog/launch-status";
+const helperLaunchStatusBaseUrl = "http://127.0.0.1:53935";
 
 /**
  * Tenant credential management through Core's authenticated BFF route. Secret values live only
@@ -349,6 +348,10 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             setHelperError("The GOG session is already expired. Reconnect GOG and try again.");
             return;
         }
+        if (result.provider !== "gog") {
+            setHelperError("This helper result is not for GOG.");
+            return;
+        }
 
         if (await onSave({ cookie: result.cookie, user: result.user })) {
             setHelperPayload("");
@@ -371,7 +374,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         window.location.href = url.toString();
 
         try {
-            const launchedHandoffUrl = await waitForHelperLaunchStatus(launchId, attempt, handoffAttemptRef);
+            const launchedHandoffUrl = await waitForHelperLaunchStatus("gog", launchId, attempt, handoffAttemptRef);
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
@@ -390,7 +393,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     };
 
     async function pollHandoffUrl(candidateUrl = handoffUrl) {
-        const parsedUrl = parseGogHandoffUrl(candidateUrl);
+        const parsedUrl = parseHandoffUrl(candidateUrl, "gog", window.location.origin);
         if (parsedUrl instanceof Error) {
             setHandoffError(parsedUrl.message);
             return;
@@ -420,7 +423,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     throw new Error("This local helper result was already imported. Run the helper again for a fresh handoff URL.");
                 }
                 if (!response.ok) {
-                    throw new Error(`The local helper returned status ${response.status}.`);
+                    throw new Error(await readLocalHelperFailure(response));
                 }
 
                 const result = parseGogConnectObject(await response.json());
@@ -429,6 +432,9 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                 }
                 if (result.expired) {
                     throw new Error("The GOG session is already expired. Reconnect GOG and try again.");
+                }
+                if (result.provider !== "gog") {
+                    throw new Error("This helper result is not for GOG.");
                 }
 
                 setHandoffMessage("GOG session captured. Storing it in the encrypted vault…");
@@ -640,7 +646,24 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
 
 function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     const [cookies, setCookies] = useState([{ key: "", value: "" }]);
+    const [helperPayload, setHelperPayload] = useState("");
+    const [handoffUrl, setHandoffUrl] = useState("");
+    const [handoffPolling, setHandoffPolling] = useState(false);
+    const [helperLaunching, setHelperLaunching] = useState(false);
+    const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
+    const [handoffError, setHandoffError] = useState<string | null>(null);
+    const [helperError, setHelperError] = useState<string | null>(null);
+    const [pageOrigin, setPageOrigin] = useState("http://localhost:3005");
+    const handoffAttemptRef = useRef(0);
     const validCookies = cookies.filter((cookie) => cookie.key.trim() && cookie.value.trim());
+
+    useEffect(() => () => {
+        handoffAttemptRef.current += 1;
+    }, []);
+
+    useEffect(() => {
+        setPageOrigin(window.location.origin);
+    }, []);
 
     const submit = async () => {
         const payload = Object.fromEntries(
@@ -649,52 +672,345 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         if (await onSave({ cookies: payload })) setCookies([{ key: "", value: "" }]);
     };
 
+    const saveHelperPayload = async () => {
+        setHelperError(null);
+
+        const result = parsePsnConnectPayload(helperPayload);
+        if (result instanceof Error) {
+            setHelperError(result.message);
+            return;
+        }
+
+        if (result.expired) {
+            setHelperError("The PlayStation session is already expired. Reconnect PlayStation and try again.");
+            return;
+        }
+        if (result.provider !== "psn") {
+            setHelperError("This helper result is not for PlayStation.");
+            return;
+        }
+
+        if (await onSave({ cookies: result.cookies })) {
+            setHelperPayload("");
+        }
+    };
+
+    const launchProtocolHelper = async () => {
+        const launchId = newHelperLaunchId();
+        const url = new URL("gamehub-helper://connect/psn");
+        url.searchParams.set("origin", window.location.origin);
+        url.searchParams.set("launchId", launchId);
+
+        const attempt = handoffAttemptRef.current + 1;
+        handoffAttemptRef.current = attempt;
+        setHandoffError(null);
+        setHelperError(null);
+        setHandoffUrl("");
+        setHelperLaunching(true);
+        setHandoffMessage("Waiting for the local helper to start. If your browser asks, allow it to open GameHub Helper.");
+        window.location.href = url.toString();
+
+        try {
+            const launchedHandoffUrl = await waitForHelperLaunchStatus("psn", launchId, attempt, handoffAttemptRef);
+            if (handoffAttemptRef.current !== attempt) return;
+
+            setHandoffUrl(launchedHandoffUrl);
+            setHandoffMessage("Local helper started. Waiting for the visible PlayStation sign-in…");
+            await pollHandoffUrl(launchedHandoffUrl);
+        } catch (caught) {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffError(localLaunchErrorMessage(caught));
+                setHandoffMessage(null);
+            }
+        } finally {
+            if (handoffAttemptRef.current === attempt) {
+                setHelperLaunching(false);
+            }
+        }
+    };
+
+    async function pollHandoffUrl(candidateUrl = handoffUrl) {
+        const parsedUrl = parseHandoffUrl(candidateUrl, "psn", window.location.origin);
+        if (parsedUrl instanceof Error) {
+            setHandoffError(parsedUrl.message);
+            return;
+        }
+
+        const attempt = handoffAttemptRef.current + 1;
+        handoffAttemptRef.current = attempt;
+        setHandoffPolling(true);
+        setHelperLaunching(false);
+        setHandoffError(null);
+        setHelperError(null);
+        setHandoffMessage("Waiting for the local helper to capture your PlayStation session…");
+
+        try {
+            const deadline = Date.now() + 10 * 60 * 1000;
+            while (Date.now() < deadline && handoffAttemptRef.current === attempt) {
+                const response = await fetch(parsedUrl, { cache: "no-store" });
+                if (handoffAttemptRef.current !== attempt) return;
+
+                if (response.status === 202) {
+                    setHandoffMessage("Helper is still waiting for the visible PlayStation sign-in…");
+                    await delay(1500);
+                    continue;
+                }
+
+                if (response.status === 410) {
+                    throw new Error("This local helper result was already imported. Run the helper again for a fresh handoff URL.");
+                }
+                if (!response.ok) {
+                    throw new Error(await readLocalHelperFailure(response));
+                }
+
+                const result = parsePsnConnectObject(await response.json());
+                if (result instanceof Error) {
+                    throw result;
+                }
+                if (result.expired) {
+                    throw new Error("The PlayStation session is already expired. Reconnect PlayStation and try again.");
+                }
+                if (result.provider !== "psn") {
+                    throw new Error("This helper result is not for PlayStation.");
+                }
+
+                setHandoffMessage("PlayStation session captured. Storing it in the encrypted vault…");
+                if (await onSave({ cookies: result.cookies })) {
+                    setHandoffUrl("");
+                    setHelperPayload("");
+                    setHandoffMessage("PlayStation session imported from the local helper.");
+                    return;
+                }
+
+                setCookies(cookieMapToRows(result.cookies));
+                setHandoffError("The helper result was captured, but storing it failed. The manual fields below are filled so you can retry.");
+                return;
+            }
+
+            throw new Error("Timed out waiting for the local helper result.");
+        } catch (caught) {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffError(localHandoffErrorMessage(caught));
+                setHandoffMessage(null);
+            }
+        } finally {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffPolling(false);
+            }
+        }
+    }
+
+    const stopHandoffPolling = () => {
+        handoffAttemptRef.current += 1;
+        setHandoffPolling(false);
+        setHelperLaunching(false);
+        setHandoffMessage(null);
+    };
+
     return (
         <CredentialCard
             platform="Psn"
-            description="PlayStation Store browser cookies"
+            description="Guided connect flow with manual cookie fallback"
             status={status}
             busy={busy}
             onDelete={onDelete}
         >
-            {cookies.map((cookie, index) => (
-                <div key={index} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
-                    <Input
-                        aria-label={`Cookie ${index + 1} name`}
-                        placeholder="Cookie name"
-                        value={cookie.key}
-                        onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, key: event.target.value } : item))}
-                    />
-                    <Input
-                        aria-label={`Cookie ${index + 1} value`}
-                        placeholder="Cookie value"
-                        type="password"
-                        autoComplete="off"
-                        value={cookie.value}
-                        onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, value: event.target.value } : item))}
-                    />
+            <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="flex items-start gap-2">
+                    <PlugZap className="mt-0.5 h-4 w-4 text-primary" />
+                    <div className="space-y-2">
+                        <div>
+                            <h4 className="text-sm font-medium text-foreground">
+                                {status?.isConfigured ? "Reconnect PlayStation" : "Connect PlayStation"}
+                            </h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                After installing the local protocol handler, launch the helper here,
+                                sign in with Sony/PlayStation in the visible browser, and GameHub
+                                will import the local handoff automatically.
+                            </p>
+                            <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+                                gamehub-cli helper install-protocol-handler
+                            </code>
+                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                                The launch URL contains only this Admin page origin and a one-time launch ID, never PSN cookies.
+                            </p>
+                        </div>
+                        <Button
+                            variant="default"
+                            size="sm"
+                            className="w-full"
+                            disabled={busy || handoffPolling || helperLaunching}
+                            onClick={() => void launchProtocolHelper()}
+                        >
+                            {helperLaunching ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <PlugZap className="mr-2 h-4 w-4" />
+                            )}
+                            {helperLaunching ? "Starting helper…" : "Connect PlayStation"}
+                        </Button>
+                        <div>
+                            <p className="text-xs leading-5 text-muted-foreground">
+                                Fallback if the protocol handler is not installed:
+                            </p>
+                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+                                cd services/cli && go run . connect psn --handoff-server --origin {pageOrigin}
+                            </code>
+                        </div>
+                        <Input
+                            aria-label="PlayStation local helper handoff URL"
+                            className="font-mono text-xs"
+                            placeholder="http://127.0.0.1:12345/connect/psn/result?nonce=..."
+                            value={handoffUrl}
+                            onChange={(event) => {
+                                setHandoffUrl(event.target.value);
+                                setHandoffError(null);
+                            }}
+                            disabled={handoffPolling || helperLaunching}
+                        />
+                        {(handoffMessage || handoffError) && (
+                            <p
+                                className={`rounded-md border px-3 py-2 text-xs ${
+                                    handoffError
+                                        ? "border-destructive/30 bg-destructive/10 text-destructive"
+                                        : "border-primary/30 bg-primary/10 text-primary"
+                                }`}
+                            >
+                                {handoffError ?? handoffMessage}
+                            </p>
+                        )}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
+                            onClick={() => void pollHandoffUrl()}
+                        >
+                            {handoffPolling ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <PlugZap className="mr-2 h-4 w-4" />
+                            )}
+                            {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
+                        </Button>
+                        {(handoffPolling || helperLaunching) && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full"
+                                onClick={stopHandoffPolling}
+                            >
+                                Stop waiting
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="flex items-start gap-2">
+                    <KeyRound className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div className="space-y-2">
+                        <div>
+                            <h4 className="text-sm font-medium text-foreground">
+                                JSON fallback
+                            </h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                If the loopback handoff is unavailable, run the helper without
+                                --handoff-server and paste its one-time JSON result here.
+                            </p>
+                        </div>
+                        <Textarea
+                            aria-label="PlayStation helper result"
+                            className="min-h-24 font-mono text-xs"
+                            placeholder='{"provider":"psn","cookies":{"npsso":"...","sb-cdn.session":"..."}}'
+                            value={helperPayload}
+                            onChange={(event) => {
+                                setHelperPayload(event.target.value);
+                                setHelperError(null);
+                            }}
+                        />
+                        {helperError && (
+                            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                                {helperError}
+                            </p>
+                        )}
+                        <Button
+                            className="w-full"
+                            disabled={busy || !helperPayload.trim()}
+                            onClick={() => void saveHelperPayload()}
+                        >
+                            {busy ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : status?.isConfigured ? (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                            ) : (
+                                <PlugZap className="mr-2 h-4 w-4" />
+                            )}
+                            {busy
+                                ? "Saving…"
+                                : status?.isConfigured
+                                    ? "Store refreshed PlayStation session"
+                                    : "Store JSON helper result"}
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-3 border-t pt-4">
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">Manual fallback</p>
                     <Button
                         variant="ghost"
-                        size="icon"
-                        aria-label={`Remove cookie ${index + 1}`}
-                        disabled={cookies.length === 1}
-                        onClick={() => setCookies((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                            window.open("https://store.playstation.com/", "_blank", "noopener,noreferrer");
+                        }}
                     >
-                        <Trash2 className="h-4 w-4" />
+                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                        Open PlayStation
                     </Button>
                 </div>
-            ))}
-            <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => setCookies((current) => [...current, { key: "", value: "" }])}
-            >
-                <Plus className="mr-2 h-4 w-4" /> Add cookie
-            </Button>
-            <SaveButton busy={busy} disabled={validCookies.length === 0} onClick={submit} />
+                {cookies.map((cookie, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
+                        <Input
+                            aria-label={`Cookie ${index + 1} name`}
+                            placeholder="Cookie name"
+                            value={cookie.key}
+                            onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
+                                itemIndex === index ? { ...item, key: event.target.value } : item))}
+                        />
+                        <Input
+                            aria-label={`Cookie ${index + 1} value`}
+                            placeholder="Cookie value"
+                            type="password"
+                            autoComplete="off"
+                            value={cookie.value}
+                            onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
+                                itemIndex === index ? { ...item, value: event.target.value } : item))}
+                        />
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Remove cookie ${index + 1}`}
+                            disabled={cookies.length === 1}
+                            onClick={() => setCookies((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </Button>
+                    </div>
+                ))}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setCookies((current) => [...current, { key: "", value: "" }])}
+                >
+                    <Plus className="mr-2 h-4 w-4" /> Add cookie
+                </Button>
+                <SaveButton busy={busy} disabled={validCookies.length === 0} onClick={submit} />
+            </div>
         </CredentialCard>
     );
 }
@@ -750,12 +1066,13 @@ async function readError(response: Response): Promise<string> {
 }
 
 async function waitForHelperLaunchStatus(
+    provider: ConnectProvider,
     launchId: string,
     attempt: number,
     handoffAttemptRef: RefObject<number>,
 ): Promise<string> {
     const deadline = Date.now() + 45 * 1000;
-    const statusUrl = new URL(gogHelperLaunchStatusUrl);
+    const statusUrl = new URL(`${helperLaunchStatusBaseUrl}/connect/${provider}/launch-status`);
     statusUrl.searchParams.set("launchId", launchId);
     statusUrl.searchParams.set("origin", window.location.origin);
 
@@ -773,10 +1090,10 @@ async function waitForHelperLaunchStatus(
             continue;
         }
         if (!response.ok) {
-            throw new Error(`The local helper launch status returned ${response.status}.`);
+            throw new Error(await readLocalHelperFailure(response));
         }
 
-        const parsed = parseGogHelperLaunchStatus(await response.json());
+        const parsed = parseHelperLaunchStatus(await response.json());
         if (parsed instanceof Error) {
             throw parsed;
         }
@@ -813,89 +1130,15 @@ function localHandoffErrorMessage(error: unknown): string {
     return message;
 }
 
-function parseGogConnectPayload(value: string): GogConnectResult | Error {
-    let parsed: unknown;
+async function readLocalHelperFailure(response: Response): Promise<string> {
     try {
-        parsed = JSON.parse(value);
+        const body = await response.json() as { message?: string; status?: string };
+        if (body.message) return body.message;
+        if (body.status === "failed") return "The local helper reported a provider sign-in failure.";
     } catch {
-        return new Error("Paste the JSON result returned by the local GOG helper.");
+        // Fall through to the generic status message when the helper response is not JSON.
     }
-
-    if (!isObjectRecord(parsed)) {
-        return new Error("The GOG helper result must be a JSON object.");
-    }
-
-    return parseGogConnectObject(parsed);
-}
-
-function parseGogConnectObject(parsed: Record<string, unknown>): GogConnectResult | Error {
-    const provider = readOptionalText(parsed.provider ?? parsed.platform);
-    if (provider && provider.toLowerCase() !== "gog") {
-        return new Error("This helper result is not for GOG.");
-    }
-
-    const status = readOptionalText(parsed.status ?? parsed.error)?.toLowerCase();
-    const user = readOptionalText(parsed.user ?? parsed.username);
-    const cookie = readOptionalText(
-        parsed.cookie ?? parsed.gogAl ?? parsed.gogAlCookie ?? parsed["gog-al"],
-    )
-        ?? readCookieValue(parsed.cookies, "gog-al");
-
-    if (!user) {
-        return new Error("The GOG helper result is missing the user field.");
-    }
-    if (!cookie) {
-        return new Error("The GOG helper result is missing the gog-al cookie.");
-    }
-
-    const expiresAt = readOptionalText(parsed.expiresAtUtc ?? parsed.expiresAt);
-    const isExpired = status === "session_expired"
-        || status === "expired"
-        || (expiresAt ? Date.parse(expiresAt) <= Date.now() : false);
-
-    return { user, cookie, expired: isExpired };
-}
-
-function parseGogHelperLaunchStatus(parsed: unknown): GogHelperLaunchStatus | Error {
-    if (!isObjectRecord(parsed)) {
-        return new Error("The local helper launch status response was not valid.");
-    }
-
-    const status = readOptionalText(parsed.status);
-    if (status !== "starting" && status !== "handoff_ready" && status !== "failed") {
-        return new Error("The local helper launch status response was not recognized.");
-    }
-
-    return {
-        status,
-        handoffUrl: readOptionalText(parsed.handoffUrl) ?? undefined,
-        message: readOptionalText(parsed.message) ?? undefined,
-    };
-}
-
-function parseGogHandoffUrl(value: string): string | Error {
-    const match = value.trim().match(/https?:\/\/\S+/);
-    if (!match) {
-        return new Error("Paste the local handoff URL printed by the GOG helper.");
-    }
-
-    let url: URL;
-    try {
-        url = new URL(match[0]);
-    } catch {
-        return new Error("The local handoff URL is not valid.");
-    }
-
-    const isLoopbackHost = url.hostname === "127.0.0.1" || url.hostname === "localhost";
-    if (url.protocol !== "http:" || !isLoopbackHost) {
-        return new Error("The helper handoff URL must be an http://127.0.0.1 or http://localhost URL.");
-    }
-    if (url.pathname !== "/connect/gog/result" || !url.searchParams.get("nonce")) {
-        return new Error("The helper handoff URL does not match the GOG loopback result endpoint.");
-    }
-
-    url.searchParams.set("origin", window.location.origin);
-    return url.toString();
+    return `The local helper returned status ${response.status}.`;
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -912,17 +1155,9 @@ function newHelperLaunchId(): string {
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function readCookieValue(value: unknown, name: string): string | null {
-    if (!isObjectRecord(value)) return null;
-    return readOptionalText(value[name]);
-}
-
-function readOptionalText(value: unknown): string | null {
-    return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
+function cookieMapToRows(cookies: Record<string, string>): { key: string; value: string }[] {
+    const rows = Object.entries(cookies).map(([key, value]) => ({ key, value }));
+    return rows.length > 0 ? rows : [{ key: "", value: "" }];
 }
 
 function platformLabel(platform: Platform): string {

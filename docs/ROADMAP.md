@@ -172,10 +172,17 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   path needs the `gog-al` cookie plus username. PSN should follow after the helper contract is stable
   because its store cookies are more brittle and may require several cookie names. The UI should keep
   the manual credential entry as a fallback and provide clear "session expired, reconnect" handling.
-- **#17A GOG POC**: The first slice keeps the existing Core/Ingest credential vault boundary and
-  prepares a user-visible local-helper handoff for GOG. See
-  [GOG Connect Helper Contract](gog-connect-helper-contract.md) for the one-time helper payload,
-  BFF/Core upsert target, and security invariants.
+- **#17A/#17B GOG + PSN guided connect**: The first slices keep the existing Core/Ingest credential
+  vault boundary and provide user-visible local-helper handoff flows for GOG and PlayStation. See
+  [Platform Connect Helper Contract](gog-connect-helper-contract.md) for the one-time helper
+  payloads, BFF/Core upsert targets, and security invariants.
+- **PSN validation status (2026-07-04)**: The PSN guided-connect implementation is mergeable as an
+  integration slice, but it is not considered complete. Real Sony sign-in testing hit provider
+  fragility, including `429 Too Many Requests` on Sony account endpoints after repeated helper
+  attempts. Before marking PSN guided connect done, re-test after the rate limit clears, verify that
+  captured cookies can be stored and used for stored PSN retrieval, and decide whether PSN should
+  remain manual-first or gain a safer fallback that reads an already signed-in normal browser
+  session.
 
 ---
 

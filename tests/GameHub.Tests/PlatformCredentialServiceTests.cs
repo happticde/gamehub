@@ -196,6 +196,23 @@ public sealed class PlatformCredentialServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadPsnCredential_ValidCookieMap_ReturnsStoredCookies()
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(db, TenantA);
+        await service.UpsertAsync(
+            Platform.Psn,
+            1,
+            ParseCredentials("{\"cookies\":{\"npsso\":\"secret-npsso\",\"sb-cdn.session\":\"secret-session\"}}"));
+
+        var credential = await service.GetPsnAsync();
+
+        Assert.NotNull(credential);
+        Assert.Equal("secret-npsso", credential.Cookies["npsso"]);
+        Assert.Equal("secret-session", credential.Cookies["sb-cdn.session"]);
+    }
+
+    [Fact]
     public async Task ReadCredential_UnavailableEncryptionKey_ReturnsSanitizedReadFailure()
     {
         await using var db = CreateContext(TenantA);

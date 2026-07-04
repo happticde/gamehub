@@ -25,7 +25,6 @@ const (
 	gameHubHelperAppName        = "GameHub Helper.app"
 	defaultGogHandoffOriginList = "http://localhost:3005,http://127.0.0.1:3005"
 	helperLaunchStatusPort      = 53935
-	helperLaunchStatusPath      = "/connect/gog/launch-status"
 )
 
 var (
@@ -54,8 +53,8 @@ var helperInstallCmd = &cobra.Command{
 	Long: strings.TrimSpace(`Register the local gamehub-helper:// protocol handler for this host.
 
 On macOS this creates a small AppleScript application in ~/Applications. The app starts the existing
-visible-browser GOG helper flow in the background when the Admin UI launches
-gamehub-helper://connect/gog. The custom URI carries only non-secret launch metadata.`),
+visible-browser platform helper flow in the background when the Admin UI launches a
+gamehub-helper://connect/... URL. The custom URI carries only non-secret launch metadata.`),
 	RunE: runHelperInstallProtocolHandler,
 }
 
@@ -66,7 +65,7 @@ var helperUninstallCmd = &cobra.Command{
 }
 
 var helperLaunchCmd = &cobra.Command{
-	Use:   "launch gamehub-helper://connect/gog",
+	Use:   "launch gamehub-helper://connect/{gog|psn}",
 	Short: "Launch a helper flow from a gamehub-helper:// URL",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runHelperLaunch,
@@ -130,7 +129,7 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if request.Platform != "gog" {
+	if request.Platform != "gog" && request.Platform != "psn" {
 		return fmt.Errorf("unsupported helper platform %q", request.Platform)
 	}
 
@@ -148,7 +147,7 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		state, shutdown, err := startHelperLaunchStatusServer(request.LaunchID, allowedOrigins)
+		state, shutdown, err := startHelperLaunchStatusServer(request.Platform, request.LaunchID, allowedOrigins)
 		if err != nil {
 			return err
 		}
@@ -161,28 +160,49 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 		}()
 	}
 
-	gogConnectTimeout = helperLaunchTimeout
-	gogConnectUser = helperLaunchUser
-	gogHandoffServer = true
-	gogHandoffOrigin = defaultGogHandoffOriginList
+	handoffOrigin := defaultGogHandoffOriginList
 	if request.Origin != "" {
-		gogHandoffOrigin = request.Origin
+		handoffOrigin = request.Origin
 	}
-	gogHandoffTTL = helperLaunchTTL
 
-	previousHook := gogHandoffURLHook
-	if launchStatus != nil {
-		gogHandoffURLHook = launchStatus.ready
-	}
-	defer func() {
-		gogHandoffURLHook = previousHook
-	}()
+	var runErr error
+	switch request.Platform {
+	case "gog":
+		gogConnectTimeout = helperLaunchTimeout
+		gogConnectUser = helperLaunchUser
+		gogHandoffServer = true
+		gogHandoffOrigin = handoffOrigin
+		gogHandoffTTL = helperLaunchTTL
 
-	if err := runConnectGog(cmd, nil); err != nil {
+		previousHook := gogHandoffURLHook
 		if launchStatus != nil {
-			launchStatus.fail(err)
+			gogHandoffURLHook = launchStatus.ready
 		}
-		return err
+		defer func() {
+			gogHandoffURLHook = previousHook
+		}()
+		runErr = runConnectGog(cmd, nil)
+	case "psn":
+		psnConnectTimeout = helperLaunchTimeout
+		psnHandoffServer = true
+		psnHandoffOrigin = handoffOrigin
+		psnHandoffTTL = helperLaunchTTL
+
+		previousHook := psnHandoffURLHook
+		if launchStatus != nil {
+			psnHandoffURLHook = launchStatus.ready
+		}
+		defer func() {
+			psnHandoffURLHook = previousHook
+		}()
+		runErr = runConnectPsn(cmd, nil)
+	}
+
+	if runErr != nil {
+		if launchStatus != nil {
+			launchStatus.fail(runErr)
+		}
+		return runErr
 	}
 	return nil
 }
@@ -199,7 +219,11 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 	if parsed.User != nil {
 		return helperLaunchRequest{}, fmt.Errorf("helper URL must not include user info")
 	}
-	if parsed.Host != "connect" || parsed.Path != "/gog" {
+	if parsed.Host != "connect" {
+		return helperLaunchRequest{}, fmt.Errorf("unsupported helper URL target")
+	}
+	platform := strings.TrimPrefix(parsed.Path, "/")
+	if platform != "gog" && platform != "psn" {
 		return helperLaunchRequest{}, fmt.Errorf("unsupported helper URL target")
 	}
 
@@ -207,7 +231,7 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 	for name := range values {
 		switch strings.ToLower(name) {
 		case "origin", "launchid":
-		case "cookie", "gog-al", "gogal", "gogalcookie", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
+		case "cookie", "cookies", "gog-al", "gogal", "gogalcookie", "npsso", "psnauthbearertoken", "psnauthrefreshtoken", "jsessionid", "sb-cdn.session", "psn-csrf-token", "session", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
 			return helperLaunchRequest{}, fmt.Errorf("helper URL must not contain secret parameter %q", name)
 		default:
 			return helperLaunchRequest{}, fmt.Errorf("unsupported helper URL parameter %q", name)
@@ -228,7 +252,7 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 		return helperLaunchRequest{}, fmt.Errorf("launchId must be a URL-safe non-secret identifier")
 	}
 
-	return helperLaunchRequest{Platform: "gog", Origin: origin, LaunchID: launchID}, nil
+	return helperLaunchRequest{Platform: platform, Origin: origin, LaunchID: launchID}, nil
 }
 
 func isValidHelperLaunchID(value string) bool {
@@ -381,7 +405,7 @@ on open location helperUrl
 end open location
 
 on run
-	display dialog "GameHub Helper is installed. Use Connect GOG in the GameHub Admin UI to launch the local helper." buttons {"OK"} default button "OK"
+	display dialog "GameHub Helper is installed. Use Connect in the GameHub Admin UI to launch the local helper." buttons {"OK"} default button "OK"
 end run
 `, appleScriptStringLiteral(cliPath))
 }
@@ -506,7 +530,7 @@ func (state *helperLaunchStatusState) handler(expectedLaunchID string, allowedOr
 	}
 }
 
-func startHelperLaunchStatusServer(launchID string, allowedOrigins map[string]struct{}) (*helperLaunchStatusState, func(context.Context) error, error) {
+func startHelperLaunchStatusServer(platform string, launchID string, allowedOrigins map[string]struct{}) (*helperLaunchStatusState, func(context.Context) error, error) {
 	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(helperLaunchStatusPort))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to start local helper launch status server: %w", err)
@@ -514,7 +538,7 @@ func startHelperLaunchStatusServer(launchID string, allowedOrigins map[string]st
 
 	state := &helperLaunchStatusState{}
 	mux := http.NewServeMux()
-	mux.HandleFunc(helperLaunchStatusPath, state.handler(launchID, allowedOrigins))
+	mux.HandleFunc(helperLaunchStatusPath(platform), state.handler(launchID, allowedOrigins))
 
 	server := &http.Server{
 		Handler:           mux,
@@ -530,6 +554,10 @@ func startHelperLaunchStatusServer(launchID string, allowedOrigins map[string]st
 	return state, server.Shutdown, nil
 }
 
+func helperLaunchStatusPath(platform string) string {
+	return "/connect/" + platform + "/launch-status"
+}
+
 func init() {
 	rootCmd.AddCommand(helperCmd)
 	helperCmd.AddCommand(helperInstallCmd)
@@ -539,7 +567,7 @@ func init() {
 	helperInstallCmd.Flags().StringVar(&helperInstallAppPath, "app-path", "", "macOS helper app path (default ~/Applications/GameHub Helper.app)")
 	helperInstallCmd.Flags().StringVar(&helperInstallCliPath, "cli-path", "", "gamehub-cli binary to launch (default current executable)")
 	helperUninstallCmd.Flags().StringVar(&helperInstallAppPath, "app-path", "", "macOS helper app path (default ~/Applications/GameHub Helper.app)")
-	helperLaunchCmd.Flags().DurationVar(&helperLaunchTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible GOG login")
+	helperLaunchCmd.Flags().DurationVar(&helperLaunchTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible provider login")
 	helperLaunchCmd.Flags().StringVar(&helperLaunchUser, "user", "", "optional GOG username override when userData.json cannot report it")
 	helperLaunchCmd.Flags().DurationVar(&helperLaunchTTL, "handoff-result-ttl", 10*time.Minute, "maximum time to keep a captured local handoff result available")
 }

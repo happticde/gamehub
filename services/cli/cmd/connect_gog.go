@@ -256,7 +256,7 @@ func newGogConnectPayload(user string, cookie string, expires float64, capturedA
 
 type gogHandoffState struct {
 	mu       sync.Mutex
-	payload  *gogConnectPayload
+	payload  any
 	err      error
 	consumed bool
 	done     chan struct{}
@@ -266,13 +266,13 @@ func newGogHandoffState() *gogHandoffState {
 	return &gogHandoffState{done: make(chan struct{})}
 }
 
-func (state *gogHandoffState) complete(payload gogConnectPayload) {
+func (state *gogHandoffState) complete(payload any) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if state.consumed || state.payload != nil || state.err != nil {
 		return
 	}
-	state.payload = &payload
+	state.payload = payload
 }
 
 func (state *gogHandoffState) fail(err error) {
@@ -317,7 +317,7 @@ func (state *gogHandoffState) handler(expectedNonce string, allowedOrigins map[s
 			return
 		}
 
-		payload, status, code := state.take()
+		payload, status, message, code := state.take()
 		response.WriteHeader(code)
 		encoder := json.NewEncoder(response)
 		encoder.SetEscapeHTML(false)
@@ -325,29 +325,37 @@ func (state *gogHandoffState) handler(expectedNonce string, allowedOrigins map[s
 			_ = encoder.Encode(payload)
 			return
 		}
-		_ = encoder.Encode(map[string]string{"status": status})
+		body := map[string]string{"status": status}
+		if message != "" {
+			body["message"] = message
+		}
+		_ = encoder.Encode(body)
 	}
 }
 
-func (state *gogHandoffState) take() (*gogConnectPayload, string, int) {
+func (state *gogHandoffState) take() (any, string, string, int) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	if state.consumed {
-		return nil, "consumed", http.StatusGone
+		return nil, "consumed", "", http.StatusGone
 	}
 	if state.err != nil {
-		return nil, "failed", http.StatusInternalServerError
+		message := state.err.Error()
+		state.err = nil
+		state.consumed = true
+		close(state.done)
+		return nil, "failed", message, http.StatusInternalServerError
 	}
 	if state.payload == nil {
-		return nil, "pending", http.StatusAccepted
+		return nil, "pending", "", http.StatusAccepted
 	}
 
-	payload := *state.payload
+	payload := state.payload
 	state.payload = nil
 	state.consumed = true
 	close(state.done)
-	return &payload, "", http.StatusOK
+	return payload, "", "", http.StatusOK
 }
 
 func applyGogHandoffCors(response http.ResponseWriter, request *http.Request, allowedOrigins map[string]struct{}) bool {
@@ -392,6 +400,10 @@ func allowedGogHandoffOrigin(request *http.Request, allowedOrigins map[string]st
 }
 
 func startGogHandoffServer(allowedOrigins map[string]struct{}) (string, *gogHandoffState, func(context.Context) error, error) {
+	return startPlatformHandoffServer("gog", allowedOrigins)
+}
+
+func startPlatformHandoffServer(platform string, allowedOrigins map[string]struct{}) (string, *gogHandoffState, func(context.Context) error, error) {
 	nonce, err := newGogHandoffNonce()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to create local handoff nonce: %w", err)
@@ -404,7 +416,8 @@ func startGogHandoffServer(allowedOrigins map[string]struct{}) (string, *gogHand
 
 	state := newGogHandoffState()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/connect/gog/result", state.handler(nonce, allowedOrigins))
+	resultPath := "/connect/" + platform + "/result"
+	mux.HandleFunc(resultPath, state.handler(nonce, allowedOrigins))
 
 	server := &http.Server{
 		Handler:           mux,
@@ -423,7 +436,7 @@ func startGogHandoffServer(allowedOrigins map[string]struct{}) (string, *gogHand
 		return "", nil, nil, fmt.Errorf("local handoff server did not return a TCP address")
 	}
 
-	resultURL := "http://127.0.0.1:" + strconv.Itoa(tcpAddr.Port) + "/connect/gog/result?nonce=" + nonce
+	resultURL := "http://127.0.0.1:" + strconv.Itoa(tcpAddr.Port) + resultPath + "?nonce=" + nonce
 	return resultURL, state, server.Shutdown, nil
 }
 
