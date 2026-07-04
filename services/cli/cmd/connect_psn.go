@@ -145,6 +145,24 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will only be printed in the final JSON payload.")
 	}
 
+	if strings.TrimSpace(psnRemoteDebugURL) != "" {
+		if err := preparePsnRemoteDebugChrome(cmd.Context(), strings.TrimSpace(psnRemoteDebugURL), cmd.ErrOrStderr()); err != nil {
+			if handoff != nil {
+				handoff.fail(err)
+				fmt.Fprintln(os.Stderr, err.Error())
+				fmt.Fprintln(os.Stderr, "Keep this helper running until GameHub imports the local failure result.")
+
+				waitCtx, cancel := context.WithTimeout(cmd.Context(), psnHandoffTTL)
+				defer cancel()
+				if waitErr := handoff.waitConsumed(waitCtx); waitErr != nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+					return waitErr
+				}
+				return nil
+			}
+			return err
+		}
+	}
+
 	payload, err := capturePsnConnectPayload(cmd.Context(), profileDir, strings.TrimSpace(psnRemoteDebugURL), psnConnectTimeout, diagnostics)
 	if err != nil {
 		if handoff != nil {

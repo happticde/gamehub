@@ -1091,6 +1091,7 @@ async function waitForHelperLaunchStatus(
     const statusUrl = new URL(`${helperLaunchStatusBaseUrl}/connect/${provider}/launch-status`);
     statusUrl.searchParams.set("launchId", launchId);
     statusUrl.searchParams.set("origin", window.location.origin);
+    let reachedHelper = false;
 
     while (Date.now() < deadline && handoffAttemptRef.current === attempt) {
         let response: Response;
@@ -1100,6 +1101,7 @@ async function waitForHelperLaunchStatus(
             await delay(1000);
             continue;
         }
+        reachedHelper = true;
 
         if (response.status === 202) {
             await delay(1000);
@@ -1123,7 +1125,9 @@ async function waitForHelperLaunchStatus(
         await delay(1000);
     }
 
-    throw new Error("Timed out waiting for the local helper to start.");
+    throw new Error(reachedHelper
+        ? "The local helper started but did not publish its handoff URL. Reinstall the protocol handler from a freshly built gamehub-cli binary and try again."
+        : "Timed out waiting for the local helper to start.");
 }
 
 function errorMessage(error: unknown): string {

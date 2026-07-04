@@ -211,10 +211,6 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 		defer func() {
 			psnHandoffURLHook = previousHook
 		}()
-		if err := preparePsnRemoteDebugChrome(cmd.Context(), psnRemoteDebugURL, cmd.ErrOrStderr()); err != nil {
-			runErr = err
-			break
-		}
 		runErr = runConnectPsn(cmd, nil)
 	}
 
