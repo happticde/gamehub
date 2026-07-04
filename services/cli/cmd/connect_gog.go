@@ -317,7 +317,7 @@ func (state *gogHandoffState) handler(expectedNonce string, allowedOrigins map[s
 			return
 		}
 
-		payload, status, code := state.take()
+		payload, status, message, code := state.take()
 		response.WriteHeader(code)
 		encoder := json.NewEncoder(response)
 		encoder.SetEscapeHTML(false)
@@ -325,29 +325,37 @@ func (state *gogHandoffState) handler(expectedNonce string, allowedOrigins map[s
 			_ = encoder.Encode(payload)
 			return
 		}
-		_ = encoder.Encode(map[string]string{"status": status})
+		body := map[string]string{"status": status}
+		if message != "" {
+			body["message"] = message
+		}
+		_ = encoder.Encode(body)
 	}
 }
 
-func (state *gogHandoffState) take() (any, string, int) {
+func (state *gogHandoffState) take() (any, string, string, int) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	if state.consumed {
-		return nil, "consumed", http.StatusGone
+		return nil, "consumed", "", http.StatusGone
 	}
 	if state.err != nil {
-		return nil, "failed", http.StatusInternalServerError
+		message := state.err.Error()
+		state.err = nil
+		state.consumed = true
+		close(state.done)
+		return nil, "failed", message, http.StatusInternalServerError
 	}
 	if state.payload == nil {
-		return nil, "pending", http.StatusAccepted
+		return nil, "pending", "", http.StatusAccepted
 	}
 
 	payload := state.payload
 	state.payload = nil
 	state.consumed = true
 	close(state.done)
-	return payload, "", http.StatusOK
+	return payload, "", "", http.StatusOK
 }
 
 func applyGogHandoffCors(response http.ResponseWriter, request *http.Request, allowedOrigins map[string]struct{}) bool {

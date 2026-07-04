@@ -423,7 +423,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     throw new Error("This local helper result was already imported. Run the helper again for a fresh handoff URL.");
                 }
                 if (!response.ok) {
-                    throw new Error(`The local helper returned status ${response.status}.`);
+                    throw new Error(await readLocalHelperFailure(response));
                 }
 
                 const result = parseGogConnectObject(await response.json());
@@ -760,7 +760,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     throw new Error("This local helper result was already imported. Run the helper again for a fresh handoff URL.");
                 }
                 if (!response.ok) {
-                    throw new Error(`The local helper returned status ${response.status}.`);
+                    throw new Error(await readLocalHelperFailure(response));
                 }
 
                 const result = parsePsnConnectObject(await response.json());
@@ -1128,6 +1128,17 @@ function localHandoffErrorMessage(error: unknown): string {
         return "The browser could not read the local helper. Make sure the helper is still running, the handoff URL has not expired, and the helper --origin matches this Admin page origin.";
     }
     return message;
+}
+
+async function readLocalHelperFailure(response: Response): Promise<string> {
+    try {
+        const body = await response.json() as { message?: string; status?: string };
+        if (body.message) return body.message;
+        if (body.status === "failed") return "The local helper reported a provider sign-in failure.";
+    } catch {
+        // Fall through to the generic status message when the helper response is not JSON.
+    }
+    return `The local helper returned status ${response.status}.`;
 }
 
 function delay(milliseconds: number): Promise<void> {

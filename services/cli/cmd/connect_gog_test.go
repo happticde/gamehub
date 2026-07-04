@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -151,6 +152,47 @@ func TestGogHandoffHandler_CompletedResult_IsAvailableOnce(t *testing.T) {
 
 	if secondResponse.Code != http.StatusGone {
 		t.Fatalf("second handoff status = %d, want %d", secondResponse.Code, http.StatusGone)
+	}
+}
+
+func TestGogHandoffHandler_FailedResult_ReturnsMessageOnce(t *testing.T) {
+	state := newGogHandoffState()
+	state.fail(errors.New("provider returned HTTP 429"))
+	handler := state.handler("nonce", mustParseGogHandoffOrigins(t, "http://localhost:3005"))
+
+	firstRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
+	firstRequest.Header.Set("Origin", "http://localhost:3005")
+	firstResponse := httptest.NewRecorder()
+	handler.ServeHTTP(firstResponse, firstRequest)
+
+	if firstResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("first failed handoff status = %d, want %d", firstResponse.Code, http.StatusInternalServerError)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(firstResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode failed handoff payload: %v", err)
+	}
+	if payload["status"] != "failed" {
+		t.Fatalf("status = %q, want failed", payload["status"])
+	}
+	if payload["message"] != "provider returned HTTP 429" {
+		t.Fatalf("message = %q, want provider error", payload["message"])
+	}
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := state.waitConsumed(waitCtx); err != nil {
+		t.Fatalf("failed handoff state was not marked consumed: %v", err)
+	}
+
+	secondRequest := httptest.NewRequest(http.MethodGet, "/connect/gog/result?nonce=nonce", nil)
+	secondRequest.Header.Set("Origin", "http://localhost:3005")
+	secondResponse := httptest.NewRecorder()
+	handler.ServeHTTP(secondResponse, secondRequest)
+
+	if secondResponse.Code != http.StatusGone {
+		t.Fatalf("second failed handoff status = %d, want %d", secondResponse.Code, http.StatusGone)
 	}
 }
 
