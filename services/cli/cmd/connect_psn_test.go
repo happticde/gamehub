@@ -217,38 +217,6 @@ func TestIsPsnCookieCaptureReady_WaitsUntilBrowserLeavesSonyAccountLogin(t *test
 	}
 }
 
-func TestIsPsnCookieCaptureComplete_AllowsValidatedPdccwsCookieWithoutReadyURL(t *testing.T) {
-	cookies := map[string]string{"pdccws_p": "secret-pdccws"}
-	blockedURLs := []string{
-		"",
-		"about:blank",
-		"https://my.account.sony.com/sonyacct/signin/",
-		"https://ca.account.sony.com/api/authz/v3/oauth/authorize",
-	}
-
-	for _, currentURL := range blockedURLs {
-		t.Run(currentURL, func(t *testing.T) {
-			if !isPsnCookieCaptureComplete(cookies, currentURL) {
-				t.Fatalf("expected pdccws_p to complete capture even when current URL is %q", currentURL)
-			}
-		})
-	}
-}
-
-func TestIsPsnCookieCaptureComplete_WaitsForPostLoginURLWithoutPdccwsCookie(t *testing.T) {
-	cookies := map[string]string{"npsso": "secret-npsso"}
-
-	if isPsnCookieCaptureComplete(cookies, "about:blank") {
-		t.Fatalf("expected partial cookies on a blank remote-debug target to keep waiting")
-	}
-	if isPsnCookieCaptureComplete(cookies, "https://ca.account.sony.com/api/authz/v3/oauth/authorize") {
-		t.Fatalf("expected partial cookies on a Sony account URL to keep waiting")
-	}
-	if !isPsnCookieCaptureComplete(cookies, "https://store.playstation.com/") {
-		t.Fatalf("expected partial cookies on a PlayStation post-login URL to be accepted")
-	}
-}
-
 func TestPsnConnectDiagnostics_WritesSanitizedJSONLines(t *testing.T) {
 	path := t.TempDir() + "/psn-diagnostics.jsonl"
 	diagnostics, err := newPsnConnectDiagnostics(path)

@@ -270,7 +270,7 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 			return psnConnectPayload{}, fmt.Errorf("failed to read PlayStation browser location: %w", err)
 		}
 
-		if isPsnCookieCaptureComplete(cookies, currentURL) {
+		if len(cookies) > 0 && isPsnCookieCaptureReady(currentURL) {
 			if diagnostics != nil {
 				diagnostics.recordCookieCapture(cookies)
 			}
@@ -652,16 +652,6 @@ func isPsnCookieCaptureReady(currentURL string) bool {
 	}
 
 	return hostname != "my.account.sony.com" && hostname != "ca.account.sony.com"
-}
-
-func isPsnCookieCaptureComplete(cookies map[string]string, currentURL string) bool {
-	if len(cookies) == 0 {
-		return false
-	}
-	if strings.TrimSpace(cookies["pdccws_p"]) != "" {
-		return true
-	}
-	return isPsnCookieCaptureReady(currentURL)
 }
 
 func newPsnConnectPayload(cookies map[string]string, expires float64, capturedAt time.Time) psnConnectPayload {
