@@ -105,6 +105,7 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
         int added = 0;
         int updated = 0;
         int skipped = 0;
+        var pendingInserts = new Dictionary<string, TEntity>(StringComparer.Ordinal);
 
         foreach (var gameJson in rawGames)
         {
@@ -130,10 +131,21 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
                 UpdateEntity(existing, name, playtimeMinutes, jsonString);
                 updated++;
             }
+            else if (pendingInserts.TryGetValue(id, out var pending))
+            {
+                UpdateEntity(pending, name, playtimeMinutes, jsonString);
+                updated++;
+                Logger.LogDebug(
+                    "{Platform}: duplicate game in same batch updated pending insert (ID: {Id})",
+                    PlatformName,
+                    id);
+            }
             else
             {
                 // Step 3b: New record → create and add it
-                DbSet.Add(CreateEntity(id, name, playtimeMinutes, jsonString));
+                var created = CreateEntity(id, name, playtimeMinutes, jsonString);
+                DbSet.Add(created);
+                pendingInserts[id] = created;
                 added++;
                 Logger.LogDebug("{Platform}: new game '{Name}' (ID: {Id})", PlatformName, name, id);
             }
