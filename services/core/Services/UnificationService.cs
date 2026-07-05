@@ -146,15 +146,12 @@ public class UnificationService
 
         try
         {
-            if (platform != Platform.Epic)
+            var refreshed = await _client.RetrieveStoredAsync(platform);
+            if (!refreshed)
             {
-                var refreshed = await _client.RetrieveStoredAsync(platform);
-                if (!refreshed)
-                {
-                    _logger.LogDebug(
-                        "No stored credential configured for {Platform}; exporting existing raw data",
-                        platform);
-                }
+                _logger.LogDebug(
+                    "No stored credential configured for {Platform}; exporting existing raw data",
+                    platform);
             }
 
             while (hasMore)

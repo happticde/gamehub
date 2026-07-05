@@ -152,6 +152,51 @@ public sealed class PlatformCredentialServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Upsert_EpicRefreshToken_StoresVaultCredential()
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(db, TenantA);
+
+        var status = await service.UpsertAsync(
+            Platform.Epic,
+            1,
+            ParseCredentials(
+                "{\"refreshToken\":\"epic-refresh\",\"accountId\":\"account-1\",\"displayName\":\"Player\"}"));
+
+        var credential = await service.GetEpicAsync();
+        Assert.True(status.IsConfigured);
+        Assert.NotNull(credential);
+        Assert.Equal("epic-refresh", credential.RefreshToken);
+        Assert.Equal("account-1", credential.AccountId);
+        Assert.Equal("Player", credential.DisplayName);
+    }
+
+    [Fact]
+    public async Task Upsert_EpicAuthorizationCode_StoresRefreshTokenWithoutPersistingCode()
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(
+            db,
+            TenantA,
+            new FakeEpicAuthenticationClient(new EpicPlatformCredential(
+                "exchanged-refresh-token",
+                "account-1",
+                "Player")));
+
+        await service.UpsertAsync(
+            Platform.Epic,
+            1,
+            ParseCredentials("{\"authorizationCode\":\"short-lived-code\"}"));
+
+        var stored = await db.PlatformCredentials.SingleAsync();
+        var plaintext = _protector.Unprotect(stored);
+        var plaintextJson = Encoding.UTF8.GetString(plaintext);
+        Assert.Contains("exchanged-refresh-token", plaintextJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("short-lived-code", plaintextJson, StringComparison.Ordinal);
+        CryptographicOperations.ZeroMemory(plaintext);
+    }
+
+    [Fact]
     public async Task Upsert_UnsupportedSchemaVersion_RejectsWithoutWriting()
     {
         await using var db = CreateContext(TenantA);
@@ -310,12 +355,16 @@ public sealed class PlatformCredentialServiceTests : IDisposable
     private IngestContext CreateContext(Guid tenantId) =>
         new(_options, new FixedIngestTenantContext(tenantId));
 
-    private PlatformCredentialService CreateService(IngestContext db, Guid tenantId) =>
+    private PlatformCredentialService CreateService(
+        IngestContext db,
+        Guid tenantId,
+        IEpicAuthenticationClient? epicAuthenticationClient = null) =>
         new(
             db,
             new FixedIngestTenantContext(tenantId),
             _protector,
-            _timeProvider);
+            _timeProvider,
+            epicAuthenticationClient);
 
     private static PlatformCredentialProtector CreateProtector()
     {
@@ -345,5 +394,17 @@ public sealed class PlatformCredentialServiceTests : IDisposable
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class FakeEpicAuthenticationClient(EpicPlatformCredential credential)
+        : IEpicAuthenticationClient
+    {
+        public Task<EpicPlatformCredential> ExchangeAuthorizationCodeAsync(
+            string authorizationCode,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal("short-lived-code", authorizationCode);
+            return Task.FromResult(credential);
+        }
     }
 }

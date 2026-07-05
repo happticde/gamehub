@@ -30,8 +30,8 @@ internal static class PlatformCredentialPayloadCodec
                 DecodePsn(plaintext);
                 break;
             case Platform.Epic:
-                throw new PlatformCredentialValidationException(
-                    "Stored Epic retrieval is not supported yet.");
+                DecodeEpic(plaintext);
+                break;
             default:
                 throw new PlatformCredentialValidationException("Platform is unsupported.");
         }
@@ -80,6 +80,27 @@ internal static class PlatformCredentialPayloadCodec
         return credential;
     }
 
+    public static EpicPlatformCredential DecodeEpic(ReadOnlySpan<byte> plaintext)
+    {
+        var credential = Deserialize<EpicPlatformCredential>(plaintext, Platform.Epic);
+        RequireText(credential.RefreshToken, "refreshToken", 8 * 1024);
+        RequireOptionalText(credential.AccountId, "accountId", 128);
+        RequireOptionalText(credential.DisplayName, "displayName", 256);
+        return credential;
+    }
+
+    public static string? ReadEpicAuthorizationCode(JsonElement credentials)
+    {
+        if (!credentials.TryGetProperty("authorizationCode", out var codeProperty))
+        {
+            return null;
+        }
+
+        var code = codeProperty.GetString();
+        RequireText(code, "authorizationCode", 2048);
+        return code;
+    }
+
     private static T Deserialize<T>(ReadOnlySpan<byte> plaintext, Platform platform)
     {
         try
@@ -101,6 +122,19 @@ internal static class PlatformCredentialPayloadCodec
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new PlatformCredentialValidationException($"{field} is required.");
+        }
+        if (value.Length > maximumLength)
+        {
+            throw new PlatformCredentialValidationException(
+                $"{field} must not exceed {maximumLength} characters.");
+        }
+    }
+
+    private static void RequireOptionalText(string? value, string field, int maximumLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
         }
         if (value.Length > maximumLength)
         {

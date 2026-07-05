@@ -85,21 +85,26 @@ public sealed class PlatformCredentialManagementTests : IDisposable
     }
 
     [Fact]
-    public async Task UpsertAsync_EpicCredential_RejectsBeforeCallingIngest()
+    public async Task UpsertAsync_EpicCredential_EnablesTenantAfterVaultVerification()
     {
-        var handler = new SequenceHandler();
+        var handler = new SequenceHandler(
+            JsonResponse(HttpStatusCode.OK, "{}"),
+            CredentialStatusResponse((Platform.Epic, true)));
         var service = CreateService(handler);
 
-        await Assert.ThrowsAsync<UnsupportedPlatformCredentialException>(() =>
-            service.UpsertAsync(
-                Platform.Epic,
-                new UpsertPlatformCredentialRequest
-                {
-                    Credentials = ParseCredentials("{\"token\":\"secret\"}")
-                }));
+        var result = await service.UpsertAsync(
+            Platform.Epic,
+            new UpsertPlatformCredentialRequest
+            {
+                Credentials = ParseCredentials("{\"refreshToken\":\"epic-refresh\"}")
+            });
 
-        Assert.Empty(handler.Requests);
-        Assert.False((await _db.Tenants.SingleAsync(tenant => tenant.Id == TenantA)).PlatformSyncEnabled);
+        _db.ChangeTracker.Clear();
+        Assert.True(result.PlatformSyncEnabled);
+        Assert.True((await _db.Tenants.SingleAsync(tenant => tenant.Id == TenantA)).PlatformSyncEnabled);
+        Assert.Equal(HttpMethod.Put, handler.Requests[0].Method);
+        Assert.Equal("/api/internal/platform-credentials/epic", handler.Requests[0].Path);
+        Assert.Contains("epic-refresh", handler.Requests[0].Body, StringComparison.Ordinal);
     }
 
     [Fact]

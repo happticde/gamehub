@@ -75,7 +75,7 @@ public class LibraryController : ControllerBase
             return Conflict(new
             {
                 Code = "platform_sync_disabled",
-                Message = "Configure a Steam, GOG, or PlayStation credential before running platform sync."
+                Message = "Configure a Steam, GOG, PlayStation, or Epic credential before running platform sync."
             });
         }
 

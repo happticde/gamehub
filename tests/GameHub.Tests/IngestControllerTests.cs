@@ -1,6 +1,9 @@
 using GameHub.Ingest.Data;
+using GameHub.Ingest.Controllers;
 using GameHub.Tests.Helpers;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
 using Xunit;
 
@@ -88,6 +91,34 @@ public class IngestControllerTests : IDisposable
 
         // Assert: SQLite unique index prevents duplicates
         await Assert.ThrowsAsync<DbUpdateException>(() => _db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task IngestBatch_DuplicateExternalIdInSameBatch_UpdatesPendingInsert()
+    {
+        // Arrange: Epic can return multiple library records for the same appName in one response.
+        var controller = new EpicIngestController(
+            _db,
+            NullLogger<EpicIngestController>.Instance);
+        using var first = JsonDocument.Parse(
+            "{\"app_name\":\"Anemone\",\"app_title\":\"World of Goo\"}");
+        using var second = JsonDocument.Parse(
+            "{\"app_name\":\"Anemone\",\"app_title\":\"World of Goo Updated\"}");
+
+        // Act
+        var result = await controller.IngestBatch([
+            first.RootElement.Clone(),
+            second.RootElement.Clone()
+        ]);
+
+        // Assert: The second record updates the pending insert instead of violating the unique index.
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(1, GetAnonymousInt(ok.Value, "Added"));
+        Assert.Equal(1, GetAnonymousInt(ok.Value, "Updated"));
+        Assert.Equal(1, await _db.EpicRawItems.CountAsync());
+        var stored = await _db.EpicRawItems.SingleAsync();
+        Assert.Equal("Anemone", stored.AppName);
+        Assert.Equal("World of Goo Updated", stored.Title);
     }
 
     // =========================================================================
@@ -182,5 +213,13 @@ public class IngestControllerTests : IDisposable
         var epic = await _db.EpicRawItems.FirstAsync();
         Assert.Equal("epic-game", epic.ExternalId);
         Assert.Equal("Epic Game", epic.DisplayName);
+    }
+
+    private static int GetAnonymousInt(object? value, string propertyName)
+    {
+        Assert.NotNull(value);
+        var property = value.GetType().GetProperty(propertyName);
+        Assert.NotNull(property);
+        return Assert.IsType<int>(property.GetValue(value));
     }
 }
