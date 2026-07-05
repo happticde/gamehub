@@ -217,6 +217,28 @@ func TestIsPsnCookieCaptureReady_WaitsUntilBrowserLeavesSonyAccountLogin(t *test
 	}
 }
 
+func TestIsPsnCookieCaptureComplete_RequiresPdccwsCookie(t *testing.T) {
+	cookies := map[string]string{
+		"npsso":          "secret-npsso",
+		"sb-cdn.session": "secret-session",
+	}
+
+	if isPsnCookieCaptureComplete(cookies, "https://store.playstation.com/") {
+		t.Fatalf("expected PSN capture to wait until pdccws_p is present")
+	}
+}
+
+func TestIsPsnCookieCaptureComplete_RequiresPostLoginURL(t *testing.T) {
+	cookies := map[string]string{"pdccws_p": "secret-pdccws"}
+
+	if isPsnCookieCaptureComplete(cookies, "https://ca.account.sony.com/api/authz/v3/oauth/authorize") {
+		t.Fatalf("expected PSN capture to wait while the browser is still on Sony account URLs")
+	}
+	if !isPsnCookieCaptureComplete(cookies, "https://store.playstation.com/") {
+		t.Fatalf("expected PSN capture to complete with pdccws_p on a PlayStation URL")
+	}
+}
+
 func TestPsnConnectDiagnostics_WritesSanitizedJSONLines(t *testing.T) {
 	path := t.TempDir() + "/psn-diagnostics.jsonl"
 	diagnostics, err := newPsnConnectDiagnostics(path)
