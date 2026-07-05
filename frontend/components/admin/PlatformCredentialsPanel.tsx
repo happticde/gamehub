@@ -167,7 +167,7 @@ export function PlatformCredentialsPanel() {
                 </div>
             )}
 
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
                 <SteamCredentialCard
                     status={statusFor("Steam")}
                     busy={busyPlatform === "Steam"}
@@ -219,9 +219,9 @@ function CredentialCard({
 }: CredentialCardProps) {
     return (
         <Card className="overflow-hidden">
-            <CardHeader>
+            <CardHeader className="space-y-3 pb-4">
                 <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                         <CardTitle className="flex items-center gap-2 text-base">
                             <span
                                 className="h-3 w-3 rounded-full"
@@ -231,7 +231,7 @@ function CredentialCard({
                         </CardTitle>
                         <CardDescription className="mt-1">{description}</CardDescription>
                     </div>
-                    <Badge variant={status?.isConfigured ? "default" : "outline"}>
+                    <Badge className="shrink-0" variant={status?.isConfigured ? "default" : "outline"}>
                         {status?.isConfigured ? "Configured" : "Not configured"}
                     </Badge>
                 </div>
@@ -302,6 +302,16 @@ function SteamCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         >
             <CredentialInput label="Steam ID (64-bit)" value={steamId} onChange={setSteamId} />
             <CredentialInput label="Steam Web API key" value={apiKey} onChange={setApiKey} secret />
+            <Button variant="link" size="sm" className="h-auto justify-start p-0 text-xs" asChild>
+                <a
+                    href="https://steamcommunity.com/dev/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                    Create or manage your Steam Web API key
+                </a>
+            </Button>
             <SaveButton busy={busy} disabled={!apiKey.trim() || !steamId.trim()} onClick={submit} />
         </CredentialCard>
     );
@@ -479,151 +489,120 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             busy={busy}
             onDelete={onDelete}
         >
-            <div className="rounded-lg border bg-muted/30 p-3">
-                <div className="flex items-start gap-2">
-                    <PlugZap className="mt-0.5 h-4 w-4 text-primary" />
-                    <div className="space-y-2">
-                        <div>
-                            <h4 className="text-sm font-medium text-foreground">
-                                {status?.isConfigured ? "Reconnect GOG" : "Connect GOG"}
-                            </h4>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                After installing the local protocol handler, launch the helper here,
-                                sign in with GOG in the visible browser, and GameHub will import the
-                                local handoff automatically.
-                            </p>
-                            <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path &quot;$PWD/gamehub-cli&quot;
-                            </code>
-                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                The launch URL contains only this Admin page origin and a one-time launch ID, never the gog-al cookie.
-                            </p>
-                        </div>
-                        <Button
-                            variant="default"
-                            size="sm"
-                            className="w-full"
-                            disabled={busy || handoffPolling || helperLaunching}
-                            onClick={() => void launchProtocolHelper()}
-                        >
-                            {helperLaunching ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <PlugZap className="mr-2 h-4 w-4" />
-                            )}
-                            {helperLaunching ? "Starting helper…" : "Connect GOG"}
-                        </Button>
-                        <div>
-                            <p className="text-xs leading-5 text-muted-foreground">
-                                Fallback if the protocol handler is not installed:
-                            </p>
-                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect gog --handoff-server --origin {pageOrigin}
-                            </code>
-                        </div>
-                        <Input
-                            aria-label="GOG local helper handoff URL"
-                            className="font-mono text-xs"
-                            placeholder="http://127.0.0.1:12345/connect/gog/result?nonce=..."
-                            value={handoffUrl}
-                            onChange={(event) => {
-                                setHandoffUrl(event.target.value);
-                                setHandoffError(null);
-                            }}
-                            disabled={handoffPolling || helperLaunching}
-                        />
-                        {(handoffMessage || handoffError) && (
-                            <p
-                                className={`rounded-md border px-3 py-2 text-xs ${
-                                    handoffError
-                                        ? "border-destructive/30 bg-destructive/10 text-destructive"
-                                        : "border-primary/30 bg-primary/10 text-primary"
-                                }`}
-                            >
-                                {handoffError ?? handoffMessage}
-                            </p>
-                        )}
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
-                            onClick={() => void pollHandoffUrl()}
-                        >
-                            {handoffPolling ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <PlugZap className="mr-2 h-4 w-4" />
-                            )}
-                            {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
-                        </Button>
-                        {(handoffPolling || helperLaunching) && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="w-full"
-                                onClick={stopHandoffPolling}
-                            >
-                                Stop waiting
-                            </Button>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <CredentialSection
+                icon={<PlugZap className="h-4 w-4 text-primary" />}
+                title={status?.isConfigured ? "Reconnect GOG" : "Connect GOG"}
+                description="Launch the local helper, sign in with GOG in the visible browser, and import the one-time handoff automatically."
+                tone="primary"
+            >
+                <p className="text-xs leading-5 text-muted-foreground">
+                    The launch URL contains only this Admin page origin and a one-time launch ID,
+                    never the gog-al cookie.
+                </p>
+                <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy || handoffPolling || helperLaunching}
+                    onClick={() => void launchProtocolHelper()}
+                >
+                    {helperLaunching ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {helperLaunching ? "Starting helper…" : "Connect GOG"}
+                </Button>
+                <Input
+                    aria-label="GOG local helper handoff URL"
+                    className="font-mono text-xs"
+                    placeholder="Paste local helper handoff URL"
+                    value={handoffUrl}
+                    onChange={(event) => {
+                        setHandoffUrl(event.target.value);
+                        setHandoffError(null);
+                    }}
+                    disabled={handoffPolling || helperLaunching}
+                />
+                <HelperStatusMessage message={handoffMessage} error={handoffError} />
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
+                    onClick={() => void pollHandoffUrl()}
+                >
+                    {handoffPolling ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
+                </Button>
+                {(handoffPolling || helperLaunching) && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={stopHandoffPolling}
+                    >
+                        Stop waiting
+                    </Button>
+                )}
+                <CommandFallback
+                    title="Protocol handler or loopback fallback"
+                    commands={[
+                        'cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"',
+                        `cd services/cli && go run . connect gog --handoff-server --origin ${pageOrigin}`,
+                    ]}
+                />
+            </CredentialSection>
 
-            <div className="rounded-lg border bg-muted/20 p-3">
-                <div className="flex items-start gap-2">
-                    <KeyRound className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="space-y-2">
-                        <div>
-                            <h4 className="text-sm font-medium text-foreground">
-                                JSON fallback
-                            </h4>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                If the loopback handoff is unavailable, run the helper without
-                                --handoff-server and paste its one-time JSON result here.
-                            </p>
-                        </div>
-                        <Textarea
-                            aria-label="GOG helper result"
-                            className="min-h-24 font-mono text-xs"
-                            placeholder='{"provider":"gog","user":"gog-user","cookies":{"gog-al":"..."}}'
-                            value={helperPayload}
-                            onChange={(event) => {
-                                setHelperPayload(event.target.value);
-                                setHelperError(null);
-                            }}
-                        />
-                        {helperError && (
-                            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                                {helperError}
-                            </p>
-                        )}
-                        <Button
-                            className="w-full"
-                            disabled={busy || !helperPayload.trim()}
-                            onClick={() => void saveHelperPayload()}
-                        >
-                            {busy ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : status?.isConfigured ? (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                            ) : (
-                                <PlugZap className="mr-2 h-4 w-4" />
-                            )}
-                            {busy
-                                ? "Saving…"
-                                : status?.isConfigured
-                                    ? "Store refreshed GOG session"
-                                    : "Store JSON helper result"}
-                        </Button>
-                    </div>
-                </div>
-            </div>
+            <CredentialSection
+                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+                title="JSON fallback"
+                description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
+            >
+                <Textarea
+                    aria-label="GOG helper result"
+                    className="min-h-24 font-mono text-xs"
+                    placeholder='{"provider":"gog","user":"gog-user","cookies":{"gog-al":"..."}}'
+                    value={helperPayload}
+                    onChange={(event) => {
+                        setHelperPayload(event.target.value);
+                        setHelperError(null);
+                    }}
+                />
+                {helperError && (
+                    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        {helperError}
+                    </p>
+                )}
+                <Button
+                    className="w-full"
+                    disabled={busy || !helperPayload.trim()}
+                    onClick={() => void saveHelperPayload()}
+                >
+                    {busy ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : status?.isConfigured ? (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {busy
+                        ? "Saving…"
+                        : status?.isConfigured
+                            ? "Store refreshed GOG session"
+                            : "Store JSON helper result"}
+                </Button>
+            </CredentialSection>
 
-            <div className="space-y-3 border-t pt-4">
-                <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium text-muted-foreground">Manual fallback</p>
+            <CredentialSection
+                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+                title="Manual fallback"
+                description="Use only when the helper cannot capture the session for you."
+                action={
                     <Button
                         variant="ghost"
                         size="sm"
@@ -635,11 +614,12 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                         Open GOG
                     </Button>
-                </div>
+                }
+            >
                 <CredentialInput label="GOG username" value={user} onChange={setUser} />
                 <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
                 <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
-            </div>
+            </CredentialSection>
         </CredentialCard>
     );
 }
@@ -815,166 +795,123 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             busy={busy}
             onDelete={onDelete}
         >
-            <div className="rounded-lg border bg-muted/30 p-3">
-                <div className="flex items-start gap-2">
-                    <PlugZap className="mt-0.5 h-4 w-4 text-primary" />
-                    <div className="space-y-2">
-                        <div>
-                            <h4 className="text-sm font-medium text-foreground">
-                                {status?.isConfigured ? "Reconnect PlayStation" : "Connect PlayStation"}
-                            </h4>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                After installing the local protocol handler, launch the helper here.
-                                It opens or attaches to a persistent GameHub Chrome profile with local
-                                debugging, then imports the PlayStation handoff automatically.
-                            </p>
-                            <code className="mt-2 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path &quot;$PWD/gamehub-cli&quot;
-                            </code>
-                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                The launch URL contains only this Admin page origin and a one-time
-                                launch ID. GameHub never asks for your PSN password; cookies stay in
-                                a local one-time handoff before encrypted vault storage.
-                            </p>
-                        </div>
-                        <Button
-                            variant="default"
-                            size="sm"
-                            className="w-full"
-                            disabled={busy || handoffPolling || helperLaunching}
-                            onClick={() => void launchProtocolHelper()}
-                        >
-                            {helperLaunching ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <PlugZap className="mr-2 h-4 w-4" />
-                            )}
-                            {helperLaunching ? "Starting helper…" : "Connect PlayStation"}
-                        </Button>
-                        <div>
-                            <p className="text-xs leading-5 text-muted-foreground">
-                                Fallback if the protocol handler is not installed:
-                            </p>
-                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/
-                            </code>
-                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin {pageOrigin}
-                            </code>
-                        </div>
-                        <div>
-                            <p className="text-xs leading-5 text-muted-foreground">
-                                Diagnostic only: the fresh helper-launched browser is known to be
-                                provider-fragile because Sony can return 429 at the final ssocookie
-                                step.
-                            </p>
-                            <code className="mt-1 block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
-                                cd services/cli && go run . connect psn --handoff-server --origin {pageOrigin} --diagnostics-file /tmp/gamehub-psn-login.jsonl
-                            </code>
-                        </div>
-                        <Input
-                            aria-label="PlayStation local helper handoff URL"
-                            className="font-mono text-xs"
-                            placeholder="http://127.0.0.1:12345/connect/psn/result?nonce=..."
-                            value={handoffUrl}
-                            onChange={(event) => {
-                                setHandoffUrl(event.target.value);
-                                setHandoffError(null);
-                            }}
-                            disabled={handoffPolling || helperLaunching}
-                        />
-                        {(handoffMessage || handoffError) && (
-                            <p
-                                className={`rounded-md border px-3 py-2 text-xs ${
-                                    handoffError
-                                        ? "border-destructive/30 bg-destructive/10 text-destructive"
-                                        : "border-primary/30 bg-primary/10 text-primary"
-                                }`}
-                            >
-                                {handoffError ?? handoffMessage}
-                            </p>
-                        )}
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
-                            onClick={() => void pollHandoffUrl()}
-                        >
-                            {handoffPolling ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <PlugZap className="mr-2 h-4 w-4" />
-                            )}
-                            {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
-                        </Button>
-                        {(handoffPolling || helperLaunching) && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="w-full"
-                                onClick={stopHandoffPolling}
-                            >
-                                Stop waiting
-                            </Button>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <CredentialSection
+                icon={<PlugZap className="h-4 w-4 text-primary" />}
+                title={status?.isConfigured ? "Reconnect PlayStation" : "Connect PlayStation"}
+                description="Launch the local helper to open or attach to the persistent GameHub Chrome profile and import the one-time handoff automatically."
+                tone="primary"
+            >
+                <p className="text-xs leading-5 text-muted-foreground">
+                    GameHub never asks for your PSN password. Cookies stay in a local one-time
+                    handoff before encrypted vault storage; <span className="font-medium text-foreground">pdccws_p</span> is the relevant cookie.
+                </p>
+                <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy || handoffPolling || helperLaunching}
+                    onClick={() => void launchProtocolHelper()}
+                >
+                    {helperLaunching ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {helperLaunching ? "Starting helper…" : "Connect PlayStation"}
+                </Button>
+                <Input
+                    aria-label="PlayStation local helper handoff URL"
+                    className="font-mono text-xs"
+                    placeholder="Paste local helper handoff URL"
+                    value={handoffUrl}
+                    onChange={(event) => {
+                        setHandoffUrl(event.target.value);
+                        setHandoffError(null);
+                    }}
+                    disabled={handoffPolling || helperLaunching}
+                />
+                <HelperStatusMessage message={handoffMessage} error={handoffError} />
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
+                    onClick={() => void pollHandoffUrl()}
+                >
+                    {handoffPolling ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
+                </Button>
+                {(handoffPolling || helperLaunching) && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={stopHandoffPolling}
+                    >
+                        Stop waiting
+                    </Button>
+                )}
+                <CommandFallback
+                    title="Protocol handler, Chrome, or diagnostics fallback"
+                    note="Use diagnostics only when the normal Chrome handoff cannot complete; fresh PlayStation sign-ins can be provider-fragile."
+                    commands={[
+                        'cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"',
+                        "/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/",
+                        `cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin ${pageOrigin}`,
+                        `cd services/cli && go run . connect psn --handoff-server --origin ${pageOrigin} --diagnostics-file /tmp/gamehub-psn-login.jsonl`,
+                    ]}
+                />
+            </CredentialSection>
 
-            <div className="rounded-lg border bg-muted/20 p-3">
-                <div className="flex items-start gap-2">
-                    <KeyRound className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <div className="space-y-2">
-                        <div>
-                            <h4 className="text-sm font-medium text-foreground">
-                                JSON fallback
-                            </h4>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                If the loopback handoff is unavailable, run the Chrome debugging
-                                helper without --handoff-server and paste its one-time JSON result here.
-                            </p>
-                        </div>
-                        <Textarea
-                            aria-label="PlayStation helper result"
-                            className="min-h-24 font-mono text-xs"
-                            placeholder='{"provider":"psn","cookies":{"pdccws_p":"..."}}'
-                            value={helperPayload}
-                            onChange={(event) => {
-                                setHelperPayload(event.target.value);
-                                setHelperError(null);
-                            }}
-                        />
-                        {helperError && (
-                            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                                {helperError}
-                            </p>
-                        )}
-                        <Button
-                            className="w-full"
-                            disabled={busy || !helperPayload.trim()}
-                            onClick={() => void saveHelperPayload()}
-                        >
-                            {busy ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : status?.isConfigured ? (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                            ) : (
-                                <PlugZap className="mr-2 h-4 w-4" />
-                            )}
-                            {busy
-                                ? "Saving…"
-                                : status?.isConfigured
-                                    ? "Store refreshed PlayStation session"
-                                    : "Store JSON helper result"}
-                        </Button>
-                    </div>
-                </div>
-            </div>
+            <CredentialSection
+                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+                title="JSON fallback"
+                description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
+            >
+                <Textarea
+                    aria-label="PlayStation helper result"
+                    className="min-h-24 font-mono text-xs"
+                    placeholder='{"provider":"psn","cookies":{"pdccws_p":"..."}}'
+                    value={helperPayload}
+                    onChange={(event) => {
+                        setHelperPayload(event.target.value);
+                        setHelperError(null);
+                    }}
+                />
+                {helperError && (
+                    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        {helperError}
+                    </p>
+                )}
+                <Button
+                    className="w-full"
+                    disabled={busy || !helperPayload.trim()}
+                    onClick={() => void saveHelperPayload()}
+                >
+                    {busy ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : status?.isConfigured ? (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {busy
+                        ? "Saving…"
+                        : status?.isConfigured
+                            ? "Store refreshed PlayStation session"
+                            : "Store JSON helper result"}
+                </Button>
+            </CredentialSection>
 
-            <div className="space-y-3 border-t pt-4">
-                <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium text-muted-foreground">Manual fallback</p>
+            <CredentialSection
+                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+                title="Manual fallback"
+                description="Add only the cookies needed for the vault; pdccws_p is required for PSN import."
+                action={
                     <Button
                         variant="ghost"
                         size="sm"
@@ -986,9 +923,10 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                         Open PlayStation
                     </Button>
-                </div>
+                }
+            >
                 {cookies.map((cookie, index) => (
-                    <div key={index} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
+                    <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
                         <Input
                             aria-label={`Cookie ${index + 1} name`}
                             placeholder="Cookie name"
@@ -1025,8 +963,103 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     <Plus className="mr-2 h-4 w-4" /> Add cookie
                 </Button>
                 <SaveButton busy={busy} disabled={validCookies.length === 0} onClick={submit} />
-            </div>
+            </CredentialSection>
         </CredentialCard>
+    );
+}
+
+function CredentialSection({
+    icon,
+    title,
+    description,
+    action,
+    tone = "muted",
+    children,
+}: {
+    icon: ReactNode;
+    title: string;
+    description: string;
+    action?: ReactNode;
+    tone?: "muted" | "primary";
+    children: ReactNode;
+}) {
+    return (
+        <section
+            className={`rounded-lg border p-3 ${
+                tone === "primary" ? "bg-primary/5" : "bg-muted/20"
+            }`}
+        >
+            <div className="flex items-start gap-3">
+                <div className="mt-0.5 shrink-0">{icon}</div>
+                <div className="min-w-0 flex-1 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <h4 className="text-sm font-medium text-foreground">{title}</h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                {description}
+                            </p>
+                        </div>
+                        {action}
+                    </div>
+                    {children}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function HelperStatusMessage({
+    message,
+    error,
+}: {
+    message: string | null;
+    error: string | null;
+}) {
+    if (!message && !error) return null;
+
+    return (
+        <p
+            className={`rounded-md border px-3 py-2 text-xs ${
+                error
+                    ? "border-destructive/30 bg-destructive/10 text-destructive"
+                    : "border-primary/30 bg-primary/10 text-primary"
+            }`}
+        >
+            {error ?? message}
+        </p>
+    );
+}
+
+function CommandFallback({
+    title,
+    note,
+    commands,
+}: {
+    title: string;
+    note?: string;
+    commands: string[];
+}) {
+    return (
+        <details className="rounded-md border bg-background/70 px-3 py-2 text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+                {title}
+            </summary>
+            <div className="mt-2 space-y-1.5">
+                {note && (
+                    <p className="text-muted-foreground">
+                        {note}
+                    </p>
+                )}
+                {commands.map((command) => (
+                    <code
+                        key={command}
+                        className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[11px] text-foreground"
+                    >
+                        {command}
+                    </code>
+                ))}
+            </div>
+        </details>
     );
 }
 
