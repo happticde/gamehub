@@ -10,7 +10,7 @@
  * Six tabs:
  *   1. Enrichment — manage IGDB metadata enrichment (stats, actions, audit)
  *   2. Credentials — manage tenant-scoped encrypted platform credentials
- *   3. Ingestion  — trigger platform data fetches (Steam, GOG, PSN)
+ *   3. Ingestion  — trigger platform data fetches (Steam, GOG, PSN, Epic)
  *   4. Sync       — trigger and review unification syncs
  *   5. Activity   — recent system activity feed
  *   6. Backup     — export, validate, and restore portable backups

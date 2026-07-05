@@ -19,7 +19,8 @@ public sealed class PlatformCredentialManagementService(
     [
         Platform.Steam,
         Platform.Gog,
-        Platform.Psn
+        Platform.Psn,
+        Platform.Epic
     ];
 
     /// <summary>Returns secret-free vault status and the current server-side activation state.</summary>

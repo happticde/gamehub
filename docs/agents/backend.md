@@ -20,11 +20,12 @@ Two ASP.NET Core microservices:
   state, strong independent operator/delegation/JWT/BFF trust, Ingest vault readiness, and an
   explicit configured-issuer link for every live account. See ADR-012.
 - Core→Ingest delegation: Core reads `Services:IngestServiceKey`; Ingest validates the matching `Authentication:ServiceKey`. Only this internal key may authenticate `X-GameHub-Tenant-Id`. Normal API keys cannot select a tenant through request headers.
-- Platform credential vault: Ingest reads versioned Base64-encoded 32-byte AES keys from `Credentials:Keys:{version}` and selects the write key with `Credentials:ActiveKeyVersion`. Empty keys disable writes; invalid key-ring configuration fails startup. Vault endpoints require the internal tenant-delegation scheme and never return plaintext. Steam/GOG/PSN use strict schema-v1 payloads; Core triggers the service-key-only stored-retrieval route before exporting raw data.
-- Epic ingestion: Epic remains fully manual through the Ingest API or CLI. No Epic credentials are
-  stored and no automatic Epic stored retrieval runs. Core still synchronizes Epic raw data that
-  has already been ingested manually. Any future Epic authentication or stored-retrieval support is
-  a separate roadmap feature, not unfinished platform credential-management work.
+- Platform credential vault: Ingest reads versioned Base64-encoded 32-byte AES keys from `Credentials:Keys:{version}` and selects the write key with `Credentials:ActiveKeyVersion`. Empty keys disable writes; invalid key-ring configuration fails startup. Vault endpoints require the internal tenant-delegation scheme and never return plaintext. Steam/GOG/PSN/Epic use strict schema-v1 payloads; Core triggers the service-key-only stored-retrieval route before exporting raw data.
+- Epic ingestion: Epic has a small Legendary-inspired MVP. The Admin UI accepts an Epic
+  authorization code and Ingest exchanges it server-side for a vault-stored refresh token, or accepts
+  a manual refresh-token fallback. Retrieval refreshes an access token in-memory and maps Epic
+  library records to the existing `app_name`/`app_title` raw-ingest shape. No Epic access or refresh
+  token is returned by status APIs or browser JavaScript after storage.
 - Credential management: Authenticated clients use Core's `/api/platform-credentials` endpoints;
   Core alone delegates the tenant and forwards credential bodies to Ingest. Responses contain only
   configuration status and timestamps. `PlatformSyncEnabled` is never client-settable.
@@ -37,7 +38,7 @@ Two ASP.NET Core microservices:
   cross-tenant tag name into the game's tenant before enforcing the boundary.
 - Core→Ingest URL: `Services:IngestUrl` (default `http://localhost:5000`).
 - Provisioned tenants start platform-sync disabled. Core enables them only after a fresh vault
-  status confirms at least one Steam, GOG, or PSN credential. Deletion disables first and only
+  status confirms at least one Steam, GOG, PSN, or Epic credential. Deletion disables first and only
   re-enables after another supported credential is verified; failures remain disabled.
 - Account lifecycle: password changes require the current password and revoke all refresh
   sessions. Explicit global revocation is tenant/account-claim scoped. Account deletion persists

@@ -59,11 +59,11 @@ GitHub Actions: build → test → Docker build → push to registry.
 
 ### 8. User Accounts & Multi-Tenancy ✅
 Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth (Steam/PSN/GOG login).
-- **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, rotating/revocable refresh sessions, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. The current Steam/GOG/PSN credential-management scope is complete; multi-user operation is not enabled by default.
-- **Epic boundary**: Epic remains a fully manual Ingest flow through API or CLI. No Epic credentials
-  are stored and no automatic Epic stored retrieval runs. Core continues to synchronize manually
-  ingested Epic raw data. Future Epic authentication and stored retrieval are independently tracked
-  in item #16 and are not pending work for the current credential-management scope.
+- **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, rotating/revocable refresh sessions, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN/Epic retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. Multi-user operation is not enabled by default.
+- **Epic MVP boundary**: Epic now has a Legendary-inspired stored-retrieval MVP. Ingest can exchange
+  a copied Epic authorization code for a vault-stored refresh token, refresh an access token
+  in-memory, retrieve library records, and map them to the existing Epic raw-ingest shape. A manual
+  refresh-token fallback remains available. A robust local helper flow is still future work.
 - **Isolation verification (2026-06-21)**: Tenant-scoped backup export and restore, the active-tenant
   empty-library restore rule, equivalent cross-tenant slugs/platform IDs, and Library mutation
   boundaries for personal tracking, merge, and split have direct cross-tenant test coverage.
@@ -145,13 +145,15 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Manual Split**: Ability to separate platform entries from a unified game into their own records.
 - **Robust Sorting**: Logic to gracefully handle missing years or ratings (coalesce nulls).
 
-### 16. Epic Authentication & Stored Retrieval
-- **Current behavior**: Epic ingestion is manual through API or CLI; Core synchronizes the resulting
-  raw data alongside other platforms.
-- **Future scope**: Evaluate an Epic authentication mechanism, secure credential or token handling,
-  and tenant-scoped stored retrieval as a standalone integration.
-- **Boundary**: This work is not a missing part of the Steam/GOG/PSN credential-management feature
-  and does not block that feature from being considered complete.
+### 16. Epic Authentication & Stored Retrieval ✅ MVP
+- **Current behavior**: Admin Credentials can store Epic retrieval credentials through the encrypted
+  Ingest vault. The primary MVP flow accepts an Epic `authorizationCode` and exchanges it
+  server-side for a refresh token; the manual fallback accepts an existing refresh token.
+- **Retrieval**: Core treats Epic as a stored-retrieval platform. Ingest refreshes an access token
+  in-memory, calls Epic's library service, maps records to `app_name`/`app_title`, and writes raw
+  Epic items through the existing ingest pipeline.
+- **Remaining scope**: A robust local helper/protocol-handler flow, token rotation persistence after
+  refresh, richer Epic metadata mapping, and provider-fragility handling remain follow-up work.
 
 ### 17. Guided Platform Account Connect for GOG & PSN
 - **Goal**: Replace the current manual DevTools cookie-copy workflow with a guided "Connect GOG" and

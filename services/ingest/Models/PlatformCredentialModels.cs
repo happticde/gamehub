@@ -28,3 +28,9 @@ public sealed record GogPlatformCredential(string Cookie, string User);
 
 /// <summary>Schema v1 for PlayStation retrieval credentials.</summary>
 public sealed record PsnPlatformCredential(Dictionary<string, string> Cookies);
+
+/// <summary>Schema v1 for Epic Games retrieval credentials stored in the vault.</summary>
+public sealed record EpicPlatformCredential(
+    string RefreshToken,
+    string? AccountId = null,
+    string? DisplayName = null);

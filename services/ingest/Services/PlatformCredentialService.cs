@@ -12,8 +12,11 @@ public sealed class PlatformCredentialService(
     IngestContext db,
     IIngestTenantContext tenantContext,
     PlatformCredentialProtector protector,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IEpicAuthenticationClient? epicAuthenticationClient = null)
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     /// <summary>Maximum serialized plaintext accepted by the vault.</summary>
     public const int MaximumPayloadSizeBytes = 16 * 1024;
 
@@ -28,7 +31,7 @@ public sealed class PlatformCredentialService(
         CancellationToken cancellationToken = default)
     {
         Validate(platform, schemaVersion, credentials);
-        var plaintext = JsonSerializer.SerializeToUtf8Bytes(credentials);
+        var plaintext = await BuildPlaintextAsync(platform, schemaVersion, credentials, cancellationToken);
         try
         {
             if (plaintext.Length > MaximumPayloadSizeBytes)
@@ -114,6 +117,10 @@ public sealed class PlatformCredentialService(
     public Task<PsnPlatformCredential?> GetPsnAsync(CancellationToken cancellationToken = default) =>
         ReadAsync(Platform.Psn, PlatformCredentialPayloadCodec.DecodePsn, cancellationToken);
 
+    /// <summary>Decrypts the active tenant's Epic Games credential for immediate retrieval.</summary>
+    public Task<EpicPlatformCredential?> GetEpicAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync(Platform.Epic, PlatformCredentialPayloadCodec.DecodeEpic, cancellationToken);
+
     private async Task<T?> ReadAsync<T>(
         Platform platform,
         Func<ReadOnlySpan<byte>, T> decode,
@@ -178,6 +185,40 @@ public sealed class PlatformCredentialService(
             throw new PlatformCredentialValidationException(
                 "Credentials must be a non-empty JSON object.");
         }
+    }
+
+    private async Task<byte[]> BuildPlaintextAsync(
+        Platform platform,
+        int schemaVersion,
+        JsonElement credentials,
+        CancellationToken cancellationToken)
+    {
+        if (platform != Platform.Epic)
+        {
+            return JsonSerializer.SerializeToUtf8Bytes(credentials);
+        }
+
+        if (schemaVersion != 1)
+        {
+            return JsonSerializer.SerializeToUtf8Bytes(credentials);
+        }
+
+        var authorizationCode = PlatformCredentialPayloadCodec.ReadEpicAuthorizationCode(credentials);
+        if (authorizationCode is null)
+        {
+            return JsonSerializer.SerializeToUtf8Bytes(credentials);
+        }
+
+        if (epicAuthenticationClient is null)
+        {
+            throw new PlatformCredentialValidationException(
+                "Epic authorization code exchange is not configured.");
+        }
+
+        var credential = await epicAuthenticationClient.ExchangeAuthorizationCodeAsync(
+            authorizationCode,
+            cancellationToken);
+        return JsonSerializer.SerializeToUtf8Bytes(credential, JsonOptions);
     }
 
     private static PlatformCredentialStatusResponse ToStatus(PlatformCredential credential) =>

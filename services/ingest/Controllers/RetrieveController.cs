@@ -35,6 +35,7 @@ public class RetrieveController : ControllerBase
     private readonly ISteamFetcher _steamFetcher;
     private readonly IGogFetcher _gogFetcher;
     private readonly IPsnFetcher _psnFetcher;
+    private readonly IEpicFetcher _epicFetcher;
     private readonly PlatformCredentialService _credentials;
     private readonly ILogger<RetrieveController> _logger;
 
@@ -43,12 +44,14 @@ public class RetrieveController : ControllerBase
     private readonly SteamIngestController _steamIngest;
     private readonly GogIngestController _gogIngest;
     private readonly PsnIngestController _psnIngest;
+    private readonly EpicIngestController _epicIngest;
 
     public RetrieveController(
         IngestContext db,
         ISteamFetcher steamFetcher,
         IGogFetcher gogFetcher,
         IPsnFetcher psnFetcher,
+        IEpicFetcher epicFetcher,
         PlatformCredentialService credentials,
         ILogger<RetrieveController> logger,
         ILoggerFactory loggerFactory)
@@ -57,6 +60,7 @@ public class RetrieveController : ControllerBase
         _steamFetcher = steamFetcher;
         _gogFetcher = gogFetcher;
         _psnFetcher = psnFetcher;
+        _epicFetcher = epicFetcher;
         _credentials = credentials;
         _logger = logger;
 
@@ -64,6 +68,7 @@ public class RetrieveController : ControllerBase
         _steamIngest = new SteamIngestController(db, loggerFactory.CreateLogger<SteamIngestController>());
         _gogIngest = new GogIngestController(db, loggerFactory.CreateLogger<GogIngestController>());
         _psnIngest = new PsnIngestController(db, loggerFactory.CreateLogger<PsnIngestController>());
+        _epicIngest = new EpicIngestController(db, loggerFactory.CreateLogger<EpicIngestController>());
     }
 
     /// <summary>
@@ -77,7 +82,7 @@ public class RetrieveController : ControllerBase
         Platform platform,
         CancellationToken cancellationToken)
     {
-        if (platform == Platform.Epic || !Enum.IsDefined(platform))
+        if (!Enum.IsDefined(platform))
         {
             return BadRequest(new PlatformCredentialErrorResponse(
                 "Stored retrieval is unsupported for this platform."));
@@ -90,6 +95,7 @@ public class RetrieveController : ControllerBase
                 Platform.Steam => await RetrieveStoredSteam(cancellationToken),
                 Platform.Gog => await RetrieveStoredGog(cancellationToken),
                 Platform.Psn => await RetrieveStoredPsn(cancellationToken),
+                Platform.Epic => await RetrieveStoredEpic(cancellationToken),
                 _ => null
             };
             return result ?? NotFound(new PlatformCredentialErrorResponse(
@@ -156,6 +162,19 @@ public class RetrieveController : ControllerBase
         var games = await _psnFetcher.FetchGamesAsync(credential.Cookies);
         _logger.LogInformation("Stored PSN retrieve completed: {Count} games processed", games.Count);
         return await _psnIngest.IngestBatch(games);
+    }
+
+    private async Task<IActionResult?> RetrieveStoredEpic(CancellationToken cancellationToken)
+    {
+        var credential = await _credentials.GetEpicAsync(cancellationToken);
+        if (credential is null)
+        {
+            return null;
+        }
+
+        var games = await _epicFetcher.FetchGamesAsync(credential, cancellationToken);
+        _logger.LogInformation("Stored Epic retrieve completed: {Count} games processed", games.Count);
+        return await _epicIngest.IngestBatch(games);
     }
 
     /// <summary>

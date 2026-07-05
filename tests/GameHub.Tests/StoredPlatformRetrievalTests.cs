@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using GameHub.Ingest.Controllers;
 using GameHub.Ingest.Data;
+using GameHub.Ingest.Models;
 using GameHub.Ingest.Services;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
@@ -86,14 +87,26 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
     }
 
     [Fact]
-    public async Task StoredRetrieve_Epic_ReturnsBadRequestWithoutReadingVault()
+    public async Task StoredEpicRetrieve_UsesDelegatedTenantRefreshTokenWithoutReturningSecrets()
     {
+        await StoreEpic(TenantA, "epic-refresh-a");
+        await StoreEpic(TenantB, "epic-refresh-b");
         await using var db = CreateContext(TenantA);
-        var controller = CreateController(db, TenantA, new CapturingSteamFetcher());
+        var epic = new CapturingEpicFetcher();
+        var controller = CreateController(
+            db,
+            TenantA,
+            new CapturingSteamFetcher(),
+            new UnusedPsnFetcher(),
+            epic);
 
         var result = await controller.RetrieveStored(Platform.Epic, CancellationToken.None);
 
-        Assert.IsType<BadRequestObjectResult>(result);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("epic-refresh-a", epic.Credential?.RefreshToken);
+        var responseJson = JsonSerializer.Serialize(ok.Value);
+        Assert.DoesNotContain("epic-refresh-a", responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("epic-refresh-b", responseJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -146,6 +159,17 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
             document.RootElement.Clone());
     }
 
+    private async Task StoreEpic(Guid tenantId, string refreshToken)
+    {
+        await using var db = CreateContext(tenantId);
+        using var document = JsonDocument.Parse(
+            JsonSerializer.Serialize(new { refreshToken }));
+        await CreateCredentialService(db, tenantId).UpsertAsync(
+            Platform.Epic,
+            1,
+            document.RootElement.Clone());
+    }
+
     private RetrieveController CreateController(
         IngestContext db,
         Guid tenantId,
@@ -157,11 +181,20 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         Guid tenantId,
         ISteamFetcher steamFetcher,
         IPsnFetcher psnFetcher) =>
+        CreateController(db, tenantId, steamFetcher, psnFetcher, new UnusedEpicFetcher());
+
+    private RetrieveController CreateController(
+        IngestContext db,
+        Guid tenantId,
+        ISteamFetcher steamFetcher,
+        IPsnFetcher psnFetcher,
+        IEpicFetcher epicFetcher) =>
         new(
             db,
             steamFetcher,
             new UnusedGogFetcher(),
             psnFetcher,
+            epicFetcher,
             CreateCredentialService(db, tenantId),
             NullLogger<RetrieveController>.Instance,
             NullLoggerFactory.Instance);
@@ -220,6 +253,14 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
             throw new InvalidOperationException("PSN fetcher must not be called in this test.");
     }
 
+    private sealed class UnusedEpicFetcher : IEpicFetcher
+    {
+        public Task<List<JsonElement>> FetchGamesAsync(
+            EpicPlatformCredential credential,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Epic fetcher must not be called in this test.");
+    }
+
     private sealed class CapturingPsnFetcher : IPsnFetcher
     {
         public Dictionary<string, string>? Cookies { get; private set; }
@@ -227,6 +268,19 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         public Task<List<JsonElement>> FetchGamesAsync(Dictionary<string, string> cookies)
         {
             Cookies = new Dictionary<string, string>(cookies);
+            return Task.FromResult(new List<JsonElement>());
+        }
+    }
+
+    private sealed class CapturingEpicFetcher : IEpicFetcher
+    {
+        public EpicPlatformCredential? Credential { get; private set; }
+
+        public Task<List<JsonElement>> FetchGamesAsync(
+            EpicPlatformCredential credential,
+            CancellationToken cancellationToken = default)
+        {
+            Credential = credential;
             return Task.FromResult(new List<JsonElement>());
         }
     }

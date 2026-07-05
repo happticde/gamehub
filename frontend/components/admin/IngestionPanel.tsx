@@ -24,7 +24,7 @@ import type {
 } from "@/types/game";
 import { Download, Loader2, ShieldAlert } from "lucide-react";
 
-const RETRIEVAL_PLATFORMS: Platform[] = ["Steam", "Gog", "Psn"];
+const RETRIEVAL_PLATFORMS: Platform[] = ["Steam", "Gog", "Psn", "Epic"];
 
 export function IngestionPanel() {
     const [credentials, setCredentials] = useState<PlatformCredentialManagement | null>(null);
@@ -144,6 +144,7 @@ export function IngestionPanel() {
                             <SelectItem value="Steam">Steam</SelectItem>
                             <SelectItem value="Gog">GOG</SelectItem>
                             <SelectItem value="Psn">PlayStation</SelectItem>
+                            <SelectItem value="Epic">Epic Games</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -301,5 +302,6 @@ function errorMessage(error: unknown): string {
 function platformLabel(platform: Platform): string {
     if (platform === "Gog") return "GOG";
     if (platform === "Psn") return "PlayStation";
+    if (platform === "Epic") return "Epic Games";
     return platform;
 }

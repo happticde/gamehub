@@ -47,6 +47,10 @@ type CredentialPayload = Record<string, unknown>;
 type ConnectProvider = "gog" | "psn";
 
 const helperLaunchStatusBaseUrl = "http://127.0.0.1:53935";
+const epicLauncherClientId = "34a02cf8f4414e29b15921876da36f9a";
+const epicAuthorizationUrl =
+    "https://www.epicgames.com/id/login?redirectUrl=" +
+    encodeURIComponent(`https://www.epicgames.com/id/api/redirect?clientId=${epicLauncherClientId}&responseType=code`);
 
 /**
  * Tenant credential management through Core's authenticated BFF route. Secret values live only
@@ -186,16 +190,13 @@ export function PlatformCredentialsPanel() {
                     onSave={(payload) => save("Psn", payload)}
                     onDelete={() => remove("Psn")}
                 />
+                <EpicCredentialCard
+                    status={statusFor("Epic")}
+                    busy={busyPlatform === "Epic"}
+                    onSave={(payload) => save("Epic", payload)}
+                    onDelete={() => remove("Epic")}
+                />
             </div>
-
-            <Card className="border-dashed">
-                <CardHeader>
-                    <CardTitle className="text-base">Epic Games</CardTitle>
-                    <CardDescription>
-                        Stored Epic retrieval is not supported yet, so Epic cannot activate platform sync.
-                    </CardDescription>
-                </CardHeader>
-            </Card>
         </div>
     );
 }
@@ -966,6 +967,84 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     );
 }
 
+function EpicCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
+    const [authorizationCode, setAuthorizationCode] = useState("");
+    const [refreshToken, setRefreshToken] = useState("");
+
+    const saveAuthorizationCode = async () => {
+        if (await onSave({ authorizationCode })) {
+            setAuthorizationCode("");
+        }
+    };
+
+    const saveRefreshToken = async () => {
+        if (await onSave({ refreshToken })) {
+            setRefreshToken("");
+        }
+    };
+
+    return (
+        <CredentialCard
+            platform="Epic"
+            description="Epic authorization code exchange with manual refresh-token fallback"
+            status={status}
+            busy={busy}
+            onDelete={onDelete}
+        >
+            <CredentialSection
+                icon={<PlugZap className="h-4 w-4 text-primary" />}
+                title={status?.isConfigured ? "Reconnect Epic Games" : "Connect Epic Games"}
+                description="Sign in with Epic, paste the returned authorizationCode, and let Ingest store only the resulting refresh token in the encrypted vault."
+                tone="primary"
+                action={
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
+                        <a href={epicAuthorizationUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                            Open Epic
+                        </a>
+                    </Button>
+                }
+            >
+                <p className="text-xs leading-5 text-muted-foreground">
+                    The Epic URL contains only the launcher client ID and response type; the
+                    authorization code is submitted to Core and exchanged server-side.
+                </p>
+                <CredentialInput
+                    label="Epic authorizationCode"
+                    value={authorizationCode}
+                    onChange={setAuthorizationCode}
+                    secret
+                />
+                <Button
+                    className="w-full"
+                    disabled={busy || !authorizationCode.trim()}
+                    onClick={() => void saveAuthorizationCode()}
+                >
+                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
+                    {busy ? "Saving…" : "Exchange and store encrypted credential"}
+                </Button>
+            </CredentialSection>
+
+            <HiddenFallback
+                title="Manual fallback"
+                description="Use a refresh token only when you already imported or generated one with a trusted local tool."
+            >
+                <CredentialInput
+                    label="Epic refresh token"
+                    value={refreshToken}
+                    onChange={setRefreshToken}
+                    secret
+                />
+                <SaveButton
+                    busy={busy}
+                    disabled={!refreshToken.trim()}
+                    onClick={saveRefreshToken}
+                />
+            </HiddenFallback>
+        </CredentialCard>
+    );
+}
+
 function CredentialSection({
     icon,
     title,
@@ -1246,5 +1325,6 @@ function cookieMapToRows(cookies: Record<string, string>): { key: string; value:
 function platformLabel(platform: Platform): string {
     if (platform === "Gog") return "GOG";
     if (platform === "Psn") return "PlayStation";
+    if (platform === "Epic") return "Epic Games";
     return platform;
 }
