@@ -176,15 +176,17 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   vault boundary and provide user-visible local-helper handoff flows for GOG and PlayStation. See
   [Platform Connect Helper Contract](gog-connect-helper-contract.md) for the one-time helper
   payloads, BFF/Core upsert targets, and security invariants.
-- **PSN validation status (2026-07-04)**: The PSN guided-connect implementation is mergeable as an
-  integration slice, but the helper-launched Sony login remains provider-fragile. Real Sony sign-in
-  testing hit `429 Too Many Requests` on Sony account endpoints after repeated helper attempts, and
-  a normal Chrome remote-debugging fallback was validated as the working path for reading an already
-  signed-in browser session. The validated cookie key for this flow is `pdccws_p`; keep the broader
-  cookie map support in place because Sony may vary cookie names by surface or account state. Before
-  marking PSN guided connect fully done, verify stored PSN retrieval end-to-end with the captured
-  `pdccws_p` credential and decide whether the helper-launched Sony login should remain secondary to
-  the remote-debugging fallback.
+- **PSN validation status (2026-07-04)**: The PlayStation Admin connector now treats a persistent
+  GameHub Chrome profile exposed through loopback remote debugging as the primary guided path. The
+  protocol helper opens or attaches to Chrome on `127.0.0.1:49333`, then hands the captured cookies
+  back through the same one-time local handoff used by GOG. Real Sony sign-in testing showed that a
+  helper-launched fresh Chrome profile can complete the earlier OAuth, passkey, telemetry, and
+  fingerprinting calls, but still fail at the final `ca.account.sony.com/api/v1/ssocookie` mint with
+  `429 Too Many Requests`. A persistent Chrome session exposed through loopback remote debugging was
+  validated as the working path for reading the already-issued `pdccws_p` cookie. Keep the broader
+  cookie map support in place because Sony may vary cookie names by surface or account state. The
+  fresh helper-launched PSN browser remains available only as a diagnostic fallback; do not present it
+  as a completed production flow until Sony's `ssocookie` behavior is revalidated.
 
 ---
 

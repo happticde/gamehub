@@ -87,10 +87,45 @@ To see pagination details and request URLs, set `GameHub` to `Debug`.
 | Unexpected response structure | API version changed | Check if the GraphQL hash needs updating |
 | Timeout | PSN API is slow | Retry, or increase the timeout in `PsnFetcher` |
 
-**How to get PSN cookies:**
+**Preferred PlayStation capture path:**
+1. Install the local helper protocol handler once:
+   ```bash
+   cd services/cli
+   go build -o gamehub-cli .
+   ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"
+   ```
+2. From the Admin credential UI, use **Connect PlayStation**.
+3. The helper opens or attaches to a persistent GameHub Chrome profile with local debugging enabled.
+   Sign in with Sony/PlayStation in that Chrome window if needed, including MFA or captcha. The
+   profile is reused for future PSN connects so Sony can keep normal browser trust/session state.
+
+If the protocol handler is not installed, use the manual fallback:
+1. Start the persistent GameHub Chrome profile with local debugging enabled:
+   ```bash
+   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/
+   ```
+2. Run the helper against that Chrome endpoint:
+   ```bash
+   cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin http://localhost:3005
+   ```
+3. Paste the loopback handoff URL into the Admin credential UI.
+
+GameHub never asks for the PSN password; the helper reads local session cookies only for a one-time
+handoff into the encrypted vault. The validated cookie for the current PlayStation flow is
+`pdccws_p`.
+
+**Diagnostic-only helper-launched browser:**
+```bash
+cd services/cli && go run . connect psn --handoff-server --origin http://localhost:3005 --diagnostics-file /tmp/gamehub-psn-login.jsonl
+```
+This fresh-profile path is known to be provider-fragile: Sony can allow OAuth, passkey, telemetry,
+and fingerprinting requests but still return `429 Too Many Requests` for
+`ca.account.sony.com/api/v1/ssocookie`, preventing the final `pdccws_p` cookie from being minted.
+
+**Manual cookie fallback:**
 1. Log in to [store.playstation.com](https://store.playstation.com)
 2. Open DevTools → Network → find any API request
-3. Copy all cookies from the request headers
+3. Copy the required PlayStation cookies from the request headers
 
 ---
 

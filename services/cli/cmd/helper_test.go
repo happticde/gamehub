@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseHelperLaunchURL_GogWithOrigin_NormalizesOrigin(t *testing.T) {
@@ -109,6 +112,117 @@ func TestMacOSHelperAppleScript_StartsLaunchCommandWithoutTerminalOrCookieData(t
 	}
 }
 
+func TestConfigurePsnHelperLaunch_DefaultsToExistingChromeDebugEndpoint(t *testing.T) {
+	psnRemoteDebugURL = ""
+	psnHandoffServer = false
+	psnHandoffOrigin = ""
+	psnHandoffTTL = 0
+	psnConnectTimeout = 0
+
+	restore := configurePsnHelperLaunch(5*time.Minute, 7*time.Minute, "http://localhost:3005", "")
+	defer restore()
+
+	if psnRemoteDebugURL != defaultPsnRemoteDebugURL {
+		t.Fatalf("psnRemoteDebugURL = %q, want %q", psnRemoteDebugURL, defaultPsnRemoteDebugURL)
+	}
+	if !psnHandoffServer {
+		t.Fatalf("psnHandoffServer = false, want true")
+	}
+	if psnHandoffOrigin != "http://localhost:3005" {
+		t.Fatalf("psnHandoffOrigin = %q, want http://localhost:3005", psnHandoffOrigin)
+	}
+	if psnConnectTimeout != 5*time.Minute {
+		t.Fatalf("psnConnectTimeout = %s, want 5m", psnConnectTimeout)
+	}
+	if psnHandoffTTL != 7*time.Minute {
+		t.Fatalf("psnHandoffTTL = %s, want 7m", psnHandoffTTL)
+	}
+}
+
+func TestConfigurePsnHelperLaunch_AllowsCustomDebugEndpoint(t *testing.T) {
+	restore := configurePsnHelperLaunch(time.Minute, time.Minute, "http://localhost:3005", " http://127.0.0.1:49444 ")
+	defer restore()
+
+	if psnRemoteDebugURL != "http://127.0.0.1:49444" {
+		t.Fatalf("psnRemoteDebugURL = %q, want custom endpoint", psnRemoteDebugURL)
+	}
+}
+
+func TestPreparePsnRemoteDebugChrome_SkipsLaunchWhenEndpointIsReady(t *testing.T) {
+	restore := stubPsnChromePreparation(t, "darwin")
+	defer restore()
+
+	psnRemoteDebugEndpointReady = func(ctx context.Context, remoteDebugURL string) bool {
+		return true
+	}
+	started := false
+	startPsnRemoteDebugChrome = func(ctx context.Context, remoteDebugURL string) error {
+		started = true
+		return nil
+	}
+
+	if err := preparePsnRemoteDebugChrome(context.Background(), defaultPsnRemoteDebugURL, &bytes.Buffer{}); err != nil {
+		t.Fatalf("preparePsnRemoteDebugChrome returned error: %v", err)
+	}
+	if started {
+		t.Fatalf("Chrome should not be started when the debugging endpoint is already ready")
+	}
+}
+
+func TestPreparePsnRemoteDebugChrome_StartsChromeOnMacWhenEndpointIsMissing(t *testing.T) {
+	restore := stubPsnChromePreparation(t, "darwin")
+	defer restore()
+
+	checks := 0
+	psnRemoteDebugEndpointReady = func(ctx context.Context, remoteDebugURL string) bool {
+		checks++
+		return checks > 1
+	}
+	startedWith := ""
+	startPsnRemoteDebugChrome = func(ctx context.Context, remoteDebugURL string) error {
+		startedWith = remoteDebugURL
+		return nil
+	}
+
+	var stderr bytes.Buffer
+	if err := preparePsnRemoteDebugChrome(context.Background(), defaultPsnRemoteDebugURL, &stderr); err != nil {
+		t.Fatalf("preparePsnRemoteDebugChrome returned error: %v", err)
+	}
+	if startedWith != defaultPsnRemoteDebugURL {
+		t.Fatalf("startedWith = %q, want %q", startedWith, defaultPsnRemoteDebugURL)
+	}
+	if !strings.Contains(stderr.String(), "Opening Chrome with local remote debugging enabled") {
+		t.Fatalf("stderr did not explain Chrome launch: %s", stderr.String())
+	}
+}
+
+func TestPreparePsnRemoteDebugChrome_DoesNotLaunchChromeOutsideMac(t *testing.T) {
+	restore := stubPsnChromePreparation(t, "linux")
+	defer restore()
+
+	psnRemoteDebugEndpointReady = func(ctx context.Context, remoteDebugURL string) bool {
+		return false
+	}
+	startPsnRemoteDebugChrome = func(ctx context.Context, remoteDebugURL string) error {
+		t.Fatalf("Chrome should not be auto-started outside macOS")
+		return nil
+	}
+
+	if err := preparePsnRemoteDebugChrome(context.Background(), defaultPsnRemoteDebugURL, &bytes.Buffer{}); err != nil {
+		t.Fatalf("preparePsnRemoteDebugChrome returned error: %v", err)
+	}
+}
+
+func TestDefaultPsnRemoteDebugProfileDir_UsesStableGameHubProfile(t *testing.T) {
+	profileDir, err := defaultPsnRemoteDebugProfileDir()
+	if err != nil {
+		t.Fatalf("defaultPsnRemoteDebugProfileDir returned error: %v", err)
+	}
+	if !strings.Contains(profileDir, "GameHub") || !strings.HasSuffix(profileDir, psnChromeProfileDirName) {
+		t.Fatalf("profileDir = %q, want stable GameHub PSN profile", profileDir)
+	}
+}
+
 func TestHelperLaunchStatusHandler_ReturnsHandoffURLWithoutCookieData(t *testing.T) {
 	state := &helperLaunchStatusState{}
 	handler := state.handler("launch-1234567890", mustParseGogHandoffOrigins(t, "http://localhost:3005"))
@@ -153,5 +267,20 @@ func TestHelperLaunchStatusPath_UsesProviderSpecificPath(t *testing.T) {
 	}
 	if helperLaunchStatusPath("psn") != "/connect/psn/launch-status" {
 		t.Fatalf("unexpected PSN launch status path")
+	}
+}
+
+func stubPsnChromePreparation(t *testing.T, goos string) func() {
+	t.Helper()
+
+	previousGOOS := helperRuntimeGOOS
+	previousEndpointReady := psnRemoteDebugEndpointReady
+	previousStartChrome := startPsnRemoteDebugChrome
+	helperRuntimeGOOS = goos
+
+	return func() {
+		helperRuntimeGOOS = previousGOOS
+		psnRemoteDebugEndpointReady = previousEndpointReady
+		startPsnRemoteDebugChrome = previousStartChrome
 	}
 }

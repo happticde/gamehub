@@ -152,26 +152,25 @@ go build -o gamehub-cli .
 ./gamehub-cli connect psn
 ```
 
-If Sony blocks the helper-launched PlayStation login before MFA/2FA, use the validated normal Chrome
-debug-profile fallback. This replaces the normal GameHub "Connect PlayStation" launch for this
-attempt and reads the already signed-in browser session, including the observed `pdccws_p` cookie.
-First start Chrome yourself and sign in there:
+If Sony blocks the helper-launched PlayStation login before MFA/2FA, use the validated persistent
+GameHub Chrome debug-profile fallback. This replaces the normal GameHub "Connect PlayStation"
+launch for this attempt and reads the already signed-in browser session, including the observed
+`pdccws_p` cookie. First start Chrome yourself and sign in there:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-address=127.0.0.1 \
   --remote-debugging-port=49333 \
-  --user-data-dir=/tmp/gamehub-psn-chrome \
+  --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile \
   https://store.playstation.com/
 ```
 
 If `http://127.0.0.1:49333/json/version` does not return Chrome debug JSON, the debug profile is not
-reachable. On macOS, quit all Chrome windows and start the command again so the
-`--remote-debugging-port` flag is not handed to an already running Chrome instance. A `404 Not
-Found` response usually means another local service or another browser process is answering on that
-port; choose a different unused loopback port and use the same port in both commands.
+reachable. A `404 Not Found` response usually means another local service or another browser process
+is answering on that port; choose a different unused loopback port and use the same port in both
+commands.
 
-After the normal Chrome profile is signed in, keep it open and run:
+After the persistent GameHub Chrome profile is signed in, keep it open and run:
 
 ```bash
 ./gamehub-cli connect psn \

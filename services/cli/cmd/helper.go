@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +26,7 @@ const (
 	gameHubHelperAppName        = "GameHub Helper.app"
 	defaultGogHandoffOriginList = "http://localhost:3005,http://127.0.0.1:3005"
 	helperLaunchStatusPort      = 53935
+	psnChromeProfileDirName     = "psn-chrome-profile"
 )
 
 var (
@@ -32,7 +34,19 @@ var (
 	helperInstallCliPath string
 	helperLaunchTimeout  time.Duration
 	helperLaunchUser     string
+	helperLaunchPsnDebug string
 	helperLaunchTTL      time.Duration
+)
+
+var (
+	helperRuntimeGOOS           = runtime.GOOS
+	psnRemoteDebugEndpointReady = func(ctx context.Context, remoteDebugURL string) bool {
+		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_, err := resolvePsnRemoteDebugURL(checkCtx, remoteDebugURL)
+		return err == nil
+	}
+	startPsnRemoteDebugChrome = defaultStartPsnRemoteDebugChrome
 )
 
 type helperLaunchRequest struct {
@@ -86,7 +100,7 @@ func runHelperInstallProtocolHandler(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if isLikelyGoRunBinary(cliPath) && strings.TrimSpace(helperInstallCliPath) == "" {
-		return fmt.Errorf("refusing to register a temporary go run binary; build gamehub-cli first or pass --cli-path")
+		return fmt.Errorf("refusing to register a temporary go run binary; run `go build -o gamehub-cli .` and then `./gamehub-cli helper install-protocol-handler --cli-path <absolute-path-to-gamehub-cli>`")
 	}
 
 	if err := installMacOSProtocolHandler(appPath, cliPath); err != nil {
@@ -183,10 +197,13 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 		}()
 		runErr = runConnectGog(cmd, nil)
 	case "psn":
-		psnConnectTimeout = helperLaunchTimeout
-		psnHandoffServer = true
-		psnHandoffOrigin = handoffOrigin
-		psnHandoffTTL = helperLaunchTTL
+		restorePsnLaunch := configurePsnHelperLaunch(
+			helperLaunchTimeout,
+			helperLaunchTTL,
+			handoffOrigin,
+			helperLaunchPsnDebug,
+		)
+		defer restorePsnLaunch()
 
 		previousHook := psnHandoffURLHook
 		if launchStatus != nil {
@@ -205,6 +222,107 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 		return runErr
 	}
 	return nil
+}
+
+func configurePsnHelperLaunch(timeout time.Duration, handoffTTL time.Duration, handoffOrigin string, remoteDebugURL string) func() {
+	previousTimeout := psnConnectTimeout
+	previousHandoffServer := psnHandoffServer
+	previousHandoffOrigin := psnHandoffOrigin
+	previousHandoffTTL := psnHandoffTTL
+	previousRemoteDebugURL := psnRemoteDebugURL
+
+	psnConnectTimeout = timeout
+	psnHandoffServer = true
+	psnHandoffOrigin = handoffOrigin
+	psnHandoffTTL = handoffTTL
+	psnRemoteDebugURL = strings.TrimSpace(remoteDebugURL)
+	if psnRemoteDebugURL == "" {
+		psnRemoteDebugURL = defaultPsnRemoteDebugURL
+	}
+
+	return func() {
+		psnConnectTimeout = previousTimeout
+		psnHandoffServer = previousHandoffServer
+		psnHandoffOrigin = previousHandoffOrigin
+		psnHandoffTTL = previousHandoffTTL
+		psnRemoteDebugURL = previousRemoteDebugURL
+	}
+}
+
+func preparePsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string, stderr io.Writer) error {
+	if strings.TrimSpace(remoteDebugURL) == "" || psnRemoteDebugEndpointReady(ctx, remoteDebugURL) {
+		return nil
+	}
+	if helperRuntimeGOOS != "darwin" {
+		return nil
+	}
+
+	fmt.Fprintf(stderr, "Chrome debugging endpoint %s is not ready. Opening Chrome with local remote debugging enabled.\n", remoteDebugURL)
+	if err := startPsnRemoteDebugChrome(ctx, remoteDebugURL); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(25 * time.Second)
+	for time.Now().Before(deadline) {
+		if psnRemoteDebugEndpointReady(ctx, remoteDebugURL) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+
+	profileDir, profileErr := defaultPsnRemoteDebugProfileDir()
+	if profileErr != nil {
+		profileDir = "the persistent GameHub Chrome profile"
+	}
+	return fmt.Errorf("Chrome did not expose %s after launch. The helper tried to start Chrome with profile %s; if this repeats, close that Chrome window and use the manual fallback command shown in GameHub", remoteDebugURL, profileDir)
+}
+
+func defaultStartPsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string) error {
+	normalizedURL, err := normalizePsnRemoteDebugURL(remoteDebugURL)
+	if err != nil {
+		return err
+	}
+	parsed, err := url.Parse(normalizedURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse PlayStation Chrome debugging URL: %w", err)
+	}
+	port := parsed.Port()
+	if port == "" {
+		return fmt.Errorf("PlayStation Chrome debugging URL must include a port")
+	}
+	profileDir, err := defaultPsnRemoteDebugProfileDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(profileDir, 0700); err != nil {
+		return fmt.Errorf("failed to prepare PlayStation Chrome profile directory: %w", err)
+	}
+
+	chromePath := "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+	command := exec.CommandContext(
+		ctx,
+		chromePath,
+		"--remote-debugging-address=127.0.0.1",
+		"--remote-debugging-port="+port,
+		"--user-data-dir="+profileDir,
+		psnConnectStartURL,
+	)
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("failed to open Chrome for PlayStation connect: %w", err)
+	}
+	return nil
+}
+
+func defaultPsnRemoteDebugProfileDir() (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to find the user cache directory for the PlayStation Chrome profile: %w", err)
+	}
+	return filepath.Join(cacheDir, "GameHub", psnChromeProfileDirName), nil
 }
 
 func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
@@ -569,5 +687,6 @@ func init() {
 	helperUninstallCmd.Flags().StringVar(&helperInstallAppPath, "app-path", "", "macOS helper app path (default ~/Applications/GameHub Helper.app)")
 	helperLaunchCmd.Flags().DurationVar(&helperLaunchTimeout, "timeout", 10*time.Minute, "maximum time to wait for the visible provider login")
 	helperLaunchCmd.Flags().StringVar(&helperLaunchUser, "user", "", "optional GOG username override when userData.json cannot report it")
+	helperLaunchCmd.Flags().StringVar(&helperLaunchPsnDebug, "psn-remote-debugging-url", defaultPsnRemoteDebugURL, "local Chrome debugging endpoint used by PlayStation helper launches")
 	helperLaunchCmd.Flags().DurationVar(&helperLaunchTTL, "handoff-result-ttl", 10*time.Minute, "maximum time to keep a captured local handoff result available")
 }

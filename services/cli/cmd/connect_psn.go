@@ -22,7 +22,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const psnConnectStartURL = "https://store.playstation.com/"
+const (
+	psnConnectStartURL          = "https://store.playstation.com/"
+	defaultPsnRemoteDebugURL    = "http://127.0.0.1:49333"
+	psnRemoteDebugChromeCommand = "/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/"
+)
 
 var (
 	psnConnectTimeout  time.Duration
@@ -58,15 +62,20 @@ type psnBrowserLaunchFlag struct {
 
 var connectPsnCmd = &cobra.Command{
 	Use:   "psn",
-	Short: "Open a visible PlayStation login session and print the GameHub helper JSON",
-	Long: strings.TrimSpace(`Open a temporary, visible Chrome/Chromium browser profile for PlayStation.
+	Short: "Capture PlayStation session cookies from a local Chrome session",
+	Long: strings.TrimSpace(`Capture PlayStation session cookies from a visible local Chrome session.
 
-Sign in to PlayStation/Sony in that browser window, including any MFA or captcha prompts. The
-helper waits until it can read known PlayStation session cookies from that controlled browser
-context, prints one JSON payload to stdout, and then removes the temporary profile.
+Preferred path: start the persistent GameHub Chrome profile with local remote debugging enabled,
+sign in to PlayStation/Sony there if needed, and pass --remote-debugging-url. The helper attaches
+only to the loopback Chrome debugging endpoint, waits until it can read known PlayStation session
+cookies, and prints one GameHub helper JSON payload.
 
-If Sony blocks the helper-launched login redirects, use --remote-debugging-url to attach to an
-already running local Chrome debug profile where PlayStation is signed in.`),
+Example:
+  ` + psnRemoteDebugChromeCommand + `
+  gamehub-cli connect psn --remote-debugging-url ` + defaultPsnRemoteDebugURL + `
+
+If --remote-debugging-url is omitted, the helper opens a fresh temporary Chrome profile. That path
+is kept for diagnostics and may fail when Sony declines the final ssocookie mint with HTTP 429.`),
 	RunE: runConnectPsn,
 }
 
@@ -128,12 +137,30 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 	if strings.TrimSpace(psnRemoteDebugURL) != "" {
 		fmt.Fprintln(os.Stderr, "Connecting to an existing Chrome debugging session. Sign in there with PlayStation if needed; no PSN password is entered into GameHub.")
 	} else {
-		fmt.Fprintln(os.Stderr, "Opening a visible PlayStation browser session. Sign in there; no PSN password is entered into GameHub.")
+		fmt.Fprintln(os.Stderr, "Opening a temporary PlayStation browser session for diagnostics. Sony may block the final ssocookie step for fresh helper profiles; no PSN password is entered into GameHub.")
 	}
 	if psnHandoffServer {
 		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will be held in memory for a one-time local handoff.")
 	} else {
 		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will only be printed in the final JSON payload.")
+	}
+
+	if strings.TrimSpace(psnRemoteDebugURL) != "" {
+		if err := preparePsnRemoteDebugChrome(cmd.Context(), strings.TrimSpace(psnRemoteDebugURL), cmd.ErrOrStderr()); err != nil {
+			if handoff != nil {
+				handoff.fail(err)
+				fmt.Fprintln(os.Stderr, err.Error())
+				fmt.Fprintln(os.Stderr, "Keep this helper running until GameHub imports the local failure result.")
+
+				waitCtx, cancel := context.WithTimeout(cmd.Context(), psnHandoffTTL)
+				defer cancel()
+				if waitErr := handoff.waitConsumed(waitCtx); waitErr != nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+					return waitErr
+				}
+				return nil
+			}
+			return err
+		}
 	}
 
 	payload, err := capturePsnConnectPayload(cmd.Context(), profileDir, strings.TrimSpace(psnRemoteDebugURL), psnConnectTimeout, diagnostics)
@@ -243,7 +270,7 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 			return psnConnectPayload{}, fmt.Errorf("failed to read PlayStation browser location: %w", err)
 		}
 
-		if len(cookies) > 0 && isPsnCookieCaptureReady(currentURL) {
+		if isPsnCookieCaptureComplete(cookies, currentURL) {
 			if diagnostics != nil {
 				diagnostics.recordCookieCapture(cookies)
 			}
@@ -259,7 +286,7 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 				}
 				continue
 			}
-			return psnConnectPayload{}, fmt.Errorf("Sony returned HTTP 429 during PlayStation sign-in at %s. Wait before retrying, or use the manual cookie fallback with an already signed-in normal browser session", url)
+			return psnConnectPayload{}, fmt.Errorf("Sony returned HTTP 429 during PlayStation sign-in at %s. Use the existing Chrome remote-debugging path with --remote-debugging-url %s, or wait before retrying diagnostics", url, defaultPsnRemoteDebugURL)
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return psnConnectPayload{}, fmt.Errorf("timed out waiting for PlayStation login after %s", timeout)
@@ -428,7 +455,7 @@ func newPsnBrowserAllocator(parent context.Context, profileDir string, remoteDeb
 			return nil, nil, false, err
 		}
 		allocatorCtx, cancelAllocator := chromedp.NewRemoteAllocator(parent, browserWSURL, chromedp.NoModifyURL)
-		return allocatorCtx, cancelAllocator, false, nil
+		return allocatorCtx, cancelAllocator, true, nil
 	}
 
 	options, err := psnBrowserAllocatorOptions(profileDir)
@@ -575,6 +602,7 @@ func readPsnSessionCookies(ctx context.Context) (map[string]string, float64, err
 				"https://store.playstation.com",
 				"https://www.playstation.com",
 				"https://my.account.sony.com",
+				"https://ca.account.sony.com",
 				"https://web.np.playstation.com",
 			}).
 			Do(ctx)
@@ -624,6 +652,10 @@ func isPsnCookieCaptureReady(currentURL string) bool {
 	}
 
 	return hostname != "my.account.sony.com" && hostname != "ca.account.sony.com"
+}
+
+func isPsnCookieCaptureComplete(cookies map[string]string, currentURL string) bool {
+	return strings.TrimSpace(cookies["pdccws_p"]) != "" && isPsnCookieCaptureReady(currentURL)
 }
 
 func newPsnConnectPayload(cookies map[string]string, expires float64, capturedAt time.Time) psnConnectPayload {
