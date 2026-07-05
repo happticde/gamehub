@@ -513,32 +513,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     )}
                     {helperLaunching ? "Starting helper…" : "Connect GOG"}
                 </Button>
-                <Input
-                    aria-label="GOG local helper handoff URL"
-                    className="font-mono text-xs"
-                    placeholder="Paste local helper handoff URL"
-                    value={handoffUrl}
-                    onChange={(event) => {
-                        setHandoffUrl(event.target.value);
-                        setHandoffError(null);
-                    }}
-                    disabled={handoffPolling || helperLaunching}
-                />
                 <HelperStatusMessage message={handoffMessage} error={handoffError} />
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
-                    onClick={() => void pollHandoffUrl()}
-                >
-                    {handoffPolling ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <PlugZap className="mr-2 h-4 w-4" />
-                    )}
-                    {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
-                </Button>
                 {(handoffPolling || helperLaunching) && (
                     <Button
                         variant="ghost"
@@ -550,16 +525,41 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     </Button>
                 )}
                 <CommandFallback
-                    title="Protocol handler or loopback fallback"
+                    title="Advanced helper options"
                     commands={[
                         'cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"',
                         `cd services/cli && go run . connect gog --handoff-server --origin ${pageOrigin}`,
                     ]}
-                />
+                >
+                    <Input
+                        aria-label="GOG local helper handoff URL"
+                        className="font-mono text-xs"
+                        placeholder="Paste local helper handoff URL"
+                        value={handoffUrl}
+                        onChange={(event) => {
+                            setHandoffUrl(event.target.value);
+                            setHandoffError(null);
+                        }}
+                        disabled={handoffPolling || helperLaunching}
+                    />
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
+                        onClick={() => void pollHandoffUrl()}
+                    >
+                        {handoffPolling ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <PlugZap className="mr-2 h-4 w-4" />
+                        )}
+                        {handoffPolling ? "Waiting for helper…" : "Import pasted handoff URL"}
+                    </Button>
+                </CommandFallback>
             </CredentialSection>
 
-            <CredentialSection
-                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+            <HiddenFallback
                 title="JSON fallback"
                 description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
             >
@@ -596,10 +596,9 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             ? "Store refreshed GOG session"
                             : "Store JSON helper result"}
                 </Button>
-            </CredentialSection>
+            </HiddenFallback>
 
-            <CredentialSection
-                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+            <HiddenFallback
                 title="Manual fallback"
                 description="Use only when the helper cannot capture the session for you."
                 action={
@@ -619,7 +618,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                 <CredentialInput label="GOG username" value={user} onChange={setUser} />
                 <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
                 <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
-            </CredentialSection>
+            </HiddenFallback>
         </CredentialCard>
     );
 }
@@ -819,32 +818,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     )}
                     {helperLaunching ? "Starting helper…" : "Connect PlayStation"}
                 </Button>
-                <Input
-                    aria-label="PlayStation local helper handoff URL"
-                    className="font-mono text-xs"
-                    placeholder="Paste local helper handoff URL"
-                    value={handoffUrl}
-                    onChange={(event) => {
-                        setHandoffUrl(event.target.value);
-                        setHandoffError(null);
-                    }}
-                    disabled={handoffPolling || helperLaunching}
-                />
                 <HelperStatusMessage message={handoffMessage} error={handoffError} />
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
-                    onClick={() => void pollHandoffUrl()}
-                >
-                    {handoffPolling ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <PlugZap className="mr-2 h-4 w-4" />
-                    )}
-                    {handoffPolling ? "Waiting for helper…" : "Import from local helper"}
-                </Button>
                 {(handoffPolling || helperLaunching) && (
                     <Button
                         variant="ghost"
@@ -856,7 +830,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     </Button>
                 )}
                 <CommandFallback
-                    title="Protocol handler, Chrome, or diagnostics fallback"
+                    title="Advanced helper options"
                     note="Use diagnostics only when the normal Chrome handoff cannot complete; fresh PlayStation sign-ins can be provider-fragile."
                     commands={[
                         'cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"',
@@ -864,11 +838,36 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         `cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin ${pageOrigin}`,
                         `cd services/cli && go run . connect psn --handoff-server --origin ${pageOrigin} --diagnostics-file /tmp/gamehub-psn-login.jsonl`,
                     ]}
-                />
+                >
+                    <Input
+                        aria-label="PlayStation local helper handoff URL"
+                        className="font-mono text-xs"
+                        placeholder="Paste local helper handoff URL"
+                        value={handoffUrl}
+                        onChange={(event) => {
+                            setHandoffUrl(event.target.value);
+                            setHandoffError(null);
+                        }}
+                        disabled={handoffPolling || helperLaunching}
+                    />
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
+                        onClick={() => void pollHandoffUrl()}
+                    >
+                        {handoffPolling ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <PlugZap className="mr-2 h-4 w-4" />
+                        )}
+                        {handoffPolling ? "Waiting for helper…" : "Import pasted handoff URL"}
+                    </Button>
+                </CommandFallback>
             </CredentialSection>
 
-            <CredentialSection
-                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+            <HiddenFallback
                 title="JSON fallback"
                 description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
             >
@@ -905,10 +904,9 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                             ? "Store refreshed PlayStation session"
                             : "Store JSON helper result"}
                 </Button>
-            </CredentialSection>
+            </HiddenFallback>
 
-            <CredentialSection
-                icon={<KeyRound className="h-4 w-4 text-muted-foreground" />}
+            <HiddenFallback
                 title="Manual fallback"
                 description="Add only the cookies needed for the vault; pdccws_p is required for PSN import."
                 action={
@@ -963,7 +961,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     <Plus className="mr-2 h-4 w-4" /> Add cookie
                 </Button>
                 <SaveButton busy={busy} disabled={validCookies.length === 0} onClick={submit} />
-            </CredentialSection>
+            </HiddenFallback>
         </CredentialCard>
     );
 }
@@ -1030,21 +1028,54 @@ function HelperStatusMessage({
     );
 }
 
+function HiddenFallback({
+    title,
+    description,
+    action,
+    children,
+}: {
+    title: string;
+    description: string;
+    action?: ReactNode;
+    children: ReactNode;
+}) {
+    return (
+        <details className="rounded-lg border bg-muted/10 px-3 py-2 text-xs">
+            <summary className="cursor-pointer list-none">
+                <div className="inline-flex w-full items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <span className="font-medium text-muted-foreground">{title}</span>
+                        <p className="mt-0.5 leading-5 text-muted-foreground/80">{description}</p>
+                    </div>
+                    <span className="shrink-0 text-muted-foreground/70">Show</span>
+                </div>
+            </summary>
+            <div className="mt-3 space-y-3">
+                {action}
+                {children}
+            </div>
+        </details>
+    );
+}
+
 function CommandFallback({
     title,
     note,
     commands,
+    children,
 }: {
     title: string;
     note?: string;
     commands: string[];
+    children?: ReactNode;
 }) {
     return (
         <details className="rounded-md border bg-background/70 px-3 py-2 text-xs">
             <summary className="cursor-pointer text-muted-foreground">
                 {title}
             </summary>
-            <div className="mt-2 space-y-1.5">
+            <div className="mt-2 space-y-2">
+                {children}
                 {note && (
                     <p className="text-muted-foreground">
                         {note}
