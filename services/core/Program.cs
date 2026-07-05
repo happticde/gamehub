@@ -103,6 +103,7 @@ builder.Services.AddHttpClient<IngestClient>(c =>
     {
         // Stored platform retrieval may fan out to provider APIs before Ingest can respond.
         options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(2);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(5);
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
     });
 builder.Services.AddScoped<UnificationService>();
