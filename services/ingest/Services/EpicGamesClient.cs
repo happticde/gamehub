@@ -35,8 +35,10 @@ public sealed class EpicGamesClient(
     private const string LauncherClientSecret = "daafbccc737745039dffe53d94fc76cf";
     private const string OAuthTokenUrl =
         "https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token";
-    private const string LibraryItemsUrl =
-        "https://library-service.live.use1a.on.epicgames.com/library/api/public/items";
+    private const string LauncherAssetsUrl =
+        "https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/Windows?label=Live";
+    private const string CatalogItemsUrl =
+        "https://catalog-public-service-prod06.ol.epicgames.com/catalog/api/shared/namespace";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -97,11 +99,13 @@ public sealed class EpicGamesClient(
                 throw new HttpRequestException("Epic authentication failed.");
             }
 
-            var rawItems = await FetchLibraryItemsAsync(session.AccessToken, cancellationToken);
+            var rawItems = await FetchLauncherGamesAsync(session.AccessToken, cancellationToken);
             var mapped = new List<JsonElement>();
             foreach (var rawItem in rawItems)
             {
-                var mappedItem = EpicLibraryItemMapper.MapToIngestItem(rawItem);
+                var mappedItem = EpicLibraryItemMapper.MapToIngestItem(
+                    rawItem.Asset,
+                    rawItem.CatalogMetadata);
                 if (mappedItem is not null)
                 {
                     mapped.Add(mappedItem.Value);
@@ -109,7 +113,7 @@ public sealed class EpicGamesClient(
             }
 
             logger.LogInformation(
-                "Epic Games: fetched {RawCount} library records and mapped {MappedCount} games",
+                "Epic Games: fetched {RawCount} launcher asset records and mapped {MappedCount} games",
                 rawItems.Count,
                 mapped.Count);
             await WriteAuditLogAsync("Success", mapped.Count);
@@ -156,67 +160,131 @@ public sealed class EpicGamesClient(
             ?? throw new JsonException("Epic authorization returned an empty response.");
     }
 
-    private async Task<List<JsonElement>> FetchLibraryItemsAsync(
+    private async Task<List<EpicLauncherGameRecord>> FetchLauncherGamesAsync(
         string accessToken,
         CancellationToken cancellationToken)
     {
-        var items = new List<JsonElement>();
-        string? cursor = null;
+        var items = new List<EpicLauncherGameRecord>();
+        var assets = await FetchGameAssetsAsync(accessToken, cancellationToken);
+        var seenAppNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        do
+        foreach (var asset in assets)
         {
-            var url = $"{LibraryItemsUrl}?includeMetadata=true";
-            if (!string.IsNullOrWhiteSpace(cursor))
+            var appName = EpicLibraryItemMapper.ReadAppName(asset);
+            var namespaceName = EpicLibraryItemMapper.ReadNamespace(asset);
+            var catalogItemId = EpicLibraryItemMapper.ReadCatalogItemId(asset);
+            if (string.IsNullOrWhiteSpace(appName)
+                || string.IsNullOrWhiteSpace(namespaceName)
+                || string.IsNullOrWhiteSpace(catalogItemId)
+                || string.Equals(namespaceName, "ue", StringComparison.OrdinalIgnoreCase)
+                || !seenAppNames.Add(appName))
             {
-                url += $"&cursor={Uri.EscapeDataString(cursor)}";
+                continue;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            using var response = await http.SendAsync(request, cancellationToken);
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            var metadata = await FetchCatalogMetadataAsync(
+                accessToken,
+                namespaceName,
+                catalogItemId,
+                cancellationToken);
+            if (metadata is null)
             {
-                await WriteAuditLogAsync("TokenExpired", 0, "Epic access token was rejected.");
-                throw new HttpRequestException("Epic authentication failed.");
-            }
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                await WriteAuditLogAsync("RateLimited", 0, "Epic API rate limit exceeded.");
-                throw new HttpRequestException("Epic API rate limit exceeded.");
-            }
-            if (!response.IsSuccessStatusCode)
-            {
-                logger.LogWarning("Epic library request failed with status {StatusCode}", (int)response.StatusCode);
-                await WriteAuditLogAsync("Error", 0, $"HTTP {(int)response.StatusCode}");
-                throw new HttpRequestException("Epic library request failed.");
+                continue;
             }
 
-            using var document = await JsonDocument.ParseAsync(
-                await response.Content.ReadAsStreamAsync(cancellationToken),
-                cancellationToken: cancellationToken);
-            if (!document.RootElement.TryGetProperty("records", out var records)
-                || records.ValueKind != JsonValueKind.Array)
-            {
-                await WriteAuditLogAsync("Error", 0, "Unexpected Response Structure");
-                throw new InvalidOperationException(
-                    "Epic library API returned an unexpected response structure.");
-            }
-
-            foreach (var record in records.EnumerateArray())
-            {
-                items.Add(record.Clone());
-            }
-
-            cursor = null;
-            if (document.RootElement.TryGetProperty("responseMetadata", out var metadata)
-                && metadata.TryGetProperty("nextCursor", out var cursorElement))
-            {
-                cursor = cursorElement.GetString();
-            }
-        } while (!string.IsNullOrWhiteSpace(cursor));
+            items.Add(new EpicLauncherGameRecord(asset, metadata.Value));
+        }
 
         return items;
     }
+
+    private async Task<List<JsonElement>> FetchGameAssetsAsync(
+        string accessToken,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, LauncherAssetsUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await SendEpicApiRequestAsync(request, "Epic launcher assets", cancellationToken);
+        using var document = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(cancellationToken),
+            cancellationToken: cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            await WriteAuditLogAsync("Error", 0, "Unexpected Asset Response Structure");
+            throw new InvalidOperationException("Epic launcher assets API returned an unexpected response structure.");
+        }
+
+        var items = new List<JsonElement>();
+        foreach (var record in document.RootElement.EnumerateArray())
+        {
+            items.Add(record.Clone());
+        }
+
+        return items;
+    }
+
+    private async Task<JsonElement?> FetchCatalogMetadataAsync(
+        string accessToken,
+        string namespaceName,
+        string catalogItemId,
+        CancellationToken cancellationToken)
+    {
+        var url =
+            $"{CatalogItemsUrl}/{Uri.EscapeDataString(namespaceName)}/bulk/items" +
+            $"?id={Uri.EscapeDataString(catalogItemId)}" +
+            "&includeDLCDetails=true&includeMainGameDetails=true&country=US&locale=en-US";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await SendEpicApiRequestAsync(request, "Epic catalog metadata", cancellationToken);
+        using var document = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(cancellationToken),
+            cancellationToken: cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            await WriteAuditLogAsync("Error", 0, "Unexpected Catalog Response Structure");
+            throw new InvalidOperationException("Epic catalog API returned an unexpected response structure.");
+        }
+
+        if (document.RootElement.TryGetProperty(catalogItemId, out var metadata)
+            && metadata.ValueKind == JsonValueKind.Object)
+        {
+            return metadata.Clone();
+        }
+
+        return null;
+    }
+
+    private async Task<HttpResponseMessage> SendEpicApiRequestAsync(
+        HttpRequestMessage request,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        var response = await http.SendAsync(request, cancellationToken);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            await WriteAuditLogAsync("TokenExpired", 0, "Epic access token was rejected.");
+            response.Dispose();
+            throw new HttpRequestException("Epic authentication failed.");
+        }
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            await WriteAuditLogAsync("RateLimited", 0, "Epic API rate limit exceeded.");
+            response.Dispose();
+            throw new HttpRequestException("Epic API rate limit exceeded.");
+        }
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning("{Operation} request failed with status {StatusCode}", operation, (int)response.StatusCode);
+            await WriteAuditLogAsync("Error", 0, $"HTTP {(int)response.StatusCode}");
+            response.Dispose();
+            throw new HttpRequestException("Epic library request failed.");
+        }
+
+        return response;
+    }
+
+    private sealed record EpicLauncherGameRecord(JsonElement Asset, JsonElement CatalogMetadata);
 
     private async Task WriteAuditLogAsync(string status, int count, string? error = null)
     {
@@ -241,27 +309,17 @@ public sealed class EpicGamesClient(
 
 public static class EpicLibraryItemMapper
 {
-    /// <summary>Maps an Epic Library record to the existing Epic raw-ingest shape.</summary>
-    public static JsonElement? MapToIngestItem(JsonElement record)
+    /// <summary>Maps Epic launcher asset and catalog metadata to the existing raw-ingest shape.</summary>
+    public static JsonElement? MapToIngestItem(JsonElement asset, JsonElement catalogMetadata)
     {
-        var appName =
-            ReadString(record, "appName") ??
-            ReadString(record, "app_name") ??
-            ReadString(record, "artifactId") ??
-            ReadString(record, "catalogItemId");
-        if (string.IsNullOrWhiteSpace(appName))
+        var appName = ReadAppName(asset);
+        var title = ReadString(catalogMetadata, "title");
+        if (string.IsNullOrWhiteSpace(appName)
+            || string.IsNullOrWhiteSpace(title)
+            || ShouldSkip(asset, catalogMetadata))
         {
             return null;
         }
-
-        var title =
-            ReadString(record, "appTitle") ??
-            ReadString(record, "app_title") ??
-            ReadString(record, "title") ??
-            ReadString(record, "displayName") ??
-            ReadNestedString(record, "metadata", "title") ??
-            ReadNestedString(record, "catalogItem", "title") ??
-            appName;
 
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
@@ -269,8 +327,13 @@ public static class EpicLibraryItemMapper
             writer.WriteStartObject();
             writer.WriteString("app_name", appName);
             writer.WriteString("app_title", title);
-            writer.WritePropertyName("legendary_library_item");
-            record.WriteTo(writer);
+            WriteOptionalString(writer, "namespace", ReadNamespace(asset) ?? ReadString(catalogMetadata, "namespace"));
+            WriteOptionalString(writer, "catalog_item_id", ReadCatalogItemId(asset) ?? ReadString(catalogMetadata, "id"));
+            WriteOptionalString(writer, "asset_id", ReadString(asset, "assetId"));
+            writer.WritePropertyName("legendary_asset");
+            asset.WriteTo(writer);
+            writer.WritePropertyName("legendary_metadata");
+            catalogMetadata.WriteTo(writer);
             writer.WriteEndObject();
         }
 
@@ -278,15 +341,88 @@ public static class EpicLibraryItemMapper
         return document.RootElement.Clone();
     }
 
-    private static string? ReadNestedString(JsonElement element, string parent, string property)
+    /// <summary>Maps legacy library-service records to the existing raw-ingest shape.</summary>
+    public static JsonElement? MapToIngestItem(JsonElement record)
     {
-        if (!element.TryGetProperty(parent, out var nested)
-            || nested.ValueKind != JsonValueKind.Object)
+        if (!record.TryGetProperty("metadata", out var metadata)
+            || metadata.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
 
-        return ReadString(nested, property);
+        return MapToIngestItem(record, metadata);
+    }
+
+    /// <summary>Reads Legendary's stable app name from an Epic asset or compatible record.</summary>
+    public static string? ReadAppName(JsonElement element) =>
+        ReadString(element, "appName") ??
+        ReadString(element, "app_name") ??
+        ReadString(element, "artifactId");
+
+    /// <summary>Reads the Epic catalog item identifier from an Epic asset or compatible record.</summary>
+    public static string? ReadCatalogItemId(JsonElement element) =>
+        ReadString(element, "catalogItemId") ??
+        ReadString(element, "catalog_item_id");
+
+    /// <summary>Reads the Epic namespace from an Epic asset or compatible record.</summary>
+    public static string? ReadNamespace(JsonElement element) =>
+        ReadString(element, "namespace");
+
+    private static bool ShouldSkip(JsonElement asset, JsonElement catalogMetadata)
+    {
+        var namespaceName = ReadNamespace(asset) ?? ReadString(catalogMetadata, "namespace");
+        if (string.Equals(namespaceName, "ue", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (catalogMetadata.TryGetProperty("mainGameItem", out _))
+        {
+            return true;
+        }
+
+        if (TryGetStringProperty(catalogMetadata, "sandboxType", out var sandboxType)
+            && string.Equals(sandboxType, "PRIVATE", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var hasGameCategory = false;
+        foreach (var path in ReadCategoryPaths(catalogMetadata))
+        {
+            if (path.Equals("mods", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("mods/", StringComparison.OrdinalIgnoreCase)
+                || path.Equals("addons", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("addons/", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (path.Equals("games", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("games/", StringComparison.OrdinalIgnoreCase))
+            {
+                hasGameCategory = true;
+            }
+        }
+
+        return !hasGameCategory;
+    }
+
+    private static IEnumerable<string> ReadCategoryPaths(JsonElement catalogMetadata)
+    {
+        if (!catalogMetadata.TryGetProperty("categories", out var categories)
+            || categories.ValueKind != JsonValueKind.Array)
+        {
+            yield break;
+        }
+
+        foreach (var category in categories.EnumerateArray())
+        {
+            if (TryGetStringProperty(category, "path", out var path))
+            {
+                yield return path;
+            }
+        }
     }
 
     private static string? ReadString(JsonElement element, string property)
@@ -299,5 +435,26 @@ public static class EpicLibraryItemMapper
 
         var text = value.GetString();
         return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static bool TryGetStringProperty(JsonElement element, string property, out string value)
+    {
+        value = string.Empty;
+        var text = ReadString(element, property);
+        if (text is null)
+        {
+            return false;
+        }
+
+        value = text;
+        return true;
+    }
+
+    private static void WriteOptionalString(Utf8JsonWriter writer, string property, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            writer.WriteString(property, value);
+        }
     }
 }
