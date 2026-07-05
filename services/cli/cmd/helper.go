@@ -26,6 +26,7 @@ const (
 	gameHubHelperAppName        = "GameHub Helper.app"
 	defaultGogHandoffOriginList = "http://localhost:3005,http://127.0.0.1:3005"
 	helperLaunchStatusPort      = 53935
+	psnChromeProfileDirName     = "psn-chrome-profile"
 )
 
 var (
@@ -273,7 +274,11 @@ func preparePsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string, std
 		}
 	}
 
-	return fmt.Errorf("Chrome did not expose %s after launch. Quit all Chrome windows, then use Connect PlayStation again so the helper can start Chrome with remote debugging enabled", remoteDebugURL)
+	profileDir, profileErr := defaultPsnRemoteDebugProfileDir()
+	if profileErr != nil {
+		profileDir = "the persistent GameHub Chrome profile"
+	}
+	return fmt.Errorf("Chrome did not expose %s after launch. The helper tried to start Chrome with profile %s; if this repeats, close that Chrome window and use the manual fallback command shown in GameHub", remoteDebugURL, profileDir)
 }
 
 func defaultStartPsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string) error {
@@ -289,6 +294,13 @@ func defaultStartPsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string
 	if port == "" {
 		return fmt.Errorf("PlayStation Chrome debugging URL must include a port")
 	}
+	profileDir, err := defaultPsnRemoteDebugProfileDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(profileDir, 0700); err != nil {
+		return fmt.Errorf("failed to prepare PlayStation Chrome profile directory: %w", err)
+	}
 
 	chromePath := "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 	command := exec.CommandContext(
@@ -296,12 +308,21 @@ func defaultStartPsnRemoteDebugChrome(ctx context.Context, remoteDebugURL string
 		chromePath,
 		"--remote-debugging-address=127.0.0.1",
 		"--remote-debugging-port="+port,
+		"--user-data-dir="+profileDir,
 		psnConnectStartURL,
 	)
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("failed to open Chrome for PlayStation connect: %w", err)
 	}
 	return nil
+}
+
+func defaultPsnRemoteDebugProfileDir() (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to find the user cache directory for the PlayStation Chrome profile: %w", err)
+	}
+	return filepath.Join(cacheDir, "GameHub", psnChromeProfileDirName), nil
 }
 
 func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {

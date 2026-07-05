@@ -213,6 +213,16 @@ func TestPreparePsnRemoteDebugChrome_DoesNotLaunchChromeOutsideMac(t *testing.T)
 	}
 }
 
+func TestDefaultPsnRemoteDebugProfileDir_UsesStableGameHubProfile(t *testing.T) {
+	profileDir, err := defaultPsnRemoteDebugProfileDir()
+	if err != nil {
+		t.Fatalf("defaultPsnRemoteDebugProfileDir returned error: %v", err)
+	}
+	if !strings.Contains(profileDir, "GameHub") || !strings.HasSuffix(profileDir, psnChromeProfileDirName) {
+		t.Fatalf("profileDir = %q, want stable GameHub PSN profile", profileDir)
+	}
+}
+
 func TestHelperLaunchStatusHandler_ReturnsHandoffURLWithoutCookieData(t *testing.T) {
 	state := &helperLaunchStatusState{}
 	handler := state.handler("launch-1234567890", mustParseGogHandoffOrigins(t, "http://localhost:3005"))

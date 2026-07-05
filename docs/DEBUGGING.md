@@ -95,14 +95,14 @@ To see pagination details and request URLs, set `GameHub` to `Debug`.
    ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"
    ```
 2. From the Admin credential UI, use **Connect PlayStation**.
-3. The helper opens or attaches to your normal Chrome profile with local debugging enabled. Sign in
-   with Sony/PlayStation in that Chrome window if needed, including MFA or captcha.
+3. The helper opens or attaches to a persistent GameHub Chrome profile with local debugging enabled.
+   Sign in with Sony/PlayStation in that Chrome window if needed, including MFA or captcha. The
+   profile is reused for future PSN connects so Sony can keep normal browser trust/session state.
 
-If the protocol handler is not installed, or if Chrome was already running without the debug port,
-use the manual fallback:
-1. Start your regular Chrome profile with local debugging enabled:
+If the protocol handler is not installed, use the manual fallback:
+1. Start the persistent GameHub Chrome profile with local debugging enabled:
    ```bash
-   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 https://store.playstation.com/
+   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/
    ```
 2. Run the helper against that Chrome endpoint:
    ```bash
@@ -110,10 +110,9 @@ use the manual fallback:
    ```
 3. Paste the loopback handoff URL into the Admin credential UI.
 
-If Chrome was already open and `http://127.0.0.1:49333/json/version` does not answer, quit all
-Chrome windows and start it again with the command above. GameHub never asks for the PSN password;
-the helper reads local session cookies only for a one-time handoff into the encrypted vault. The
-validated cookie for the current PlayStation flow is `pdccws_p`.
+GameHub never asks for the PSN password; the helper reads local session cookies only for a one-time
+handoff into the encrypted vault. The validated cookie for the current PlayStation flow is
+`pdccws_p`.
 
 **Diagnostic-only helper-launched browser:**
 ```bash

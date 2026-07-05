@@ -25,7 +25,7 @@ import (
 const (
 	psnConnectStartURL          = "https://store.playstation.com/"
 	defaultPsnRemoteDebugURL    = "http://127.0.0.1:49333"
-	psnRemoteDebugChromeCommand = "/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 https://store.playstation.com/"
+	psnRemoteDebugChromeCommand = "/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/"
 )
 
 var (
@@ -65,10 +65,10 @@ var connectPsnCmd = &cobra.Command{
 	Short: "Capture PlayStation session cookies from a local Chrome session",
 	Long: strings.TrimSpace(`Capture PlayStation session cookies from a visible local Chrome session.
 
-Preferred path: start your regular Chrome profile with local remote debugging enabled, sign in to
-PlayStation/Sony there if needed, and pass --remote-debugging-url. The helper attaches only to the
-loopback Chrome debugging endpoint, waits until it can read known PlayStation session cookies,
-and prints one GameHub helper JSON payload.
+Preferred path: start the persistent GameHub Chrome profile with local remote debugging enabled,
+sign in to PlayStation/Sony there if needed, and pass --remote-debugging-url. The helper attaches
+only to the loopback Chrome debugging endpoint, waits until it can read known PlayStation session
+cookies, and prints one GameHub helper JSON payload.
 
 Example:
   ` + psnRemoteDebugChromeCommand + `
