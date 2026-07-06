@@ -8,6 +8,10 @@ export type HelperLaunchStatus = {
     message?: string;
 };
 
+export type EpicAuthorizationCodeResult = {
+    authorizationCode: string;
+};
+
 export function parseGogConnectPayload(value: string): ProviderConnectResult | Error {
     const parsed = parseJsonObject(value, "Paste the JSON result returned by the local GOG helper.");
     if (parsed instanceof Error) return parsed;
@@ -18,6 +22,25 @@ export function parsePsnConnectPayload(value: string): ProviderConnectResult | E
     const parsed = parseJsonObject(value, "Paste the JSON result returned by the local PlayStation helper.");
     if (parsed instanceof Error) return parsed;
     return parsePsnConnectObject(parsed);
+}
+
+export function parseEpicAuthorizationCodePayload(value: string): EpicAuthorizationCodeResult | Error {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return new Error("Paste the authorizationCode from the Epic page.");
+    }
+
+    if (!trimmed.startsWith("{")) {
+        return { authorizationCode: trimmed };
+    }
+
+    const parsed = parseJsonObject(trimmed, "Paste the JSON result returned by the Epic page.");
+    if (parsed instanceof Error) return parsed;
+    const authorizationCode = readOptionalText(parsed.authorizationCode ?? parsed.code);
+    if (!authorizationCode) {
+        return new Error("The Epic result is missing authorizationCode.");
+    }
+    return { authorizationCode };
 }
 
 export function parseGogConnectObject(parsed: Record<string, unknown>): ProviderConnectResult | Error {

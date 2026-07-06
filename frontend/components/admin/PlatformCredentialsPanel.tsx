@@ -22,6 +22,7 @@ import {
     parseGogConnectObject,
     parseGogConnectPayload,
     parseHandoffUrl,
+    parseEpicAuthorizationCodePayload,
     parseHelperLaunchStatus,
     parsePsnConnectObject,
     parsePsnConnectPayload,
@@ -45,12 +46,13 @@ import {
 
 type CredentialPayload = Record<string, unknown>;
 type ConnectProvider = "gog" | "psn";
+type EpicConnectStart = {
+    authorizationUrl: string;
+    state: string;
+    expiresAtUtc: string;
+};
 
 const helperLaunchStatusBaseUrl = "http://127.0.0.1:53935";
-const epicLauncherClientId = "34a02cf8f4414e29b15921876da36f9a";
-const epicAuthorizationUrl =
-    "https://www.epicgames.com/id/login?redirectUrl=" +
-    encodeURIComponent(`https://www.epicgames.com/id/api/redirect?clientId=${epicLauncherClientId}&responseType=code`);
 
 /**
  * Tenant credential management through Core's authenticated BFF route. Secret values live only
@@ -116,6 +118,52 @@ export function PlatformCredentialsPanel() {
             setMessage(`${platformLabel(platform)} credential removed.`);
         } catch (caught) {
             setError(errorMessage(caught));
+        } finally {
+            setBusyPlatform(null);
+        }
+    };
+
+    const startEpicConnect = async (): Promise<EpicConnectStart | null> => {
+        setBusyPlatform("Epic");
+        setMessage(null);
+        setError(null);
+        try {
+            const response = await fetch("/api/platform-credentials/epic/connect/start", {
+                method: "POST",
+                cache: "no-store",
+            });
+            if (!response.ok) throw new Error(await readError(response));
+            const payload = (await response.json()) as EpicConnectStart;
+            setMessage("Epic Games sign-in opened. Paste the Epic result here to finish securely.");
+            return payload;
+        } catch (caught) {
+            setError(errorMessage(caught));
+            return null;
+        } finally {
+            setBusyPlatform(null);
+        }
+    };
+
+    const completeEpicConnect = async (
+        authorizationCode: string,
+        connectState: string,
+    ): Promise<boolean> => {
+        setBusyPlatform("Epic");
+        setMessage(null);
+        setError(null);
+        try {
+            const response = await fetch("/api/platform-credentials/epic/connect/complete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ authorizationCode, state: connectState }),
+            });
+            if (!response.ok) throw new Error(await readError(response));
+            setState(await response.json());
+            setMessage("Epic Games credential stored securely.");
+            return true;
+        } catch (caught) {
+            setError(errorMessage(caught));
+            return false;
         } finally {
             setBusyPlatform(null);
         }
@@ -194,6 +242,8 @@ export function PlatformCredentialsPanel() {
                     status={statusFor("Epic")}
                     busy={busyPlatform === "Epic"}
                     onSave={(payload) => save("Epic", payload)}
+                    onStartConnect={startEpicConnect}
+                    onCompleteConnect={completeEpicConnect}
                     onDelete={() => remove("Epic")}
                 />
             </div>
@@ -967,13 +1017,59 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     );
 }
 
-function EpicCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
-    const [authorizationCode, setAuthorizationCode] = useState("");
+interface EpicFormProps extends FormProps {
+    onStartConnect: () => Promise<EpicConnectStart | null>;
+    onCompleteConnect: (authorizationCode: string, connectState: string) => Promise<boolean>;
+}
+
+function EpicCredentialCard({
+    status,
+    busy,
+    onSave,
+    onStartConnect,
+    onCompleteConnect,
+    onDelete,
+}: EpicFormProps) {
+    const [epicResult, setEpicResult] = useState("");
+    const [manualAuthorizationCode, setManualAuthorizationCode] = useState("");
     const [refreshToken, setRefreshToken] = useState("");
+    const [connectState, setConnectState] = useState<string | null>(null);
+    const [connectExpiresAt, setConnectExpiresAt] = useState<string | null>(null);
+    const [localError, setLocalError] = useState<string | null>(null);
+
+    const startConnect = async () => {
+        setLocalError(null);
+        const started = await onStartConnect();
+        if (!started) return;
+
+        setConnectState(started.state);
+        setConnectExpiresAt(started.expiresAtUtc);
+        window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
+    };
+
+    const finishConnect = async () => {
+        setLocalError(null);
+        if (!connectState) {
+            setLocalError("Start the Epic Games connect flow first.");
+            return;
+        }
+
+        const parsed = parseEpicAuthorizationCodePayload(epicResult);
+        if (parsed instanceof Error) {
+            setLocalError(parsed.message);
+            return;
+        }
+
+        if (await onCompleteConnect(parsed.authorizationCode, connectState)) {
+            setEpicResult("");
+            setConnectState(null);
+            setConnectExpiresAt(null);
+        }
+    };
 
     const saveAuthorizationCode = async () => {
-        if (await onSave({ authorizationCode })) {
-            setAuthorizationCode("");
+        if (await onSave({ authorizationCode: manualAuthorizationCode })) {
+            setManualAuthorizationCode("");
         }
     };
 
@@ -986,7 +1082,7 @@ function EpicCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     return (
         <CredentialCard
             platform="Epic"
-            description="Epic authorization code exchange with manual refresh-token fallback"
+            description="Guided Epic Games authorization with manual fallback"
             status={status}
             busy={busy}
             onDelete={onDelete}
@@ -994,41 +1090,76 @@ function EpicCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             <CredentialSection
                 icon={<PlugZap className="h-4 w-4 text-primary" />}
                 title={status?.isConfigured ? "Reconnect Epic Games" : "Connect Epic Games"}
-                description="Sign in with Epic, paste the returned authorizationCode, and let Ingest store only the resulting refresh token in the encrypted vault."
+                description="Start Epic sign-in from GameHub, then finish through the BFF so Ingest stores only the exchanged refresh token."
                 tone="primary"
                 action={
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
-                        <a href={epicAuthorizationUrl} target="_blank" rel="noopener noreferrer">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={busy}
+                        onClick={() => void startConnect()}
+                    >
+                        {busy ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
                             <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                            Open Epic
-                        </a>
+                        )}
+                        Connect
                     </Button>
                 }
             >
                 <p className="text-xs leading-5 text-muted-foreground">
-                    The Epic URL contains only the launcher client ID and response type; the
-                    authorization code is submitted to Core and exchanged server-side.
+                    Epic&apos;s launcher-compatible page returns JSON instead of redirecting back to
+                    GameHub. Paste that result here; GameHub validates the connect state and clears
+                    the browser transaction after one attempt.
                 </p>
-                <CredentialInput
-                    label="Epic authorizationCode"
-                    value={authorizationCode}
-                    onChange={setAuthorizationCode}
-                    secret
+                {connectExpiresAt && (
+                    <p className="text-xs text-muted-foreground">
+                        Connect session expires {new Date(connectExpiresAt).toLocaleTimeString()}.
+                    </p>
+                )}
+                {localError && (
+                    <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        {localError}
+                    </p>
+                )}
+                <Textarea
+                    aria-label="Epic authorization result"
+                    placeholder='Paste Epic JSON, e.g. {"authorizationCode":"..."}'
+                    value={epicResult}
+                    onChange={(event) => setEpicResult(event.target.value)}
+                    className="min-h-24 font-mono text-xs"
+                    autoComplete="off"
                 />
                 <Button
                     className="w-full"
-                    disabled={busy || !authorizationCode.trim()}
-                    onClick={() => void saveAuthorizationCode()}
+                    disabled={busy || !connectState || !epicResult.trim()}
+                    onClick={() => void finishConnect()}
                 >
                     {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
-                    {busy ? "Saving…" : "Exchange and store encrypted credential"}
+                    {busy ? "Saving…" : "Finish Epic connect"}
                 </Button>
             </CredentialSection>
 
             <HiddenFallback
                 title="Manual fallback"
-                description="Use a refresh token only when you already imported or generated one with a trusted local tool."
+                description="Use direct entry only when the guided Epic browser result cannot be completed."
             >
+                <CredentialInput
+                    label="Epic authorizationCode"
+                    value={manualAuthorizationCode}
+                    onChange={setManualAuthorizationCode}
+                    secret
+                />
+                <Button
+                    className="w-full"
+                    disabled={busy || !manualAuthorizationCode.trim()}
+                    onClick={() => void saveAuthorizationCode()}
+                >
+                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
+                    {busy ? "Saving…" : "Exchange and store authorization code"}
+                </Button>
                 <CredentialInput
                     label="Epic refresh token"
                     value={refreshToken}

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+    parseEpicAuthorizationCodePayload,
     parseGogConnectPayload,
     parseHandoffUrl,
     parseHelperLaunchStatus,
@@ -48,6 +49,31 @@ test("PSN helper payload rejects missing cookies", () => {
     }));
 
     assert.match(result.message, /missing the cookies object/);
+});
+
+test("Epic authorization result accepts full JSON response", () => {
+    const result = parseEpicAuthorizationCodePayload(JSON.stringify({
+        warning: "Do not share this code with any 3rd party service.",
+        redirectUrl: "https://localhost/launcher/authorized",
+        authorizationCode: "short-lived-code",
+        exchangeCode: null,
+    }));
+
+    assert.deepEqual(result, { authorizationCode: "short-lived-code" });
+});
+
+test("Epic authorization result accepts direct code fallback", () => {
+    const result = parseEpicAuthorizationCodePayload("short-lived-code");
+
+    assert.deepEqual(result, { authorizationCode: "short-lived-code" });
+});
+
+test("Epic authorization result rejects JSON without code", () => {
+    const result = parseEpicAuthorizationCodePayload(JSON.stringify({
+        authorizationCode: null,
+    }));
+
+    assert.match(result.message, /missing authorizationCode/);
 });
 
 test("local handoff URL must match the selected provider path", () => {

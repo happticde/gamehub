@@ -108,6 +108,29 @@ public sealed class PlatformCredentialManagementTests : IDisposable
     }
 
     [Fact]
+    public async Task UpsertAsync_EpicAuthorizationCode_ForwardsCodeAndReturnsSecretFreeStatus()
+    {
+        var handler = new SequenceHandler(
+            JsonResponse(HttpStatusCode.OK, "{}"),
+            CredentialStatusResponse((Platform.Epic, true)));
+        var service = CreateService(handler);
+
+        var result = await service.UpsertAsync(
+            Platform.Epic,
+            new UpsertPlatformCredentialRequest
+            {
+                Credentials = ParseCredentials("{\"authorizationCode\":\"short-lived-code\"}")
+            });
+
+        var resultJson = JsonSerializer.Serialize(result);
+        Assert.True(result.PlatformSyncEnabled);
+        Assert.Equal("/api/internal/platform-credentials/epic", handler.Requests[0].Path);
+        Assert.Contains("short-lived-code", handler.Requests[0].Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("short-lived-code", resultJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("refresh", resultJson, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task UpsertAsync_StatusVerificationFails_DoesNotEnableTenant()
     {
         var handler = new SequenceHandler(
