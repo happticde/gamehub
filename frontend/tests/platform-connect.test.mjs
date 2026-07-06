@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
     parseEpicAuthorizationCodePayload,
+    parseEpicConnectPayload,
     parseGogConnectPayload,
     parseHandoffUrl,
     parseHelperLaunchStatus,
@@ -76,6 +77,67 @@ test("Epic authorization result rejects JSON without code", () => {
     assert.match(result.message, /missing authorizationCode/);
 });
 
+test("Epic authorization result rejects wrong helper provider", () => {
+    const result = parseEpicAuthorizationCodePayload(JSON.stringify({
+        provider: "psn",
+        authorizationCode: "short-lived-code",
+    }));
+
+    assert.match(result.message, /not for Epic Games/);
+});
+
+test("Epic authorization result rejects expired helper status", () => {
+    const result = parseEpicAuthorizationCodePayload(JSON.stringify({
+        provider: "epic",
+        authorizationCode: "short-lived-code",
+        status: "expired",
+    }));
+
+    assert.match(result.message, /already expired/);
+});
+
+test("Epic helper payload accepts authorization code handoff contract", () => {
+    const result = parseEpicConnectPayload(JSON.stringify({
+        provider: "epic",
+        authorizationCode: "short-lived-code",
+        capturedAtUtc: "2026-07-03T12:00:00Z",
+        expiresAtUtc: "2099-07-03T12:10:00Z",
+    }));
+
+    assert.equal(result.provider, "epic");
+    assert.equal(result.authorizationCode, "short-lived-code");
+    assert.equal(result.expired, false);
+});
+
+test("Epic helper payload rejects wrong provider", () => {
+    const result = parseEpicConnectPayload(JSON.stringify({
+        provider: "gog",
+        authorizationCode: "short-lived-code",
+    }));
+
+    assert.match(result.message, /not for Epic Games/);
+});
+
+test("Epic helper payload rejects missing authorizationCode", () => {
+    const result = parseEpicConnectPayload(JSON.stringify({
+        provider: "epic",
+        capturedAtUtc: "2026-07-03T12:00:00Z",
+    }));
+
+    assert.match(result.message, /missing authorizationCode/);
+});
+
+test("Epic helper payload marks expired status unusable", () => {
+    const result = parseEpicConnectPayload(JSON.stringify({
+        provider: "epic",
+        authorizationCode: "short-lived-code",
+        status: "session_expired",
+    }));
+
+    assert.equal(result.provider, "epic");
+    assert.equal(result.expired, true);
+});
+
 test("local handoff URL must match the selected provider path", () => {
     const parsed = parseHandoffUrl(
         "http://127.0.0.1:49152/connect/psn/result?nonce=nonce-value",
@@ -94,6 +156,14 @@ test("local handoff URL must match the selected provider path", () => {
             "http://localhost:3005",
         ).message,
         /PlayStation loopback result endpoint/,
+    );
+    assert.equal(
+        parseHandoffUrl(
+            "http://127.0.0.1:49152/connect/epic/result?nonce=nonce-value",
+            "epic",
+            "http://localhost:3005",
+        ),
+        "http://127.0.0.1:49152/connect/epic/result?nonce=nonce-value&origin=http%3A%2F%2Flocalhost%3A3005",
     );
 });
 

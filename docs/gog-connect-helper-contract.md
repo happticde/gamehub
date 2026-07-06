@@ -2,10 +2,11 @@
 
 Roadmap #17A introduced the first guided-account-connect slice for GOG without adding a hidden
 server-side provider login flow. Roadmap #17B extends the same browser-centered local helper
-contract to PlayStation/PSN. The local helper is intentionally user-visible: it opens a normal
-provider browser session, lets the user complete password, MFA, captcha, or provider prompts
-directly with GOG or Sony/PlayStation, and captures only the session material needed by the
-existing Ingest fetcher.
+contract to PlayStation/PSN, and the Epic Games stored-retrieval slice uses the same local helper
+handoff for Epic's launcher-compatible authorization-code JSON page. The local helper is
+intentionally user-visible: it opens a normal provider browser session, lets the user complete
+password, MFA, captcha, or provider prompts directly with GOG, Sony/PlayStation, or Epic Games, and
+captures only the session material needed by the existing server-side credential exchange.
 
 For GOG, the helper captures the `gog-al` cookie value plus the GOG username. For PSN, the helper
 captures a small named map of PlayStation/Sony session cookies for the current Ingest PSN fetcher,
@@ -27,6 +28,18 @@ therefore validates that at least one known PlayStation session cookie was captu
 named cookie map through the existing vault upsert, and preserves manual cookie entry as the
 fallback. The PSN helper intentionally avoids the broad `chromedp` automation-default flag set
 because Sony's sign-in can reject browser sessions that advertise unusual command-line behavior.
+
+For Epic Games, the helper opens Epic's visible login flow with the launcher client redirect target:
+
+```text
+https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code
+```
+
+After the user completes Epic login, Epic renders a JSON response on `epicgames.com` instead of
+redirecting back to GameHub. The helper reads that JSON page and extracts only `authorizationCode`.
+It never captures Epic refresh tokens, access tokens, cookies, account identifiers, or provider
+secrets. GameHub's BFF/Core/Ingest path exchanges the short-lived code server-side, and only Ingest
+stores the resulting refresh token in the encrypted vault.
 
 ## Implemented Local Helper
 
@@ -52,6 +65,12 @@ or PlayStation:
 gamehub-helper://connect/psn?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-time-random-value
 ```
 
+or Epic Games:
+
+```text
+gamehub-helper://connect/epic?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-time-random-value
+```
+
 The handler starts the same secure helper path in the background:
 
 ```bash
@@ -64,12 +83,19 @@ The PSN form is identical except for the provider path:
 gamehub-cli helper launch 'gamehub-helper://connect/psn?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-time-random-value'
 ```
 
+The Epic Games form is also identical except for the provider path:
+
+```bash
+gamehub-cli helper launch 'gamehub-helper://connect/epic?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-time-random-value'
+```
+
 `helper launch` validates the custom URI, rejects secret-looking query parameters, starts a
-short-lived local launch-status endpoint, and then starts `connect gog --handoff-server` or
-`connect psn --handoff-server`. The user still signs in directly with the provider in a visible
-browser. The Admin UI polls the local launch-status endpoint by `launchId`, receives the local
-one-shot handoff URL after the helper is ready, polls that handoff URL, and stores the captured
-credential through the existing Core/Ingest vault upsert.
+short-lived local launch-status endpoint, and then starts `connect gog --handoff-server`,
+`connect psn --handoff-server`, or `connect epic --handoff-server`. The user still signs in directly
+with the provider in a visible browser. The Admin UI polls the local launch-status endpoint by
+`launchId`, receives the local one-shot handoff URL after the helper is ready, polls that handoff
+URL, and stores the captured credential through the existing Core/Ingest vault upsert or Epic BFF
+completion route.
 
 The portable manual launch fallback remains the loopback handoff mode:
 
@@ -83,6 +109,13 @@ For PlayStation:
 ```bash
 cd services/cli
 go run . connect psn --handoff-server
+```
+
+For Epic Games:
+
+```bash
+cd services/cli
+go run . connect epic --handoff-server
 ```
 
 To investigate Sony-side failures such as HTTP 429 responses without recording cookies, headers,
@@ -119,6 +152,7 @@ http://127.0.0.1:49152/connect/gog/result?nonce=one-time-random-value
 ```
 
 The PlayStation helper prints the same shape under `/connect/psn/result`.
+The Epic Games helper prints the same shape under `/connect/epic/result`.
 
 Paste that URL into the Admin credential UI and leave the helper running. The UI polls the local
 URL while the user signs in directly with GOG in the visible browser. After capture, the helper
@@ -143,6 +177,13 @@ For PlayStation:
 ```bash
 cd services/cli
 go run . connect psn
+```
+
+For Epic Games:
+
+```bash
+cd services/cli
+go run . connect epic
 ```
 
 For repeated use:
@@ -189,7 +230,8 @@ not put PSN cookies into the custom URI, query strings, localStorage, logs, or s
 The normal guided modes open a temporary, user-visible Chrome/Chromium browser profile at the
 provider. The user signs in directly in that browser window, including MFA or captcha prompts. The
 helper polls the controlled browser context until it can read the provider-specific session
-material, then removes the temporary browser profile when the command exits. The PSN launched
+material, then removes the temporary browser profile when the command exits. The Epic Games helper
+captures only the authorization-code JSON response from Epic's launcher redirect API. The PSN launched
 browser intentionally uses a hardened minimal Chrome flag set and avoids chromedp's default
 Puppeteer-style automation flags such as `--enable-automation`, `--disable-extensions`, and
 `--disable-sync`. The PSN `--remote-debugging-url` fallback does not create or remove a browser
@@ -231,6 +273,10 @@ gamehub-helper://connect/gog?origin={url-encoded-admin-origin}&launchId={random-
 gamehub-helper://connect/psn?origin={url-encoded-admin-origin}&launchId={random-launch-id}
 ```
 
+```text
+gamehub-helper://connect/epic?origin={url-encoded-admin-origin}&launchId={random-launch-id}
+```
+
 Allowed query parameters:
 
 - `origin`: optional, non-secret browser origin such as `http://localhost:3005`. When present, it is
@@ -238,15 +284,16 @@ Allowed query parameters:
 - `launchId`: optional, non-secret, high-entropy URL-safe identifier generated by the Admin UI. When
   present, the helper exposes launch readiness only to callers that provide the same ID.
 
-Rejected query parameters include `cookie`, `cookies`, `gog-al`, `gogAl`, `gogAlCookie`, `npsso`,
-`psnAuthBearerToken`, `psnAuthRefreshToken`, `JSESSIONID`, `pdccws_p`, `sb-cdn.session`,
-`psn-csrf-token`, `password`, `session`, and `token`, as well as handoff/result aliases such as `nonce`,
-`handoffUrl`, and `resultUrl`. Unknown parameters are rejected too. This keeps the protocol surface
-deliberately narrow and prevents future UI code from accidentally moving provider session material
-into browser history, OS URL-handler logs, or shell history.
+Rejected query parameters include `authorizationCode`, `code`, `cookie`, `cookies`, `gog-al`,
+`gogAl`, `gogAlCookie`, `npsso`, `psnAuthBearerToken`, `psnAuthRefreshToken`, `JSESSIONID`,
+`pdccws_p`, `sb-cdn.session`, `psn-csrf-token`, `accessToken`, `refreshToken`, `password`,
+`session`, and `token`, as well as handoff/result aliases such as `nonce`, `handoffUrl`, and
+`resultUrl`. Unknown parameters are rejected too. This keeps the protocol surface deliberately
+narrow and prevents future UI code from accidentally moving provider session material into browser
+history, OS URL-handler logs, or shell history.
 
 The handler target is local launch only. It does not carry the handoff result, does not carry the
-random loopback nonce, and does not store credential material. The actual `gog-al` transfer remains
+random loopback nonce, and does not store credential material. The actual provider handoff remains
 the existing loopback handoff or JSON fallback.
 
 ## Launch Status Protocol
@@ -263,9 +310,15 @@ or:
 http://127.0.0.1:53935/connect/psn/launch-status?launchId={random-launch-id}&origin={admin-origin}
 ```
 
-This endpoint exists only while the helper process is running. It never returns `gog-al` or PSN
-cookies. It returns only the helper readiness state and, once ready, the local handoff URL that still
-requires the separate one-time handoff nonce:
+or:
+
+```text
+http://127.0.0.1:53935/connect/epic/launch-status?launchId={random-launch-id}&origin={admin-origin}
+```
+
+This endpoint exists only while the helper process is running. It never returns `gog-al`, PSN
+cookies, or an Epic authorization code. It returns only the helper readiness state and, once ready,
+the local handoff URL that still requires the separate one-time handoff nonce:
 
 - `202 Accepted` with `{"status":"starting"}` while the helper is creating the one-shot handoff
   server or opening the visible GOG browser.
@@ -312,13 +365,14 @@ To reset or uninstall the handler app:
 ```
 
 If a browser or macOS caches the old handler, running `install-protocol-handler` again refreshes the
-Launch Services registration. The same handler app supports both GOG and PlayStation launch URLs.
+Launch Services registration. The same handler app supports GOG, PlayStation, and Epic Games launch
+URLs.
 
 ### OS Support Matrix
 
 | OS | Status | Notes |
 |----|--------|-------|
-| macOS | Implemented MVP | Installs `~/Applications/GameHub Helper.app`, registers `gamehub-helper://` through Launch Services, starts the GOG or PlayStation helper without opening Terminal, and lets the Admin UI auto-discover the local handoff URL through the launch-status endpoint. |
+| macOS | Implemented MVP | Installs `~/Applications/GameHub Helper.app`, registers `gamehub-helper://` through Launch Services, starts the GOG, PlayStation, or Epic Games helper without opening Terminal, and lets the Admin UI auto-discover the local handoff URL through the launch-status endpoint. |
 | Windows | Follow-up | Needs a small installer or registry registration under `HKCU\Software\Classes\gamehub-helper`. |
 | Linux | Follow-up | Needs a `.desktop` file, MIME/scheme registration through `xdg-mime`, and desktop-environment verification. |
 
@@ -328,8 +382,9 @@ helper flow.
 ## Loopback Handoff Protocol
 
 Loopback handoff mode starts an HTTP server bound only to `127.0.0.1` on a random port. It creates a
-32-byte random nonce and embeds that nonce in the local result URL. The `gog-al` cookie and PSN
-cookies are never placed in the URL, query string, browser history, logs, or status APIs.
+32-byte random nonce and embeds that nonce in the local result URL. The `gog-al` cookie, PSN
+cookies, and Epic authorization code are never placed in the URL, query string, browser history,
+logs, or status APIs.
 
 The Admin UI sends:
 
@@ -378,6 +433,10 @@ gamehub-helper://connect/gog?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-t
 gamehub-helper://connect/psn?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-time-random-value
 ```
 
+```text
+gamehub-helper://connect/epic?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-time-random-value
+```
+
 The Admin UI does not claim the handler is installed. It offers the launch action and keeps the
 handoff URL paste field, JSON paste, and manual credential fields as fallbacks. The normal installed
 flow no longer requires reading Terminal output: after the custom URI launch, the Admin UI polls the
@@ -421,6 +480,28 @@ Content-Type: application/json
   }
 }
 ```
+
+For Epic Games, the Admin UI sends the helper result through the same authenticated Core credential
+route as the manual authorization-code fallback. The local helper handoff already validates the
+loopback nonce and browser origin, and the code remains short-lived; Core/Ingest still perform the
+Epic refresh-token exchange server-side:
+
+```http
+PUT /api/core/platform-credentials/Epic
+Content-Type: application/json
+
+{
+  "schemaVersion": 1,
+  "credentials": {
+    "authorizationCode": "short-lived-epic-code"
+  }
+}
+```
+
+The web JSON fallback may still use `/api/platform-credentials/epic/connect/complete` to bind a
+browser-opened Epic page to a short-lived BFF state transaction. The local helper path does not rely
+on that transaction because Epic login, MFA, or captcha can legitimately take longer than the BFF
+state lifetime.
 
 `/api/core/*` is the Next.js BFF route. Browser JavaScript never receives Core bearer tokens; the
 BFF forwards the request with HttpOnly GameHub session cookies. Core then delegates to Ingest's
@@ -476,25 +557,51 @@ Accepted PlayStation aliases during this slice:
 - `status: "expired"` or `status: "session_expired"` marks the capture as unusable.
 - `expiresAtUtc` or `expiresAt` marks the capture as unusable when it is already in the past.
 
+The Epic Games helper output uses the same envelope but contains only the short-lived code:
+
+```json
+{
+  "provider": "epic",
+  "authorizationCode": "short-lived-epic-code",
+  "capturedAtUtc": "2026-07-03T12:00:00Z",
+  "expiresAtUtc": "2026-07-03T12:10:00Z"
+}
+```
+
+Accepted Epic Games aliases during this slice:
+
+- `provider` or `platform`, when present, must be `epic`.
+- `authorizationCode` or `code` contains the short-lived Epic authorization code.
+- `status: "expired"` or `status: "session_expired"` marks the capture as unusable.
+- `expiresAtUtc` or `expiresAt` marks the capture as unusable when it is already in the past.
+- Epic refresh tokens, access tokens, cookies, account identifiers, and provider secrets must never
+  appear in the helper payload.
+
 ## Security Invariants
 
 - GameHub must not ask for the user's GOG password.
 - GameHub must not ask for the user's PSN/Sony password.
-- GameHub must not run a hidden server-side headless GOG or PSN password login.
+- GameHub must not ask for the user's Epic Games password.
+- GameHub must not run a hidden server-side headless GOG, PSN, or Epic Games password login.
 - The custom URI must contain only non-secret launch metadata. In this slice, `origin` and
   `launchId` are the only accepted query parameters.
-- The custom URI must never contain `gog-al`, PSN cookies, another provider cookie, a password, a
-  token, or the loopback result payload.
-- The launch-status endpoint must never return `gog-al` or PSN cookies; it may return only
-  readiness state and the local handoff URL.
-- The helper must not put `gog-al` or PSN cookies in `localStorage`, query strings, logs, or status
-  APIs.
+- The custom URI must never contain `gog-al`, PSN cookies, an Epic authorization code, another
+  provider cookie, a password, a token, or the loopback result payload.
+- The launch-status endpoint must never return `gog-al`, PSN cookies, or an Epic authorization
+  code; it may return only readiness state and the local handoff URL.
+- The helper must not put `gog-al`, PSN cookies, Epic authorization codes, Epic tokens, or Epic
+  cookies in `localStorage`, query strings, logs, or status APIs.
 - In JSON fallback mode, the Go helper writes progress messages to stderr and writes provider
-  cookies only in the final stdout JSON payload intended for immediate copy/paste into the Admin UI.
+  cookies or the Epic authorization code only in the final stdout JSON payload intended for
+  immediate copy/paste into the Admin UI.
 - In loopback handoff mode, stdout contains only the local handoff URL. Provider cookies are held in
-  memory and served once from the `127.0.0.1` result endpoint.
+  memory and served once from the `127.0.0.1` result endpoint; the Epic authorization code follows
+  the same one-time in-memory handoff.
 - Plaintext session material may exist only in the helper capture, transient React state, the
   BFF/Core upsert request body, and Ingest's immediate encryption path.
+- Epic refresh tokens remain server-side only: Core/Ingest exchange the authorization code and
+  Ingest stores the refresh token in the encrypted vault without returning it to browser JavaScript,
+  status APIs, URLs, logs, or local storage.
 - Core and Ingest must keep the existing authenticated, tenant-scoped credential-management and
   vault boundaries.
 - A stale or expired capture should lead the UI to ask the user to reconnect the provider rather
