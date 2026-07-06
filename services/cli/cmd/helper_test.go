@@ -59,8 +59,25 @@ func TestParseHelperLaunchURL_PsnWithOrigin_NormalizesOrigin(t *testing.T) {
 	}
 }
 
+func TestParseHelperLaunchURL_EpicWithOrigin_NormalizesOrigin(t *testing.T) {
+	request, err := parseHelperLaunchURL("gamehub-helper://connect/epic?origin=http%3A%2F%2Flocalhost%3A3005&launchId=launch-1234567890")
+	if err != nil {
+		t.Fatalf("parseHelperLaunchURL returned error: %v", err)
+	}
+
+	if request.Platform != "epic" {
+		t.Fatalf("Platform = %q, want epic", request.Platform)
+	}
+	if request.Origin != "http://localhost:3005" {
+		t.Fatalf("Origin = %q, want http://localhost:3005", request.Origin)
+	}
+	if request.LaunchID != "launch-1234567890" {
+		t.Fatalf("LaunchID = %q, want launch-1234567890", request.LaunchID)
+	}
+}
+
 func TestParseHelperLaunchURL_RejectsSecretParameters(t *testing.T) {
-	secretParameters := []string{"cookie", "cookies", "gog-al", "gogAl", "gogAlCookie", "npsso", "psnAuthBearerToken", "JSESSIONID", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "password", "token", "nonce", "handoffUrl", "resultUrl"}
+	secretParameters := []string{"authorizationCode", "code", "cookie", "cookies", "gog-al", "gogAl", "gogAlCookie", "npsso", "psnAuthBearerToken", "JSESSIONID", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "accessToken", "refreshToken", "password", "token", "nonce", "handoffUrl", "resultUrl"}
 	for _, parameter := range secretParameters {
 		t.Run(parameter, func(t *testing.T) {
 			_, err := parseHelperLaunchURL("gamehub-helper://connect/psn?" + parameter + "=secret")
@@ -82,7 +99,7 @@ func TestParseHelperLaunchURL_RejectsInvalidLaunchID(t *testing.T) {
 }
 
 func TestParseHelperLaunchURL_RejectsUnsupportedTarget(t *testing.T) {
-	_, err := parseHelperLaunchURL("gamehub-helper://connect/epic?origin=http%3A%2F%2Flocalhost%3A3005")
+	_, err := parseHelperLaunchURL("gamehub-helper://connect/steam?origin=http%3A%2F%2Flocalhost%3A3005")
 	if err == nil {
 		t.Fatalf("expected unsupported target to fail")
 	}
@@ -267,6 +284,9 @@ func TestHelperLaunchStatusPath_UsesProviderSpecificPath(t *testing.T) {
 	}
 	if helperLaunchStatusPath("psn") != "/connect/psn/launch-status" {
 		t.Fatalf("unexpected PSN launch status path")
+	}
+	if helperLaunchStatusPath("epic") != "/connect/epic/launch-status" {
+		t.Fatalf("unexpected Epic Games launch status path")
 	}
 }
 

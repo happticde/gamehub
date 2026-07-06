@@ -572,7 +572,10 @@ func psnBrowserLaunchFlags(profileDir string, debuggingPort int) []psnBrowserLau
 	// Keep PSN's launched Chrome as close as possible to a user-started browser. The chromedp
 	// default allocator intentionally adds Puppeteer-style flags such as --enable-automation,
 	// --disable-extensions, and --disable-sync; those are avoided for Sony's risk checks.
+	// The first-run prompts are suppressed so the helper opens straight into the login flow.
 	return []psnBrowserLaunchFlag{
+		{Name: "no-default-browser-check", Value: true},
+		{Name: "no-first-run", Value: true},
 		{Name: "remote-debugging-address", Value: "127.0.0.1"},
 		{Name: "remote-debugging-port", Value: strconv.Itoa(debuggingPort)},
 		{Name: "user-data-dir", Value: profileDir},

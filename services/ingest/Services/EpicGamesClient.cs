@@ -33,6 +33,8 @@ public sealed class EpicGamesClient(
 {
     private const string LauncherClientId = "34a02cf8f4414e29b15921876da36f9a";
     private const string LauncherClientSecret = "daafbccc737745039dffe53d94fc76cf";
+    private const string LauncherUserAgent =
+        "UELauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit";
     private const string OAuthTokenUrl =
         "https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token";
     private const string LauncherAssetsUrl =
@@ -137,9 +139,13 @@ public sealed class EpicGamesClient(
         var basic = Convert.ToBase64String(
             Encoding.ASCII.GetBytes($"{LauncherClientId}:{LauncherClientSecret}"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", basic);
+        ApplyEpicHeaders(request);
 
         using var response = await http.SendAsync(request, cancellationToken);
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        if (response.StatusCode is
+            HttpStatusCode.BadRequest or
+            HttpStatusCode.Unauthorized or
+            HttpStatusCode.Forbidden)
         {
             throw new PlatformCredentialValidationException(
                 "Epic authorization failed. The code or refresh token is invalid or expired.");
@@ -158,6 +164,14 @@ public sealed class EpicGamesClient(
                 JsonOptions,
                 cancellationToken)
             ?? throw new JsonException("Epic authorization returned an empty response.");
+    }
+
+    private static void ApplyEpicHeaders(HttpRequestMessage request)
+    {
+        if (request.Headers.UserAgent.Count == 0)
+        {
+            request.Headers.UserAgent.ParseAdd(LauncherUserAgent);
+        }
     }
 
     private async Task<List<EpicLauncherGameRecord>> FetchLauncherGamesAsync(
@@ -260,6 +274,7 @@ public sealed class EpicGamesClient(
         string operation,
         CancellationToken cancellationToken)
     {
+        ApplyEpicHeaders(request);
         var response = await http.SendAsync(request, cancellationToken);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {

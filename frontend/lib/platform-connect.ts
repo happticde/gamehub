@@ -1,6 +1,7 @@
 export type ProviderConnectResult =
     | { provider: "gog"; user: string; cookie: string; expired: boolean }
-    | { provider: "psn"; cookies: Record<string, string>; expired: boolean };
+    | { provider: "psn"; cookies: Record<string, string>; expired: boolean }
+    | { provider: "epic"; authorizationCode: string; expired: boolean };
 
 export type HelperLaunchStatus = {
     status: "starting" | "handoff_ready" | "failed";
@@ -24,6 +25,12 @@ export function parsePsnConnectPayload(value: string): ProviderConnectResult | E
     return parsePsnConnectObject(parsed);
 }
 
+export function parseEpicConnectPayload(value: string): ProviderConnectResult | Error {
+    const parsed = parseJsonObject(value, "Paste the JSON result returned by the local Epic Games helper.");
+    if (parsed instanceof Error) return parsed;
+    return parseEpicConnectObject(parsed);
+}
+
 export function parseEpicAuthorizationCodePayload(value: string): EpicAuthorizationCodeResult | Error {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -36,6 +43,14 @@ export function parseEpicAuthorizationCodePayload(value: string): EpicAuthorizat
 
     const parsed = parseJsonObject(trimmed, "Paste the JSON result returned by the Epic page.");
     if (parsed instanceof Error) return parsed;
+    const provider = readOptionalText(parsed.provider ?? parsed.platform);
+    if (provider && provider.toLowerCase() !== "epic") {
+        return new Error("This helper result is not for Epic Games.");
+    }
+    const status = readOptionalText(parsed.status ?? parsed.error)?.toLowerCase();
+    if (isExpiredStatus(parsed, status)) {
+        return new Error("The Epic Games authorization code is already expired. Reconnect Epic Games and try again.");
+    }
     const authorizationCode = readOptionalText(parsed.authorizationCode ?? parsed.code);
     if (!authorizationCode) {
         return new Error("The Epic result is missing authorizationCode.");
@@ -81,6 +96,25 @@ export function parsePsnConnectObject(parsed: Record<string, unknown>): Provider
     return { provider: "psn", cookies, expired: isExpiredStatus(parsed, status) };
 }
 
+export function parseEpicConnectObject(parsed: Record<string, unknown>): ProviderConnectResult | Error {
+    const provider = readOptionalText(parsed.provider ?? parsed.platform);
+    if (provider && provider.toLowerCase() !== "epic") {
+        return new Error("This helper result is not for Epic Games.");
+    }
+
+    const status = readOptionalText(parsed.status ?? parsed.error)?.toLowerCase();
+    const authorizationCode = readOptionalText(parsed.authorizationCode ?? parsed.code);
+    if (!authorizationCode) {
+        return new Error("The Epic Games helper result is missing authorizationCode.");
+    }
+
+    return {
+        provider: "epic",
+        authorizationCode,
+        expired: isExpiredStatus(parsed, status),
+    };
+}
+
 export function parseHelperLaunchStatus(parsed: unknown): HelperLaunchStatus | Error {
     if (!isObjectRecord(parsed)) {
         return new Error("The local helper launch status response was not valid.");
@@ -98,7 +132,7 @@ export function parseHelperLaunchStatus(parsed: unknown): HelperLaunchStatus | E
     };
 }
 
-export function parseHandoffUrl(value: string, provider: "gog" | "psn", pageOrigin: string): string | Error {
+export function parseHandoffUrl(value: string, provider: "gog" | "psn" | "epic", pageOrigin: string): string | Error {
     const match = value.trim().match(/https?:\/\/\S+/);
     if (!match) {
         return new Error(`Paste the local handoff URL printed by the ${providerLabel(provider)} helper.`);
@@ -171,6 +205,8 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function providerLabel(provider: "gog" | "psn"): string {
-    return provider === "gog" ? "GOG" : "PlayStation";
+function providerLabel(provider: "gog" | "psn" | "epic"): string {
+    if (provider === "gog") return "GOG";
+    if (provider === "psn") return "PlayStation";
+    return "Epic Games";
 }

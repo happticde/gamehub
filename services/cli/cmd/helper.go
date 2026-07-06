@@ -79,7 +79,7 @@ var helperUninstallCmd = &cobra.Command{
 }
 
 var helperLaunchCmd = &cobra.Command{
-	Use:   "launch gamehub-helper://connect/{gog|psn}",
+	Use:   "launch gamehub-helper://connect/{gog|psn|epic}",
 	Short: "Launch a helper flow from a gamehub-helper:// URL",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runHelperLaunch,
@@ -143,7 +143,7 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if request.Platform != "gog" && request.Platform != "psn" {
+	if request.Platform != "gog" && request.Platform != "psn" && request.Platform != "epic" {
 		return fmt.Errorf("unsupported helper platform %q", request.Platform)
 	}
 
@@ -213,6 +213,20 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 			psnHandoffURLHook = previousHook
 		}()
 		runErr = runConnectPsn(cmd, nil)
+	case "epic":
+		epicConnectTimeout = helperLaunchTimeout
+		epicHandoffServer = true
+		epicHandoffOrigin = handoffOrigin
+		epicHandoffTTL = helperLaunchTTL
+
+		previousHook := epicHandoffURLHook
+		if launchStatus != nil {
+			epicHandoffURLHook = launchStatus.ready
+		}
+		defer func() {
+			epicHandoffURLHook = previousHook
+		}()
+		runErr = runConnectEpic(cmd, nil)
 	}
 
 	if runErr != nil {
@@ -341,7 +355,7 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 		return helperLaunchRequest{}, fmt.Errorf("unsupported helper URL target")
 	}
 	platform := strings.TrimPrefix(parsed.Path, "/")
-	if platform != "gog" && platform != "psn" {
+	if platform != "gog" && platform != "psn" && platform != "epic" {
 		return helperLaunchRequest{}, fmt.Errorf("unsupported helper URL target")
 	}
 
@@ -349,7 +363,7 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 	for name := range values {
 		switch strings.ToLower(name) {
 		case "origin", "launchid":
-		case "cookie", "cookies", "gog-al", "gogal", "gogalcookie", "npsso", "psnauthbearertoken", "psnauthrefreshtoken", "jsessionid", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "session", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
+		case "authorizationcode", "code", "cookie", "cookies", "gog-al", "gogal", "gogalcookie", "npsso", "psnauthbearertoken", "psnauthrefreshtoken", "jsessionid", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "accesstoken", "refreshtoken", "session", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
 			return helperLaunchRequest{}, fmt.Errorf("helper URL must not contain secret parameter %q", name)
 		default:
 			return helperLaunchRequest{}, fmt.Errorf("unsupported helper URL parameter %q", name)

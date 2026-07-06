@@ -94,6 +94,12 @@ func TestPsnBrowserLaunchFlags_UsesMinimalChromeFingerprint(t *testing.T) {
 	if values["user-data-dir"] != "/tmp/gamehub-psn-connect-test" {
 		t.Fatalf("user-data-dir = %v, want test profile dir", values["user-data-dir"])
 	}
+	if values["no-default-browser-check"] != true {
+		t.Fatalf("no-default-browser-check = %v, want true", values["no-default-browser-check"])
+	}
+	if values["no-first-run"] != true {
+		t.Fatalf("no-first-run = %v, want true", values["no-first-run"])
+	}
 
 	rejectedFlags := []string{
 		"disable-blink-features",

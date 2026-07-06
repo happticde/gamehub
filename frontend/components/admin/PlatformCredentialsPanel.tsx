@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getPlatformColor } from "@/lib/platform-colors";
 import {
+    parseEpicConnectObject,
     parseGogConnectObject,
     parseGogConnectPayload,
     parseHandoffUrl,
@@ -45,7 +46,7 @@ import {
 } from "lucide-react";
 
 type CredentialPayload = Record<string, unknown>;
-type ConnectProvider = "gog" | "psn";
+type ConnectProvider = "gog" | "psn" | "epic";
 type EpicConnectStart = {
     authorizationUrl: string;
     state: string;
@@ -134,7 +135,7 @@ export function PlatformCredentialsPanel() {
             });
             if (!response.ok) throw new Error(await readError(response));
             const payload = (await response.json()) as EpicConnectStart;
-            setMessage("Epic Games sign-in opened. Paste the Epic result here to finish securely.");
+            setMessage("Epic Games connect session started.");
             return payload;
         } catch (caught) {
             setError(errorMessage(caught));
@@ -1035,15 +1036,36 @@ function EpicCredentialCard({
     const [refreshToken, setRefreshToken] = useState("");
     const [connectState, setConnectState] = useState<string | null>(null);
     const [connectExpiresAt, setConnectExpiresAt] = useState<string | null>(null);
+    const [handoffUrl, setHandoffUrl] = useState("");
+    const [handoffPolling, setHandoffPolling] = useState(false);
+    const [helperLaunching, setHelperLaunching] = useState(false);
+    const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
+    const [handoffError, setHandoffError] = useState<string | null>(null);
+    const [pageOrigin, setPageOrigin] = useState("http://localhost:3005");
     const [localError, setLocalError] = useState<string | null>(null);
+    const handoffAttemptRef = useRef(0);
 
-    const startConnect = async () => {
+    useEffect(() => () => {
+        handoffAttemptRef.current += 1;
+    }, []);
+
+    useEffect(() => {
+        setPageOrigin(window.location.origin);
+    }, []);
+
+    const beginConnectTransaction = async (): Promise<EpicConnectStart | null> => {
         setLocalError(null);
         const started = await onStartConnect();
-        if (!started) return;
+        if (!started) return null;
 
         setConnectState(started.state);
         setConnectExpiresAt(started.expiresAtUtc);
+        return started;
+    };
+
+    const startBrowserConnect = async () => {
+        const started = await beginConnectTransaction();
+        if (!started) return;
         window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
     };
 
@@ -1065,6 +1087,121 @@ function EpicCredentialCard({
             setConnectState(null);
             setConnectExpiresAt(null);
         }
+    };
+
+    const launchProtocolHelper = async () => {
+        const launchId = newHelperLaunchId();
+        const url = new URL("gamehub-helper://connect/epic");
+        url.searchParams.set("origin", window.location.origin);
+        url.searchParams.set("launchId", launchId);
+
+        const attempt = handoffAttemptRef.current + 1;
+        handoffAttemptRef.current = attempt;
+        setHandoffError(null);
+        setHandoffUrl("");
+        setHelperLaunching(true);
+        setHandoffMessage("Waiting for the local helper to start. If your browser asks, allow it to open GameHub Helper.");
+        window.location.href = url.toString();
+
+        try {
+            const launchedHandoffUrl = await waitForHelperLaunchStatus("epic", launchId, attempt, handoffAttemptRef);
+            if (handoffAttemptRef.current !== attempt) return;
+
+            setHandoffUrl(launchedHandoffUrl);
+            setHandoffMessage("Local helper started. Waiting for the visible Epic Games sign-in…");
+            await pollHandoffUrl(launchedHandoffUrl);
+        } catch (caught) {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffError(localLaunchErrorMessage(caught));
+                setHandoffMessage(null);
+            }
+        } finally {
+            if (handoffAttemptRef.current === attempt) {
+                setHelperLaunching(false);
+            }
+        }
+    };
+
+    async function pollHandoffUrl(candidateUrl = handoffUrl) {
+        const parsedUrl = parseHandoffUrl(candidateUrl, "epic", window.location.origin);
+        if (parsedUrl instanceof Error) {
+            setHandoffError(parsedUrl.message);
+            return;
+        }
+
+        const attempt = handoffAttemptRef.current + 1;
+        handoffAttemptRef.current = attempt;
+        setHandoffPolling(true);
+        setHelperLaunching(false);
+        setHandoffError(null);
+        setLocalError(null);
+        setHandoffMessage("Waiting for the local helper to capture your Epic Games authorization code…");
+
+        try {
+            const deadline = Date.now() + 10 * 60 * 1000;
+            while (Date.now() < deadline && handoffAttemptRef.current === attempt) {
+                const response = await fetch(parsedUrl, { cache: "no-store" });
+                if (handoffAttemptRef.current !== attempt) return;
+
+                if (response.status === 202) {
+                    setHandoffMessage("Helper is still waiting for the visible Epic Games sign-in…");
+                    await delay(1500);
+                    continue;
+                }
+
+                if (response.status === 410) {
+                    throw new Error("This local helper result was already imported. Run the helper again for a fresh handoff URL.");
+                }
+                if (!response.ok) {
+                    throw new Error(await readLocalHelperFailure(response));
+                }
+
+                const result = parseEpicConnectObject(await response.json());
+                if (result instanceof Error) {
+                    throw result;
+                }
+                if (result.expired) {
+                    throw new Error("The Epic Games authorization code is already expired. Reconnect Epic Games and try again.");
+                }
+                if (result.provider !== "epic") {
+                    throw new Error("This helper result is not for Epic Games.");
+                }
+
+                setHandoffMessage("Epic Games authorization captured. Exchanging it through GameHub…");
+                if (await onSave({ authorizationCode: result.authorizationCode })) {
+                    setHandoffUrl("");
+                    setEpicResult("");
+                    setConnectState(null);
+                    setConnectExpiresAt(null);
+                    setHandoffMessage("Epic Games connected through the local helper.");
+                    return;
+                }
+
+                setManualAuthorizationCode(result.authorizationCode);
+                setConnectState(null);
+                setConnectExpiresAt(null);
+                setHandoffError("The helper result was captured, but storing it failed. The manual authorization code field below is filled so you can retry quickly.");
+                return;
+            }
+
+            throw new Error("Timed out waiting for the local helper result.");
+        } catch (caught) {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffError(localHandoffErrorMessage(caught));
+                setHandoffMessage(null);
+            }
+        } finally {
+            if (handoffAttemptRef.current === attempt) {
+                setHandoffPolling(false);
+            }
+        }
+    }
+
+    const stopHandoffPolling = () => {
+        handoffAttemptRef.current += 1;
+        setHandoffPolling(false);
+        setHelperLaunching(false);
+        setHandoffMessage(null);
     };
 
     const saveAuthorizationCode = async () => {
@@ -1090,35 +1227,102 @@ function EpicCredentialCard({
             <CredentialSection
                 icon={<PlugZap className="h-4 w-4 text-primary" />}
                 title={status?.isConfigured ? "Reconnect Epic Games" : "Connect Epic Games"}
-                description="Start Epic sign-in from GameHub, then finish through the BFF so Ingest stores only the exchanged refresh token."
+                description="Launch the local helper, sign in with Epic Games in the visible browser, and exchange the captured authorization code server-side."
                 tone="primary"
-                action={
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        disabled={busy}
-                        onClick={() => void startConnect()}
-                    >
-                        {busy ? (
-                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        Connect
-                    </Button>
-                }
             >
                 <p className="text-xs leading-5 text-muted-foreground">
-                    Epic&apos;s launcher-compatible page returns JSON instead of redirecting back to
-                    GameHub. Paste that result here; GameHub validates the connect state and clears
-                    the browser transaction after one attempt.
+                    The helper handoff contains only a short-lived authorization code. Refresh tokens
+                    are exchanged and encrypted server-side.
                 </p>
                 {connectExpiresAt && (
                     <p className="text-xs text-muted-foreground">
                         Connect session expires {new Date(connectExpiresAt).toLocaleTimeString()}.
                     </p>
                 )}
+                <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy || handoffPolling || helperLaunching}
+                    onClick={() => void launchProtocolHelper()}
+                >
+                    {helperLaunching ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {helperLaunching ? "Starting helper…" : "Connect Epic Games"}
+                </Button>
+                <HelperStatusMessage message={handoffMessage} error={handoffError} />
+                {(handoffPolling || helperLaunching) && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={stopHandoffPolling}
+                    >
+                        Stop waiting
+                    </Button>
+                )}
+                <CommandFallback
+                    title="Advanced helper options"
+                    commands={[
+                        'cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"',
+                        `cd services/cli && go run . connect epic --handoff-server --origin ${pageOrigin}`,
+                    ]}
+                >
+                    <Input
+                        aria-label="Epic Games local helper handoff URL"
+                        className="font-mono text-xs"
+                        placeholder="Paste local helper handoff URL"
+                        value={handoffUrl}
+                        onChange={(event) => {
+                            setHandoffUrl(event.target.value);
+                            setHandoffError(null);
+                        }}
+                        disabled={handoffPolling || helperLaunching}
+                    />
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
+                        onClick={() => void pollHandoffUrl()}
+                    >
+                        {handoffPolling ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <PlugZap className="mr-2 h-4 w-4" />
+                        )}
+                        {handoffPolling ? "Waiting for helper…" : "Import pasted handoff URL"}
+                    </Button>
+                </CommandFallback>
+            </CredentialSection>
+
+            <HiddenFallback
+                title="Epic JSON fallback"
+                description="Use the browser fallback when the local helper cannot capture the Epic page for you."
+                action={
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={busy}
+                        onClick={() => void startBrowserConnect()}
+                    >
+                        {busy ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Open Epic
+                    </Button>
+                }
+            >
+                <p className="text-xs leading-5 text-muted-foreground">
+                    Epic&apos;s launcher-compatible page returns JSON instead of redirecting back to
+                    GameHub. Paste that result here to finish through the BFF.
+                </p>
                 {localError && (
                     <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                         {localError}
@@ -1140,7 +1344,7 @@ function EpicCredentialCard({
                     {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
                     {busy ? "Saving…" : "Finish Epic connect"}
                 </Button>
-            </CredentialSection>
+            </HiddenFallback>
 
             <HiddenFallback
                 title="Manual fallback"
