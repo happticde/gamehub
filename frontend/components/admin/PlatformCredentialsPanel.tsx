@@ -47,6 +47,7 @@ import {
 
 type CredentialPayload = Record<string, unknown>;
 type ConnectProvider = "gog" | "psn" | "epic";
+type HelperStatusKind = "starting" | "browser" | "captured" | "saving" | "saved";
 type EpicConnectStart = {
     authorizationUrl: string;
     state: string;
@@ -394,8 +395,16 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         if (await onSave({ cookie, user })) {
             setCookie("");
             setUser("");
+            clearHelperState(helperStatusMessage("gog", "saved"));
         }
     };
+
+    function clearHelperState(successMessage: string | null = null) {
+        setHandoffError(null);
+        setHelperError(null);
+        setHandoffUrl("");
+        setHandoffMessage(successMessage);
+    }
 
     const saveHelperPayload = async () => {
         setHelperError(null);
@@ -417,6 +426,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
 
         if (await onSave({ cookie: result.cookie, user: result.user })) {
             setHelperPayload("");
+            clearHelperState(helperStatusMessage("gog", "saved"));
         }
     };
 
@@ -432,7 +442,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         setHelperError(null);
         setHandoffUrl("");
         setHelperLaunching(true);
-        setHandoffMessage("Waiting for the local helper to start. If your browser asks, allow it to open GameHub Helper.");
+        setHandoffMessage(helperStatusMessage("gog", "starting"));
         window.location.href = url.toString();
 
         try {
@@ -440,7 +450,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
-            setHandoffMessage("Local helper started. Waiting for the visible GOG sign-in…");
+            setHandoffMessage(helperStatusMessage("gog", "browser"));
             await pollHandoffUrl(launchedHandoffUrl);
         } catch (caught) {
             if (handoffAttemptRef.current === attempt) {
@@ -467,7 +477,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         setHelperLaunching(false);
         setHandoffError(null);
         setHelperError(null);
-        setHandoffMessage("Waiting for the local helper to capture your GOG session…");
+        setHandoffMessage(helperStatusMessage("gog", "browser"));
 
         try {
             const deadline = Date.now() + 10 * 60 * 1000;
@@ -476,7 +486,7 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                 if (handoffAttemptRef.current !== attempt) return;
 
                 if (response.status === 202) {
-                    setHandoffMessage("Helper is still waiting for the visible GOG sign-in…");
+                    setHandoffMessage(helperStatusMessage("gog", "browser"));
                     await delay(1500);
                     continue;
                 }
@@ -499,17 +509,22 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     throw new Error("This helper result is not for GOG.");
                 }
 
-                setHandoffMessage("GOG session captured. Storing it in the encrypted vault…");
+                setHandoffMessage(helperStatusMessage("gog", "captured"));
+                await delay(250);
+                if (handoffAttemptRef.current !== attempt) return;
+                setHandoffMessage(helperStatusMessage("gog", "saving"));
                 if (await onSave({ cookie: result.cookie, user: result.user })) {
                     setHandoffUrl("");
                     setHelperPayload("");
-                    setHandoffMessage("GOG session imported from the local helper.");
+                    setHandoffError(null);
+                    setHandoffMessage(helperStatusMessage("gog", "saved"));
                     return;
                 }
 
                 setCookie(result.cookie);
                 setUser(result.user);
-                setHandoffError("The helper result was captured, but storing it failed. The manual fields below are filled so you can retry.");
+                setHandoffError(helperStoreFailedMessage("gog", "manual fields"));
+                setHandoffMessage(null);
                 return;
             }
 
@@ -700,8 +715,18 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         const payload = Object.fromEntries(
             validCookies.map((cookie) => [cookie.key.trim(), cookie.value]),
         );
-        if (await onSave({ cookies: payload })) setCookies([{ key: "", value: "" }]);
+        if (await onSave({ cookies: payload })) {
+            setCookies([{ key: "", value: "" }]);
+            clearHelperState(helperStatusMessage("psn", "saved"));
+        }
     };
+
+    function clearHelperState(successMessage: string | null = null) {
+        setHandoffError(null);
+        setHelperError(null);
+        setHandoffUrl("");
+        setHandoffMessage(successMessage);
+    }
 
     const saveHelperPayload = async () => {
         setHelperError(null);
@@ -723,6 +748,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
 
         if (await onSave({ cookies: result.cookies })) {
             setHelperPayload("");
+            clearHelperState(helperStatusMessage("psn", "saved"));
         }
     };
 
@@ -738,7 +764,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         setHelperError(null);
         setHandoffUrl("");
         setHelperLaunching(true);
-        setHandoffMessage("Waiting for the local helper to attach to Chrome. If your browser asks, allow it to open GameHub Helper.");
+        setHandoffMessage(helperStatusMessage("psn", "starting"));
         window.location.href = url.toString();
 
         try {
@@ -746,7 +772,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
-            setHandoffMessage("Local helper attached. Waiting for PlayStation session cookies from Chrome…");
+            setHandoffMessage(helperStatusMessage("psn", "browser"));
             await pollHandoffUrl(launchedHandoffUrl);
         } catch (caught) {
             if (handoffAttemptRef.current === attempt) {
@@ -773,7 +799,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         setHelperLaunching(false);
         setHandoffError(null);
         setHelperError(null);
-        setHandoffMessage("Waiting for the local helper to capture your PlayStation session from Chrome…");
+        setHandoffMessage(helperStatusMessage("psn", "browser"));
 
         try {
             const deadline = Date.now() + 10 * 60 * 1000;
@@ -782,7 +808,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                 if (handoffAttemptRef.current !== attempt) return;
 
                 if (response.status === 202) {
-                    setHandoffMessage("Helper is still waiting for Chrome to expose PlayStation session cookies…");
+                    setHandoffMessage(helperStatusMessage("psn", "browser"));
                     await delay(1500);
                     continue;
                 }
@@ -805,16 +831,21 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     throw new Error("This helper result is not for PlayStation.");
                 }
 
-                setHandoffMessage("PlayStation session captured. Storing it in the encrypted vault…");
+                setHandoffMessage(helperStatusMessage("psn", "captured"));
+                await delay(250);
+                if (handoffAttemptRef.current !== attempt) return;
+                setHandoffMessage(helperStatusMessage("psn", "saving"));
                 if (await onSave({ cookies: result.cookies })) {
                     setHandoffUrl("");
                     setHelperPayload("");
-                    setHandoffMessage("PlayStation session imported from the local helper.");
+                    setHandoffError(null);
+                    setHandoffMessage(helperStatusMessage("psn", "saved"));
                     return;
                 }
 
                 setCookies(cookieMapToRows(result.cookies));
-                setHandoffError("The helper result was captured, but storing it failed. The manual fields below are filled so you can retry.");
+                setHandoffError(helperStoreFailedMessage("psn", "manual fields"));
+                setHandoffMessage(null);
                 return;
             }
 
@@ -1086,8 +1117,16 @@ function EpicCredentialCard({
             setEpicResult("");
             setConnectState(null);
             setConnectExpiresAt(null);
+            clearHelperState(helperStatusMessage("epic", "saved"));
         }
     };
+
+    function clearHelperState(successMessage: string | null = null) {
+        setHandoffError(null);
+        setLocalError(null);
+        setHandoffUrl("");
+        setHandoffMessage(successMessage);
+    }
 
     const launchProtocolHelper = async () => {
         const launchId = newHelperLaunchId();
@@ -1100,7 +1139,7 @@ function EpicCredentialCard({
         setHandoffError(null);
         setHandoffUrl("");
         setHelperLaunching(true);
-        setHandoffMessage("Waiting for the local helper to start. If your browser asks, allow it to open GameHub Helper.");
+        setHandoffMessage(helperStatusMessage("epic", "starting"));
         window.location.href = url.toString();
 
         try {
@@ -1108,7 +1147,7 @@ function EpicCredentialCard({
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
-            setHandoffMessage("Local helper started. Waiting for the visible Epic Games sign-in…");
+            setHandoffMessage(helperStatusMessage("epic", "browser"));
             await pollHandoffUrl(launchedHandoffUrl);
         } catch (caught) {
             if (handoffAttemptRef.current === attempt) {
@@ -1135,7 +1174,7 @@ function EpicCredentialCard({
         setHelperLaunching(false);
         setHandoffError(null);
         setLocalError(null);
-        setHandoffMessage("Waiting for the local helper to capture your Epic Games authorization code…");
+        setHandoffMessage(helperStatusMessage("epic", "browser"));
 
         try {
             const deadline = Date.now() + 10 * 60 * 1000;
@@ -1144,7 +1183,7 @@ function EpicCredentialCard({
                 if (handoffAttemptRef.current !== attempt) return;
 
                 if (response.status === 202) {
-                    setHandoffMessage("Helper is still waiting for the visible Epic Games sign-in…");
+                    setHandoffMessage(helperStatusMessage("epic", "browser"));
                     await delay(1500);
                     continue;
                 }
@@ -1167,20 +1206,25 @@ function EpicCredentialCard({
                     throw new Error("This helper result is not for Epic Games.");
                 }
 
-                setHandoffMessage("Epic Games authorization captured. Exchanging it through GameHub…");
+                setHandoffMessage(helperStatusMessage("epic", "captured"));
+                await delay(250);
+                if (handoffAttemptRef.current !== attempt) return;
+                setHandoffMessage(helperStatusMessage("epic", "saving"));
                 if (await onSave({ authorizationCode: result.authorizationCode })) {
                     setHandoffUrl("");
                     setEpicResult("");
                     setConnectState(null);
                     setConnectExpiresAt(null);
-                    setHandoffMessage("Epic Games connected through the local helper.");
+                    setHandoffError(null);
+                    setHandoffMessage(helperStatusMessage("epic", "saved"));
                     return;
                 }
 
                 setManualAuthorizationCode(result.authorizationCode);
                 setConnectState(null);
                 setConnectExpiresAt(null);
-                setHandoffError("The helper result was captured, but storing it failed. The manual authorization code field below is filled so you can retry quickly.");
+                setHandoffError(helperStoreFailedMessage("epic", "manual authorization code field"));
+                setHandoffMessage(null);
                 return;
             }
 
@@ -1207,12 +1251,14 @@ function EpicCredentialCard({
     const saveAuthorizationCode = async () => {
         if (await onSave({ authorizationCode: manualAuthorizationCode })) {
             setManualAuthorizationCode("");
+            clearHelperState(helperStatusMessage("epic", "saved"));
         }
     };
 
     const saveRefreshToken = async () => {
         if (await onSave({ refreshToken })) {
             setRefreshToken("");
+            clearHelperState(helperStatusMessage("epic", "saved"));
         }
     };
 
@@ -1300,8 +1346,8 @@ function EpicCredentialCard({
             </CredentialSection>
 
             <HiddenFallback
-                title="Epic JSON fallback"
-                description="Use the browser fallback when the local helper cannot capture the Epic page for you."
+                title="JSON fallback"
+                description="If loopback handoff is unavailable, paste the helper or browser one-time JSON result here."
                 action={
                     <Button
                         variant="ghost"
@@ -1348,7 +1394,7 @@ function EpicCredentialCard({
 
             <HiddenFallback
                 title="Manual fallback"
-                description="Use direct entry only when the guided Epic browser result cannot be completed."
+                description="Use direct entry only when the helper or JSON fallback cannot be completed."
             >
                 <CredentialInput
                     label="Epic authorizationCode"
@@ -1428,17 +1474,32 @@ function HelperStatusMessage({
     error: string | null;
 }) {
     if (!message && !error) return null;
+    const displayedError = error ? splitHelperError(error) : null;
 
     return (
-        <p
+        <div
             className={`rounded-md border px-3 py-2 text-xs ${
                 error
                     ? "border-destructive/30 bg-destructive/10 text-destructive"
                     : "border-primary/30 bg-primary/10 text-primary"
             }`}
         >
-            {error ?? message}
-        </p>
+            {displayedError ? (
+                <div className="space-y-2">
+                    <p>{displayedError.message}</p>
+                    {displayedError.details && (
+                        <details className="text-destructive/80">
+                            <summary className="cursor-pointer">Show details</summary>
+                            <p className="mt-1 break-words font-mono text-[11px] leading-4">
+                                {displayedError.details}
+                            </p>
+                        </details>
+                    )}
+                </div>
+            ) : (
+                <p>{message}</p>
+            )}
+        </div>
     );
 }
 
@@ -1549,6 +1610,41 @@ function SaveButton({
     );
 }
 
+function helperStatusMessage(provider: ConnectProvider, status: HelperStatusKind): string {
+    const label = connectProviderLabel(provider);
+    switch (status) {
+        case "starting":
+            return "Helper is starting. If your browser asks, allow it to open GameHub Helper.";
+        case "browser":
+            return `Browser login is running. Complete the ${label} sign-in in the visible browser.`;
+        case "captured":
+            return "Result captured. Preparing encrypted vault storage.";
+        case "saving":
+            return "Saving result in the encrypted vault.";
+        case "saved":
+            return "Saved successfully. The connector is ready to sync.";
+    }
+}
+
+function helperStoreFailedMessage(provider: ConnectProvider, fallbackTarget: string): string {
+    const label = connectProviderLabel(provider);
+    return `Saving failed. The ${label} result is still available in the ${fallbackTarget} below so you can retry quickly.`;
+}
+
+function connectProviderLabel(provider: ConnectProvider): string {
+    if (provider === "gog") return "GOG";
+    if (provider === "psn") return "PlayStation";
+    return "Epic Games";
+}
+
+function splitHelperError(error: string): { message: string; details: string | null } {
+    const [message, ...details] = error.split("\nDetails: ");
+    return {
+        message,
+        details: details.length > 0 ? details.join("\nDetails: ") : null,
+    };
+}
+
 async function readError(response: Response): Promise<string> {
     try {
         const body = await response.json() as { message?: string };
@@ -1616,7 +1712,8 @@ function localLaunchErrorMessage(error: unknown): string {
     if (message.toLowerCase().includes("timed out")) {
         return "GameHub could not reach the local helper. Install or reinstall the protocol handler, allow the browser prompt to open GameHub Helper, or use the fallback command below.";
     }
-    return message;
+    if (message.includes("\nDetails: ")) return message;
+    return `The local helper could not start. Use the fallback command below or paste a helper result manually.\nDetails: ${message}`;
 }
 
 function localHandoffErrorMessage(error: unknown): string {
@@ -1624,13 +1721,25 @@ function localHandoffErrorMessage(error: unknown): string {
     if (message.toLowerCase() === "failed to fetch") {
         return "The browser could not read the local helper. Make sure the helper is still running, the handoff URL has not expired, and the helper --origin matches this Admin page origin.";
     }
-    return message;
+    if (
+        message.startsWith("Paste ")
+        || message.startsWith("This local helper result")
+        || message.startsWith("Timed out ")
+        || message.includes("already expired")
+        || message.includes("not for ")
+        || message.includes("\nDetails: ")
+    ) {
+        return message;
+    }
+    return `The local helper could not finish this handoff. Use the manual fallback below to retry.\nDetails: ${message}`;
 }
 
 async function readLocalHelperFailure(response: Response): Promise<string> {
     try {
         const body = await response.json() as { message?: string; status?: string };
-        if (body.message) return body.message;
+        if (body.message) {
+            return `The local helper reported a provider sign-in failure. Use the manual fallback below to retry.\nDetails: ${body.message}`;
+        }
         if (body.status === "failed") return "The local helper reported a provider sign-in failure.";
     } catch {
         // Fall through to the generic status message when the helper response is not JSON.

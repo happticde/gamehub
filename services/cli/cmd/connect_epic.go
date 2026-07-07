@@ -87,14 +87,14 @@ func runConnectEpic(cmd *cobra.Command, args []string) error {
 		if epicHandoffURLHook != nil {
 			epicHandoffURLHook(handoffURL)
 		}
-		fmt.Fprintln(os.Stderr, "Paste this local handoff URL into the GameHub Admin Epic Games connector. It contains only a one-time local nonce, not the authorization code.")
+		fmt.Fprintln(os.Stderr, "Local handoff URL ready for the GameHub Admin Epic Games connector. It contains only a one-time local nonce, not the authorization code.")
 	}
 
 	fmt.Fprintln(os.Stderr, "Opening a visible Epic Games browser session. Sign in there; no Epic password is entered into GameHub.")
 	if epicHandoffServer {
-		fmt.Fprintln(os.Stderr, "Waiting for Epic's authorization JSON. The code will be held in memory for a one-time local handoff.")
+		fmt.Fprintln(os.Stderr, "Waiting for Epic's authorization JSON. The result will be held only in this helper process until GameHub imports it.")
 	} else {
-		fmt.Fprintln(os.Stderr, "Waiting for Epic's authorization JSON. The code will only be printed in the final JSON payload.")
+		fmt.Fprintln(os.Stderr, "Waiting for Epic's authorization JSON. GameHub will not import automatically; paste the final JSON into the Admin fallback to save it.")
 	}
 
 	payload, err := captureEpicConnectPayload(cmd.Context(), profileDir, epicConnectTimeout)
@@ -107,22 +107,23 @@ func runConnectEpic(cmd *cobra.Command, args []string) error {
 
 	if handoff != nil {
 		handoff.complete(payload)
-		fmt.Fprintln(os.Stderr, "Epic Games authorization captured. Keep this helper running until GameHub imports the one-time result.")
+		fmt.Fprintln(os.Stderr, "Epic Games authorization captured locally. No credential has been stored yet; keep this helper running until GameHub imports the one-time result.")
 
 		waitCtx, cancel := context.WithTimeout(cmd.Context(), epicHandoffTTL)
 		defer cancel()
 		if err := handoff.waitConsumed(waitCtx); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				fmt.Fprintln(os.Stderr, "The local handoff result expired before GameHub imported it. Run the helper again to reconnect.")
+				fmt.Fprintln(os.Stderr, "GameHub did not import the local handoff result before it expired. Run the helper again, or use the Admin manual fallback with a fresh result.")
 				return nil
 			}
 			return err
 		}
 
-		fmt.Fprintln(os.Stderr, "GameHub imported the local Epic Games handoff result. The in-memory copy has been cleared.")
+		fmt.Fprintln(os.Stderr, "GameHub imported and saved the local Epic Games handoff result. The in-memory copy has been cleared.")
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr, "Epic Games authorization captured locally. GameHub has not imported it; paste the JSON payload into the Admin fallback to save it.")
 	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(payload)
