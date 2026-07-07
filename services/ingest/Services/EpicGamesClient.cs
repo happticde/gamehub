@@ -29,7 +29,8 @@ public interface IEpicFetcher
 public sealed class EpicGamesClient(
     HttpClient http,
     ILogger<EpicGamesClient> logger,
-    IServiceScopeFactory scopeFactory) : IEpicAuthenticationClient, IEpicFetcher
+    IServiceScopeFactory scopeFactory,
+    IEpicRefreshTokenRotationStore refreshTokenRotationStore) : IEpicAuthenticationClient, IEpicFetcher
 {
     private const string LauncherClientId = "34a02cf8f4414e29b15921876da36f9a";
     private const string LauncherClientSecret = "daafbccc737745039dffe53d94fc76cf";
@@ -101,6 +102,8 @@ public sealed class EpicGamesClient(
                 throw new HttpRequestException("Epic authentication failed.");
             }
 
+            await PersistRefreshTokenRotationAsync(credential, session, cancellationToken);
+
             var rawItems = await FetchLauncherGamesAsync(session.AccessToken, cancellationToken);
             var mapped = new List<JsonElement>();
             foreach (var rawItem in rawItems)
@@ -120,6 +123,11 @@ public sealed class EpicGamesClient(
                 mapped.Count);
             await WriteAuditLogAsync("Success", mapped.Count);
             return mapped;
+        }
+        catch (PlatformCredentialRotationException)
+        {
+            await WriteAuditLogAsync("Error", 0, "Epic refresh token rotation could not be persisted.");
+            throw;
         }
         catch (Exception ex) when (ex is not HttpRequestException && ex is not InvalidOperationException)
         {
@@ -164,6 +172,26 @@ public sealed class EpicGamesClient(
                 JsonOptions,
                 cancellationToken)
             ?? throw new JsonException("Epic authorization returned an empty response.");
+    }
+
+    private async Task PersistRefreshTokenRotationAsync(
+        EpicPlatformCredential credential,
+        EpicOAuthSession session,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(session.RefreshToken)
+            || string.Equals(session.RefreshToken, credential.RefreshToken, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await refreshTokenRotationStore.PersistIfRotatedAsync(
+            credential,
+            new EpicPlatformCredential(
+                session.RefreshToken,
+                session.AccountId ?? credential.AccountId,
+                session.DisplayName ?? credential.DisplayName),
+            cancellationToken);
     }
 
     private static void ApplyEpicHeaders(HttpRequestMessage request)
@@ -316,8 +344,8 @@ public sealed class EpicGamesClient(
     }
 
     private sealed record EpicOAuthSession(
-        [property: JsonPropertyName("access_token")] string AccessToken,
-        [property: JsonPropertyName("refresh_token")] string RefreshToken,
+        [property: JsonPropertyName("access_token")] string? AccessToken,
+        [property: JsonPropertyName("refresh_token")] string? RefreshToken,
         [property: JsonPropertyName("account_id")] string? AccountId,
         [property: JsonPropertyName("displayName")] string? DisplayName);
 }

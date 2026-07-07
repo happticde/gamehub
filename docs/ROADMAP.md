@@ -156,12 +156,12 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   capture Epic's launcher-compatible authorization-code JSON page without asking for the user's Epic
   password.
 - **Retrieval**: Core treats Epic as a stored-retrieval platform. Ingest refreshes an access token
-  in-memory, calls Epic's library service, maps records to `app_name`/`app_title`, and writes raw
-  Epic items through the existing ingest pipeline.
+  in-memory, persists an Epic-rotated refresh token back into the tenant-scoped encrypted Ingest
+  vault before continuing, calls Epic's library service, maps records to `app_name`/`app_title`,
+  and writes raw Epic items through the existing ingest pipeline.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
-  follow-up scope is token rotation persistence after refresh, richer Epic metadata mapping, and
-  continued provider-fragility handling. Do not describe this as official OAuth support or a fully
-  production-proof provider integration.
+  follow-up scope is richer Epic metadata mapping and continued provider-fragility handling. Do not
+  describe this as official OAuth support or a fully production-proof provider integration.
 
 ### 17. Guided Platform Account Connect for GOG & PSN ✅ Local Helper MVP
 - **Goal**: Replace the current manual DevTools cookie-copy workflow with a guided "Connect GOG" and

@@ -70,6 +70,7 @@ var platformCredentialKeyRing = PlatformCredentialKeyRing.FromConfiguration(buil
 builder.Services.AddSingleton(platformCredentialKeyRing);
 builder.Services.AddSingleton<PlatformCredentialProtector>();
 builder.Services.AddScoped<PlatformCredentialService>();
+builder.Services.AddScoped<IEpicRefreshTokenRotationStore, EpicRefreshTokenRotationStore>();
 builder.Services.AddScoped<TenantDataDeletionService>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 

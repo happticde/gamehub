@@ -197,6 +197,128 @@ public sealed class PlatformCredentialServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PersistEpicRefreshTokenRotation_SameRefreshToken_LeavesVaultUnchanged()
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(db, TenantA);
+        await service.UpsertAsync(
+            Platform.Epic,
+            1,
+            ParseCredentials(
+                "{\"refreshToken\":\"epic-refresh\",\"accountId\":\"account-1\",\"displayName\":\"Player\"}"));
+        var before = await db.PlatformCredentials.AsNoTracking().SingleAsync();
+        db.ChangeTracker.Clear();
+
+        await CreateRotationStore(db).PersistIfRotatedAsync(
+            new EpicPlatformCredential("epic-refresh", "account-1", "Player"),
+            new EpicPlatformCredential("epic-refresh", "account-2", "Renamed Player"));
+
+        var after = await db.PlatformCredentials.AsNoTracking().SingleAsync();
+        Assert.Equal(before.UpdatedAtUtc, after.UpdatedAtUtc);
+        Assert.Equal(before.Nonce, after.Nonce);
+        Assert.Equal(before.AuthenticationTag, after.AuthenticationTag);
+        Assert.Equal(before.EncryptedPayload, after.EncryptedPayload);
+    }
+
+    [Fact]
+    public async Task PersistEpicRefreshTokenRotation_NewRefreshToken_StoresEncryptedToken()
+    {
+        await using var db = CreateContext(TenantA);
+        var service = CreateService(db, TenantA);
+        await service.UpsertAsync(
+            Platform.Epic,
+            1,
+            ParseCredentials(
+                "{\"refreshToken\":\"old-refresh\",\"accountId\":\"account-1\",\"displayName\":\"Player\"}"));
+        db.ChangeTracker.Clear();
+
+        await CreateRotationStore(db).PersistIfRotatedAsync(
+            new EpicPlatformCredential("old-refresh", "account-1", "Player"),
+            new EpicPlatformCredential("new-refresh", "account-2", "Renamed Player"));
+        db.ChangeTracker.Clear();
+
+        var stored = await db.PlatformCredentials.SingleAsync();
+        var credential = await service.GetEpicAsync();
+        var encryptedText = Convert.ToBase64String(stored.EncryptedPayload);
+        Assert.Equal(Platform.Epic, stored.Platform);
+        Assert.Equal(TenantA, stored.TenantId);
+        Assert.Equal("new-refresh", credential?.RefreshToken);
+        Assert.Equal("account-2", credential?.AccountId);
+        Assert.Equal("Renamed Player", credential?.DisplayName);
+        Assert.DoesNotContain("new-refresh", encryptedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("old-refresh", encryptedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PersistEpicRefreshTokenRotation_TwoTenants_UpdatesOnlyActiveTenantEpicCredential()
+    {
+        await using (var dbA = CreateContext(TenantA))
+        {
+            await CreateService(dbA, TenantA).UpsertAsync(
+                Platform.Epic,
+                1,
+                ParseCredentials("{\"refreshToken\":\"tenant-a-old\"}"));
+            await CreateService(dbA, TenantA).UpsertAsync(
+                Platform.Steam,
+                1,
+                ParseCredentials("{\"apiKey\":\"steam-secret-a\",\"steamId\":\"111\"}"));
+        }
+        await using (var dbB = CreateContext(TenantB))
+        {
+            await CreateService(dbB, TenantB).UpsertAsync(
+                Platform.Epic,
+                1,
+                ParseCredentials("{\"refreshToken\":\"tenant-b-old\"}"));
+        }
+
+        await using (var dbA = CreateContext(TenantA))
+        {
+            var steamBefore = await dbA.PlatformCredentials
+                .AsNoTracking()
+                .SingleAsync(credential => credential.Platform == Platform.Steam);
+
+            await CreateRotationStore(dbA).PersistIfRotatedAsync(
+                new EpicPlatformCredential("tenant-a-old"),
+                new EpicPlatformCredential("tenant-a-new"));
+
+            var serviceA = CreateService(dbA, TenantA);
+            var epicA = await serviceA.GetEpicAsync();
+            var steamAfter = await dbA.PlatformCredentials
+                .AsNoTracking()
+                .SingleAsync(credential => credential.Platform == Platform.Steam);
+
+            Assert.Equal("tenant-a-new", epicA?.RefreshToken);
+            Assert.Equal(steamBefore.EncryptedPayload, steamAfter.EncryptedPayload);
+            Assert.Equal(steamBefore.Nonce, steamAfter.Nonce);
+            Assert.Equal(steamBefore.AuthenticationTag, steamAfter.AuthenticationTag);
+        }
+
+        await using var dbBVerify = CreateContext(TenantB);
+        var epicB = await CreateService(dbBVerify, TenantB).GetEpicAsync();
+        Assert.Equal("tenant-b-old", epicB?.RefreshToken);
+    }
+
+    [Fact]
+    public async Task PersistEpicRefreshTokenRotation_ChangedStoredCredential_FailsWithSanitizedMessage()
+    {
+        await using var db = CreateContext(TenantA);
+        await CreateService(db, TenantA).UpsertAsync(
+            Platform.Epic,
+            1,
+            ParseCredentials("{\"refreshToken\":\"manually-replaced-refresh\"}"));
+
+        var exception = await Assert.ThrowsAsync<PlatformCredentialRotationException>(
+            () => CreateRotationStore(db).PersistIfRotatedAsync(
+                new EpicPlatformCredential("old-refresh-secret"),
+                new EpicPlatformCredential("new-refresh-secret")));
+
+        Assert.Equal("Epic refresh token rotation could not be persisted.", exception.Message);
+        Assert.DoesNotContain("old-refresh-secret", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("new-refresh-secret", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("manually-replaced-refresh", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Upsert_UnsupportedSchemaVersion_RejectsWithoutWriting()
     {
         await using var db = CreateContext(TenantA);
@@ -365,6 +487,9 @@ public sealed class PlatformCredentialServiceTests : IDisposable
             _protector,
             _timeProvider,
             epicAuthenticationClient);
+
+    private EpicRefreshTokenRotationStore CreateRotationStore(IngestContext db) =>
+        new(db, _protector, _timeProvider);
 
     private static PlatformCredentialProtector CreateProtector()
     {
