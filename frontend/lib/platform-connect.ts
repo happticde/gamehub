@@ -13,6 +13,10 @@ export type EpicAuthorizationCodeResult = {
     authorizationCode: string;
 };
 
+export type PsnChromeDebugVersion = {
+    product: string | null;
+};
+
 export function parseGogConnectPayload(value: string): ProviderConnectResult | Error {
     const parsed = parseJsonObject(value, "Paste the JSON result returned by the local GOG helper.");
     if (parsed instanceof Error) return parsed;
@@ -129,6 +133,16 @@ export function parseHelperLaunchStatus(parsed: unknown): HelperLaunchStatus | E
         status,
         handoffUrl: readOptionalText(parsed.handoffUrl) ?? undefined,
         message: readOptionalText(parsed.message) ?? undefined,
+    };
+}
+
+export function parsePsnChromeDebugVersion(parsed: unknown): PsnChromeDebugVersion | Error {
+    if (!isObjectRecord(parsed)) {
+        return new Error("The Chrome remote-debugging response was not valid JSON.");
+    }
+
+    return {
+        product: readOptionalText(parsed.Browser),
     };
 }
 
