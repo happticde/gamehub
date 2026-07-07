@@ -4,6 +4,26 @@
 
 ### What Changed
 
+**PSN Persistent Chrome Admin UX:**
+- Kept the PlayStation Admin credential connector's one-click helper launch as the primary
+  "Connect PlayStation" action.
+- Added the validated persistent Chrome loopback remote-debugging handoff as a guided fallback for
+  Sony fresh-profile or HTTP 429 failures.
+- Added a secret-free `http://127.0.0.1:49333/json/version` reachability check that displays only
+  the Chrome product string and ignores local debugger URLs or provider-looking fields.
+- Preserved the existing one-time handoff URL, JSON payload fallback, manual cookie fallback, and
+  Core/Ingest encrypted vault upsert path.
+
+### Known State / Pending
+
+- No credential-vault, platform-auth, provider-password, `.env`, or production configuration change
+  was introduced.
+- PSN remains provider-fragile; the persistent Chrome path is the recommended operator flow.
+
+## Current Session Summary (2026-07-07)
+
+### What Changed
+
 **Platform Connect Helper Documentation:**
 - Documented the local Epic, GOG, and PlayStation helper flows as the current project state.
 - Added an operator runbook covering CLI build, macOS `gamehub-helper://` installation, Admin UI

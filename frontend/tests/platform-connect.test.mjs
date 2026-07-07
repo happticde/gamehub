@@ -6,6 +6,7 @@ import {
     parseGogConnectPayload,
     parseHandoffUrl,
     parseHelperLaunchStatus,
+    parsePsnChromeDebugVersion,
     parsePsnConnectPayload,
 } from "../lib/platform-connect.ts";
 
@@ -179,4 +180,22 @@ test("launch status parsing exposes only status and handoff URL", () => {
         handoffUrl: "http://127.0.0.1:49152/connect/psn/result?nonce=nonce-value",
         message: undefined,
     });
+});
+
+test("PSN Chrome debug status parsing exposes only the browser product", () => {
+    const result = parsePsnChromeDebugVersion({
+        Browser: "Chrome/126.0.6478.127",
+        webSocketDebuggerUrl: "ws://127.0.0.1:49333/devtools/browser/local-debug-id",
+        pdccws_p: "secret-cookie",
+    });
+
+    assert.deepEqual(result, {
+        product: "Chrome/126.0.6478.127",
+    });
+});
+
+test("PSN Chrome debug status parsing rejects non-object responses", () => {
+    const result = parsePsnChromeDebugVersion("not-json");
+
+    assert.match(result.message, /not valid JSON/);
 });
