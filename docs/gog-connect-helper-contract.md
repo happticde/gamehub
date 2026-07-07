@@ -1,5 +1,9 @@
 # Platform Connect Helper Contract
 
+For the short operator runbook, including normal Admin UI usage, manual fallbacks, PSN's persistent
+Chrome recommendation, troubleshooting, and security reminders, see
+[Platform Connect Helpers](platform-connect-helpers.md).
+
 Roadmap #17A introduced the first guided-account-connect slice for GOG without adding a hidden
 server-side provider login flow. Roadmap #17B extends the same browser-centered local helper
 contract to PlayStation/PSN, and the Epic Games stored-retrieval slice uses the same local helper
