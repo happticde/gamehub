@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -107,6 +108,37 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         var responseJson = JsonSerializer.Serialize(ok.Value);
         Assert.DoesNotContain("epic-refresh-a", responseJson, StringComparison.Ordinal);
         Assert.DoesNotContain("epic-refresh-b", responseJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StoredEpicRetrieve_RotationPersistenceFailure_ReturnsSanitizedFailureWithoutLoggingSecrets()
+    {
+        const string oldRefreshToken = "old-refresh-token-secret";
+        const string newRefreshToken = "new-refresh-token-secret";
+        await StoreEpic(TenantA, oldRefreshToken);
+        await using var db = CreateContext(TenantA);
+        var logger = new CapturingLogger<RetrieveController>();
+        var controller = new RetrieveController(
+            db,
+            new CapturingSteamFetcher(),
+            new UnusedGogFetcher(),
+            new UnusedPsnFetcher(),
+            new ThrowingEpicFetcher(new PlatformCredentialRotationException(
+                new InvalidOperationException(newRefreshToken))),
+            CreateCredentialService(db, TenantA),
+            logger,
+            NullLoggerFactory.Instance);
+
+        var result = await controller.RetrieveStored(Platform.Epic, CancellationToken.None);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        var responseJson = JsonSerializer.Serialize(objectResult.Value);
+        Assert.Equal(502, objectResult.StatusCode);
+        Assert.Contains("Platform retrieval failed.", responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(oldRefreshToken, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(newRefreshToken, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(oldRefreshToken, string.Join("\n", logger.Messages), StringComparison.Ordinal);
+        Assert.DoesNotContain(newRefreshToken, string.Join("\n", logger.Messages), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -282,6 +314,43 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         {
             Credential = credential;
             return Task.FromResult(new List<JsonElement>());
+        }
+    }
+
+    private sealed class ThrowingEpicFetcher(Exception exception) : IEpicFetcher
+    {
+        public Task<List<JsonElement>> FetchGamesAsync(
+            EpicPlatformCredential credential,
+            CancellationToken cancellationToken = default) =>
+            throw exception;
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>, IDisposable
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull =>
+            this;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception));
+            if (exception is not null)
+            {
+                Messages.Add(exception.Message);
+            }
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

@@ -4,6 +4,26 @@
 
 ### What Changed
 
+**Epic Refresh Token Rotation Persistence:**
+- Added tenant-scoped Epic refresh-token rotation persistence after a successful stored-retrieval
+  refresh response. Rotated refresh tokens are written back through the encrypted Ingest credential
+  vault before Epic library retrieval can continue.
+- Preserved the Epic local-helper/Auth-Code MVP boundary and avoided adding a new platform auth
+  flow. Stored-retrieval responses, status DTOs, logs, and audit messages remain secret-free.
+- Added direct vault, cross-tenant, Epic client, and stored-retrieval failure-path tests for
+  rotation, no-rotation, tenant/platform isolation, encrypted storage, and sanitized errors.
+
+### Known State / Pending
+
+- Epic remains a provider-fragile MVP and should not be described as official OAuth support or a
+  fully production-proof provider integration. Richer Epic metadata mapping remains follow-up scope.
+- No `.env`, dependency, production configuration, Core/BFF auth-flow, or schema change was
+  introduced.
+
+## Current Session Summary (2026-07-07)
+
+### What Changed
+
 **PSN Persistent Chrome Admin UX:**
 - Kept the PlayStation Admin credential connector's one-click helper launch as the primary
   "Connect PlayStation" action.
