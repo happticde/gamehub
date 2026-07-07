@@ -785,7 +785,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         }
     };
 
-    const launchDiagnosticProtocolHelper = async () => {
+    const launchProtocolHelper = async () => {
         const launchId = newHelperLaunchId();
         const url = new URL("gamehub-helper://connect/psn");
         url.searchParams.set("origin", window.location.origin);
@@ -797,7 +797,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
         setHelperError(null);
         setHandoffUrl("");
         setHelperLaunching(true);
-        setHandoffMessage("Diagnostic fresh PlayStation helper is starting. Use this only when the persistent Chrome handoff cannot be used.");
+        setHandoffMessage(helperStatusMessage("psn", "starting"));
         window.location.href = url.toString();
 
         try {
@@ -805,7 +805,7 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
-            setHandoffMessage("Diagnostic PlayStation browser is running. Complete provider sign-in there, or stop and use the persistent Chrome handoff if Sony blocks the fresh profile.");
+            setHandoffMessage(helperStatusMessage("psn", "browser"));
             await pollHandoffUrl(launchedHandoffUrl);
         } catch (caught) {
             if (handoffAttemptRef.current === attempt) {
@@ -905,82 +905,36 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     return (
         <CredentialCard
             platform="Psn"
-            description="Recommended persistent Chrome handoff with manual fallbacks"
+            description="One-click helper with persistent Chrome and manual fallbacks"
             status={status}
             busy={busy}
             onDelete={onDelete}
         >
             <CredentialSection
                 icon={<PlugZap className="h-4 w-4 text-primary" />}
-                title={status?.isConfigured ? "Reconnect PlayStation with persistent Chrome" : "Connect PlayStation with persistent Chrome"}
-                description="Use the persistent GameHub Chrome profile first. It is the validated path for Sony sessions and avoids fresh-profile 429 failures."
+                title={status?.isConfigured ? "Reconnect PlayStation" : "Connect PlayStation"}
+                description="Start the local helper from the browser and import the one-time handoff automatically."
                 tone="primary"
             >
                 <p className="text-xs leading-5 text-muted-foreground">
-                    GameHub never asks for your PSN password. Sign in inside the persistent Chrome
-                    profile, run the helper against its loopback debug endpoint, then paste the
-                    one-time handoff URL below. Cookies stay in the helper handoff before encrypted
-                    vault storage; <span className="font-medium text-foreground">pdccws_p</span> is the relevant cookie.
+                    GameHub never asks for your PSN password. Complete the Sony sign-in in the
+                    visible helper browser. Cookies stay in a local one-time handoff before
+                    encrypted vault storage; <span className="font-medium text-foreground">pdccws_p</span> is the relevant cookie.
                 </p>
-                <div className="space-y-2 rounded-md border bg-background/70 p-3 text-xs">
-                    <p className="font-medium text-foreground">1. Start or reuse the persistent Chrome profile</p>
-                    <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[11px] text-foreground">
-                        /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/
-                    </code>
-                    <p className="text-muted-foreground">
-                        Sign in to PlayStation in that Chrome window and keep it open.
-                    </p>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        disabled={chromeDebugChecking}
-                        onClick={() => void checkPersistentChrome()}
-                    >
-                        {chromeDebugChecking ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                            <CheckCircle2 className="mr-2 h-4 w-4" />
-                        )}
-                        {chromeDebugChecking ? "Checking Chrome…" : "Check persistent Chrome"}
-                    </Button>
-                    <HelperStatusMessage message={chromeDebugStatus} error={chromeDebugError} />
-                </div>
-                <div className="space-y-2 rounded-md border bg-background/70 p-3 text-xs">
-                    <p className="font-medium text-foreground">2. Run the PSN helper against that profile</p>
-                    <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[11px] text-foreground">
-                        {`cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin ${pageOrigin}`}
-                    </code>
-                    <p className="text-muted-foreground">
-                        Paste the printed handoff URL here. Do not use the fresh helper button during
-                        this attempt.
-                    </p>
-                    <Input
-                        aria-label="PlayStation local helper handoff URL"
-                        className="font-mono text-xs"
-                        placeholder="Paste local helper handoff URL"
-                        value={handoffUrl}
-                        onChange={(event) => {
-                            setHandoffUrl(event.target.value);
-                            setHandoffError(null);
-                        }}
-                        disabled={handoffPolling || helperLaunching}
-                    />
-                    <Button
-                        variant="default"
-                        size="sm"
-                        className="w-full"
-                        disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
-                        onClick={() => void pollHandoffUrl()}
-                    >
-                        {handoffPolling ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                            <PlugZap className="mr-2 h-4 w-4" />
-                        )}
-                        {handoffPolling ? "Waiting for helper…" : "Import persistent Chrome handoff"}
-                    </Button>
-                </div>
+                <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    disabled={busy || handoffPolling || helperLaunching}
+                    onClick={() => void launchProtocolHelper()}
+                >
+                    {helperLaunching ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <PlugZap className="mr-2 h-4 w-4" />
+                    )}
+                    {helperLaunching ? "Starting helper…" : "Connect PlayStation"}
+                </Button>
                 <HelperStatusMessage message={handoffMessage} error={handoffError} />
                 {(handoffPolling || helperLaunching) && (
                     <Button
@@ -993,25 +947,69 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                     </Button>
                 )}
                 <HiddenFallback
-                    title="Diagnostic fresh helper"
-                    description="Use only when the persistent Chrome path is unavailable. Sony can block fresh profiles with HTTP 429."
+                    title="Persistent Chrome fallback"
+                    description="Use this when Sony blocks the one-click helper or returns HTTP 429 for fresh profiles."
                 >
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        disabled={busy || handoffPolling || helperLaunching}
-                        onClick={() => void launchDiagnosticProtocolHelper()}
-                    >
-                        {helperLaunching ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                            <PlugZap className="mr-2 h-4 w-4" />
-                        )}
-                        {helperLaunching ? "Starting diagnostic helper…" : "Launch diagnostic fresh helper"}
-                    </Button>
+                    <div className="space-y-2 rounded-md border bg-background/70 p-3 text-xs">
+                        <p className="font-medium text-foreground">1. Start or reuse the persistent Chrome profile</p>
+                        <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[11px] text-foreground">
+                            /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-address=127.0.0.1 --remote-debugging-port=49333 --user-data-dir=$HOME/Library/Caches/GameHub/psn-chrome-profile https://store.playstation.com/
+                        </code>
+                        <p className="text-muted-foreground">
+                            Sign in to PlayStation in that Chrome window and keep it open.
+                        </p>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            disabled={chromeDebugChecking}
+                            onClick={() => void checkPersistentChrome()}
+                        >
+                            {chromeDebugChecking ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                            )}
+                            {chromeDebugChecking ? "Checking Chrome…" : "Check persistent Chrome"}
+                        </Button>
+                        <HelperStatusMessage message={chromeDebugStatus} error={chromeDebugError} />
+                    </div>
+                    <div className="space-y-2 rounded-md border bg-background/70 p-3 text-xs">
+                        <p className="font-medium text-foreground">2. Run the PSN helper against that profile</p>
+                        <code className="block break-all rounded bg-muted px-2 py-1.5 font-mono text-[11px] text-foreground">
+                            {`cd services/cli && go run . connect psn --remote-debugging-url http://127.0.0.1:49333 --handoff-server --origin ${pageOrigin}`}
+                        </code>
+                        <p className="text-muted-foreground">
+                            Paste the printed handoff URL here.
+                        </p>
+                        <Input
+                            aria-label="PlayStation local helper handoff URL"
+                            className="font-mono text-xs"
+                            placeholder="Paste local helper handoff URL"
+                            value={handoffUrl}
+                            onChange={(event) => {
+                                setHandoffUrl(event.target.value);
+                                setHandoffError(null);
+                            }}
+                            disabled={handoffPolling || helperLaunching}
+                        />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            disabled={busy || handoffPolling || helperLaunching || !handoffUrl.trim()}
+                            onClick={() => void pollHandoffUrl()}
+                        >
+                            {handoffPolling ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <PlugZap className="mr-2 h-4 w-4" />
+                            )}
+                            {handoffPolling ? "Waiting for helper…" : "Import persistent Chrome handoff"}
+                        </Button>
+                    </div>
                     <CommandFallback
-                        title="Diagnostic commands"
+                        title="Diagnostics"
                         note="The diagnostics file is sanitized by the helper; do not add cookies, headers, query strings, fragments, or tokens to reports."
                         commands={[
                             'cd services/cli && go build -o gamehub-cli . && ./gamehub-cli helper install-protocol-handler --cli-path "$PWD/gamehub-cli"',

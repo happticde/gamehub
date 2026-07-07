@@ -5,12 +5,12 @@
 ### What Changed
 
 **PSN Persistent Chrome Admin UX:**
-- Made the PlayStation Admin credential connector lead with the validated persistent Chrome
-  loopback remote-debugging handoff instead of the fresh helper-launched browser.
+- Kept the PlayStation Admin credential connector's one-click helper launch as the primary
+  "Connect PlayStation" action.
+- Added the validated persistent Chrome loopback remote-debugging handoff as a guided fallback for
+  Sony fresh-profile or HTTP 429 failures.
 - Added a secret-free `http://127.0.0.1:49333/json/version` reachability check that displays only
   the Chrome product string and ignores local debugger URLs or provider-looking fields.
-- Kept the fresh PlayStation helper launch available only under a diagnostic fallback, with copy
-  warning that Sony can block fresh profiles with HTTP 429.
 - Preserved the existing one-time handoff URL, JSON payload fallback, manual cookie fallback, and
   Core/Ingest encrypted vault upsert path.
 
