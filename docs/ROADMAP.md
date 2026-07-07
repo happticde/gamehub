@@ -58,12 +58,15 @@ Added 5-star ratings, Play Status tracking, and "Auto-Hide & Ignore" keyword log
 GitHub Actions: build → test → Docker build → push to registry.
 
 ### 8. User Accounts & Multi-Tenancy ✅
-Per-user game libraries with encrypted credential storage. Auth via JWT or OAuth (Steam/PSN/GOG login).
+Per-user game libraries with encrypted credential storage. App authentication uses local/JWT/OIDC
+boundaries; platform connector credentials are stored separately in the Ingest vault.
 - **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, rotating/revocable refresh sessions, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN/Epic retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. Multi-user operation is not enabled by default.
 - **Epic MVP boundary**: Epic now has a Legendary-inspired stored-retrieval MVP. Ingest can exchange
-  a copied Epic authorization code for a vault-stored refresh token, refresh an access token
-  in-memory, retrieve library records, and map them to the existing Epic raw-ingest shape. A manual
-  refresh-token fallback remains available. A robust local helper flow is still future work.
+  an Epic authorization code for a vault-stored refresh token, refresh an access token in-memory,
+  retrieve library records, and map them to the existing Epic raw-ingest shape. The Admin UI can use
+  the local helper/protocol-handler handoff for the authorization-code capture, and manual entry
+  remains available as a fallback. This is a pragmatic stored-retrieval integration, not an official
+  Epic OAuth or production-proof provider partnership.
 - **Isolation verification (2026-06-21)**: Tenant-scoped backup export and restore, the active-tenant
   empty-library restore rule, equivalent cross-tenant slugs/platform IDs, and Library mutation
   boundaries for personal tracking, merge, and split have direct cross-tenant test coverage.
@@ -148,16 +151,22 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 ### 16. Epic Authentication & Stored Retrieval ✅ MVP
 - **Current behavior**: Admin Credentials can store Epic retrieval credentials through the encrypted
   Ingest vault. The primary MVP flow accepts an Epic `authorizationCode` and exchanges it
-  server-side for a refresh token; the manual fallback accepts an existing refresh token.
+  server-side for a refresh token; the manual fallback accepts an existing refresh token. The local
+  helper UX and `gamehub-helper://` protocol-handler launch path are implemented for Epic and can
+  capture Epic's launcher-compatible authorization-code JSON page without asking for the user's Epic
+  password.
 - **Retrieval**: Core treats Epic as a stored-retrieval platform. Ingest refreshes an access token
   in-memory, calls Epic's library service, maps records to `app_name`/`app_title`, and writes raw
   Epic items through the existing ingest pipeline.
-- **Remaining scope**: A robust local helper/protocol-handler flow, token rotation persistence after
-  refresh, richer Epic metadata mapping, and provider-fragility handling remain follow-up work.
+- **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
+  follow-up scope is token rotation persistence after refresh, richer Epic metadata mapping, and
+  continued provider-fragility handling. Do not describe this as official OAuth support or a fully
+  production-proof provider integration.
 
-### 17. Guided Platform Account Connect for GOG & PSN
+### 17. Guided Platform Account Connect for GOG & PSN ✅ Local Helper MVP
 - **Goal**: Replace the current manual DevTools cookie-copy workflow with a guided "Connect GOG" and
-  "Connect PlayStation" experience that feels like account linking from the frontend.
+  "Connect PlayStation" experience that feels like account linking from the frontend while preserving
+  the existing credential-vault boundary.
 - **Preferred approach**: Use a local, user-visible browser helper/assistant for self-hosted
   deployments. The user signs in directly with GOG or PlayStation, including MFA/captcha when
   required; the helper extracts only the required session cookie/token from that controlled browser
@@ -170,25 +179,22 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   returned by status APIs, and must remain tenant-scoped in the Ingest credential vault. This must
   preserve the future multi-tenant isolation rules from ADR-008 and the credential-vault boundaries
   introduced for item #8.
-- **Implementation notes**: Start with a vertical GOG proof of concept because the existing ingest
-  path needs the `gog-al` cookie plus username. PSN should follow after the helper contract is stable
-  because its store cookies are more brittle and may require several cookie names. The UI should keep
-  the manual credential entry as a fallback and provide clear "session expired, reconnect" handling.
-- **#17A/#17B GOG + PSN guided connect**: The first slices keep the existing Core/Ingest credential
-  vault boundary and provide user-visible local-helper handoff flows for GOG and PlayStation. See
-  [Platform Connect Helper Contract](gog-connect-helper-contract.md) for the one-time helper
-  payloads, BFF/Core upsert targets, and security invariants.
-- **PSN validation status (2026-07-04)**: The PlayStation Admin connector now treats a persistent
-  GameHub Chrome profile exposed through loopback remote debugging as the primary guided path. The
-  protocol helper opens or attaches to Chrome on `127.0.0.1:49333`, then hands the captured cookies
-  back through the same one-time local handoff used by GOG. Real Sony sign-in testing showed that a
-  helper-launched fresh Chrome profile can complete the earlier OAuth, passkey, telemetry, and
-  fingerprinting calls, but still fail at the final `ca.account.sony.com/api/v1/ssocookie` mint with
-  `429 Too Many Requests`. A persistent Chrome session exposed through loopback remote debugging was
-  validated as the working path for reading the already-issued `pdccws_p` cookie. Keep the broader
-  cookie map support in place because Sony may vary cookie names by surface or account state. The
-  fresh helper-launched PSN browser remains available only as a diagnostic fallback; do not present it
-  as a completed production flow until Sony's `ssocookie` behavior is revalidated.
+- **Implemented helper status**: GOG local helper capture works through the installed
+  `gamehub-helper://` protocol handler, the one-time loopback handoff URL, JSON payload fallback, and
+  manual credential fields. PlayStation local helper capture also works, but the reliable path is the
+  persistent Chrome profile exposed through loopback remote debugging. See
+  [Platform Connect Helpers](platform-connect-helpers.md) for the operator runbook and
+  [Platform Connect Helper Contract](gog-connect-helper-contract.md) for the detailed helper payload,
+  BFF/Core upsert target, and security contract.
+- **PSN validation status (2026-07-07)**: The PlayStation Admin connector should prefer a persistent
+  GameHub Chrome profile exposed on loopback remote debugging, commonly
+  `http://127.0.0.1:49333`, and then use the same one-time local handoff used by GOG. Real Sony
+  sign-in testing showed that a helper-launched fresh Chrome profile can complete earlier sign-in,
+  passkey, telemetry, and fingerprinting steps, but may still fail when Sony mints final session
+  cookies with `429 Too Many Requests`. A persistent Chrome session was validated as the working path
+  for reading already-issued PlayStation cookies such as `pdccws_p`. Keep the broader cookie map
+  support because Sony may vary cookie names by surface or account state. The fresh
+  helper-launched PSN browser remains a diagnostic/fallback path, not the recommended operator path.
 
 ---
 

@@ -1,5 +1,27 @@
 # Session History
 
+## Current Session Summary (2026-07-07)
+
+### What Changed
+
+**Platform Connect Helper Documentation:**
+- Documented the local Epic, GOG, and PlayStation helper flows as the current project state.
+- Added an operator runbook covering CLI build, macOS `gamehub-helper://` installation, Admin UI
+  usage, handoff URL, JSON payload, manual fallback fields, troubleshooting, and secret-handling
+  boundaries.
+- Updated Roadmap items #16 and #17 to mark Epic Stored Retrieval with local helper UX as an MVP,
+  GOG local helper capture as working, and PlayStation local helper capture as working through the
+  recommended persistent Chrome loopback remote-debugging path.
+- Clarified that fresh helper-launched PSN browsers remain a diagnostic/fallback path because Sony
+  sign-in can reject fresh profiles or return HTTP 429 during final session-cookie minting.
+
+### Known State / Pending
+
+- No new platform authentication flow, provider OAuth claim, credential-vault refactor, or code
+  change was introduced.
+- PSN remains provider-fragile; operators should prefer the persistent Chrome remote-debugging path
+  and keep manual fallbacks available.
+
 ## Current Session Summary (2026-06-30)
 
 ### What Changed
