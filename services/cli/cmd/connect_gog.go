@@ -107,14 +107,14 @@ func runConnectGog(cmd *cobra.Command, args []string) error {
 		if gogHandoffURLHook != nil {
 			gogHandoffURLHook(handoffURL)
 		}
-		fmt.Fprintln(os.Stderr, "Paste this local handoff URL into the GameHub Admin GOG connector. It contains only a one-time local nonce, not the GOG cookie.")
+		fmt.Fprintln(os.Stderr, "Local handoff URL ready for the GameHub Admin GOG connector. It contains only a one-time local nonce, not the GOG cookie.")
 	}
 
 	fmt.Fprintln(os.Stderr, "Opening a visible GOG browser session. Sign in there; no GOG password is entered into GameHub.")
 	if gogHandoffServer {
-		fmt.Fprintln(os.Stderr, "Waiting for gog-al and the GOG username. The cookie will be held in memory for a one-time local handoff.")
+		fmt.Fprintln(os.Stderr, "Waiting for gog-al and the GOG username. The result will be held only in this helper process until GameHub imports it.")
 	} else {
-		fmt.Fprintln(os.Stderr, "Waiting for gog-al and the GOG username. The cookie will only be printed in the final JSON payload.")
+		fmt.Fprintln(os.Stderr, "Waiting for gog-al and the GOG username. GameHub will not import automatically; paste the final JSON into the Admin fallback to save it.")
 	}
 
 	payload, err := captureGogConnectPayload(cmd.Context(), profileDir, strings.TrimSpace(gogConnectUser), gogConnectTimeout)
@@ -127,22 +127,23 @@ func runConnectGog(cmd *cobra.Command, args []string) error {
 
 	if handoff != nil {
 		handoff.complete(payload)
-		fmt.Fprintln(os.Stderr, "GOG session captured. Keep this helper running until GameHub imports the one-time result.")
+		fmt.Fprintln(os.Stderr, "GOG session captured locally. No credential has been stored yet; keep this helper running until GameHub imports the one-time result.")
 
 		waitCtx, cancel := context.WithTimeout(cmd.Context(), gogHandoffTTL)
 		defer cancel()
 		if err := handoff.waitConsumed(waitCtx); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				fmt.Fprintln(os.Stderr, "The local handoff result expired before GameHub imported it. Run the helper again to reconnect.")
+				fmt.Fprintln(os.Stderr, "GameHub did not import the local handoff result before it expired. Run the helper again, or use the Admin manual fallback with a fresh result.")
 				return nil
 			}
 			return err
 		}
 
-		fmt.Fprintln(os.Stderr, "GameHub imported the local GOG handoff result. The in-memory copy has been cleared.")
+		fmt.Fprintln(os.Stderr, "GameHub imported and saved the local GOG handoff result. The in-memory copy has been cleared.")
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr, "GOG session captured locally. GameHub has not imported it; paste the JSON payload into the Admin fallback to save it.")
 	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(payload)

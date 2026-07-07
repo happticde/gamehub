@@ -122,7 +122,7 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 		if psnHandoffURLHook != nil {
 			psnHandoffURLHook(handoffURL)
 		}
-		fmt.Fprintln(os.Stderr, "Paste this local handoff URL into the GameHub Admin PlayStation connector. It contains only a one-time local nonce, not PSN cookies.")
+		fmt.Fprintln(os.Stderr, "Local handoff URL ready for the GameHub Admin PlayStation connector. It contains only a one-time local nonce, not PSN cookies.")
 	}
 
 	diagnostics, err := newPsnConnectDiagnostics(strings.TrimSpace(psnDiagnosticsFile))
@@ -140,9 +140,9 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "Opening a temporary PlayStation browser session for diagnostics. Sony may block the final ssocookie step for fresh helper profiles; no PSN password is entered into GameHub.")
 	}
 	if psnHandoffServer {
-		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will be held in memory for a one-time local handoff.")
+		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. The result will be held only in this helper process until GameHub imports it.")
 	} else {
-		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. Cookies will only be printed in the final JSON payload.")
+		fmt.Fprintln(os.Stderr, "Waiting for PlayStation session cookies. GameHub will not import automatically; paste the final JSON into the Admin fallback to save it.")
 	}
 
 	if strings.TrimSpace(psnRemoteDebugURL) != "" {
@@ -182,22 +182,23 @@ func runConnectPsn(cmd *cobra.Command, args []string) error {
 
 	if handoff != nil {
 		handoff.complete(payload)
-		fmt.Fprintln(os.Stderr, "PlayStation session captured. Keep this helper running until GameHub imports the one-time result.")
+		fmt.Fprintln(os.Stderr, "PlayStation session captured locally. No credential has been stored yet; keep this helper running until GameHub imports the one-time result.")
 
 		waitCtx, cancel := context.WithTimeout(cmd.Context(), psnHandoffTTL)
 		defer cancel()
 		if err := handoff.waitConsumed(waitCtx); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				fmt.Fprintln(os.Stderr, "The local handoff result expired before GameHub imported it. Run the helper again to reconnect.")
+				fmt.Fprintln(os.Stderr, "GameHub did not import the local handoff result before it expired. Run the helper again, or use the Admin manual fallback with a fresh result.")
 				return nil
 			}
 			return err
 		}
 
-		fmt.Fprintln(os.Stderr, "GameHub imported the local PlayStation handoff result. The in-memory copy has been cleared.")
+		fmt.Fprintln(os.Stderr, "GameHub imported and saved the local PlayStation handoff result. The in-memory copy has been cleared.")
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr, "PlayStation session captured locally. GameHub has not imported it; paste the JSON payload into the Admin fallback to save it.")
 	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(payload)
@@ -279,14 +280,18 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 
 		select {
 		case url := <-rateLimit:
+			sanitizedURL := sanitizePsnDiagnosticURL(url)
+			if sanitizedURL == "" {
+				sanitizedURL = "the PlayStation login endpoint"
+			}
 			if diagnostics != nil {
 				if !reportedDiagnosticRateLimit {
-					fmt.Fprintf(os.Stderr, "Sony returned HTTP 429 during PlayStation sign-in at %s. Diagnostics mode will keep the browser open until cookies are captured, the timeout is reached, or you stop the helper.\n", url)
+					fmt.Fprintf(os.Stderr, "Sony returned HTTP 429 during PlayStation sign-in at %s. Diagnostics mode will keep the browser open until cookies are captured, the timeout is reached, or you stop the helper.\n", sanitizedURL)
 					reportedDiagnosticRateLimit = true
 				}
 				continue
 			}
-			return psnConnectPayload{}, fmt.Errorf("Sony returned HTTP 429 during PlayStation sign-in at %s. Use the existing Chrome remote-debugging path with --remote-debugging-url %s, or wait before retrying diagnostics", url, defaultPsnRemoteDebugURL)
+			return psnConnectPayload{}, fmt.Errorf("Sony returned HTTP 429 during PlayStation sign-in at %s. Use the existing Chrome remote-debugging path with --remote-debugging-url %s, or wait before retrying diagnostics", sanitizedURL, defaultPsnRemoteDebugURL)
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return psnConnectPayload{}, fmt.Errorf("timed out waiting for PlayStation login after %s", timeout)
