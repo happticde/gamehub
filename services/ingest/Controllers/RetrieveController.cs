@@ -306,6 +306,13 @@ public class RetrieveController : ControllerBase
         var logs = await query
             .OrderByDescending(l => l.Timestamp)
             .Take(limit)
+            .Select(l => new PlatformRetrievalAuditLogResponse(
+                l.Id,
+                l.Timestamp,
+                l.Platform,
+                l.Status,
+                l.GamesFound,
+                l.ErrorMessage))
             .ToListAsync();
 
         return Ok(logs);
@@ -338,3 +345,12 @@ public class PsnRetrieveRequest
     /// <summary>Browser cookies from store.playstation.com as key-value pairs.</summary>
     public Dictionary<string, string> Cookies { get; set; } = new();
 }
+
+/// <summary>Secret-free retrieval audit row returned to Core.</summary>
+public sealed record PlatformRetrievalAuditLogResponse(
+    int Id,
+    DateTime Timestamp,
+    string Platform,
+    string Status,
+    int ItemsProcessed,
+    string? ErrorMessage);
