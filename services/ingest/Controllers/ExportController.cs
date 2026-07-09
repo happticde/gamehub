@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace GameHub.Ingest.Controllers;
 
@@ -55,8 +56,14 @@ public class ExportController : ControllerBase
         if (pageSize > 500) pageSize = 500;
         if (page < 1) page = 1;
 
+        var normalizedPlatform = platform.ToLowerInvariant();
+        if (normalizedPlatform == "epic")
+        {
+            return await GetEpicPageAsync(page, pageSize, updatedAfter);
+        }
+
         // Route to the correct DbSet based on platform name and project to RawGameDto
-        IQueryable<RawGameDto>? query = platform.ToLowerInvariant() switch
+        IQueryable<RawGameDto>? query = normalizedPlatform switch
         {
             "steam" => BuildQuery(_db.SteamRawItems, updatedAfter,
                 x => new RawGameDto { Id = x.AppId.ToString(), Name = x.Name, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
@@ -64,8 +71,6 @@ public class ExportController : ControllerBase
                 x => new RawGameDto { Id = x.TitleId, Name = x.TitleName, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
             "gog" => BuildQuery(_db.GogRawItems, updatedAfter,
                 x => new RawGameDto { Id = x.GameId.ToString(), Name = x.Title, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
-            "epic" => BuildQuery(_db.EpicRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.AppName, Name = x.Title, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
             _ => null
         };
 
@@ -113,5 +118,103 @@ public class ExportController : ControllerBase
 
         // Order by LastUpdated ascending for stable, deterministic pagination
         return query.OrderBy(x => x.LastUpdated).Select(selector);
+    }
+
+    private async Task<IActionResult> GetEpicPageAsync(int page, int pageSize, DateTime? updatedAfter)
+    {
+        var query = _db.EpicRawItems.AsNoTracking();
+
+        if (updatedAfter.HasValue)
+            query = query.Where(x => x.LastUpdated > updatedAfter.Value);
+
+        var totalCount = await query.CountAsync();
+        var rows = await query
+            .OrderBy(x => x.LastUpdated)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => new
+            {
+                x.AppName,
+                x.Title,
+                x.LastUpdated,
+                x.PlaytimeMinutes,
+                x.RawJson
+            })
+            .ToListAsync();
+
+        return Ok(new PagedResult<RawGameDto>
+        {
+            Items = rows.Select(x => BuildEpicRawGameDto(
+                x.AppName,
+                x.Title,
+                x.LastUpdated,
+                x.PlaytimeMinutes,
+                x.RawJson)).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        });
+    }
+
+    private static RawGameDto BuildEpicRawGameDto(
+        string appName,
+        string? title,
+        DateTime lastUpdated,
+        int? playtimeMinutes,
+        string rawJson)
+    {
+        var item = new RawGameDto
+        {
+            Id = appName,
+            Name = title,
+            LastUpdated = lastUpdated,
+            PlaytimeMinutes = playtimeMinutes
+        };
+
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return item;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawJson);
+            var root = document.RootElement;
+            item.Summary = ReadString(root, "summary") ?? ReadString(root, "description");
+            item.CoverUrl = ReadString(root, "cover_url");
+            item.ArtworkUrl = ReadString(root, "key_art_url");
+            item.Developers = ReadString(root, "developer");
+            item.Publishers = ReadString(root, "publisher");
+            item.FirstReleaseDate = ReadDate(root, "release_date");
+        }
+        catch (JsonException)
+        {
+            return item;
+        }
+
+        return item;
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = property.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static DateTime? ReadDate(JsonElement element, string propertyName)
+    {
+        var value = ReadString(element, propertyName);
+        if (value is null || !DateTimeOffset.TryParse(value, out var parsed))
+        {
+            return null;
+        }
+
+        return parsed.UtcDateTime;
     }
 }

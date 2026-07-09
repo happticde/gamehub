@@ -1,7 +1,10 @@
+using GameHub.Ingest.Controllers;
 using GameHub.Ingest.Data;
 using GameHub.Shared;
 using GameHub.Tests.Helpers;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace GameHub.Tests;
@@ -145,6 +148,50 @@ public class ExportControllerTests : IDisposable
         // Assert
         Assert.Single(items);
         Assert.Equal("New Game", items[0].Name);
+    }
+
+    [Fact]
+    public async Task Export_EpicRawItem_IncludesOnlySafeFallbackMetadata()
+    {
+        _db.EpicRawItems.Add(new EpicRawItem
+        {
+            AppName = "Anemone",
+            Title = "World of Goo",
+            RawJson = """
+            {
+              "app_name": "Anemone",
+              "app_title": "World of Goo",
+              "developer": "2D Boy",
+              "publisher": "Tomorrow Corporation",
+              "release_date": "2008-10-13T00:00:00.000Z",
+              "summary": "Build bridges from living balls of goo.",
+              "description": "Longer description.",
+              "cover_url": "https://cdn.example.test/cover.jpg",
+              "key_art_url": "https://cdn.example.test/key-art.jpg",
+              "client_secret": "must-not-surface",
+              "legendary_metadata": {
+                "description": "Debug metadata is not exported as raw JSON."
+              }
+            }
+            """,
+            LastUpdated = new DateTime(2026, 7, 9, 0, 0, 0, DateTimeKind.Utc)
+        });
+        await _db.SaveChangesAsync();
+
+        var controller = new ExportController(_db, NullLogger<ExportController>.Instance);
+        var result = await controller.GetByPlatform("epic");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var page = Assert.IsType<PagedResult<RawGameDto>>(ok.Value);
+        var item = Assert.Single(page.Items);
+        Assert.Equal("Anemone", item.Id);
+        Assert.Equal("World of Goo", item.Name);
+        Assert.Equal("Build bridges from living balls of goo.", item.Summary);
+        Assert.Equal("https://cdn.example.test/cover.jpg", item.CoverUrl);
+        Assert.Equal("https://cdn.example.test/key-art.jpg", item.ArtworkUrl);
+        Assert.Equal("2D Boy", item.Developers);
+        Assert.Equal("Tomorrow Corporation", item.Publishers);
+        Assert.Equal(new DateTime(2008, 10, 13, 0, 0, 0, DateTimeKind.Utc), item.FirstReleaseDate);
     }
 
     // =========================================================================

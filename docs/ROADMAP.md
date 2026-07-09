@@ -161,10 +161,14 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   plus safe stable raw metadata such as catalog identifiers, developer/publisher names, release
   date, categories, description/summary, and catalog artwork URLs, and writes raw Epic items through
   the existing ingest pipeline.
+- **Core/UI fallback consumption**: Core now consumes the safe Epic raw metadata as cautious
+  fallbacks for existing unified-library fields (`Summary`, `CoverUrl`, `Artworks`, `Developers`,
+  `Publishers`, and `FirstReleaseDate`) during sync. Existing IGDB/enriched values are preserved,
+  the app-name/title matching path remains unchanged, and the existing library DTOs already expose
+  these fields to the UI without a new screen or schema change.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
-  follow-up scope is continued provider-fragility handling and deciding how Core/UI should consume
-  the richer Epic raw metadata. Do not
-  describe this as official OAuth support or a fully production-proof provider integration.
+  follow-up scope is continued provider-fragility handling. Do not describe this as official OAuth
+  support or a fully production-proof provider integration.
 
 ### 17. Guided Platform Account Connect for GOG & PSN ✅ Local Helper MVP
 - **Goal**: Replace the current manual DevTools cookie-copy workflow with a guided "Connect GOG" and
