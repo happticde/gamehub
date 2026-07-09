@@ -147,11 +147,23 @@ public class UnificationService
 
         try
         {
-            var refreshed = await _client.RetrieveStoredAsync(platform);
-            if (!refreshed)
+            try
             {
-                _logger.LogDebug(
-                    "No stored credential configured for {Platform}; exporting existing raw data",
+                var refreshed = await _client.RetrieveStoredAsync(platform);
+                if (!refreshed)
+                {
+                    _logger.LogDebug(
+                        "No stored credential configured for {Platform}; exporting existing raw data",
+                        platform);
+                }
+            }
+            catch (HttpRequestException) when (platform == Platform.Epic)
+            {
+                // An upstream refresh must not make an already stored tenant library unavailable.
+                auditStatus = "PartialSuccess";
+                errorMessage = "Stored platform retrieval failed; existing raw data was exported.";
+                _logger.LogWarning(
+                    "Stored retrieval failed for {Platform}; exporting existing raw data",
                     platform);
             }
 
