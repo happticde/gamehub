@@ -26,6 +26,70 @@ import { Download, Loader2, ShieldAlert } from "lucide-react";
 
 const RETRIEVAL_PLATFORMS: Platform[] = ["Steam", "Gog", "Psn", "Epic"];
 
+type IngestStatusPresentation = {
+    label: string;
+    badgeClassName: string;
+    messageClassName: string;
+    guidance?: string;
+};
+
+const INGEST_STATUS_PRESENTATIONS: Record<string, IngestStatusPresentation> = {
+    Success: {
+        label: "Succeeded",
+        badgeClassName: "bg-green-500/15 text-green-700 dark:text-green-300",
+        messageClassName: "text-green-700 dark:text-green-300",
+    },
+    PartialSuccess: {
+        label: "Partial success",
+        badgeClassName: "bg-amber-500/15 text-amber-800 dark:text-amber-200",
+        messageClassName: "text-amber-800 dark:text-amber-200",
+        guidance: "Available games were updated; some catalog metadata was skipped.",
+    },
+    TokenExpired: {
+        label: "Credential expired",
+        badgeClassName: "bg-red-500/15 text-red-700 dark:text-red-300",
+        messageClassName: "text-red-700 dark:text-red-300",
+        guidance: "Reconnect this platform account, then retry.",
+    },
+    RateLimited: {
+        label: "Rate limited",
+        badgeClassName: "bg-amber-500/15 text-amber-800 dark:text-amber-200",
+        messageClassName: "text-amber-800 dark:text-amber-200",
+        guidance: "Wait before retrying this platform.",
+    },
+    UpstreamUnavailable: {
+        label: "Provider unavailable",
+        badgeClassName: "bg-orange-500/15 text-orange-800 dark:text-orange-200",
+        messageClassName: "text-orange-800 dark:text-orange-200",
+        guidance: "Existing raw games remain available; try again later.",
+    },
+    MalformedResponse: {
+        label: "Unexpected response",
+        badgeClassName: "bg-orange-500/15 text-orange-800 dark:text-orange-200",
+        messageClassName: "text-orange-800 dark:text-orange-200",
+        guidance: "Existing raw games remain available; try again later.",
+    },
+    Error: {
+        label: "Failed",
+        badgeClassName: "bg-red-500/15 text-red-700 dark:text-red-300",
+        messageClassName: "text-red-700 dark:text-red-300",
+        guidance: "Review the error and retry this platform.",
+    },
+    Failed: {
+        label: "Failed",
+        badgeClassName: "bg-red-500/15 text-red-700 dark:text-red-300",
+        messageClassName: "text-red-700 dark:text-red-300",
+        guidance: "Review the error and retry this platform.",
+    },
+};
+
+const DEFAULT_INGEST_STATUS_PRESENTATION: IngestStatusPresentation = {
+    label: "Unknown status",
+    badgeClassName: "bg-muted text-muted-foreground",
+    messageClassName: "text-muted-foreground",
+    guidance: "Review the audit entry before retrying this platform.",
+};
+
 export function IngestionPanel() {
     const [credentials, setCredentials] = useState<PlatformCredentialManagement | null>(null);
     const [logs, setLogs] = useState<IngestAuditLog[]>([]);
@@ -241,7 +305,7 @@ function AuditLogList({ logs }: { logs: IngestAuditLog[] }) {
                             <IngestStatusBadge status={log.status} />
                             <span>{log.itemsProcessed} items</span>
                         </div>
-                        {log.errorMessage && <p className="text-xs text-destructive">{log.errorMessage}</p>}
+                        <IngestStatusGuidance status={log.status} errorMessage={log.errorMessage} />
                     </div>
                 ))}
             </div>
@@ -265,8 +329,8 @@ function AuditLogList({ logs }: { logs: IngestAuditLog[] }) {
                                 <td className="px-4 py-3">{platformLabel(log.platform as Platform)}</td>
                                 <td className="px-4 py-3"><IngestStatusBadge status={log.status} /></td>
                                 <td className="px-4 py-3 tabular-nums">{log.itemsProcessed}</td>
-                                <td className="max-w-[280px] truncate px-4 py-3 text-muted-foreground">
-                                    {log.errorMessage ?? "—"}
+                                <td className="max-w-[280px] px-4 py-3">
+                                    <IngestStatusGuidance status={log.status} errorMessage={log.errorMessage} />
                                 </td>
                             </tr>
                         ))}
@@ -278,12 +342,41 @@ function AuditLogList({ logs }: { logs: IngestAuditLog[] }) {
 }
 
 function IngestStatusBadge({ status }: { status: string }) {
-    const className = status === "Success"
-        ? "bg-green-500/15 text-green-700 dark:text-green-300"
-        : status === "Failed"
-            ? "bg-red-500/15 text-red-700 dark:text-red-300"
-            : "bg-muted text-muted-foreground";
-    return <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${className}`}>{status}</span>;
+    const presentation = getIngestStatusPresentation(status);
+    return (
+        <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${presentation.badgeClassName}`}>
+            {presentation.label}
+        </span>
+    );
+}
+
+function IngestStatusGuidance({
+    status,
+    errorMessage,
+}: {
+    status: string;
+    errorMessage: string | null;
+}) {
+    const presentation = getIngestStatusPresentation(status);
+    if (!presentation.guidance && !errorMessage) {
+        return <span className="text-muted-foreground">—</span>;
+    }
+
+    return (
+        <div className="space-y-1 text-xs">
+            {presentation.guidance && (
+                <p className={presentation.messageClassName}>{presentation.guidance}</p>
+            )}
+            {errorMessage && <p className="text-muted-foreground">{errorMessage}</p>}
+        </div>
+    );
+}
+
+function getIngestStatusPresentation(status: string): IngestStatusPresentation {
+    return INGEST_STATUS_PRESENTATIONS[status] ?? {
+        ...DEFAULT_INGEST_STATUS_PRESENTATION,
+        label: status || DEFAULT_INGEST_STATUS_PRESENTATION.label,
+    };
 }
 
 async function readError(response: Response): Promise<string> {
