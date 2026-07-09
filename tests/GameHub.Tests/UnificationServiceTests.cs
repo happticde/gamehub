@@ -61,15 +61,20 @@ public class UnificationServiceTests : IDisposable
     private static IngestClient CreateMockClient(List<RawGameDto> items)
         => CreateMockClient(Platform.Steam, items);
 
-    private static IngestClient CreateMockClient(Platform platform, List<RawGameDto> items)
+    private static IngestClient CreateMockClient(
+        Platform platform,
+        List<RawGameDto> items,
+        Platform? failingStoredRetrievePlatform = null)
     {
         // We can't easily mock IngestClient since it uses HttpClient internally.
         // Instead, we'll test the sync pipeline by seeding data directly.
         // For full end-to-end, we test ProcessPageAsync behavior via the DB state.
-        var http = new HttpClient(new FakeHandler(new Dictionary<Platform, List<RawGameDto>>
-        {
-            [platform] = items
-        }))
+        var http = new HttpClient(new FakeHandler(
+            new Dictionary<Platform, List<RawGameDto>>
+            {
+                [platform] = items
+            },
+            failingStoredRetrievePlatform))
         {
             BaseAddress = new Uri("http://ingest.test")
         };
@@ -266,6 +271,36 @@ public class UnificationServiceTests : IDisposable
         Assert.Contains(game.Items, item => item.Platform == Platform.Epic && item.ExternalId == "StableGameApp");
     }
 
+    [Fact]
+    public async Task RunFullSync_EpicStoredRetrievalFailure_ExportsExistingRawDataAsPartialSuccess()
+    {
+        var service = CreateService(CreateMockClient(
+            Platform.Epic,
+            [
+                new RawGameDto
+                {
+                    Id = "StoredEpicGame",
+                    Name = "Stored Epic Game"
+                }
+            ],
+            Platform.Epic));
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await db.UnifiedGames.Include(g => g.Items).SingleAsync();
+        var audit = await db.SyncAuditLogs.SingleAsync(log => log.Platform == Platform.Epic);
+
+        Assert.Equal(1, processed);
+        Assert.Equal("Stored Epic Game", game.Title);
+        Assert.Contains(game.Items, item => item.Platform == Platform.Epic && item.ExternalId == "StoredEpicGame");
+        Assert.Equal("PartialSuccess", audit.Status);
+        Assert.Equal(1, audit.ItemsProcessed);
+        Assert.Equal("Stored platform retrieval failed; existing raw data was exported.", audit.ErrorMessage);
+        Assert.Equal(TenantDefaults.DefaultTenantId, audit.TenantId);
+    }
+
     // =========================================================================
     // Test: New games create UnifiedGame records
     // =========================================================================
@@ -421,20 +456,26 @@ public class UnificationServiceTests : IDisposable
     /// Fake HTTP handler that returns a PagedResult with the given items.
     /// Used to mock the IngestClient without needing a real HTTP server.
     /// </summary>
-    private class FakeHandler : HttpMessageHandler
+    private class FakeHandler(
+        Dictionary<Platform, List<RawGameDto>> itemsByPlatform,
+        Platform? failingStoredRetrievePlatform = null) : HttpMessageHandler
     {
-        private readonly Dictionary<Platform, List<RawGameDto>> _itemsByPlatform;
-
-        public FakeHandler(Dictionary<Platform, List<RawGameDto>> itemsByPlatform)
-        {
-            _itemsByPlatform = itemsByPlatform;
-        }
+        private readonly Dictionary<Platform, List<RawGameDto>> _itemsByPlatform = itemsByPlatform;
+        private readonly Platform? _failingStoredRetrievePlatform = failingStoredRetrievePlatform;
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.Method == HttpMethod.Post)
             {
+                if (ReadStoredRetrievePlatform(request.RequestUri) == _failingStoredRetrievePlatform)
+                {
+                    return Task.FromResult(new HttpResponseMessage
+                    {
+                        StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+                    });
+                }
+
                 return Task.FromResult(new HttpResponseMessage
                 {
                     StatusCode = System.Net.HttpStatusCode.NotFound
@@ -465,6 +506,20 @@ public class UnificationServiceTests : IDisposable
         private static Platform? ReadPlatform(Uri? uri)
         {
             var platformText = uri?.Segments.LastOrDefault()?.Trim('/');
+            return Enum.TryParse<Platform>(platformText, ignoreCase: true, out var platform)
+                ? platform
+                : null;
+        }
+
+        private static Platform? ReadStoredRetrievePlatform(Uri? uri)
+        {
+            var segments = uri?.Segments;
+            if (segments is null || segments.Length < 2)
+            {
+                return null;
+            }
+
+            var platformText = segments[^2].Trim('/');
             return Enum.TryParse<Platform>(platformText, ignoreCase: true, out var platform)
                 ? platform
                 : null;

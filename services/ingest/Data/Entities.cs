@@ -91,7 +91,7 @@ public class IngestAuditLog : IIngestTenantOwned
     public Guid TenantId { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public string Platform { get; set; } = ""; // "Steam", "GOG", "PSN", "Epic"
-    public string Status { get; set; } = "";   // "Success", "TokenExpired", "RateLimited", "Error"
+    public string Status { get; set; } = "";   // "Success", "PartialSuccess", "TokenExpired", "RateLimited", "MalformedResponse", "UpstreamUnavailable", "Error"
     public int GamesFound { get; set; }
     public string? ErrorMessage { get; set; }
 }

@@ -45,6 +45,21 @@ public sealed class EpicGamesClient(
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private enum EpicProviderFailure
+    {
+        Authentication,
+        RateLimited,
+        UpstreamUnavailable,
+        MalformedResponse
+    }
+
+    /// <summary>Keeps provider-specific failure details inside Ingest while retaining a safe category.</summary>
+    private sealed class EpicProviderException(EpicProviderFailure failure, Exception? innerException = null)
+        : HttpRequestException("Epic provider request failed.", innerException)
+    {
+        public EpicProviderFailure Failure { get; } = failure;
+    }
+
     public async Task<EpicPlatformCredential> ExchangeAuthorizationCodeAsync(
         string authorizationCode,
         CancellationToken cancellationToken = default)
@@ -78,35 +93,25 @@ public sealed class EpicGamesClient(
 
         try
         {
-            EpicOAuthSession session;
-            try
-            {
-                session = await StartSessionAsync(
-                    new Dictionary<string, string>
-                    {
-                        ["grant_type"] = "refresh_token",
-                        ["refresh_token"] = credential.RefreshToken,
-                        ["token_type"] = "eg1"
-                    },
-                    cancellationToken);
-            }
-            catch (PlatformCredentialValidationException ex)
-            {
-                await WriteAuditLogAsync("TokenExpired", 0, "Epic refresh token is invalid or expired.");
-                throw new HttpRequestException("Epic authentication failed.", ex);
-            }
+            var session = await StartSessionAsync(
+                new Dictionary<string, string>
+                {
+                    ["grant_type"] = "refresh_token",
+                    ["refresh_token"] = credential.RefreshToken,
+                    ["token_type"] = "eg1"
+                },
+                cancellationToken);
 
             if (string.IsNullOrWhiteSpace(session.AccessToken))
             {
-                await WriteAuditLogAsync("TokenExpired", 0, "Epic refresh token is invalid or expired.");
-                throw new HttpRequestException("Epic authentication failed.");
+                throw new EpicProviderException(EpicProviderFailure.Authentication);
             }
 
             await PersistRefreshTokenRotationAsync(credential, session, cancellationToken);
 
-            var rawItems = await FetchLauncherGamesAsync(session.AccessToken, cancellationToken);
+            var launcherGames = await FetchLauncherGamesAsync(session.AccessToken, cancellationToken);
             var mapped = new List<JsonElement>();
-            foreach (var rawItem in rawItems)
+            foreach (var rawItem in launcherGames.Items)
             {
                 var mappedItem = EpicLibraryItemMapper.MapToIngestItem(
                     rawItem.Asset,
@@ -118,20 +123,59 @@ public sealed class EpicGamesClient(
             }
 
             logger.LogInformation(
-                "Epic Games: fetched {RawCount} launcher asset records and mapped {MappedCount} games",
-                rawItems.Count,
-                mapped.Count);
-            await WriteAuditLogAsync("Success", mapped.Count);
+                "Epic Games: fetched {RawCount} launcher asset records, mapped {MappedCount} games, and skipped {SkippedCount} unavailable catalog records",
+                launcherGames.Items.Count,
+                mapped.Count,
+                launcherGames.SkippedCatalogRecords);
+            await WriteAuditLogAsync(
+                launcherGames.SkippedCatalogRecords == 0 ? "Success" : "PartialSuccess",
+                mapped.Count,
+                launcherGames.SkippedCatalogRecords == 0
+                    ? null
+                    : "Some Epic catalog metadata records were unavailable or malformed and were skipped.");
             return mapped;
+        }
+        catch (PlatformCredentialValidationException ex)
+        {
+            await WriteAuditLogAsync("TokenExpired", 0, "Epic refresh token is invalid or expired.");
+            throw new HttpRequestException("Epic authentication failed.", ex);
         }
         catch (PlatformCredentialRotationException)
         {
             await WriteAuditLogAsync("Error", 0, "Epic refresh token rotation could not be persisted.");
             throw;
         }
-        catch (Exception ex) when (ex is not HttpRequestException && ex is not InvalidOperationException)
+        catch (EpicProviderException ex)
         {
-            await WriteAuditLogAsync("Error", 0, ex.Message);
+            var (status, error) = ex.Failure switch
+            {
+                EpicProviderFailure.Authentication => ("TokenExpired", "Epic authentication was rejected."),
+                EpicProviderFailure.RateLimited => ("RateLimited", "Epic API rate limit exceeded."),
+                EpicProviderFailure.UpstreamUnavailable => ("UpstreamUnavailable", "Epic provider is temporarily unavailable."),
+                EpicProviderFailure.MalformedResponse => ("MalformedResponse", "Epic provider returned an unexpected response."),
+                _ => ("Error", "Epic retrieval failed.")
+            };
+            await WriteAuditLogAsync(status, 0, error);
+            throw new HttpRequestException("Epic library request failed.", ex);
+        }
+        catch (JsonException ex)
+        {
+            await WriteAuditLogAsync("MalformedResponse", 0, "Epic provider returned an unexpected response.");
+            throw new HttpRequestException("Epic library request failed.", ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await WriteAuditLogAsync("MalformedResponse", 0, "Epic provider returned an unexpected response.");
+            throw new HttpRequestException("Epic library request failed.", ex);
+        }
+        catch (HttpRequestException)
+        {
+            await WriteAuditLogAsync("UpstreamUnavailable", 0, "Epic provider is temporarily unavailable.");
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await WriteAuditLogAsync("Error", 0, "Epic retrieval failed unexpectedly.");
             throw;
         }
     }
@@ -160,12 +204,12 @@ public sealed class EpicGamesClient(
         }
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            throw new HttpRequestException("Epic API rate limit exceeded.");
+            throw new EpicProviderException(EpicProviderFailure.RateLimited);
         }
         if (!response.IsSuccessStatusCode)
         {
             logger.LogWarning("Epic OAuth request failed with status {StatusCode}", (int)response.StatusCode);
-            throw new HttpRequestException("Epic authorization failed.");
+            throw new EpicProviderException(EpicProviderFailure.UpstreamUnavailable);
         }
 
         return await response.Content.ReadFromJsonAsync<EpicOAuthSession>(
@@ -202,11 +246,12 @@ public sealed class EpicGamesClient(
         }
     }
 
-    private async Task<List<EpicLauncherGameRecord>> FetchLauncherGamesAsync(
+    private async Task<EpicLauncherGameResult> FetchLauncherGamesAsync(
         string accessToken,
         CancellationToken cancellationToken)
     {
         var items = new List<EpicLauncherGameRecord>();
+        var skippedCatalogRecords = 0;
         var assets = await FetchGameAssetsAsync(accessToken, cancellationToken);
         var seenAppNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -224,20 +269,33 @@ public sealed class EpicGamesClient(
                 continue;
             }
 
-            var metadata = await FetchCatalogMetadataAsync(
-                accessToken,
-                namespaceName,
-                catalogItemId,
-                cancellationToken);
+            JsonElement? metadata;
+            try
+            {
+                metadata = await FetchCatalogMetadataAsync(
+                    accessToken,
+                    namespaceName,
+                    catalogItemId,
+                    cancellationToken);
+            }
+            catch (EpicProviderException ex) when (ex.Failure is
+                EpicProviderFailure.UpstreamUnavailable or EpicProviderFailure.MalformedResponse)
+            {
+                skippedCatalogRecords++;
+                logger.LogWarning(
+                    "Skipping Epic catalog metadata record because the provider response was unavailable or malformed");
+                continue;
+            }
             if (metadata is null)
             {
+                skippedCatalogRecords++;
                 continue;
             }
 
             items.Add(new EpicLauncherGameRecord(asset, metadata.Value));
         }
 
-        return items;
+        return new EpicLauncherGameResult(items, skippedCatalogRecords);
     }
 
     private async Task<List<JsonElement>> FetchGameAssetsAsync(
@@ -247,22 +305,32 @@ public sealed class EpicGamesClient(
         using var request = new HttpRequestMessage(HttpMethod.Get, LauncherAssetsUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var response = await SendEpicApiRequestAsync(request, "Epic launcher assets", cancellationToken);
-        using var document = await JsonDocument.ParseAsync(
-            await response.Content.ReadAsStreamAsync(cancellationToken),
-            cancellationToken: cancellationToken);
-        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        JsonDocument document;
+        try
         {
-            await WriteAuditLogAsync("Error", 0, "Unexpected Asset Response Structure");
-            throw new InvalidOperationException("Epic launcher assets API returned an unexpected response structure.");
+            document = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                cancellationToken: cancellationToken);
         }
-
-        var items = new List<JsonElement>();
-        foreach (var record in document.RootElement.EnumerateArray())
+        catch (JsonException ex)
         {
-            items.Add(record.Clone());
+            throw new EpicProviderException(EpicProviderFailure.MalformedResponse, ex);
         }
+        using (document)
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                throw new EpicProviderException(EpicProviderFailure.MalformedResponse);
+            }
 
-        return items;
+            var items = new List<JsonElement>();
+            foreach (var record in document.RootElement.EnumerateArray())
+            {
+                items.Add(record.Clone());
+            }
+
+            return items;
+        }
     }
 
     private async Task<JsonElement?> FetchCatalogMetadataAsync(
@@ -279,22 +347,32 @@ public sealed class EpicGamesClient(
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var response = await SendEpicApiRequestAsync(request, "Epic catalog metadata", cancellationToken);
-        using var document = await JsonDocument.ParseAsync(
-            await response.Content.ReadAsStreamAsync(cancellationToken),
-            cancellationToken: cancellationToken);
-        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        JsonDocument document;
+        try
         {
-            await WriteAuditLogAsync("Error", 0, "Unexpected Catalog Response Structure");
-            throw new InvalidOperationException("Epic catalog API returned an unexpected response structure.");
+            document = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken),
+                cancellationToken: cancellationToken);
         }
-
-        if (document.RootElement.TryGetProperty(catalogItemId, out var metadata)
-            && metadata.ValueKind == JsonValueKind.Object)
+        catch (JsonException ex)
         {
-            return metadata.Clone();
+            throw new EpicProviderException(EpicProviderFailure.MalformedResponse, ex);
         }
+        using (document)
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new EpicProviderException(EpicProviderFailure.MalformedResponse);
+            }
 
-        return null;
+            if (document.RootElement.TryGetProperty(catalogItemId, out var metadata)
+                && metadata.ValueKind == JsonValueKind.Object)
+            {
+                return metadata.Clone();
+            }
+
+            return null;
+        }
     }
 
     private async Task<HttpResponseMessage> SendEpicApiRequestAsync(
@@ -306,28 +384,29 @@ public sealed class EpicGamesClient(
         var response = await http.SendAsync(request, cancellationToken);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
-            await WriteAuditLogAsync("TokenExpired", 0, "Epic access token was rejected.");
             response.Dispose();
-            throw new HttpRequestException("Epic authentication failed.");
+            throw new EpicProviderException(EpicProviderFailure.Authentication);
         }
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            await WriteAuditLogAsync("RateLimited", 0, "Epic API rate limit exceeded.");
             response.Dispose();
-            throw new HttpRequestException("Epic API rate limit exceeded.");
+            throw new EpicProviderException(EpicProviderFailure.RateLimited);
         }
         if (!response.IsSuccessStatusCode)
         {
             logger.LogWarning("{Operation} request failed with status {StatusCode}", operation, (int)response.StatusCode);
-            await WriteAuditLogAsync("Error", 0, $"HTTP {(int)response.StatusCode}");
             response.Dispose();
-            throw new HttpRequestException("Epic library request failed.");
+            throw new EpicProviderException(EpicProviderFailure.UpstreamUnavailable);
         }
 
         return response;
     }
 
     private sealed record EpicLauncherGameRecord(JsonElement Asset, JsonElement CatalogMetadata);
+
+    private sealed record EpicLauncherGameResult(
+        List<EpicLauncherGameRecord> Items,
+        int SkippedCatalogRecords);
 
     private async Task WriteAuditLogAsync(string status, int count, string? error = null)
     {

@@ -102,7 +102,7 @@ public class SyncAuditLog : ITenantOwned
     public Guid TenantId { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public Platform Platform { get; set; }
-    public string Status { get; set; } = ""; // "Success", "Error"
+    public string Status { get; set; } = ""; // "Success", "PartialSuccess", "Error"
     public int ItemsProcessed { get; set; }
     public int NewGamesCreated { get; set; }
     public string? ErrorMessage { get; set; }

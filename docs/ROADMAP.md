@@ -166,9 +166,14 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   `Publishers`, and `FirstReleaseDate`) during sync. Existing IGDB/enriched values are preserved,
   the app-name/title matching path remains unchanged, and the existing library DTOs already expose
   these fields to the UI without a new screen or schema change.
+- **Provider-failure handling**: Epic classifies authentication rejections, rate limits, unavailable
+  upstream responses, and malformed provider payloads into secret-free tenant audit states. A
+  single unavailable or malformed catalog record is skipped as a partial success so other Epic
+  games remain ingestible; when stored retrieval fails, Core can still unify the tenant's existing
+  raw Epic library and records that fallback as a partial sync result.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
-  follow-up scope is continued provider-fragility handling. Do not describe this as official OAuth
-  support or a fully production-proof provider integration.
+  follow-up scope includes continued provider-fragility handling. Do not describe this as official
+  OAuth support or a fully production-proof provider integration.
 
 ### 17. Guided Platform Account Connect for GOG & PSN ✅ Local Helper MVP
 - **Goal**: Replace the current manual DevTools cookie-copy workflow with a guided "Connect GOG" and

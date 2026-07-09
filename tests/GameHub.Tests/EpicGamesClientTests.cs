@@ -139,6 +139,120 @@ public sealed class EpicGamesClientTests
     }
 
     [Fact]
+    public async Task FetchGamesAsync_UnavailableCatalogMetadata_SkipsOnlyThatRecordAndWritesPartialSuccess()
+    {
+        using var fixture = new IngestScopeFixture();
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return JsonResponse("""
+                {
+                  "access_token": "epic-access-token",
+                  "refresh_token": "epic-refresh-token"
+                }
+                """);
+            }
+
+            if (request.RequestUri?.AbsolutePath.Contains("/launcher/api/public/assets/", StringComparison.Ordinal) == true)
+            {
+                return JsonResponse("""
+                [
+                  { "appName": "UnavailableCatalog", "namespace": "catalog-one", "catalogItemId": "catalog-one" },
+                  { "appName": "AvailableCatalog", "namespace": "catalog-two", "catalogItemId": "catalog-two" }
+                ]
+                """);
+            }
+
+            if (request.RequestUri?.Query.Contains("id=catalog-one", StringComparison.Ordinal) == true)
+            {
+                return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+            }
+
+            if (request.RequestUri?.Query.Contains("id=catalog-two", StringComparison.Ordinal) == true)
+            {
+                return JsonResponse("""
+                {
+                  "catalog-two": {
+                    "title": "Available Catalog Game",
+                    "categories": [{ "path": "games" }]
+                  }
+                }
+                """);
+            }
+
+            throw new InvalidOperationException("Unexpected Epic request in test.");
+        });
+        var client = CreateClient(handler, fixture.ScopeFactory);
+
+        var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
+        var audit = await fixture.ReadSingleAuditLogAsync();
+
+        var game = Assert.Single(games);
+        Assert.Equal("AvailableCatalog", game.GetProperty("app_name").GetString());
+        Assert.Equal("PartialSuccess", audit.Status);
+        Assert.Equal(1, audit.GamesFound);
+        Assert.Equal(
+            "Some Epic catalog metadata records were unavailable or malformed and were skipped.",
+            audit.ErrorMessage);
+        Assert.Equal(IngestScopeFixture.TenantId, audit.TenantId);
+        Assert.DoesNotContain("epic-refresh-token", audit.ErrorMessage, StringComparison.Ordinal);
+        Assert.Equal(4, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task FetchGamesAsync_RateLimitedLibraryRequest_WritesSanitizedRateLimitAudit()
+    {
+        using var fixture = new IngestScopeFixture();
+        const string refreshToken = "epic-refresh-token-secret";
+        var handler = new RecordingHandler(request => request.Method == HttpMethod.Post
+            ? JsonResponse("""
+            {
+              "access_token": "epic-access-token",
+              "refresh_token": "epic-refresh-token-secret"
+            }
+            """)
+            : new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var client = CreateClient(handler, fixture.ScopeFactory);
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(
+            () => client.FetchGamesAsync(new EpicPlatformCredential(refreshToken)));
+        var audit = await fixture.ReadSingleAuditLogAsync();
+
+        Assert.Equal("RateLimited", audit.Status);
+        Assert.Equal("Epic API rate limit exceeded.", audit.ErrorMessage);
+        Assert.Equal(IngestScopeFixture.TenantId, audit.TenantId);
+        Assert.DoesNotContain(refreshToken, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(refreshToken, audit.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FetchGamesAsync_MalformedLauncherResponse_WritesSanitizedAudit()
+    {
+        using var fixture = new IngestScopeFixture();
+        const string refreshToken = "epic-refresh-token-secret";
+        var handler = new RecordingHandler(request => request.Method == HttpMethod.Post
+            ? JsonResponse("""
+            {
+              "access_token": "epic-access-token",
+              "refresh_token": "epic-refresh-token-secret"
+            }
+            """)
+            : JsonResponse("not-valid-json"));
+        var client = CreateClient(handler, fixture.ScopeFactory);
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(
+            () => client.FetchGamesAsync(new EpicPlatformCredential(refreshToken)));
+        var audit = await fixture.ReadSingleAuditLogAsync();
+
+        Assert.Equal("MalformedResponse", audit.Status);
+        Assert.Equal("Epic provider returned an unexpected response.", audit.ErrorMessage);
+        Assert.Equal(IngestScopeFixture.TenantId, audit.TenantId);
+        Assert.DoesNotContain(refreshToken, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(refreshToken, audit.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MapToIngestItem_LauncherAssetWithCatalogMetadata_UsesAppNameAndTitle()
     {
         using var asset = JsonDocument.Parse("""
@@ -440,7 +554,7 @@ public sealed class EpicGamesClientTests
 
     private sealed class IngestScopeFixture : IDisposable
     {
-        private static readonly Guid TenantId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        public static readonly Guid TenantId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
         private readonly SqliteConnection _connection = new("Data Source=:memory:");
         private readonly ServiceProvider _provider;

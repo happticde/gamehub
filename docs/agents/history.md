@@ -20,11 +20,21 @@
 - Added export and unification tests for fallback population, enriched metadata preservation,
   missing optional fields, and stable Epic app-name linking.
 
+**Epic Stored Retrieval Resilience:**
+- Added safe Epic audit classifications for authentication rejection, rate limiting, unavailable
+  upstream responses, and malformed provider payloads without recording provider response details.
+- A failed catalog metadata lookup now skips only that record and records `PartialSuccess`; Core
+  also exports existing tenant-scoped raw data when stored retrieval fails and marks its sync audit
+  as partial rather than dropping the whole platform sync.
+- Added direct Epic client and Core sync regression coverage for partial catalog failure, rate
+  limiting, malformed responses, sanitized audit data, and the tenant-owned fallback path.
+
 ### Known State / Pending
 
 - Epic remains the existing Legendary-inspired MVP, not official OAuth support or a production-proof
-  provider integration. Core/UI now has a small fallback consumption path for safe raw metadata, but
-  provider-fragility handling remains follow-up scope.
+  provider integration. Core/UI now has a small fallback consumption path for safe raw metadata, and
+  the first provider-resilience slice is implemented; continued provider-fragility handling remains
+  follow-up scope.
 - No `.env`, dependency, production configuration, schema, or new platform-auth flow change was
   introduced.
 
