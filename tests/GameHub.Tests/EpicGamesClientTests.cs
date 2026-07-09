@@ -154,7 +154,16 @@ public sealed class EpicGamesClientTests
           "id": "catalog-1",
           "namespace": "anemone",
           "title": "World of Goo",
-          "categories": [{ "path": "games" }]
+          "developerDisplayName": "2D Boy",
+          "publisherDisplayName": "Tomorrow Corporation",
+          "releaseInfo": [{ "date": "2008-10-13T00:00:00.000Z" }],
+          "description": "A physics puzzle game about building with balls of goo.",
+          "shortDescription": "Build strange towers with goo balls.",
+          "categories": [{ "path": "games" }, { "path": "games/puzzle" }],
+          "keyImages": [
+            { "type": "DieselGameBox", "url": "https://cdn.example.test/world-of-goo-cover.jpg" },
+            { "type": "DieselGameBoxWide", "url": "https://cdn.example.test/world-of-goo-key-art.jpg" }
+          ]
         }
         """);
 
@@ -166,10 +175,101 @@ public sealed class EpicGamesClientTests
         Assert.Equal("anemone", mapped.Value.GetProperty("namespace").GetString());
         Assert.Equal("catalog-1", mapped.Value.GetProperty("catalog_item_id").GetString());
         Assert.Equal("asset-1", mapped.Value.GetProperty("asset_id").GetString());
+        Assert.Equal("2D Boy", mapped.Value.GetProperty("developer").GetString());
+        Assert.Equal("Tomorrow Corporation", mapped.Value.GetProperty("publisher").GetString());
+        Assert.Equal("2008-10-13T00:00:00.000Z", mapped.Value.GetProperty("release_date").GetString());
+        Assert.Equal(
+            "A physics puzzle game about building with balls of goo.",
+            mapped.Value.GetProperty("description").GetString());
+        Assert.Equal("Build strange towers with goo balls.", mapped.Value.GetProperty("summary").GetString());
+        var categories = mapped.Value.GetProperty("categories").EnumerateArray()
+            .Select(category => category.GetString()!)
+            .ToArray();
+        Assert.Equal(new[] { "games", "games/puzzle" }, categories);
+        Assert.Equal(
+            "https://cdn.example.test/world-of-goo-cover.jpg",
+            mapped.Value.GetProperty("cover_url").GetString());
+        Assert.Equal(
+            "https://cdn.example.test/world-of-goo-key-art.jpg",
+            mapped.Value.GetProperty("key_art_url").GetString());
         Assert.True(mapped.Value.TryGetProperty("legendary_asset", out var originalAsset));
         Assert.True(mapped.Value.TryGetProperty("legendary_metadata", out var originalMetadata));
         Assert.Equal("catalog-1", originalAsset.GetProperty("catalogItemId").GetString());
         Assert.Equal("catalog-1", originalMetadata.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public void MapToIngestItem_MissingOptionalMetadata_OmitsEmptyRawFields()
+    {
+        using var asset = JsonDocument.Parse("""
+        {
+          "appName": "MinimalGame",
+          "assetId": "",
+          "namespace": "minimal-game",
+          "catalogItemId": "minimal-catalog"
+        }
+        """);
+        using var metadata = JsonDocument.Parse("""
+        {
+          "id": "minimal-catalog",
+          "namespace": "minimal-game",
+          "title": "Minimal Game",
+          "developerDisplayName": "",
+          "publisherDisplayName": " ",
+          "description": "",
+          "shortDescription": " ",
+          "categories": [{ "path": "games" }],
+          "keyImages": [{ "type": "DieselGameBox", "url": "" }]
+        }
+        """);
+
+        var mapped = EpicLibraryItemMapper.MapToIngestItem(asset.RootElement, metadata.RootElement);
+
+        Assert.NotNull(mapped);
+        Assert.False(mapped.Value.TryGetProperty("asset_id", out _));
+        Assert.False(mapped.Value.TryGetProperty("developer", out _));
+        Assert.False(mapped.Value.TryGetProperty("publisher", out _));
+        Assert.False(mapped.Value.TryGetProperty("release_date", out _));
+        Assert.False(mapped.Value.TryGetProperty("description", out _));
+        Assert.False(mapped.Value.TryGetProperty("summary", out _));
+        Assert.False(mapped.Value.TryGetProperty("cover_url", out _));
+        Assert.False(mapped.Value.TryGetProperty("key_art_url", out _));
+    }
+
+    [Fact]
+    public void MapToIngestItem_ProviderCredentialLikeMetadata_DoesNotPromoteSecrets()
+    {
+        using var asset = JsonDocument.Parse("""
+        {
+          "appName": "SecretSafeGame",
+          "assetId": "asset-secret-safe",
+          "namespace": "secret-safe",
+          "catalogItemId": "secret-safe-catalog",
+          "access_token": "asset-access-token"
+        }
+        """);
+        using var metadata = JsonDocument.Parse("""
+        {
+          "id": "secret-safe-catalog",
+          "namespace": "secret-safe",
+          "title": "Secret Safe Game",
+          "categories": [{ "path": "games" }],
+          "access_token": "metadata-access-token",
+          "refresh_token": "metadata-refresh-token",
+          "authorizationCode": "metadata-authorization-code",
+          "client_secret": "metadata-client-secret",
+          "cookie": "metadata-cookie"
+        }
+        """);
+
+        var mapped = EpicLibraryItemMapper.MapToIngestItem(asset.RootElement, metadata.RootElement);
+
+        Assert.NotNull(mapped);
+        Assert.False(mapped.Value.TryGetProperty("access_token", out _));
+        Assert.False(mapped.Value.TryGetProperty("refresh_token", out _));
+        Assert.False(mapped.Value.TryGetProperty("authorizationCode", out _));
+        Assert.False(mapped.Value.TryGetProperty("client_secret", out _));
+        Assert.False(mapped.Value.TryGetProperty("cookie", out _));
     }
 
     [Fact]

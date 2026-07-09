@@ -1,5 +1,24 @@
 # Session History
 
+## Current Session Summary (2026-07-09)
+
+### What Changed
+
+**Epic Raw Metadata Mapping:**
+- Extended Epic stored-retrieval raw mapping with safe stable top-level metadata from launcher
+  assets and catalog metadata, including catalog identifiers, developer/publisher names, release
+  date, description/summary, category paths, and catalog artwork URLs when present.
+- Preserved existing `legendary_asset`/`legendary_metadata` raw debug fields and kept Core sync
+  compatibility on the existing `app_name`/`app_title` shape.
+- Added mapping, missing-optional-field, existing skip-logic, and no-secret-promotion tests.
+
+### Known State / Pending
+
+- Epic remains the existing Legendary-inspired MVP, not official OAuth support or a production-proof
+  provider integration. Core/UI consumption of the richer Epic raw metadata remains follow-up scope.
+- No `.env`, dependency, production configuration, schema, or new platform-auth flow change was
+  introduced.
+
 ## Current Session Summary (2026-07-07)
 
 ### What Changed
