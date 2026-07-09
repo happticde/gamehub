@@ -24,6 +24,7 @@ public class UnificationService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IngestClient _client;
     private readonly ILogger<UnificationService> _logger;
+    private const string EpicRawMetadataSource = "Epic Raw";
 
     /// <summary>Number of items to fetch per page from the Ingest service.</summary>
     private const int PageSize = 200;
@@ -299,12 +300,65 @@ public class UnificationService
                 game.PlayStatus = PlayStatus.Played;
             }
 
+            if (platform == Platform.Epic)
+            {
+                ApplyEpicRawMetadataFallbacks(game, item);
+            }
+
             processed++;
         }
 
         await db.SaveChangesAsync();
         return (processed, created);
     }
+
+    private static void ApplyEpicRawMetadataFallbacks(UnifiedGame game, RawGameDto item)
+    {
+        var changed = false;
+
+        if (IsBlank(game.Summary) && !IsBlank(item.Summary))
+        {
+            game.Summary = item.Summary!.Trim();
+            changed = true;
+        }
+
+        if (IsBlank(game.CoverUrl) && !IsBlank(item.CoverUrl))
+        {
+            game.CoverUrl = item.CoverUrl!.Trim();
+            changed = true;
+        }
+
+        if (IsBlank(game.Artworks) && !IsBlank(item.ArtworkUrl))
+        {
+            game.Artworks = item.ArtworkUrl!.Trim();
+            changed = true;
+        }
+
+        if (IsBlank(game.Developers) && !IsBlank(item.Developers))
+        {
+            game.Developers = item.Developers!.Trim();
+            changed = true;
+        }
+
+        if (IsBlank(game.Publishers) && !IsBlank(item.Publishers))
+        {
+            game.Publishers = item.Publishers!.Trim();
+            changed = true;
+        }
+
+        if (!game.FirstReleaseDate.HasValue && item.FirstReleaseDate.HasValue)
+        {
+            game.FirstReleaseDate = item.FirstReleaseDate.Value;
+            changed = true;
+        }
+
+        if (changed && IsBlank(game.MetadataSource))
+        {
+            game.MetadataSource = EpicRawMetadataSource;
+        }
+    }
+
+    private static bool IsBlank(string? value) => string.IsNullOrWhiteSpace(value);
 
     /// <summary>
     /// Updates the SyncMetadata record for a platform with the current timestamp.

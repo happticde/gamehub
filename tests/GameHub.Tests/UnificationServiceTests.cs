@@ -59,11 +59,20 @@ public class UnificationServiceTests : IDisposable
 
     /// <summary>Creates a mock IngestClient that returns the given items on page 1.</summary>
     private static IngestClient CreateMockClient(List<RawGameDto> items)
+        => CreateMockClient(Platform.Steam, items);
+
+    private static IngestClient CreateMockClient(Platform platform, List<RawGameDto> items)
     {
         // We can't easily mock IngestClient since it uses HttpClient internally.
         // Instead, we'll test the sync pipeline by seeding data directly.
         // For full end-to-end, we test ProcessPageAsync behavior via the DB state.
-        var http = new HttpClient(new FakeHandler(items));
+        var http = new HttpClient(new FakeHandler(new Dictionary<Platform, List<RawGameDto>>
+        {
+            [platform] = items
+        }))
+        {
+            BaseAddress = new Uri("http://ingest.test")
+        };
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -97,6 +106,164 @@ public class UnificationServiceTests : IDisposable
             () => CreateService().RunFullSyncAsync());
 
         Assert.Equal(tenantId, exception.TenantId);
+    }
+
+    [Fact]
+    public async Task RunFullSync_EpicRawFallbackMetadata_PopulatesEmptyCoreFields()
+    {
+        var releaseDate = new DateTime(2008, 10, 13, 0, 0, 0, DateTimeKind.Utc);
+        var service = CreateService(CreateMockClient(Platform.Epic,
+        [
+            new RawGameDto
+            {
+                Id = "Anemone",
+                Name = "World of Goo",
+                Summary = "Build bridges from living balls of goo.",
+                CoverUrl = "https://cdn.example.test/cover.jpg",
+                ArtworkUrl = "https://cdn.example.test/key-art.jpg",
+                Developers = "2D Boy",
+                Publishers = "Tomorrow Corporation",
+                FirstReleaseDate = releaseDate
+            }
+        ]));
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await db.UnifiedGames.Include(g => g.Items).SingleAsync();
+        Assert.Equal(1, processed);
+        Assert.Equal("World of Goo", game.Title);
+        Assert.Equal("Build bridges from living balls of goo.", game.Summary);
+        Assert.Equal("https://cdn.example.test/cover.jpg", game.CoverUrl);
+        Assert.Equal("https://cdn.example.test/key-art.jpg", game.Artworks);
+        Assert.Equal("2D Boy", game.Developers);
+        Assert.Equal("Tomorrow Corporation", game.Publishers);
+        Assert.Equal(releaseDate, game.FirstReleaseDate);
+        Assert.Equal("Epic Raw", game.MetadataSource);
+        Assert.Contains(game.Items, item => item.Platform == Platform.Epic && item.ExternalId == "Anemone");
+    }
+
+    [Fact]
+    public async Task RunFullSync_EpicRawFallbackMetadata_DoesNotOverwriteExistingEnrichedFields()
+    {
+        var enrichedReleaseDate = new DateTime(2009, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            db.UnifiedGames.Add(new UnifiedGame
+            {
+                Title = "World of Goo",
+                Slug = UnificationService.GenerateSlug("World of Goo"),
+                Summary = "IGDB summary",
+                CoverUrl = "https://igdb.example.test/cover.jpg",
+                Artworks = "https://igdb.example.test/art.jpg",
+                Developers = "IGDB Developer",
+                Publishers = "IGDB Publisher",
+                FirstReleaseDate = enrichedReleaseDate,
+                MetadataSource = "IGDB",
+                MetadataProviderId = 123
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(CreateMockClient(Platform.Epic,
+        [
+            new RawGameDto
+            {
+                Id = "Anemone",
+                Name = "World of Goo",
+                Summary = "Epic summary",
+                CoverUrl = "https://epic.example.test/cover.jpg",
+                ArtworkUrl = "https://epic.example.test/art.jpg",
+                Developers = "Epic Developer",
+                Publishers = "Epic Publisher",
+                FirstReleaseDate = new DateTime(2008, 10, 13, 0, 0, 0, DateTimeKind.Utc)
+            }
+        ]));
+
+        await service.RunFullSyncAsync();
+
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await verifyDb.UnifiedGames.Include(g => g.Items).SingleAsync();
+        Assert.Equal("IGDB summary", game.Summary);
+        Assert.Equal("https://igdb.example.test/cover.jpg", game.CoverUrl);
+        Assert.Equal("https://igdb.example.test/art.jpg", game.Artworks);
+        Assert.Equal("IGDB Developer", game.Developers);
+        Assert.Equal("IGDB Publisher", game.Publishers);
+        Assert.Equal(enrichedReleaseDate, game.FirstReleaseDate);
+        Assert.Equal("IGDB", game.MetadataSource);
+        Assert.Equal(123, game.MetadataProviderId);
+        Assert.Contains(game.Items, item => item.Platform == Platform.Epic && item.ExternalId == "Anemone");
+    }
+
+    [Fact]
+    public async Task RunFullSync_EpicRawFallbackMetadata_MissingOptionalFieldsDoesNotBreakSync()
+    {
+        var service = CreateService(CreateMockClient(Platform.Epic,
+        [
+            new RawGameDto
+            {
+                Id = "MissingOptionalFieldsApp",
+                Name = "Sparse Epic Game"
+            }
+        ]));
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await db.UnifiedGames.Include(g => g.Items).SingleAsync();
+        Assert.Equal(1, processed);
+        Assert.Equal("Sparse Epic Game", game.Title);
+        Assert.Null(game.Summary);
+        Assert.Null(game.CoverUrl);
+        Assert.Null(game.Developers);
+        Assert.Null(game.Publishers);
+        Assert.Null(game.FirstReleaseDate);
+        Assert.Null(game.MetadataSource);
+        Assert.Contains(game.Items, item => item.Platform == Platform.Epic && item.ExternalId == "MissingOptionalFieldsApp");
+    }
+
+    [Fact]
+    public async Task RunFullSync_EpicRawFallbackMetadata_KeepsTitleSlugMatchingAndAppNameLinkStable()
+    {
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            db.UnifiedGames.Add(new UnifiedGame
+            {
+                Title = "World of Goo",
+                Slug = UnificationService.GenerateSlug("World of Goo"),
+                Items =
+                [
+                    new LibraryItem { Platform = Platform.Steam, ExternalId = "22000" }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(CreateMockClient(Platform.Epic,
+        [
+            new RawGameDto
+            {
+                Id = "StableGameApp",
+                Name = "World of Goo",
+                Summary = "Epic fallback summary"
+            }
+        ]));
+
+        await service.RunFullSyncAsync();
+
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await verifyDb.UnifiedGames.Include(g => g.Items).SingleAsync();
+        Assert.Equal("World of Goo", game.Title);
+        Assert.Equal(UnificationService.GenerateSlug("World of Goo"), game.Slug);
+        Assert.Equal(2, game.Items.Count);
+        Assert.Contains(game.Items, item => item.Platform == Platform.Steam && item.ExternalId == "22000");
+        Assert.Contains(game.Items, item => item.Platform == Platform.Epic && item.ExternalId == "StableGameApp");
     }
 
     // =========================================================================
@@ -256,17 +423,33 @@ public class UnificationServiceTests : IDisposable
     /// </summary>
     private class FakeHandler : HttpMessageHandler
     {
-        private readonly List<RawGameDto> _items;
+        private readonly Dictionary<Platform, List<RawGameDto>> _itemsByPlatform;
 
-        public FakeHandler(List<RawGameDto> items) { _items = items; }
+        public FakeHandler(Dictionary<Platform, List<RawGameDto>> itemsByPlatform)
+        {
+            _itemsByPlatform = itemsByPlatform;
+        }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (request.Method == HttpMethod.Post)
+            {
+                return Task.FromResult(new HttpResponseMessage
+                {
+                    StatusCode = System.Net.HttpStatusCode.NotFound
+                });
+            }
+
+            var platform = ReadPlatform(request.RequestUri);
+            var items = platform.HasValue && _itemsByPlatform.TryGetValue(platform.Value, out var platformItems)
+                ? platformItems
+                : [];
+
             var result = new PagedResult<RawGameDto>
             {
-                Items = _items,
-                TotalCount = _items.Count,
+                Items = items,
+                TotalCount = items.Count,
                 Page = 1,
                 PageSize = 200
             };
@@ -277,6 +460,14 @@ public class UnificationServiceTests : IDisposable
                 StatusCode = System.Net.HttpStatusCode.OK,
                 Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
             });
+        }
+
+        private static Platform? ReadPlatform(Uri? uri)
+        {
+            var platformText = uri?.Segments.LastOrDefault()?.Trim('/');
+            return Enum.TryParse<Platform>(platformText, ignoreCase: true, out var platform)
+                ? platform
+                : null;
         }
     }
 }

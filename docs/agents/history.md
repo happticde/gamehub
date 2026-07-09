@@ -12,10 +12,19 @@
   compatibility on the existing `app_name`/`app_title` shape.
 - Added mapping, missing-optional-field, existing skip-logic, and no-secret-promotion tests.
 
+**Epic Raw Metadata Core Fallbacks:**
+- Added a schema-free Core sync fallback that consumes safe Epic raw metadata only when existing
+  unified-library fields are empty, covering summary, cover/artwork URLs, developers, publishers,
+  and first release date.
+- Preserved existing enriched metadata and the Epic `app_name`/`app_title` unification path.
+- Added export and unification tests for fallback population, enriched metadata preservation,
+  missing optional fields, and stable Epic app-name linking.
+
 ### Known State / Pending
 
 - Epic remains the existing Legendary-inspired MVP, not official OAuth support or a production-proof
-  provider integration. Core/UI consumption of the richer Epic raw metadata remains follow-up scope.
+  provider integration. Core/UI now has a small fallback consumption path for safe raw metadata, but
+  provider-fragility handling remains follow-up scope.
 - No `.env`, dependency, production configuration, schema, or new platform-auth flow change was
   introduced.
 
