@@ -170,7 +170,8 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   upstream responses, and malformed provider payloads into secret-free tenant audit states. A
   single unavailable or malformed catalog record is skipped as a partial success so other Epic
   games remain ingestible; when stored retrieval fails, Core can still unify the tenant's existing
-  raw Epic library and records that fallback as a partial sync result.
+  raw Epic library and records that fallback as a partial sync result. The existing Admin audit log
+  presents these states with concise operator guidance using its existing DTO surface.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
   follow-up scope includes continued provider-fragility handling. Do not describe this as official
   OAuth support or a fully production-proof provider integration.

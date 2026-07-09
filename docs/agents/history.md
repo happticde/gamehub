@@ -29,6 +29,13 @@
 - Added direct Epic client and Core sync regression coverage for partial catalog failure, rate
   limiting, malformed responses, sanitized audit data, and the tenant-owned fallback path.
 
+**Epic Audit Status UI:**
+- The existing Admin ingest audit log now renders the safe retrieval states as readable labels with
+  concise operator guidance for partial success, expired credentials, rate limits, unavailable
+  providers, and malformed responses on both mobile and desktop layouts.
+- The UI reuses the existing tenant-scoped audit DTO and does not add browser access to credentials,
+  tokens, or provider response details.
+
 ### Known State / Pending
 
 - Epic remains the existing Legendary-inspired MVP, not official OAuth support or a production-proof
