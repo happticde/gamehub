@@ -212,7 +212,7 @@ public sealed class EpicGamesClientTests
               "refresh_token": "epic-refresh-token-secret"
             }
             """)
-            : new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+            : RateLimitedResponse());
         var client = CreateClient(handler, fixture.ScopeFactory);
 
         var exception = await Assert.ThrowsAsync<HttpRequestException>(
@@ -220,7 +220,7 @@ public sealed class EpicGamesClientTests
         var audit = await fixture.ReadSingleAuditLogAsync();
 
         Assert.Equal("RateLimited", audit.Status);
-        Assert.Equal("Epic API rate limit exceeded.", audit.ErrorMessage);
+        Assert.Equal("Provider rate limit exceeded. Retry after 2030-01-02T03:04:05.0000000+00:00.", audit.ErrorMessage);
         Assert.Equal(IngestScopeFixture.TenantId, audit.TenantId);
         Assert.DoesNotContain(refreshToken, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(refreshToken, audit.ErrorMessage, StringComparison.Ordinal);
@@ -558,6 +558,14 @@ public sealed class EpicGamesClientTests
             StatusCode = HttpStatusCode.OK,
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+
+    private static HttpResponseMessage RateLimitedResponse()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(
+            new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.Zero));
+        return response;
+    }
 
     private static JsonDocument LoadEpicContractFixture()
     {
