@@ -157,10 +157,13 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   password.
 - **Retrieval**: Core treats Epic as a stored-retrieval platform. Ingest refreshes an access token
   in-memory, persists an Epic-rotated refresh token back into the tenant-scoped encrypted Ingest
-  vault before continuing, calls Epic's library service, maps records to `app_name`/`app_title`,
-  and writes raw Epic items through the existing ingest pipeline.
+  vault before continuing, calls Epic's library service, maps records to `app_name`/`app_title`
+  plus safe stable raw metadata such as catalog identifiers, developer/publisher names, release
+  date, categories, description/summary, and catalog artwork URLs, and writes raw Epic items through
+  the existing ingest pipeline.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
-  follow-up scope is richer Epic metadata mapping and continued provider-fragility handling. Do not
+  follow-up scope is continued provider-fragility handling and deciding how Core/UI should consume
+  the richer Epic raw metadata. Do not
   describe this as official OAuth support or a fully production-proof provider integration.
 
 ### 17. Guided Platform Account Connect for GOG & PSN ✅ Local Helper MVP

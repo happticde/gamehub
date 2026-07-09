@@ -373,6 +373,14 @@ public static class EpicLibraryItemMapper
             WriteOptionalString(writer, "namespace", ReadNamespace(asset) ?? ReadString(catalogMetadata, "namespace"));
             WriteOptionalString(writer, "catalog_item_id", ReadCatalogItemId(asset) ?? ReadString(catalogMetadata, "id"));
             WriteOptionalString(writer, "asset_id", ReadString(asset, "assetId"));
+            WriteOptionalString(writer, "developer", ReadDeveloper(catalogMetadata));
+            WriteOptionalString(writer, "publisher", ReadPublisher(catalogMetadata));
+            WriteOptionalString(writer, "release_date", ReadReleaseDate(catalogMetadata));
+            WriteOptionalString(writer, "description", ReadString(catalogMetadata, "description"));
+            WriteOptionalString(writer, "summary", ReadString(catalogMetadata, "summary") ?? ReadString(catalogMetadata, "shortDescription"));
+            WriteOptionalStringArray(writer, "categories", ReadCategoryPaths(catalogMetadata));
+            WriteOptionalString(writer, "cover_url", ReadKeyImageUrl(catalogMetadata, CoverImageTypes));
+            WriteOptionalString(writer, "key_art_url", ReadKeyImageUrl(catalogMetadata, KeyArtImageTypes));
             writer.WritePropertyName("legendary_asset");
             asset.WriteTo(writer);
             writer.WritePropertyName("legendary_metadata");
@@ -410,6 +418,55 @@ public static class EpicLibraryItemMapper
     /// <summary>Reads the Epic namespace from an Epic asset or compatible record.</summary>
     public static string? ReadNamespace(JsonElement element) =>
         ReadString(element, "namespace");
+
+    private static readonly string[] CoverImageTypes =
+    [
+        "DieselGameBox",
+        "DieselGameBoxTall",
+        "OfferImageTall",
+        "Thumbnail"
+    ];
+
+    private static readonly string[] KeyArtImageTypes =
+    [
+        "DieselGameBoxWide",
+        "DieselStoreFrontWide",
+        "OfferImageWide"
+    ];
+
+    private static string? ReadDeveloper(JsonElement catalogMetadata) =>
+        ReadString(catalogMetadata, "developerDisplayName") ??
+        ReadString(catalogMetadata, "developer");
+
+    private static string? ReadPublisher(JsonElement catalogMetadata) =>
+        ReadString(catalogMetadata, "publisherDisplayName") ??
+        ReadString(catalogMetadata, "publisher") ??
+        ReadNestedString(catalogMetadata, "seller", "name");
+
+    private static string? ReadReleaseDate(JsonElement catalogMetadata) =>
+        ReadString(catalogMetadata, "releaseDate") ??
+        ReadString(catalogMetadata, "effectiveDate") ??
+        ReadFirstReleaseInfoDate(catalogMetadata);
+
+    private static string? ReadFirstReleaseInfoDate(JsonElement catalogMetadata)
+    {
+        if (!catalogMetadata.TryGetProperty("releaseInfo", out var releaseInfo)
+            || releaseInfo.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var release in releaseInfo.EnumerateArray())
+        {
+            var date = ReadString(release, "date");
+            if (date is not null)
+            {
+                return date;
+            }
+        }
+
+        return null;
+    }
 
     private static bool ShouldSkip(JsonElement asset, JsonElement catalogMetadata)
     {
@@ -468,6 +525,30 @@ public static class EpicLibraryItemMapper
         }
     }
 
+    private static string? ReadKeyImageUrl(JsonElement catalogMetadata, IReadOnlyList<string> imageTypes)
+    {
+        if (!catalogMetadata.TryGetProperty("keyImages", out var keyImages)
+            || keyImages.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var imageType in imageTypes)
+        {
+            foreach (var image in keyImages.EnumerateArray())
+            {
+                if (TryGetStringProperty(image, "type", out var type)
+                    && string.Equals(type, imageType, StringComparison.OrdinalIgnoreCase)
+                    && TryGetStringProperty(image, "url", out var url))
+                {
+                    return url;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static string? ReadString(JsonElement element, string property)
     {
         if (!element.TryGetProperty(property, out var value)
@@ -478,6 +559,17 @@ public static class EpicLibraryItemMapper
 
         var text = value.GetString();
         return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static string? ReadNestedString(JsonElement element, string property, string nestedProperty)
+    {
+        if (!element.TryGetProperty(property, out var nested)
+            || nested.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return ReadString(nested, nestedProperty);
     }
 
     private static bool TryGetStringProperty(JsonElement element, string property, out string value)
@@ -499,5 +591,29 @@ public static class EpicLibraryItemMapper
         {
             writer.WriteString(property, value);
         }
+    }
+
+    private static void WriteOptionalStringArray(
+        Utf8JsonWriter writer,
+        string property,
+        IEnumerable<string> values)
+    {
+        var stableValues = values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (stableValues.Length == 0)
+        {
+            return;
+        }
+
+        writer.WritePropertyName(property);
+        writer.WriteStartArray();
+        foreach (var value in stableValues)
+        {
+            writer.WriteStringValue(value);
+        }
+
+        writer.WriteEndArray();
     }
 }
