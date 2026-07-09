@@ -253,6 +253,48 @@ public sealed class EpicGamesClientTests
     }
 
     [Fact]
+    public void MapToIngestItem_ProviderContractFixtures_PreserveCompatibleRecordsAndSkipUnsupportedRecords()
+    {
+        using var fixture = LoadEpicContractFixture();
+        foreach (var contractCase in fixture.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var name = contractCase.GetProperty("name").GetString();
+            var mapped = EpicLibraryItemMapper.MapToIngestItem(
+                contractCase.GetProperty("asset"),
+                contractCase.GetProperty("catalogMetadata"));
+            var expected = contractCase.GetProperty("expected");
+
+            if (!expected.GetProperty("isMapped").GetBoolean())
+            {
+                Assert.Null(mapped);
+                continue;
+            }
+
+            Assert.True(mapped.HasValue, $"Expected contract fixture '{name}' to map.");
+            Assert.Equal(expected.GetProperty("appName").GetString(), mapped.Value.GetProperty("app_name").GetString());
+            Assert.Equal(expected.GetProperty("title").GetString(), mapped.Value.GetProperty("app_title").GetString());
+
+            foreach (var property in expected.GetProperty("presentProperties").EnumerateArray())
+            {
+                var propertyName = property.GetString();
+                Assert.False(string.IsNullOrWhiteSpace(propertyName), $"Fixture '{name}' has an empty property name.");
+                Assert.True(
+                    mapped.Value.TryGetProperty(propertyName!, out _),
+                    $"Expected contract fixture '{name}' to include '{propertyName}'.");
+            }
+
+            foreach (var property in expected.GetProperty("absentProperties").EnumerateArray())
+            {
+                var propertyName = property.GetString();
+                Assert.False(string.IsNullOrWhiteSpace(propertyName), $"Fixture '{name}' has an empty property name.");
+                Assert.False(
+                    mapped.Value.TryGetProperty(propertyName!, out _),
+                    $"Expected contract fixture '{name}' to omit '{propertyName}'.");
+            }
+        }
+    }
+
+    [Fact]
     public void MapToIngestItem_LauncherAssetWithCatalogMetadata_UsesAppNameAndTitle()
     {
         using var asset = JsonDocument.Parse("""
@@ -516,6 +558,16 @@ public sealed class EpicGamesClientTests
             StatusCode = HttpStatusCode.OK,
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+
+    private static JsonDocument LoadEpicContractFixture()
+    {
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "Epic",
+            "epic-provider-contract-cases.json");
+        return JsonDocument.Parse(File.ReadAllText(path));
+    }
 
     private static EpicGamesClient CreateClient(
         RecordingHandler handler,

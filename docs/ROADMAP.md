@@ -172,6 +172,10 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   games remain ingestible; when stored retrieval fails, Core can still unify the tenant's existing
   raw Epic library and records that fallback as a partial sync result. The existing Admin audit log
   presents these states with concise operator guidance using its existing DTO surface.
+- **Provider contract fixtures**: Redacted launcher-asset and catalog-metadata fixture cases cover
+  supported identifier variants, optional fields, DLC, and marketplace records without making live
+  Epic calls in CI. Further provider response variants should be captured as safe fixtures before
+  extending parser behavior.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
   follow-up scope includes continued provider-fragility handling. Do not describe this as official
   OAuth support or a fully production-proof provider integration.

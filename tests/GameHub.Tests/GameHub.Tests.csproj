@@ -28,4 +28,8 @@
     <ProjectReference Include="..\..\services\shared\GameHub.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

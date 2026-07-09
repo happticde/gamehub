@@ -1,0 +1,107 @@
+{
+  "cases": [
+    {
+      "name": "launcher asset with catalog metadata",
+      "asset": {
+        "appName": "ContractPrimaryGame",
+        "assetId": "asset-primary",
+        "namespace": "contract-primary",
+        "catalogItemId": "catalog-primary"
+      },
+      "catalogMetadata": {
+        "id": "catalog-primary",
+        "namespace": "contract-primary",
+        "title": "Contract Primary Game",
+        "developerDisplayName": "Example Developer",
+        "publisherDisplayName": "Example Publisher",
+        "releaseInfo": [{ "date": "2020-01-02T00:00:00.000Z" }],
+        "description": "Long contract description.",
+        "shortDescription": "Short contract description.",
+        "categories": [{ "path": "games" }],
+        "keyImages": [{ "type": "DieselGameBox", "url": "https://cdn.example.test/primary-cover.jpg" }]
+      },
+      "expected": {
+        "isMapped": true,
+        "appName": "ContractPrimaryGame",
+        "title": "Contract Primary Game",
+        "presentProperties": ["namespace", "catalog_item_id", "asset_id", "developer", "publisher", "release_date", "description", "summary", "cover_url"],
+        "absentProperties": ["key_art_url"]
+      }
+    },
+    {
+      "name": "compatible snake case asset identifiers",
+      "asset": {
+        "artifactId": "ContractCompatibleGame",
+        "namespace": "contract-compatible",
+        "catalog_item_id": "catalog-compatible"
+      },
+      "catalogMetadata": {
+        "id": "catalog-compatible",
+        "title": "Contract Compatible Game",
+        "categories": [{ "path": "games/edition/base" }]
+      },
+      "expected": {
+        "isMapped": true,
+        "appName": "ContractCompatibleGame",
+        "title": "Contract Compatible Game",
+        "presentProperties": ["namespace", "catalog_item_id"],
+        "absentProperties": ["asset_id", "developer", "publisher", "release_date", "description", "summary", "cover_url", "key_art_url"]
+      }
+    },
+    {
+      "name": "missing optional catalog metadata",
+      "asset": {
+        "app_name": "ContractMinimalGame",
+        "namespace": "contract-minimal",
+        "catalogItemId": "catalog-minimal"
+      },
+      "catalogMetadata": {
+        "id": "catalog-minimal",
+        "title": "Contract Minimal Game",
+        "categories": [{ "path": "games" }]
+      },
+      "expected": {
+        "isMapped": true,
+        "appName": "ContractMinimalGame",
+        "title": "Contract Minimal Game",
+        "presentProperties": ["namespace", "catalog_item_id"],
+        "absentProperties": ["asset_id", "developer", "publisher", "release_date", "description", "summary", "cover_url", "key_art_url"]
+      }
+    },
+    {
+      "name": "dlc catalog record",
+      "asset": {
+        "appName": "ContractDlc",
+        "namespace": "contract-dlc",
+        "catalogItemId": "catalog-dlc"
+      },
+      "catalogMetadata": {
+        "title": "Contract DLC",
+        "mainGameItem": { "id": "catalog-base" },
+        "categories": [{ "path": "addons" }]
+      },
+      "expected": {
+        "isMapped": false,
+        "presentProperties": [],
+        "absentProperties": []
+      }
+    },
+    {
+      "name": "unreal marketplace namespace",
+      "asset": {
+        "appName": "ContractMarketplacePack",
+        "namespace": "ue",
+        "catalogItemId": "catalog-marketplace"
+      },
+      "catalogMetadata": {
+        "title": "Contract Marketplace Pack",
+        "categories": [{ "path": "games" }]
+      },
+      "expected": {
+        "isMapped": false,
+        "presentProperties": [],
+        "absentProperties": []
+      }
+    }
+  ]
+}
