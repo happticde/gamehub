@@ -36,6 +36,12 @@
 - The UI reuses the existing tenant-scoped audit DTO and does not add browser access to credentials,
   tokens, or provider response details.
 
+**Epic Provider Contract Fixtures:**
+- Added redacted, version-controlled launcher-asset and catalog-metadata contract cases for normal,
+  compatible identifier, optional-field, DLC, and marketplace response variants.
+- The mapper regression test reads these fixtures without any live Epic request, so provider-shape
+  changes are explicit test updates rather than unobserved runtime assumptions.
+
 ### Known State / Pending
 
 - Epic remains the existing Legendary-inspired MVP, not official OAuth support or a production-proof
