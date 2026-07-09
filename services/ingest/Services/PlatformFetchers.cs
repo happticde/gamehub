@@ -66,15 +66,17 @@ public class SteamFetcher : ISteamFetcher
             }
             if (resp.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                await WriteAuditLogAsync("Steam", "RateLimited", 0, "Steam API rate limit exceeded.");
-                throw new HttpRequestException("Steam API rate limit exceeded.");
+                var failure = ProviderRequestException.FromResponse(resp);
+                await WriteAuditLogAsync("Steam", failure.AuditStatus, 0, failure.GetSafeAuditMessage());
+                throw failure;
             }
 
             if (!resp.IsSuccessStatusCode)
             {
                 _logger.LogError("Steam API returned {StatusCode}", (int)resp.StatusCode);
-                await WriteAuditLogAsync("Steam", "Error", 0, $"HTTP {(int)resp.StatusCode}");
-                throw new HttpRequestException($"Steam API returned {(int)resp.StatusCode}.");
+                var failure = ProviderRequestException.FromResponse(resp);
+                await WriteAuditLogAsync("Steam", failure.AuditStatus, 0, failure.GetSafeAuditMessage());
+                throw failure;
             }
 
             var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
@@ -169,16 +171,18 @@ public class GogFetcher : IGogFetcher
                 }
                 if (resp.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    await WriteAuditLogAsync("GOG", "RateLimited", 0, "GOG API rate limit exceeded.");
-                    throw new HttpRequestException("GOG API rate limit exceeded.");
+                    var failure = ProviderRequestException.FromResponse(resp);
+                    await WriteAuditLogAsync("GOG", failure.AuditStatus, 0, failure.GetSafeAuditMessage());
+                    throw failure;
                 }
 
                 if (!resp.IsSuccessStatusCode)
                 {
                     _logger.LogError("GOG API returned {StatusCode} on page {Page}",
                         (int)resp.StatusCode, page);
-                    await WriteAuditLogAsync("GOG", "Error", 0, $"HTTP {(int)resp.StatusCode}");
-                    throw new HttpRequestException($"GOG API returned {(int)resp.StatusCode} on page {page}.");
+                    var failure = ProviderRequestException.FromResponse(resp);
+                    await WriteAuditLogAsync("GOG", failure.AuditStatus, 0, failure.GetSafeAuditMessage());
+                    throw failure;
                 }
 
                 var rawJson = await resp.Content.ReadAsStringAsync();
@@ -326,18 +330,18 @@ public class PsnFetcher : IPsnFetcher
                 }
                 if (resp.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    await WriteAuditLogAsync("PSN", "RateLimited", 0, "PSN API rate limit exceeded.");
-                    throw new HttpRequestException("PSN API rate limit exceeded.");
+                    var failure = ProviderRequestException.FromResponse(resp);
+                    await WriteAuditLogAsync("PSN", failure.AuditStatus, 0, failure.GetSafeAuditMessage());
+                    throw failure;
                 }
 
                 if (!resp.IsSuccessStatusCode)
                 {
                     _logger.LogError("PSN API returned {StatusCode} at offset {Offset}",
                         (int)resp.StatusCode, offset);
-                    await WriteAuditLogAsync("PSN", "Error", 0, $"HTTP {(int)resp.StatusCode}");
-                    throw new HttpRequestException(
-                        $"PSN API returned {(int)resp.StatusCode}. " +
-                        "Cookies may have expired.");
+                    var failure = ProviderRequestException.FromResponse(resp);
+                    await WriteAuditLogAsync("PSN", failure.AuditStatus, 0, failure.GetSafeAuditMessage());
+                    throw failure;
                 }
 
                 var rawJson = await resp.Content.ReadAsStringAsync();

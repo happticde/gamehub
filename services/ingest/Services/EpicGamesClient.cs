@@ -48,7 +48,6 @@ public sealed class EpicGamesClient(
     private enum EpicProviderFailure
     {
         Authentication,
-        RateLimited,
         UpstreamUnavailable,
         MalformedResponse
     }
@@ -145,12 +144,16 @@ public sealed class EpicGamesClient(
             await WriteAuditLogAsync("Error", 0, "Epic refresh token rotation could not be persisted.");
             throw;
         }
+        catch (ProviderRequestException ex)
+        {
+            await WriteAuditLogAsync(ex.AuditStatus, 0, ex.GetSafeAuditMessage());
+            throw new HttpRequestException("Epic library request failed.", ex);
+        }
         catch (EpicProviderException ex)
         {
             var (status, error) = ex.Failure switch
             {
                 EpicProviderFailure.Authentication => ("TokenExpired", "Epic authentication was rejected."),
-                EpicProviderFailure.RateLimited => ("RateLimited", "Epic API rate limit exceeded."),
                 EpicProviderFailure.UpstreamUnavailable => ("UpstreamUnavailable", "Epic provider is temporarily unavailable."),
                 EpicProviderFailure.MalformedResponse => ("MalformedResponse", "Epic provider returned an unexpected response."),
                 _ => ("Error", "Epic retrieval failed.")
@@ -204,12 +207,12 @@ public sealed class EpicGamesClient(
         }
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            throw new EpicProviderException(EpicProviderFailure.RateLimited);
+            throw ProviderRequestException.FromResponse(response);
         }
         if (!response.IsSuccessStatusCode)
         {
             logger.LogWarning("Epic OAuth request failed with status {StatusCode}", (int)response.StatusCode);
-            throw new EpicProviderException(EpicProviderFailure.UpstreamUnavailable);
+            throw ProviderRequestException.FromResponse(response);
         }
 
         return await response.Content.ReadFromJsonAsync<EpicOAuthSession>(
@@ -280,6 +283,13 @@ public sealed class EpicGamesClient(
             }
             catch (EpicProviderException ex) when (ex.Failure is
                 EpicProviderFailure.UpstreamUnavailable or EpicProviderFailure.MalformedResponse)
+            {
+                skippedCatalogRecords++;
+                logger.LogWarning(
+                    "Skipping Epic catalog metadata record because the provider response was unavailable or malformed");
+                continue;
+            }
+            catch (ProviderRequestException ex) when (ex.Failure == ProviderRequestFailure.UpstreamUnavailable)
             {
                 skippedCatalogRecords++;
                 logger.LogWarning(
@@ -389,14 +399,16 @@ public sealed class EpicGamesClient(
         }
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
+            var failure = ProviderRequestException.FromResponse(response);
             response.Dispose();
-            throw new EpicProviderException(EpicProviderFailure.RateLimited);
+            throw failure;
         }
         if (!response.IsSuccessStatusCode)
         {
             logger.LogWarning("{Operation} request failed with status {StatusCode}", operation, (int)response.StatusCode);
+            var failure = ProviderRequestException.FromResponse(response);
             response.Dispose();
-            throw new EpicProviderException(EpicProviderFailure.UpstreamUnavailable);
+            throw failure;
         }
 
         return response;

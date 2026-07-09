@@ -176,6 +176,9 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   supported identifier variants, optional fields, DLC, and marketplace records without making live
   Epic calls in CI. Further provider response variants should be captured as safe fixtures before
   extending parser behavior.
+- **Shared provider throttle signals**: Steam, GOG, PlayStation, and Epic now share safe `429` and
+  temporary `5xx` classification, including a provider-supplied `Retry-After` timestamp when present.
+  The signal is audit-only; no automatic retry or token-exchange replay is introduced.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
   follow-up scope includes continued provider-fragility handling. Do not describe this as official
   OAuth support or a fully production-proof provider integration.

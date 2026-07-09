@@ -42,6 +42,12 @@
 - The mapper regression test reads these fixtures without any live Epic request, so provider-shape
   changes are explicit test updates rather than unobserved runtime assumptions.
 
+**Shared Provider Throttle Signals:**
+- Added a reusable Ingest transport failure type for safe rate-limit, temporary-upstream, and other
+  failed-response classification across Steam, GOG, PlayStation, and Epic.
+- `Retry-After` dates and delays are normalized to UTC for tenant audit messages when providers send
+  them. The shared signal does not retry requests and never retains response content or credentials.
+
 ### Known State / Pending
 
 - Epic remains the existing Legendary-inspired MVP, not official OAuth support or a production-proof
