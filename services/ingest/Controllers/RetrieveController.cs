@@ -115,6 +115,13 @@ public class RetrieveController : ControllerBase
                 StatusCodes.Status503ServiceUnavailable,
                 new PlatformCredentialErrorResponse("Stored platform credential is unavailable."));
         }
+        catch (ProviderRequestException exception) when (exception.Failure == ProviderRequestFailure.RateLimited)
+        {
+            _logger.LogWarning("Stored retrieval is rate limited for upstream platform {Platform}", platform);
+            return StatusCode(
+                StatusCodes.Status429TooManyRequests,
+                new StoredRetrievalThrottleResponse(exception.RetryAfterUtc));
+        }
         catch (Exception ex) when (
             ex is HttpRequestException or JsonException or InvalidOperationException)
         {

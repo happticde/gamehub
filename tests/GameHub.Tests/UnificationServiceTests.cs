@@ -47,14 +47,17 @@ public class UnificationServiceTests : IDisposable
     }
 
     /// <summary>Helper to create a UnificationService with a mocked IngestClient.</summary>
-    private UnificationService CreateService(IngestClient? client = null)
+    private UnificationService CreateService(
+        IngestClient? client = null,
+        StoredRetrievalCooldown? retrievalCooldown = null)
     {
         // Default: client that returns empty pages (no HTTP calls)
         client ??= CreateMockClient([]);
         return new UnificationService(
             _scopeFactory,
             client,
-            NullLogger<UnificationService>.Instance);
+            NullLogger<UnificationService>.Instance,
+            retrievalCooldown ?? new StoredRetrievalCooldown(TimeProvider.System));
     }
 
     /// <summary>Creates a mock IngestClient that returns the given items on page 1.</summary>
@@ -64,7 +67,9 @@ public class UnificationServiceTests : IDisposable
     private static IngestClient CreateMockClient(
         Platform platform,
         List<RawGameDto> items,
-        Platform? failingStoredRetrievePlatform = null)
+        Platform? failingStoredRetrievePlatform = null,
+        Platform? rateLimitedStoredRetrievePlatform = null,
+        DateTimeOffset? retryAfterUtc = null)
     {
         // We can't easily mock IngestClient since it uses HttpClient internally.
         // Instead, we'll test the sync pipeline by seeding data directly.
@@ -74,7 +79,9 @@ public class UnificationServiceTests : IDisposable
             {
                 [platform] = items
             },
-            failingStoredRetrievePlatform))
+            failingStoredRetrievePlatform,
+            rateLimitedStoredRetrievePlatform,
+            retryAfterUtc))
         {
             BaseAddress = new Uri("http://ingest.test")
         };
@@ -301,6 +308,34 @@ public class UnificationServiceTests : IDisposable
         Assert.Equal(TenantDefaults.DefaultTenantId, audit.TenantId);
     }
 
+    [Fact]
+    public async Task RunFullSync_EpicRateLimit_ExportsExistingRawDataAndRecordsCooldown()
+    {
+        var retryAfterUtc = new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var cooldown = new StoredRetrievalCooldown(TimeProvider.System);
+        var service = CreateService(
+            CreateMockClient(
+                Platform.Epic,
+                [new RawGameDto { Id = "RateLimitedEpicGame", Name = "Rate Limited Epic Game" }],
+                rateLimitedStoredRetrievePlatform: Platform.Epic,
+                retryAfterUtc: retryAfterUtc),
+            cooldown);
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var audit = await db.SyncAuditLogs.SingleAsync(log => log.Platform == Platform.Epic);
+
+        Assert.Equal(1, processed);
+        Assert.Equal("PartialSuccess", audit.Status);
+        Assert.Equal(
+            "Stored platform retrieval is rate limited until 2030-01-02T03:04:05.0000000+00:00; existing raw data was exported.",
+            audit.ErrorMessage);
+        Assert.True(cooldown.TryGetRetryAfter(TenantDefaults.DefaultTenantId, Platform.Epic, out var recordedRetryAfter));
+        Assert.Equal(retryAfterUtc, recordedRetryAfter);
+    }
+
     // =========================================================================
     // Test: New games create UnifiedGame records
     // =========================================================================
@@ -458,16 +493,29 @@ public class UnificationServiceTests : IDisposable
     /// </summary>
     private class FakeHandler(
         Dictionary<Platform, List<RawGameDto>> itemsByPlatform,
-        Platform? failingStoredRetrievePlatform = null) : HttpMessageHandler
+        Platform? failingStoredRetrievePlatform = null,
+        Platform? rateLimitedStoredRetrievePlatform = null,
+        DateTimeOffset? retryAfterUtc = null) : HttpMessageHandler
     {
         private readonly Dictionary<Platform, List<RawGameDto>> _itemsByPlatform = itemsByPlatform;
         private readonly Platform? _failingStoredRetrievePlatform = failingStoredRetrievePlatform;
+        private readonly Platform? _rateLimitedStoredRetrievePlatform = rateLimitedStoredRetrievePlatform;
+        private readonly DateTimeOffset? _retryAfterUtc = retryAfterUtc;
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.Method == HttpMethod.Post)
             {
+                if (ReadStoredRetrievePlatform(request.RequestUri) == _rateLimitedStoredRetrievePlatform)
+                {
+                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.TooManyRequests)
+                    {
+                        Content = System.Net.Http.Json.JsonContent.Create(
+                            new StoredRetrievalThrottleResponse(_retryAfterUtc))
+                    });
+                }
+
                 if (ReadStoredRetrievePlatform(request.RequestUri) == _failingStoredRetrievePlatform)
                 {
                     return Task.FromResult(new HttpResponseMessage

@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using GameHub.Ingest.Controllers;
 using GameHub.Ingest.Data;
@@ -7,6 +9,7 @@ using GameHub.Ingest.Services;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -139,6 +142,32 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         Assert.DoesNotContain(newRefreshToken, responseJson, StringComparison.Ordinal);
         Assert.DoesNotContain(oldRefreshToken, string.Join("\n", logger.Messages), StringComparison.Ordinal);
         Assert.DoesNotContain(newRefreshToken, string.Join("\n", logger.Messages), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StoredEpicRetrieve_RateLimited_ReturnsOnlySafeRetryAfter()
+    {
+        const string refreshToken = "epic-refresh-token-secret";
+        var retryAfterUtc = new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        await StoreEpic(TenantA, refreshToken);
+        await using var db = CreateContext(TenantA);
+        using var rateLimitResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        rateLimitResponse.Headers.RetryAfter = new RetryConditionHeaderValue(retryAfterUtc);
+        var controller = CreateController(
+            db,
+            TenantA,
+            new CapturingSteamFetcher(),
+            new UnusedPsnFetcher(),
+            new ThrowingEpicFetcher(ProviderRequestException.FromResponse(rateLimitResponse)));
+
+        var result = await controller.RetrieveStored(Platform.Epic, CancellationToken.None);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        var response = Assert.IsType<StoredRetrievalThrottleResponse>(objectResult.Value);
+        var responseJson = JsonSerializer.Serialize(response);
+        Assert.Equal(StatusCodes.Status429TooManyRequests, objectResult.StatusCode);
+        Assert.Equal(retryAfterUtc, response.RetryAfterUtc);
+        Assert.DoesNotContain(refreshToken, responseJson, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -115,6 +115,7 @@ builder.Services.AddScoped<BackupImportService>();
 builder.Services.AddSingleton<BackupCsvSerializer>();
 builder.Services.AddSingleton<BackupJsonSerializer>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.AddSingleton<StoredRetrievalCooldown>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<TenantExecutionContext>();
 builder.Services.AddScoped<ITenantContext, AuthenticatedTenantContext>();
