@@ -48,6 +48,13 @@
 - `Retry-After` dates and delays are normalized to UTC for tenant audit messages when providers send
   them. The shared signal does not retry requests and never retains response content or credentials.
 
+**Tenant-Scoped Retrieval Cooldown:**
+- Ingest now returns only a safe `RetryAfterUtc` body for internal stored-retrieval rate limits; Core
+  maps it to a typed exception and stores a transient cooldown by tenant and platform.
+- Active cooldowns skip the next provider refresh while preserving existing raw-data export and
+  unification. The state expires in memory, is isolated across tenants/platforms, and is never used
+  to replay a request or persist provider data.
+
 ### Known State / Pending
 
 - Epic remains the existing Legendary-inspired MVP, not official OAuth support or a production-proof

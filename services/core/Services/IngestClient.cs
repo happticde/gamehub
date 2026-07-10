@@ -86,6 +86,13 @@ public class IngestClient
         {
             return false;
         }
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            var throttle = await response.Content.ReadFromJsonAsync<StoredRetrievalThrottleResponse>(
+                JsonOptions,
+                cancellationToken);
+            throw new StoredRetrievalRateLimitedException(platform, throttle?.RetryAfterUtc);
+        }
 
         response.EnsureSuccessStatusCode();
         return true;

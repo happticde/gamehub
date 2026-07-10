@@ -24,6 +24,7 @@ public class UnificationService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IngestClient _client;
     private readonly ILogger<UnificationService> _logger;
+    private readonly StoredRetrievalCooldown _retrievalCooldown;
     private const string EpicRawMetadataSource = "Epic Raw";
 
     /// <summary>Number of items to fetch per page from the Ingest service.</summary>
@@ -73,11 +74,16 @@ public class UnificationService
         "bonus content"
     ];
 
-    public UnificationService(IServiceScopeFactory scopeFactory, IngestClient client, ILogger<UnificationService> logger)
+    public UnificationService(
+        IServiceScopeFactory scopeFactory,
+        IngestClient client,
+        ILogger<UnificationService> logger,
+        StoredRetrievalCooldown retrievalCooldown)
     {
         _scopeFactory = scopeFactory;
         _client = client;
         _logger = logger;
+        _retrievalCooldown = retrievalCooldown;
     }
 
     /// <summary>
@@ -128,9 +134,11 @@ public class UnificationService
 
         // Step 1: Get the last sync timestamp for this platform
         DateTime? lastSyncedAt;
+        Guid tenantId;
         using (var scope = _scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            tenantId = scope.ServiceProvider.GetRequiredService<ITenantContext>().TenantId;
             var meta = await db.SyncMetadata.FirstOrDefaultAsync(m => m.Platform == platform);
             lastSyncedAt = meta?.LastSyncedAt;
         }
@@ -147,24 +155,58 @@ public class UnificationService
 
         try
         {
-            try
+            if (_retrievalCooldown.TryGetRetryAfter(tenantId, platform, out var retryAfterUtc))
             {
-                var refreshed = await _client.RetrieveStoredAsync(platform);
-                if (!refreshed)
+                auditStatus = "PartialSuccess";
+                errorMessage = $"Stored platform retrieval is deferred until {retryAfterUtc:O}; existing raw data was exported.";
+                _logger.LogInformation(
+                    "Stored retrieval remains deferred for {Platform} in tenant {TenantId} until {RetryAfterUtc}; exporting existing raw data",
+                    platform,
+                    tenantId,
+                    retryAfterUtc);
+            }
+            else
+            {
+                try
                 {
-                    _logger.LogDebug(
-                        "No stored credential configured for {Platform}; exporting existing raw data",
+                    var refreshed = await _client.RetrieveStoredAsync(platform);
+                    if (!refreshed)
+                    {
+                        _retrievalCooldown.Clear(tenantId, platform);
+                        _logger.LogDebug(
+                            "No stored credential configured for {Platform}; exporting existing raw data",
+                            platform);
+                    }
+                    else
+                    {
+                        _retrievalCooldown.Clear(tenantId, platform);
+                    }
+                }
+                catch (StoredRetrievalRateLimitedException exception)
+                {
+                    if (exception.RetryAfterUtc is { } retryAfter)
+                    {
+                        _retrievalCooldown.SetRetryAfter(tenantId, platform, retryAfter);
+                    }
+
+                    auditStatus = "PartialSuccess";
+                    errorMessage = exception.RetryAfterUtc is { } rateLimitRetryAfterUtc
+                        ? $"Stored platform retrieval is rate limited until {rateLimitRetryAfterUtc:O}; existing raw data was exported."
+                        : "Stored platform retrieval is rate limited; existing raw data was exported.";
+                    _logger.LogWarning(
+                        "Stored retrieval is rate limited for {Platform} in tenant {TenantId}; exporting existing raw data",
+                        platform,
+                        tenantId);
+                }
+                catch (HttpRequestException) when (platform == Platform.Epic)
+                {
+                    // An upstream refresh must not make an already stored tenant library unavailable.
+                    auditStatus = "PartialSuccess";
+                    errorMessage = "Stored platform retrieval failed; existing raw data was exported.";
+                    _logger.LogWarning(
+                        "Stored retrieval failed for {Platform}; exporting existing raw data",
                         platform);
                 }
-            }
-            catch (HttpRequestException) when (platform == Platform.Epic)
-            {
-                // An upstream refresh must not make an already stored tenant library unavailable.
-                auditStatus = "PartialSuccess";
-                errorMessage = "Stored platform retrieval failed; existing raw data was exported.";
-                _logger.LogWarning(
-                    "Stored retrieval failed for {Platform}; exporting existing raw data",
-                    platform);
             }
 
             while (hasMore)

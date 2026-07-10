@@ -86,6 +86,8 @@ public sealed class SyncSchedulerTenantIsolationTests
         services.AddLogging();
         services.AddHttpContextAccessor();
         services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<StoredRetrievalCooldown>();
         services.AddSingleton<TenantExecutionContext>();
         services.AddSingleton(new MultiUserMode(true));
         services.AddScoped<ITenantContext, AuthenticatedTenantContext>();

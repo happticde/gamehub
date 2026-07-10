@@ -79,6 +79,23 @@ public sealed class IngestClientTests
         Assert.False(retrieved);
     }
 
+    [Fact]
+    public async Task RetrieveStoredAsync_RateLimited_ThrowsRetryAfterWithoutReadingProviderDetails()
+    {
+        var retryAfterUtc = new DateTimeOffset(2030, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var handler = new CapturingHandler(
+            HttpStatusCode.TooManyRequests,
+            JsonContent.Create(new StoredRetrievalThrottleResponse(retryAfterUtc)));
+        var client = CreateClient(handler, Guid.NewGuid(), "dedicated-service-key");
+
+        var exception = await Assert.ThrowsAsync<StoredRetrievalRateLimitedException>(
+            () => client.RetrieveStoredAsync(Platform.Epic));
+
+        Assert.Equal(Platform.Epic, exception.Platform);
+        Assert.Equal(retryAfterUtc, exception.RetryAfterUtc);
+        Assert.DoesNotContain("provider", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static IngestClient CreateClient(
         CapturingHandler handler,
         Guid tenantId,
@@ -102,7 +119,9 @@ public sealed class IngestClientTests
         public Guid TenantId { get; } = tenantId;
     }
 
-    private sealed class CapturingHandler(HttpStatusCode statusCode = HttpStatusCode.OK)
+    private sealed class CapturingHandler(
+        HttpStatusCode statusCode = HttpStatusCode.OK,
+        HttpContent? content = null)
         : HttpMessageHandler
     {
         public HttpRequestMessage? Request { get; private set; }
@@ -114,7 +133,7 @@ public sealed class IngestClientTests
             Request = request;
             return Task.FromResult(new HttpResponseMessage(statusCode)
             {
-                Content = JsonContent.Create(new PagedResult<RawGameDto>())
+                Content = content ?? JsonContent.Create(new PagedResult<RawGameDto>())
             });
         }
     }

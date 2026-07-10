@@ -179,6 +179,10 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Shared provider throttle signals**: Steam, GOG, PlayStation, and Epic now share safe `429` and
   temporary `5xx` classification, including a provider-supplied `Retry-After` timestamp when present.
   The signal is audit-only; no automatic retry or token-exchange replay is introduced.
+- **Tenant-scoped retrieval cooldown**: Core receives only the internal, secret-free `RetryAfterUtc`
+  for stored-retrieval `429` responses and holds a transient cooldown per tenant and platform. While
+  active, sync skips only the provider refresh and still unifies existing raw data; no cooldown is
+  persisted or used to trigger an immediate retry.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
   follow-up scope includes continued provider-fragility handling. Do not describe this as official
   OAuth support or a fully production-proof provider integration.
