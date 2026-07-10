@@ -4,6 +4,12 @@
 
 ### What Changed
 
+**Epic Stored Retrieval Operations:**
+- Added an Epic-specific operator runbook for controlled live validation, safe responses to existing
+  audit states, tenant/platform cooldown discipline, and fixture-led payload-drift investigation.
+- Kept the scope documentation-only: no new retries, metrics, alerts, provider health checks,
+  credentials, schema, or authorization flow were introduced.
+
 **Epic Raw Metadata Mapping:**
 - Extended Epic stored-retrieval raw mapping with safe stable top-level metadata from launcher
   assets and catalog metadata, including catalog identifiers, developer/publisher names, release

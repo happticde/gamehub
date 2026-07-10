@@ -183,6 +183,9 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   for stored-retrieval `429` responses and holds a transient cooldown per tenant and platform. While
   active, sync skips only the provider refresh and still unifies existing raw data; no cooldown is
   persisted or used to trigger an immediate retry.
+- **Operator readiness**: The Epic stored-retrieval runbook now defines controlled live validation,
+  safe audit-state response, cooldown discipline, and fixture-led payload-drift investigation. It
+  deliberately does not add alerting, retry orchestration, or provider monitoring infrastructure.
 - **Status boundary**: The Epic Stored Retrieval MVP works, including the local helper UX. Remaining
   follow-up scope includes continued provider-fragility handling. Do not describe this as official
   OAuth support or a fully production-proof provider integration.

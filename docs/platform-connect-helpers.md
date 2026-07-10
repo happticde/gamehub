@@ -18,6 +18,10 @@ Supported platforms:
 These flows do not add official OAuth support, do not make the providers production-proof, and do
 not replace the existing encrypted Ingest credential vault.
 
+For the Epic retrieval lifecycle after a credential is saved, including audit-state response,
+cooldown discipline, and safe payload-drift investigation, see
+[Epic Stored Retrieval Operations](epic-stored-retrieval-operations.md).
+
 ## Build the CLI
 
 Run the helper on the host machine, not inside the devcontainer, because it needs to open or attach
