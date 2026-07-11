@@ -20,6 +20,9 @@ public class RawGameDto
     /// </summary>
     public DateTime LastUpdated { get; set; }
 
+    /// <summary>SHA-256 fingerprint of the canonical source payload.</summary>
+    public string ContentHash { get; set; } = string.Empty;
+
     /// <summary>Total playtime in minutes recorded by the platform (if available).</summary>
     public int? PlaytimeMinutes { get; set; }
 

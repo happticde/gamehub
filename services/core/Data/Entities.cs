@@ -78,6 +78,7 @@ public class LibraryItem : ITenantOwned
     public UnifiedGame? UnifiedGame { get; set; }
     public Platform Platform { get; set; }
     public string ExternalId { get; set; } = "";
+    public string? SourceContentHash { get; set; }
     public DateTime LastSynced { get; set; } = DateTime.UtcNow;
 }
 

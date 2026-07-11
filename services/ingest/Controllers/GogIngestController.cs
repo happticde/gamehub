@@ -51,21 +51,23 @@ public class GogIngestController : IngestControllerBase<GogRawItem>
         return null;
     }
 
-    protected override GogRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson) => new()
+    protected override GogRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes) => new()
     {
         GameId = long.Parse(externalId), // Convert string back to long for the DB column
         Title = name,
-        PlaytimeMinutes = playtimeMinutes,
-        RawJson = rawJson,
-        LastUpdated = DateTime.UtcNow
+        PlaytimeMinutes = playtimeMinutes
     };
 
-    protected override void UpdateEntity(GogRawItem existing, string? name, int? playtimeMinutes, string rawJson)
+    protected override void UpdateEntity(GogRawItem existing, string? name, int? playtimeMinutes)
     {
-        existing.RawJson = rawJson;
         existing.Title = name ?? existing.Title;
         existing.PlaytimeMinutes = playtimeMinutes ?? existing.PlaytimeMinutes;
-        existing.LastUpdated = DateTime.UtcNow;
+    }
+
+    protected override Task<List<GogRawItem>> LoadExistingItemsAsync(IReadOnlyCollection<string> externalIds)
+    {
+        var gameIds = externalIds.Select(long.Parse).ToArray();
+        return DbSet.Where(item => gameIds.Contains(item.GameId)).ToListAsync();
     }
 
     protected override Expression<Func<GogRawItem, bool>> FindByExternalId(string id)

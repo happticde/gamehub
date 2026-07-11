@@ -151,6 +151,45 @@ public class ExportControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Export_AllStandardPlatforms_IncludeContentHash()
+    {
+        _db.SteamRawItems.Add(new SteamRawItem
+        {
+            AppId = 1,
+            Name = "Steam Game",
+            RawJson = "{}",
+            ContentHash = "steam-hash"
+        });
+        _db.PsnRawItems.Add(new PsnRawItem
+        {
+            TitleId = "CUSA00001",
+            TitleName = "PSN Game",
+            RawJson = "{}",
+            ContentHash = "psn-hash"
+        });
+        _db.GogRawItems.Add(new GogRawItem
+        {
+            GameId = 2,
+            Title = "GOG Game",
+            RawJson = "{}",
+            ContentHash = "gog-hash"
+        });
+        await _db.SaveChangesAsync();
+        var controller = new ExportController(_db, NullLogger<ExportController>.Instance);
+
+        var steam = Assert.IsType<PagedResult<RawGameDto>>(
+            Assert.IsType<OkObjectResult>(await controller.GetByPlatform("steam")).Value);
+        var psn = Assert.IsType<PagedResult<RawGameDto>>(
+            Assert.IsType<OkObjectResult>(await controller.GetByPlatform("psn")).Value);
+        var gog = Assert.IsType<PagedResult<RawGameDto>>(
+            Assert.IsType<OkObjectResult>(await controller.GetByPlatform("gog")).Value);
+
+        Assert.Equal("steam-hash", Assert.Single(steam.Items).ContentHash);
+        Assert.Equal("psn-hash", Assert.Single(psn.Items).ContentHash);
+        Assert.Equal("gog-hash", Assert.Single(gog.Items).ContentHash);
+    }
+
+    [Fact]
     public async Task Export_EpicRawItem_IncludesOnlySafeFallbackMetadata()
     {
         _db.EpicRawItems.Add(new EpicRawItem
@@ -174,6 +213,7 @@ public class ExportControllerTests : IDisposable
               }
             }
             """,
+            ContentHash = "epic-content-hash",
             LastUpdated = new DateTime(2026, 7, 9, 0, 0, 0, DateTimeKind.Utc)
         });
         await _db.SaveChangesAsync();
@@ -186,6 +226,7 @@ public class ExportControllerTests : IDisposable
         var item = Assert.Single(page.Items);
         Assert.Equal("Anemone", item.Id);
         Assert.Equal("World of Goo", item.Name);
+        Assert.Equal("epic-content-hash", item.ContentHash);
         Assert.Equal("Build bridges from living balls of goo.", item.Summary);
         Assert.Equal("https://cdn.example.test/cover.jpg", item.CoverUrl);
         Assert.Equal("https://cdn.example.test/key-art.jpg", item.ArtworkUrl);

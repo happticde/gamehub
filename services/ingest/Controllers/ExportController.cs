@@ -66,11 +66,11 @@ public class ExportController : ControllerBase
         IQueryable<RawGameDto>? query = normalizedPlatform switch
         {
             "steam" => BuildQuery(_db.SteamRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.AppId.ToString(), Name = x.Name, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
+                x => new RawGameDto { Id = x.AppId.ToString(), Name = x.Name, LastUpdated = x.LastUpdated, ContentHash = x.ContentHash, PlaytimeMinutes = x.PlaytimeMinutes }),
             "psn" => BuildQuery(_db.PsnRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.TitleId, Name = x.TitleName, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
+                x => new RawGameDto { Id = x.TitleId, Name = x.TitleName, LastUpdated = x.LastUpdated, ContentHash = x.ContentHash, PlaytimeMinutes = x.PlaytimeMinutes }),
             "gog" => BuildQuery(_db.GogRawItems, updatedAfter,
-                x => new RawGameDto { Id = x.GameId.ToString(), Name = x.Title, LastUpdated = x.LastUpdated, PlaytimeMinutes = x.PlaytimeMinutes }),
+                x => new RawGameDto { Id = x.GameId.ToString(), Name = x.Title, LastUpdated = x.LastUpdated, ContentHash = x.ContentHash, PlaytimeMinutes = x.PlaytimeMinutes }),
             _ => null
         };
 
@@ -137,6 +137,7 @@ public class ExportController : ControllerBase
                 x.AppName,
                 x.Title,
                 x.LastUpdated,
+                x.ContentHash,
                 x.PlaytimeMinutes,
                 x.RawJson
             })
@@ -148,6 +149,7 @@ public class ExportController : ControllerBase
                 x.AppName,
                 x.Title,
                 x.LastUpdated,
+                x.ContentHash,
                 x.PlaytimeMinutes,
                 x.RawJson)).ToList(),
             TotalCount = totalCount,
@@ -160,6 +162,7 @@ public class ExportController : ControllerBase
         string appName,
         string? title,
         DateTime lastUpdated,
+        string contentHash,
         int? playtimeMinutes,
         string rawJson)
     {
@@ -168,6 +171,7 @@ public class ExportController : ControllerBase
             Id = appName,
             Name = title,
             LastUpdated = lastUpdated,
+            ContentHash = contentHash,
             PlaytimeMinutes = playtimeMinutes
         };
 

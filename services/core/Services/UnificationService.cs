@@ -11,13 +11,14 @@ namespace GameHub.Core.Services;
 /// How it works:
 ///   1. For each platform (Steam, PSN, GOG, Epic), check when we last synced
 ///   2. Fetch only records updated since last sync, one page at a time
-///   3. For each page, check ManualLinks first, then fall back to slug-based matching
+///   3. For each page, check ManualLinks, stable source IDs, then slug-based matching
 ///   4. After all pages for a platform are processed, update the sync timestamp
 ///
 /// Game matching priority:
 ///   1. ManualLink — if a manual override exists for (Platform, ExternalId), use it
-///   2. Slug match — generate a normalized slug from the title and match by slug
-///   3. Create new — if no match found, create a new UnifiedGame
+///   2. Existing source — keep (Platform, ExternalId) attached to its current UnifiedGame
+///   3. Slug match — generate a normalized slug from the title and match by slug
+///   4. Create new — if no match found, create a new UnifiedGame
 /// </summary>
 public class UnificationService
 {
@@ -150,6 +151,7 @@ public class UnificationService
         int page = 1;
         bool hasMore = true;
         int created = 0;
+        int received = 0;
         string auditStatus = "Success";
         string? errorMessage = null;
 
@@ -215,6 +217,7 @@ public class UnificationService
 
                 if (result.Items.Count > 0)
                 {
+                    received += result.Items.Count;
                     // Step 3: Process this page
                     var (pageProcessed, pageCreated) = await ProcessPageAsync(result.Items, platform);
                     processed += pageProcessed;
@@ -226,7 +229,7 @@ public class UnificationService
             }
 
             // Step 4: Update the sync timestamp
-            if (processed > 0)
+            if (received > 0)
             {
                 await UpdateSyncTimestampAsync(platform);
             }
@@ -261,7 +264,8 @@ public class UnificationService
     ///
     /// For each item, the matching priority is:
     ///   1. Check ManualLinks — if a manual override exists, link directly to that game
-    ///   2. Slug match — generate a normalized slug and find/create a UnifiedGame
+    ///   2. Reuse an existing stable (Platform, ExternalId) source association
+    ///   3. Slug match — generate a normalized slug and find/create a UnifiedGame
     ///
     /// Uses a fresh DbContext scope so each page is saved independently.
     /// Returns a tuple: (TotalItemsProcessed, NewGamesCreated).
@@ -283,6 +287,28 @@ public class UnificationService
             .Where(ml => ml.Platform == platform && externalIds.Contains(ml.ExternalId))
             .ToDictionaryAsync(ml => ml.ExternalId);
 
+        var sourceLinks = await db.LibraryItems
+            .Include(item => item.UnifiedGame!)
+            .ThenInclude(game => game.Items)
+            .Where(item => item.Platform == platform && externalIds.Contains(item.ExternalId))
+            .ToListAsync();
+        var duplicateSourceCount = sourceLinks
+            .GroupBy(item => item.ExternalId, StringComparer.Ordinal)
+            .Count(group => group.Count() > 1);
+        if (duplicateSourceCount > 0)
+        {
+            _logger.LogWarning(
+                "Found {DuplicateSourceCount} duplicate source identifiers for {Platform}; using the oldest association",
+                duplicateSourceCount,
+                platform);
+        }
+        var sourceLinksByExternalId = sourceLinks
+            .GroupBy(item => item.ExternalId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(item => item.Id).First(),
+                StringComparer.Ordinal);
+
         // Pre-calculate slugs and batch-load existing UnifiedGames
         var slugMap = validItems.ToDictionary(x => x, x => GenerateSlug(x.Name!));
         var distinctSlugs = slugMap.Values.Distinct().ToHashSet();
@@ -301,12 +327,18 @@ public class UnificationService
         foreach (var item in validItems)
         {
             UnifiedGame game;
+            sourceLinksByExternalId.TryGetValue(item.Id, out var sourceLink);
 
             // Priority 1: Check for a manual override
             if (manualLinks.TryGetValue(item.Id, out var link) && manualGames.TryGetValue(link.UnifiedGameId, out var manualGame))
             {
                 // Manual override found — use this specific game regardless of title/slug
                 game = manualGame;
+            }
+            else if (sourceLink?.UnifiedGame is not null)
+            {
+                // Stable provider identifiers survive title and slug changes.
+                game = sourceLink.UnifiedGame;
             }
             else
             {
@@ -331,20 +363,32 @@ public class UnificationService
                 }
             }
 
+            if (sourceLink is not null &&
+                sourceLink.UnifiedGameId == game.Id &&
+                !string.IsNullOrEmpty(item.ContentHash) &&
+                string.Equals(sourceLink.SourceContentHash, item.ContentHash, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             // Add or update the platform-specific LibraryItem link
-            var platformLink = game.Items.FirstOrDefault(i => i.Platform == platform);
+            var platformLink = sourceLink?.UnifiedGameId == game.Id
+                ? sourceLink
+                : game.Items.FirstOrDefault(i => i.Platform == platform);
             if (platformLink == null)
             {
                 game.Items.Add(new LibraryItem
                 {
                     Platform = platform,
                     ExternalId = item.Id,
+                    SourceContentHash = NullIfEmpty(item.ContentHash),
                     LastSynced = DateTime.UtcNow
                 });
             }
             else
             {
                 platformLink.ExternalId = item.Id;
+                platformLink.SourceContentHash = NullIfEmpty(item.ContentHash);
                 platformLink.LastSynced = DateTime.UtcNow;
             }
 
@@ -413,6 +457,8 @@ public class UnificationService
     }
 
     private static bool IsBlank(string? value) => string.IsNullOrWhiteSpace(value);
+
+    private static string? NullIfEmpty(string value) => string.IsNullOrEmpty(value) ? null : value;
 
     /// <summary>
     /// Updates the SyncMetadata record for a platform with the current timestamp.

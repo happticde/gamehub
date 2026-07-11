@@ -30,7 +30,10 @@ public interface IRawItem
     /// <summary>The full raw JSON response from the platform API, stored for future re-processing.</summary>
     string RawJson { get; set; }
 
-    /// <summary>Timestamp of when this record was last ingested or updated.</summary>
+    /// <summary>SHA-256 fingerprint of the canonical raw JSON payload.</summary>
+    string ContentHash { get; set; }
+
+    /// <summary>Timestamp of the last content change detected for this record.</summary>
     DateTime LastUpdated { get; set; }
 
     /// <summary>Total playtime in minutes recorded by the platform (if available).</summary>

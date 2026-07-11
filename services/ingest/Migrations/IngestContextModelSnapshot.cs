@@ -27,6 +27,11 @@ namespace GameHub.Ingest.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("TEXT");
 
@@ -50,6 +55,8 @@ namespace GameHub.Ingest.Migrations
                     b.HasIndex("TenantId", "AppName")
                         .IsUnique();
 
+                    b.HasIndex("TenantId", "LastUpdated");
+
                     b.ToTable("EpicRawItems");
                 });
 
@@ -58,6 +65,11 @@ namespace GameHub.Ingest.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<long>("GameId")
                         .HasColumnType("INTEGER");
@@ -84,6 +96,8 @@ namespace GameHub.Ingest.Migrations
 
                     b.HasIndex("TenantId", "GameId")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "LastUpdated");
 
                     b.ToTable("GogRawItems");
                 });
@@ -181,6 +195,11 @@ namespace GameHub.Ingest.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("TEXT");
 
@@ -205,6 +224,8 @@ namespace GameHub.Ingest.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("TenantId", "LastUpdated");
+
                     b.HasIndex("TenantId", "TitleId")
                         .IsUnique();
 
@@ -219,6 +240,11 @@ namespace GameHub.Ingest.Migrations
 
                     b.Property<int>("AppId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("TEXT");
@@ -242,6 +268,8 @@ namespace GameHub.Ingest.Migrations
 
                     b.HasIndex("TenantId", "AppId")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "LastUpdated");
 
                     b.ToTable("SteamRawItems");
                 });

@@ -1,5 +1,6 @@
 using GameHub.Shared;
 using GameHub.Ingest.Data;
+using GameHub.Ingest.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -66,13 +67,16 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
     /// The subclass maps the generic externalId/name back to its specific fields
     /// (e.g. SteamRawItem.AppId = int.Parse(externalId)).
     /// </summary>
-    protected abstract TEntity CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson);
+    protected abstract TEntity CreateEntity(string externalId, string? name, int? playtimeMinutes);
 
     /// <summary>
-    /// Update an existing entity with fresh data from a re-import.
-    /// Typically updates RawJson, the name (if provided), and LastUpdated timestamp.
+    /// Updates the platform-specific projected fields after a content change is detected.
+    /// Shared raw payload, hash, and timestamp fields are updated by the base implementation.
     /// </summary>
-    protected abstract void UpdateEntity(TEntity existing, string? name, int? playtimeMinutes, string rawJson);
+    protected abstract void UpdateEntity(TEntity existing, string? name, int? playtimeMinutes);
+
+    /// <summary>Loads all existing rows for one incoming batch in a single database query.</summary>
+    protected abstract Task<List<TEntity>> LoadExistingItemsAsync(IReadOnlyCollection<string> externalIds);
 
     /// <summary>
     /// Build an Expression predicate to find an entity by its external ID.
@@ -95,7 +99,7 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
     ///   3. If yes → update it (idempotent). If no → insert a new record.
     ///   4. Save all changes in one batch at the end.
     ///
-    /// Returns a count of added and updated records.
+    /// Returns counts of added, changed, unchanged, and skipped records.
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> IngestBatch([FromBody] List<JsonElement> rawGames)
@@ -104,8 +108,9 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
 
         int added = 0;
         int updated = 0;
+        int unchanged = 0;
         int skipped = 0;
-        var pendingInserts = new Dictionary<string, TEntity>(StringComparer.Ordinal);
+        var incomingItems = new List<(string Id, string? Name, int? PlaytimeMinutes, string RawJson, string ContentHash)>();
 
         foreach (var gameJson in rawGames)
         {
@@ -118,46 +123,66 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
                 continue;
             }
 
-            // Extract playtime
-            var playtimeMinutes = ExtractPlaytime(gameJson);
+            incomingItems.Add((
+                id,
+                name,
+                ExtractPlaytime(gameJson),
+                gameJson.GetRawText(),
+                RawContentHasher.Compute(gameJson)));
+        }
 
-            // Step 2: Check if this game is already in the database (idempotency check)
-            var existing = await DbSet.FirstOrDefaultAsync(FindByExternalId(id));
-            string jsonString = gameJson.ToString();
+        var externalIds = incomingItems
+            .Select(item => item.Id)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var knownItems = (await LoadExistingItemsAsync(externalIds))
+            .ToDictionary(item => item.ExternalId, StringComparer.Ordinal);
 
-            if (existing != null)
+        foreach (var item in incomingItems)
+        {
+            if (knownItems.TryGetValue(item.Id, out var existing))
             {
-                // Step 3a: Record exists → update it with fresh data
-                UpdateEntity(existing, name, playtimeMinutes, jsonString);
+                if (string.Equals(existing.ContentHash, item.ContentHash, StringComparison.Ordinal))
+                {
+                    unchanged++;
+                    continue;
+                }
+
+                UpdateEntity(existing, item.Name, item.PlaytimeMinutes);
+                existing.RawJson = item.RawJson;
+                existing.ContentHash = item.ContentHash;
+                existing.LastUpdated = DateTime.UtcNow;
                 updated++;
-            }
-            else if (pendingInserts.TryGetValue(id, out var pending))
-            {
-                UpdateEntity(pending, name, playtimeMinutes, jsonString);
-                updated++;
-                Logger.LogDebug(
-                    "{Platform}: duplicate game in same batch updated pending insert (ID: {Id})",
-                    PlatformName,
-                    id);
             }
             else
             {
-                // Step 3b: New record → create and add it
-                var created = CreateEntity(id, name, playtimeMinutes, jsonString);
+                var created = CreateEntity(item.Id, item.Name, item.PlaytimeMinutes);
+                created.RawJson = item.RawJson;
+                created.ContentHash = item.ContentHash;
+                created.LastUpdated = DateTime.UtcNow;
                 DbSet.Add(created);
-                pendingInserts[id] = created;
+                knownItems[item.Id] = created;
                 added++;
-                Logger.LogDebug("{Platform}: new game '{Name}' (ID: {Id})", PlatformName, name, id);
+                Logger.LogDebug(
+                    "{Platform}: new game '{Name}' (ID: {Id})",
+                    PlatformName,
+                    item.Name,
+                    item.Id);
             }
         }
 
         // Step 4: Persist all changes in a single transaction
         await Db.SaveChangesAsync();
 
-        Logger.LogInformation("{Platform}: batch complete — {Added} added, {Updated} updated, {Skipped} skipped",
-            PlatformName, added, updated, skipped);
+        Logger.LogInformation(
+            "{Platform}: batch complete — {Added} added, {Updated} updated, {Unchanged} unchanged, {Skipped} skipped",
+            PlatformName,
+            added,
+            updated,
+            unchanged,
+            skipped);
 
-        return Ok(new { Added = added, Updated = updated });
+        return Ok(new { Added = added, Updated = updated, Unchanged = unchanged, Skipped = skipped });
     }
 
     /// <summary>

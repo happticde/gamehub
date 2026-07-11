@@ -336,6 +336,101 @@ public class UnificationServiceTests : IDisposable
         Assert.Equal(retryAfterUtc, recordedRetryAfter);
     }
 
+    [Fact]
+    public async Task RunFullSync_ExistingSourceIdWithChangedTitle_KeepsUnifiedGameAssociation()
+    {
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            db.UnifiedGames.Add(new UnifiedGame
+            {
+                Title = "Original Provider Title",
+                Slug = "original-provider-title",
+                Items =
+                [
+                    new LibraryItem
+                    {
+                        Platform = Platform.Psn,
+                        ExternalId = "CUSA00001",
+                        SourceContentHash = "old-hash"
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(CreateMockClient(Platform.Psn,
+        [
+            new RawGameDto
+            {
+                Id = "CUSA00001",
+                Name = "Renamed Provider Title",
+                ContentHash = "new-hash"
+            }
+        ]));
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await verifyDb.UnifiedGames.Include(item => item.Items).SingleAsync();
+        var source = Assert.Single(game.Items);
+        Assert.Equal(1, processed);
+        Assert.Equal("Original Provider Title", game.Title);
+        Assert.Equal("original-provider-title", game.Slug);
+        Assert.Equal("CUSA00001", source.ExternalId);
+        Assert.Equal("new-hash", source.SourceContentHash);
+    }
+
+    [Fact]
+    public async Task RunFullSync_AlreadyAppliedContentHash_SkipsWriteAndAdvancesCursor()
+    {
+        var originalLastSynced = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            db.UnifiedGames.Add(new UnifiedGame
+            {
+                Title = "Stable Game",
+                Slug = "stable-game",
+                Items =
+                [
+                    new LibraryItem
+                    {
+                        Platform = Platform.Steam,
+                        ExternalId = "730",
+                        SourceContentHash = "stable-hash",
+                        LastSynced = originalLastSynced
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(CreateMockClient(
+        [
+            new RawGameDto
+            {
+                Id = "730",
+                Name = "Stable Game",
+                ContentHash = "stable-hash"
+            }
+        ]));
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var source = await verifyDb.LibraryItems.SingleAsync();
+        var metadata = await verifyDb.SyncMetadata.SingleAsync(item => item.Platform == Platform.Steam);
+        var audit = await verifyDb.SyncAuditLogs.SingleAsync(item => item.Platform == Platform.Steam);
+        Assert.Equal(0, processed);
+        Assert.Equal(originalLastSynced, source.LastSynced);
+        Assert.Equal("stable-hash", source.SourceContentHash);
+        Assert.True(metadata.LastSyncedAt > originalLastSynced);
+        Assert.Equal(0, audit.ItemsProcessed);
+    }
+
     // =========================================================================
     // Test: New games create UnifiedGame records
     // =========================================================================
