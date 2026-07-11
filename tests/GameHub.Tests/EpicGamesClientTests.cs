@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using GameHub.Ingest.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -70,6 +72,7 @@ public sealed class EpicGamesClientTests
     {
         using var fixture = new IngestScopeFixture();
         var rotationStore = new CapturingRefreshTokenRotationStore();
+        var logger = new CapturingLogger<EpicGamesClient>();
         var handler = new RecordingHandler(request =>
         {
             if (request.Method == HttpMethod.Post)
@@ -90,7 +93,8 @@ public sealed class EpicGamesClientTests
         var client = CreateClient(
             handler,
             fixture.ScopeFactory,
-            rotationStore);
+            rotationStore,
+            logger);
 
         var games = await client.FetchGamesAsync(
             new EpicPlatformCredential("old-refresh-token", "account-1", "Player"));
@@ -102,6 +106,11 @@ public sealed class EpicGamesClientTests
         Assert.Equal("account-2", rotationStore.RefreshedCredential?.AccountId);
         Assert.Equal("Renamed Player", rotationStore.RefreshedCredential?.DisplayName);
         Assert.Equal(2, handler.RequestCount);
+        Assert.Contains(
+            logger.Messages,
+            message => message.Contains(
+                "Epic refresh-token rotation persistence completed",
+                StringComparison.Ordinal));
     }
 
     [Fact]
@@ -203,6 +212,213 @@ public sealed class EpicGamesClientTests
     }
 
     [Fact]
+    public async Task FetchGamesAsync_SameNamespaceCatalogItems_UsesSingleBatchRequest()
+    {
+        using var fixture = new IngestScopeFixture();
+        var logger = new CapturingLogger<EpicGamesClient>();
+        var handler = CreateLibraryHandler(
+            """
+            [
+              { "appName": "BatchGameOne", "namespace": "shared-namespace", "catalogItemId": "catalog-one" },
+              { "appName": "BatchGameTwo", "namespace": "shared-namespace", "catalogItemId": "catalog-two" },
+              { "appName": "BatchGameThree", "namespace": "shared-namespace", "catalogItemId": "catalog-three" }
+            ]
+            """);
+        var client = CreateClient(handler, fixture.ScopeFactory, logger: logger);
+
+        var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
+
+        Assert.Equal(3, games.Games.Count);
+        var catalogRequest = Assert.Single(handler.CatalogRequestUris);
+        Assert.Equal(
+            new[] { "catalog-one", "catalog-two", "catalog-three" },
+            ReadCatalogIds(catalogRequest));
+        Assert.Contains("includeDLCDetails=true", catalogRequest.Query, StringComparison.Ordinal);
+        Assert.Contains("includeMainGameDetails=true", catalogRequest.Query, StringComparison.Ordinal);
+        var logs = string.Join("\n", logger.Messages);
+        Assert.Contains("Epic OAuth refresh completed", logs, StringComparison.Ordinal);
+        Assert.Contains("Epic launcher asset retrieval completed", logs, StringComparison.Ordinal);
+        Assert.Contains("Epic catalog metadata retrieval completed", logs, StringComparison.Ordinal);
+        Assert.Contains("Epic mapping completed", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("epic-refresh-token", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("catalog-one", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("shared-namespace", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("BatchGameOne", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain(IngestScopeFixture.TenantId.ToString(), logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://", logs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FetchGamesAsync_DifferentNamespaces_UsesSeparateBatchRequests()
+    {
+        using var fixture = new IngestScopeFixture();
+        var handler = CreateLibraryHandler(
+            """
+            [
+              { "appName": "NamespaceGameOne", "namespace": "namespace-one", "catalogItemId": "catalog-one" },
+              { "appName": "NamespaceGameTwo", "namespace": "namespace-two", "catalogItemId": "catalog-two" }
+            ]
+            """);
+        var client = CreateClient(handler, fixture.ScopeFactory);
+
+        var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
+
+        Assert.Equal(2, games.Games.Count);
+        Assert.Equal(2, handler.CatalogRequestUris.Count);
+        Assert.Contains(handler.CatalogRequestUris, uri => uri.AbsolutePath.Contains("/namespace-one/", StringComparison.Ordinal));
+        Assert.Contains(handler.CatalogRequestUris, uri => uri.AbsolutePath.Contains("/namespace-two/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task FetchGamesAsync_DuplicateCatalogPair_FetchesMetadataOnce()
+    {
+        using var fixture = new IngestScopeFixture();
+        var handler = CreateLibraryHandler(
+            """
+            [
+              { "appName": "DuplicatePairOne", "namespace": "shared-namespace", "catalogItemId": "shared-catalog" },
+              { "appName": "DuplicatePairTwo", "namespace": "shared-namespace", "catalogItemId": "shared-catalog" }
+            ]
+            """);
+        var client = CreateClient(handler, fixture.ScopeFactory);
+
+        var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
+
+        Assert.Equal(2, games.Games.Count);
+        var catalogRequest = Assert.Single(handler.CatalogRequestUris);
+        Assert.Equal(new[] { "shared-catalog" }, ReadCatalogIds(catalogRequest));
+    }
+
+    [Fact]
+    public async Task FetchGamesAsync_ManyCatalogBatches_EnforcesMaximumConcurrency()
+    {
+        using var fixture = new IngestScopeFixture();
+        var activeCatalogRequests = 0;
+        var maximumCatalogRequests = 0;
+        var handler = new RecordingHandler(async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return OAuthResponse();
+            }
+            if (IsLauncherAssetsRequest(request))
+            {
+                return JsonResponse(BuildAssetsJson(65));
+            }
+
+            var active = Interlocked.Increment(ref activeCatalogRequests);
+            UpdateMaximum(ref maximumCatalogRequests, active);
+            try
+            {
+                await Task.Delay(40, cancellationToken);
+                return CatalogResponse(request.RequestUri!);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeCatalogRequests);
+            }
+        });
+        var client = CreateClient(handler, fixture.ScopeFactory);
+
+        var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
+
+        Assert.Equal(65, games.Games.Count);
+        Assert.Equal(4, handler.CatalogRequestUris.Count);
+        Assert.All(handler.CatalogRequestUris, uri => Assert.InRange(ReadCatalogIds(uri).Length, 1, 20));
+        Assert.InRange(maximumCatalogRequests, 2, 3);
+    }
+
+    [Fact]
+    public async Task FetchGamesAsync_RateLimitedCatalogBatch_AbortsRemainingWorkAndKeepsLogsSecretFree()
+    {
+        using var fixture = new IngestScopeFixture();
+        const string refreshToken = "rate-limit-refresh-token-secret";
+        const string catalogId = "catalog-secret-id-000";
+        const string namespaceName = "namespace-secret-value";
+        var logger = new CapturingLogger<EpicGamesClient>();
+        var handler = new RecordingHandler(async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return OAuthResponse(refreshToken);
+            }
+            if (IsLauncherAssetsRequest(request))
+            {
+                return JsonResponse(BuildAssetsJson(100, namespaceName, "catalog-secret-id"));
+            }
+            if (request.RequestUri?.Query.Contains(catalogId, StringComparison.Ordinal) == true)
+            {
+                return RateLimitedResponse();
+            }
+
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Canceled catalog request unexpectedly resumed.");
+        });
+        var client = CreateClient(handler, fixture.ScopeFactory, logger: logger);
+
+        var exception = await Assert.ThrowsAsync<ProviderRequestException>(
+            () => client.FetchGamesAsync(new EpicPlatformCredential(refreshToken)));
+        var audit = await fixture.ReadSingleAuditLogAsync();
+        var logs = string.Join("\n", logger.Messages);
+
+        Assert.Equal(ProviderRequestFailure.RateLimited, exception.Failure);
+        Assert.Equal("RateLimited", audit.Status);
+        Assert.InRange(handler.CatalogRequestUris.Count, 1, 3);
+        Assert.DoesNotContain(refreshToken, logs, StringComparison.Ordinal);
+        Assert.DoesNotContain(catalogId, logs, StringComparison.Ordinal);
+        Assert.DoesNotContain(namespaceName, logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain(refreshToken, audit.ErrorMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain(catalogId, audit.ErrorMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain(namespaceName, audit.ErrorMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://", audit.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FetchGamesAsync_UnusableCatalogEntry_SkipsOnlyAffectedEntry()
+    {
+        using var fixture = new IngestScopeFixture();
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return OAuthResponse();
+            }
+            if (IsLauncherAssetsRequest(request))
+            {
+                return JsonResponse(
+                    """
+                    [
+                      { "appName": "UsableCatalog", "namespace": "shared-namespace", "catalogItemId": "catalog-usable" },
+                      { "appName": "UnusableCatalog", "namespace": "shared-namespace", "catalogItemId": "catalog-unusable" }
+                    ]
+                    """);
+            }
+
+            return JsonResponse(
+                """
+                {
+                  "catalog-usable": {
+                    "title": "Usable Catalog Game",
+                    "categories": [{ "path": "games" }]
+                  },
+                  "catalog-unusable": "unexpected-shape"
+                }
+                """);
+        });
+        var client = CreateClient(handler, fixture.ScopeFactory);
+
+        var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
+        var audit = await fixture.ReadSingleAuditLogAsync();
+
+        Assert.Single(games.Games);
+        Assert.False(games.IsComplete);
+        Assert.Equal("PartialSuccess", audit.Status);
+        Assert.Equal(1, audit.GamesFound);
+        Assert.Single(handler.CatalogRequestUris);
+    }
+
+    [Fact]
     public async Task FetchGamesAsync_RateLimitedLibraryRequest_WritesSanitizedRateLimitAudit()
     {
         using var fixture = new IngestScopeFixture();
@@ -217,11 +433,12 @@ public sealed class EpicGamesClientTests
             : RateLimitedResponse());
         var client = CreateClient(handler, fixture.ScopeFactory);
 
-        var exception = await Assert.ThrowsAsync<HttpRequestException>(
+        var exception = await Assert.ThrowsAsync<ProviderRequestException>(
             () => client.FetchGamesAsync(new EpicPlatformCredential(refreshToken)));
         var audit = await fixture.ReadSingleAuditLogAsync();
 
         Assert.Equal("RateLimited", audit.Status);
+        Assert.Equal(ProviderRequestFailure.RateLimited, exception.Failure);
         Assert.Equal("Provider rate limit exceeded. Retry after 2030-01-02T03:04:05.0000000+00:00.", audit.ErrorMessage);
         Assert.Equal(IngestScopeFixture.TenantId, audit.TenantId);
         Assert.DoesNotContain(refreshToken, exception.Message, StringComparison.Ordinal);
@@ -561,6 +778,83 @@ public sealed class EpicGamesClientTests
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
 
+    private static HttpResponseMessage OAuthResponse(string refreshToken = "epic-refresh-token") =>
+        JsonResponse(
+            $$"""
+            {
+              "access_token": "epic-access-token",
+              "refresh_token": "{{refreshToken}}"
+            }
+            """);
+
+    private static RecordingHandler CreateLibraryHandler(string assetsJson) =>
+        new(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return OAuthResponse();
+            }
+            if (IsLauncherAssetsRequest(request))
+            {
+                return JsonResponse(assetsJson);
+            }
+
+            return CatalogResponse(request.RequestUri!);
+        });
+
+    private static bool IsLauncherAssetsRequest(HttpRequestMessage request) =>
+        request.RequestUri?.AbsolutePath.Contains(
+            "/launcher/api/public/assets/",
+            StringComparison.Ordinal) == true;
+
+    private static HttpResponseMessage CatalogResponse(Uri requestUri)
+    {
+        var metadata = ReadCatalogIds(requestUri).ToDictionary(
+            id => id,
+            id => new
+            {
+                title = $"Game {id}",
+                categories = new[] { new { path = "games" } }
+            },
+            StringComparer.Ordinal);
+        return JsonResponse(JsonSerializer.Serialize(metadata));
+    }
+
+    private static string[] ReadCatalogIds(Uri requestUri) =>
+        requestUri.Query
+            .TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .Where(part => part.Length == 2 && string.Equals(part[0], "id", StringComparison.Ordinal))
+            .Select(part => Uri.UnescapeDataString(part[1]))
+            .ToArray();
+
+    private static string BuildAssetsJson(
+        int count,
+        string namespaceName = "shared-namespace",
+        string catalogIdPrefix = "catalog") =>
+        JsonSerializer.Serialize(Enumerable.Range(0, count).Select(index => new
+        {
+            appName = $"BatchGame{index:D3}",
+            @namespace = namespaceName,
+            catalogItemId = $"{catalogIdPrefix}-{index:D3}"
+        }));
+
+    private static void UpdateMaximum(ref int maximum, int candidate)
+    {
+        var observed = Volatile.Read(ref maximum);
+        while (candidate > observed)
+        {
+            var prior = Interlocked.CompareExchange(ref maximum, candidate, observed);
+            if (prior == observed)
+            {
+                return;
+            }
+
+            observed = prior;
+        }
+    }
+
     private static HttpResponseMessage RateLimitedResponse()
     {
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
@@ -582,36 +876,75 @@ public sealed class EpicGamesClientTests
     private static EpicGamesClient CreateClient(
         RecordingHandler handler,
         IServiceScopeFactory? scopeFactory = null,
-        IEpicRefreshTokenRotationStore? refreshTokenRotationStore = null)
+        IEpicRefreshTokenRotationStore? refreshTokenRotationStore = null,
+        ILogger<EpicGamesClient>? logger = null)
     {
         var services = new ServiceCollection().BuildServiceProvider();
         return new EpicGamesClient(
             new HttpClient(handler),
-            NullLogger<EpicGamesClient>.Instance,
+            logger ?? NullLogger<EpicGamesClient>.Instance,
             scopeFactory ?? services.GetRequiredService<IServiceScopeFactory>(),
             refreshTokenRotationStore ?? new NoopRefreshTokenRotationStore());
     }
 
-    private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        : HttpMessageHandler
+    private sealed class RecordingHandler : HttpMessageHandler
     {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _responseFactory;
+        private readonly ConcurrentQueue<Uri> _requestUris = new();
+        private int _requestCount;
+
+        public RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+            : this((request, _) => Task.FromResult(responseFactory(request)))
+        {
+        }
+
+        public RecordingHandler(
+            Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responseFactory)
+        {
+            _responseFactory = responseFactory;
+        }
+
         public HttpRequestMessage? LastRequest { get; private set; }
         public string LastBody { get; private set; } = "";
-        public int RequestCount { get; private set; }
+        public int RequestCount => Volatile.Read(ref _requestCount);
+        public IReadOnlyList<Uri> CatalogRequestUris => _requestUris
+            .Where(uri => uri.AbsolutePath.Contains("/bulk/items", StringComparison.Ordinal))
+            .ToArray();
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            RequestCount++;
+            Interlocked.Increment(ref _requestCount);
             LastRequest = request;
+            if (request.RequestUri is not null)
+            {
+                _requestUris.Enqueue(request.RequestUri);
+            }
             if (request.Content is not null)
             {
                 LastBody = await request.Content.ReadAsStringAsync(cancellationToken);
             }
 
-            return responseFactory(request);
+            return await _responseFactory(request, cancellationToken);
         }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public ConcurrentQueue<string> Messages { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Enqueue(formatter(state, exception));
     }
 
     private sealed class IngestScopeFixture : IDisposable
