@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DatabaseZap, RefreshCw, RotateCcw } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
@@ -24,9 +23,11 @@ const refreshLabels: Record<LibrarySyncResult["platforms"][number]["refreshStatu
     Failed: "failed; cache used",
 };
 
-export function SyncTriggerButton() {
-    const router = useRouter();
-    const [isPending, startTransition] = useTransition();
+interface SyncTriggerButtonProps {
+    onSyncComplete?: () => void | Promise<void>;
+}
+
+export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
     const [activeAction, setActiveAction] = useState<string | null>(null);
     const [resultMsg, setResultMsg] = useState("");
     const [platformResults, setPlatformResults] = useState<LibrarySyncResult["platforms"]>([]);
@@ -51,10 +52,7 @@ export function SyncTriggerButton() {
                 setResultMsg(data.message || "Sync completed successfully.");
                 setPlatformResults(data.platforms);
 
-                // Refresh the server component to pull the fresh sync-history
-                startTransition(() => {
-                    router.refresh();
-                });
+                await onSyncComplete?.();
             }
         } catch (caughtError: unknown) {
             setResultMsg(`Error: ${getErrorMessage(caughtError, "The sync request failed.")}`);
@@ -68,7 +66,7 @@ export function SyncTriggerButton() {
             <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
                 <Button
                     onClick={() => handleSync("/api/core/library/sync", "cached")}
-                    disabled={activeAction !== null || isPending}
+                    disabled={activeAction !== null}
                     size="lg"
                 >
                     <DatabaseZap className={`mr-2 h-5 w-5 ${activeAction === "cached" ? "animate-pulse" : ""}`} />
@@ -76,7 +74,7 @@ export function SyncTriggerButton() {
                 </Button>
                 <Button
                     onClick={() => handleSync("/api/core/library/sync/refresh", "refresh")}
-                    disabled={activeAction !== null || isPending}
+                    disabled={activeAction !== null}
                     variant="secondary"
                     size="lg"
                 >
@@ -85,7 +83,7 @@ export function SyncTriggerButton() {
                 </Button>
                 <Button
                     onClick={() => handleSync("/api/core/library/sync/refresh/force", "force")}
-                    disabled={activeAction !== null || isPending}
+                    disabled={activeAction !== null}
                     variant="outline"
                     size="lg"
                 >

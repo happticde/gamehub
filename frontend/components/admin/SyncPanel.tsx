@@ -81,7 +81,9 @@ export function SyncPanel() {
         setError(null);
         try {
             // Client-side fetch goes through the Next.js proxy defined in next.config.ts
-            const res = await fetch("/api/core/library/sync-history?limit=100");
+            const res = await fetch("/api/core/library/sync-history?limit=100", {
+                cache: "no-store",
+            });
             if (!res.ok) {
                 setError(`Failed to fetch history (Status ${res.status})`);
             } else {
@@ -109,6 +111,10 @@ export function SyncPanel() {
             setStatusError(getErrorMessage(caughtError, "Unknown error"));
         }
     }, []);
+
+    const refreshAfterSync = useCallback(async () => {
+        await Promise.all([fetchLogs(), fetchStatus()]);
+    }, [fetchLogs, fetchStatus]);
 
     useEffect(() => {
         fetchLogs();
@@ -241,7 +247,7 @@ export function SyncPanel() {
                         Force refresh ignores freshness, but still respects credentials and rate-limit cooldowns.
                     </p>
                 </div>
-                <SyncTriggerButton />
+                <SyncTriggerButton onSyncComplete={refreshAfterSync} />
             </div>
 
             {/* Retroactive Maintenance */}
