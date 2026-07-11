@@ -1,5 +1,6 @@
 using GameHub.Ingest.Data;
 using GameHub.Ingest.Controllers;
+using GameHub.Ingest.Services;
 using GameHub.Tests.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -119,6 +120,84 @@ public class IngestControllerTests : IDisposable
         var stored = await _db.EpicRawItems.SingleAsync();
         Assert.Equal("Anemone", stored.AppName);
         Assert.Equal("World of Goo Updated", stored.Title);
+    }
+
+    [Fact]
+    public async Task IngestBatch_EquivalentJsonPropertyOrder_DoesNotMarkItemChanged()
+    {
+        var controller = new SteamIngestController(
+            _db,
+            NullLogger<SteamIngestController>.Instance);
+        using var first = JsonDocument.Parse(
+            "{\"appid\":730,\"name\":\"Counter-Strike 2\",\"metadata\":{\"b\":2,\"a\":1}}");
+        using var reordered = JsonDocument.Parse(
+            "{\"metadata\":{\"a\":1,\"b\":2},\"name\":\"Counter-Strike 2\",\"appid\":730}");
+
+        await controller.IngestBatch([first.RootElement.Clone()]);
+        var initiallyStored = await _db.SteamRawItems.AsNoTracking().SingleAsync();
+        var originalTimestamp = initiallyStored.LastUpdated;
+        var originalRawJson = initiallyStored.RawJson;
+
+        var result = await controller.IngestBatch([reordered.RootElement.Clone()]);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(0, GetAnonymousInt(ok.Value, "Updated"));
+        Assert.Equal(1, GetAnonymousInt(ok.Value, "Unchanged"));
+        var stored = await _db.SteamRawItems.AsNoTracking().SingleAsync();
+        Assert.Equal(originalTimestamp, stored.LastUpdated);
+        Assert.Equal(originalRawJson, stored.RawJson);
+        Assert.Equal(RawContentHasher.Compute(first.RootElement), stored.ContentHash);
+        Assert.Equal(
+            RawContentHasher.Compute(first.RootElement),
+            RawContentHasher.Compute(reordered.RootElement));
+    }
+
+    [Fact]
+    public async Task IngestBatch_OneChangedItem_UpdatesOnlyThatRecord()
+    {
+        var controller = new SteamIngestController(
+            _db,
+            NullLogger<SteamIngestController>.Instance);
+        using var first = JsonDocument.Parse("{\"appid\":1,\"name\":\"Game One\"}");
+        using var second = JsonDocument.Parse("{\"appid\":2,\"name\":\"Game Two\"}");
+        await controller.IngestBatch([first.RootElement.Clone(), second.RootElement.Clone()]);
+        var originalTimestamps = await _db.SteamRawItems
+            .AsNoTracking()
+            .ToDictionaryAsync(item => item.AppId, item => item.LastUpdated);
+
+        using var changed = JsonDocument.Parse("{\"appid\":2,\"name\":\"Game Two Updated\"}");
+        var result = await controller.IngestBatch([first.RootElement.Clone(), changed.RootElement.Clone()]);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(1, GetAnonymousInt(ok.Value, "Updated"));
+        Assert.Equal(1, GetAnonymousInt(ok.Value, "Unchanged"));
+        var stored = await _db.SteamRawItems.AsNoTracking().OrderBy(item => item.AppId).ToListAsync();
+        Assert.Equal(originalTimestamps[1], stored[0].LastUpdated);
+        Assert.True(stored[1].LastUpdated >= originalTimestamps[2]);
+        Assert.Equal("Game Two Updated", stored[1].Name);
+    }
+
+    [Fact]
+    public async Task IngestBatch_AllPlatformBulkLookups_PersistContentHashes()
+    {
+        var steam = new SteamIngestController(_db, NullLogger<SteamIngestController>.Instance);
+        var psn = new PsnIngestController(_db, NullLogger<PsnIngestController>.Instance);
+        var gog = new GogIngestController(_db, NullLogger<GogIngestController>.Instance);
+        var epic = new EpicIngestController(_db, NullLogger<EpicIngestController>.Instance);
+        using var steamJson = JsonDocument.Parse("{\"appid\":1,\"name\":\"Steam Game\"}");
+        using var psnJson = JsonDocument.Parse("{\"titleId\":\"CUSA00001\",\"name\":\"PSN Game\"}");
+        using var gogJson = JsonDocument.Parse("{\"id\":2,\"title\":\"GOG Game\"}");
+        using var epicJson = JsonDocument.Parse("{\"app_name\":\"EpicGame\",\"app_title\":\"Epic Game\"}");
+
+        await steam.IngestBatch([steamJson.RootElement.Clone()]);
+        await psn.IngestBatch([psnJson.RootElement.Clone()]);
+        await gog.IngestBatch([gogJson.RootElement.Clone()]);
+        await epic.IngestBatch([epicJson.RootElement.Clone()]);
+
+        Assert.Equal(64, (await _db.SteamRawItems.SingleAsync()).ContentHash.Length);
+        Assert.Equal(64, (await _db.PsnRawItems.SingleAsync()).ContentHash.Length);
+        Assert.Equal(64, (await _db.GogRawItems.SingleAsync()).ContentHash.Length);
+        Assert.Equal(64, (await _db.EpicRawItems.SingleAsync()).ContentHash.Length);
     }
 
     // =========================================================================

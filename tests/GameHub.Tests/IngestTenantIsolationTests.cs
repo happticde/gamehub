@@ -49,7 +49,8 @@ public sealed class IngestTenantIsolationTests : IDisposable
             {
                 AppId = 730,
                 Name = "Tenant A game",
-                RawJson = "{}"
+                RawJson = "{}",
+                ContentHash = "tenant-a-hash"
             });
             await tenantA.SaveChangesAsync();
         }
@@ -60,7 +61,8 @@ public sealed class IngestTenantIsolationTests : IDisposable
             {
                 AppId = 730,
                 Name = "Tenant B game",
-                RawJson = "{}"
+                RawJson = "{}",
+                ContentHash = "tenant-b-hash"
             });
             await tenantB.SaveChangesAsync();
         }
@@ -69,6 +71,8 @@ public sealed class IngestTenantIsolationTests : IDisposable
         await using var verifyB = CreateContext(TenantB);
         Assert.Equal("Tenant A game", (await verifyA.SteamRawItems.SingleAsync()).Name);
         Assert.Equal("Tenant B game", (await verifyB.SteamRawItems.SingleAsync()).Name);
+        Assert.Equal("tenant-a-hash", (await verifyA.SteamRawItems.SingleAsync()).ContentHash);
+        Assert.Equal("tenant-b-hash", (await verifyB.SteamRawItems.SingleAsync()).ContentHash);
         Assert.Equal(2, await verifyA.SteamRawItems.IgnoreQueryFilters().CountAsync());
     }
 
@@ -198,6 +202,7 @@ public sealed class IngestTenantIsolationTests : IDisposable
         var migrated = await db.SteamRawItems.IgnoreQueryFilters().SingleAsync();
         Assert.Equal(IngestTenantDefaults.DefaultTenantId, migrated.TenantId);
         Assert.Equal("Legacy game", migrated.Name);
+        Assert.Equal(string.Empty, migrated.ContentHash);
     }
 
     private IngestContext CreateContext(Guid tenantId) =>

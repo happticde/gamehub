@@ -141,7 +141,8 @@ public sealed record SyncSchedulerSnapshot(
     int ItemsProcessed);
 
 /// <summary>
-/// Background worker that runs a full library sync on a configurable interval.
+/// Background worker that refreshes stale providers and then syncs cached data on a configurable
+/// interval. It never force-refreshes a provider.
 ///
 /// Mirrors the pattern from <see cref="EnrichmentBackgroundService"/>:
 ///   - Uses ITenantJobRunner to isolate scoped work for every configured tenant
@@ -243,7 +244,10 @@ public class SyncSchedulerService : BackgroundService
             try
             {
                 await activityLog.LogAsync("SyncStarted", "Scheduled sync cycle started");
-                var tenantCount = await unifier.RunFullSyncAsync();
+                var syncResult = await unifier.RunSyncAsync(
+                    SyncExecutionMode.RefreshIfStale,
+                    tenantCancellationToken);
+                var tenantCount = syncResult.Processed;
                 count += tenantCount;
                 _status.MarkCompleted(tenantId, tenantCount);
                 await activityLog.LogAsync(

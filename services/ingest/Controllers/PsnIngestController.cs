@@ -41,22 +41,21 @@ public class PsnIngestController : IngestControllerBase<PsnRawItem>
 
     protected override int? ExtractPlaytime(JsonElement json) => null; // PSN API doesn't provide playtime here
 
-    protected override PsnRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson) => new()
+    protected override PsnRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes) => new()
     {
         TitleId = externalId,
         TitleName = name,
-        PlaytimeMinutes = playtimeMinutes,
-        RawJson = rawJson,
-        LastUpdated = DateTime.UtcNow
+        PlaytimeMinutes = playtimeMinutes
     };
 
-    protected override void UpdateEntity(PsnRawItem existing, string? name, int? playtimeMinutes, string rawJson)
+    protected override void UpdateEntity(PsnRawItem existing, string? name, int? playtimeMinutes)
     {
-        existing.RawJson = rawJson;
         existing.TitleName = name ?? existing.TitleName;
         existing.PlaytimeMinutes = playtimeMinutes ?? existing.PlaytimeMinutes;
-        existing.LastUpdated = DateTime.UtcNow;
     }
+
+    protected override Task<List<PsnRawItem>> LoadExistingItemsAsync(IReadOnlyCollection<string> externalIds)
+        => DbSet.Where(item => externalIds.Contains(item.TitleId)).ToListAsync();
 
     protected override Expression<Func<PsnRawItem, bool>> FindByExternalId(string id)
         => x => x.TitleId == id;

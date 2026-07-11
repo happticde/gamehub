@@ -23,6 +23,7 @@ public class SteamRawItem : IRawItem, IIngestTenantOwned
     public int AppId { get; set; }
     public string? Name { get; set; }
     public string RawJson { get; set; } = "{}";
+    public string ContentHash { get; set; } = "";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
     public int? PlaytimeMinutes { get; set; }
 
@@ -41,6 +42,7 @@ public class PsnRawItem : IRawItem, IIngestTenantOwned
     public string TitleId { get; set; } = string.Empty;
     public string? TitleName { get; set; }
     public string RawJson { get; set; } = "{}";
+    public string ContentHash { get; set; } = "";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
     public int? PlaytimeMinutes { get; set; }
 
@@ -59,6 +61,7 @@ public class GogRawItem : IRawItem, IIngestTenantOwned
     public long GameId { get; set; }
     public string? Title { get; set; }
     public string RawJson { get; set; } = "{}";
+    public string ContentHash { get; set; } = "";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
     public int? PlaytimeMinutes { get; set; }
 
@@ -77,6 +80,7 @@ public class EpicRawItem : IRawItem, IIngestTenantOwned
     public string AppName { get; set; } = string.Empty;
     public string? Title { get; set; }
     public string RawJson { get; set; } = "{}";
+    public string ContentHash { get; set; } = "";
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
     public int? PlaytimeMinutes { get; set; }
 

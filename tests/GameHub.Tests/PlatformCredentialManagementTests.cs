@@ -209,7 +209,9 @@ public sealed class PlatformCredentialManagementTests : IDisposable
     public async Task RetrieveAsync_EnabledTenant_UsesStoredDelegatedRoute()
     {
         await SetSyncEnabledAsync(TenantA, true);
-        var handler = new SequenceHandler(new HttpResponseMessage(HttpStatusCode.OK));
+        var handler = new SequenceHandler(JsonResponse(
+            HttpStatusCode.OK,
+            JsonSerializer.Serialize(new StoredRetrievalResponse(true))));
         var service = CreateService(handler);
 
         await service.RetrieveAsync(Platform.Gog);
@@ -219,6 +221,8 @@ public sealed class PlatformCredentialManagementTests : IDisposable
         Assert.Equal("/api/retrieve/gog/stored", request.Path);
         Assert.Equal(TenantA.ToString("D"), request.TenantHeader);
         Assert.Equal("test-service-key", request.ServiceKeyHeader);
+        var freshness = await _db.SyncMetadata.SingleAsync(item => item.Platform == Platform.Gog);
+        Assert.NotNull(freshness.LastSuccessfulProviderRetrievalAtUtc);
     }
 
     [Fact]
@@ -265,7 +269,8 @@ public sealed class PlatformCredentialManagementTests : IDisposable
             _db,
             _tenantContext,
             ingestClient,
-            NullLogger<PlatformCredentialManagementService>.Instance);
+            NullLogger<PlatformCredentialManagementService>.Instance,
+            TimeProvider.System);
     }
 
     private async Task SetSyncEnabledAsync(Guid tenantId, bool enabled)

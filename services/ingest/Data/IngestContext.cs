@@ -39,15 +39,27 @@ public class IngestContext : DbContext
         modelBuilder.Entity<SteamRawItem>()
             .HasIndex(item => new { item.TenantId, item.AppId })
             .IsUnique();
+        modelBuilder.Entity<SteamRawItem>()
+            .HasIndex(item => new { item.TenantId, item.LastUpdated });
         modelBuilder.Entity<PsnRawItem>()
             .HasIndex(item => new { item.TenantId, item.TitleId })
             .IsUnique();
+        modelBuilder.Entity<PsnRawItem>()
+            .HasIndex(item => new { item.TenantId, item.LastUpdated });
         modelBuilder.Entity<GogRawItem>()
             .HasIndex(item => new { item.TenantId, item.GameId })
             .IsUnique();
+        modelBuilder.Entity<GogRawItem>()
+            .HasIndex(item => new { item.TenantId, item.LastUpdated });
         modelBuilder.Entity<EpicRawItem>()
             .HasIndex(item => new { item.TenantId, item.AppName })
             .IsUnique();
+        modelBuilder.Entity<EpicRawItem>()
+            .HasIndex(item => new { item.TenantId, item.LastUpdated });
+        modelBuilder.Entity<SteamRawItem>().Property(item => item.ContentHash).HasMaxLength(64);
+        modelBuilder.Entity<PsnRawItem>().Property(item => item.ContentHash).HasMaxLength(64);
+        modelBuilder.Entity<GogRawItem>().Property(item => item.ContentHash).HasMaxLength(64);
+        modelBuilder.Entity<EpicRawItem>().Property(item => item.ContentHash).HasMaxLength(64);
         modelBuilder.Entity<IngestAuditLog>()
             .HasIndex(log => log.TenantId);
         modelBuilder.Entity<PlatformCredential>()

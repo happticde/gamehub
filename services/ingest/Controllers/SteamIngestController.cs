@@ -42,21 +42,23 @@ public class SteamIngestController : IngestControllerBase<SteamRawItem>
         return null;
     }
 
-    protected override SteamRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson) => new()
+    protected override SteamRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes) => new()
     {
         AppId = int.Parse(externalId), // Convert string back to int for the DB column
         Name = name,
-        PlaytimeMinutes = playtimeMinutes,
-        RawJson = rawJson,
-        LastUpdated = DateTime.UtcNow
+        PlaytimeMinutes = playtimeMinutes
     };
 
-    protected override void UpdateEntity(SteamRawItem existing, string? name, int? playtimeMinutes, string rawJson)
+    protected override void UpdateEntity(SteamRawItem existing, string? name, int? playtimeMinutes)
     {
-        existing.RawJson = rawJson;
         existing.Name = name ?? existing.Name; // Keep old name if new one is null
         existing.PlaytimeMinutes = playtimeMinutes ?? existing.PlaytimeMinutes;
-        existing.LastUpdated = DateTime.UtcNow;
+    }
+
+    protected override Task<List<SteamRawItem>> LoadExistingItemsAsync(IReadOnlyCollection<string> externalIds)
+    {
+        var appIds = externalIds.Select(int.Parse).ToArray();
+        return DbSet.Where(item => appIds.Contains(item.AppId)).ToListAsync();
     }
 
     protected override Expression<Func<SteamRawItem, bool>> FindByExternalId(string id)

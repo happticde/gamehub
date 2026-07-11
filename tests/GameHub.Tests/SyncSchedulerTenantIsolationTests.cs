@@ -26,6 +26,7 @@ public sealed class SyncSchedulerTenantIsolationTests
         await connection.OpenAsync();
         await using var serviceProvider = CreateServiceProvider(connection);
         await SeedTenantsAsync(serviceProvider);
+        var ingestHandler = serviceProvider.GetRequiredService<EmptyIngestHandler>();
         var runner = serviceProvider.GetRequiredService<ITenantJobRunner>();
         var status = new SyncSchedulerStatus();
         var scheduler = new SyncSchedulerService(
@@ -72,6 +73,10 @@ public sealed class SyncSchedulerTenantIsolationTests
         Assert.Equal("Success", tenantAStatus.LastResult);
         Assert.Equal("Skipped", tenantBStatus.LastResult);
         Assert.DoesNotContain("Skipped", tenantAStatus.LastResult);
+        Assert.Equal(Enum.GetValues<Platform>().Length, ingestHandler.StoredRetrieveRequests);
+
+        await scheduler.RunCycleAsync(CancellationToken.None);
+        Assert.Equal(Enum.GetValues<Platform>().Length, ingestHandler.StoredRetrieveRequests);
     }
 
     private static ServiceProvider CreateServiceProvider(SqliteConnection connection)
@@ -88,13 +93,14 @@ public sealed class SyncSchedulerTenantIsolationTests
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<TimeProvider>(TimeProvider.System);
         services.AddSingleton<StoredRetrievalCooldown>();
+        services.AddSingleton<EmptyIngestHandler>();
         services.AddSingleton<TenantExecutionContext>();
         services.AddSingleton(new MultiUserMode(true));
         services.AddScoped<ITenantContext, AuthenticatedTenantContext>();
         services.AddDbContext<CoreContext>(options => options.UseSqlite(connection));
         services.AddSingleton<ITenantJobRunner, TenantJobRunner>();
         services.AddScoped(provider => new IngestClient(
-            new HttpClient(new EmptyIngestHandler())
+            new HttpClient(provider.GetRequiredService<EmptyIngestHandler>())
             {
                 BaseAddress = new Uri("http://ingest.test")
             },
@@ -128,13 +134,19 @@ public sealed class SyncSchedulerTenantIsolationTests
 
     private sealed class EmptyIngestHandler : HttpMessageHandler
     {
+        public int StoredRetrieveRequests { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             if (request.Method == HttpMethod.Post)
             {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                StoredRetrieveRequests++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new StoredRetrievalResponse(true))
+                });
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

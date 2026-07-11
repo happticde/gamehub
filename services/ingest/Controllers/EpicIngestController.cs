@@ -37,22 +37,21 @@ public class EpicIngestController : IngestControllerBase<EpicRawItem>
 
     protected override int? ExtractPlaytime(JsonElement json) => null; // Epic API doesn't provide playtime here
 
-    protected override EpicRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes, string rawJson) => new()
+    protected override EpicRawItem CreateEntity(string externalId, string? name, int? playtimeMinutes) => new()
     {
         AppName = externalId, // Already a string — no conversion needed
         Title = name,
-        PlaytimeMinutes = playtimeMinutes,
-        RawJson = rawJson,
-        LastUpdated = DateTime.UtcNow
+        PlaytimeMinutes = playtimeMinutes
     };
 
-    protected override void UpdateEntity(EpicRawItem existing, string? name, int? playtimeMinutes, string rawJson)
+    protected override void UpdateEntity(EpicRawItem existing, string? name, int? playtimeMinutes)
     {
-        existing.RawJson = rawJson;
         existing.Title = name ?? existing.Title;
         existing.PlaytimeMinutes = playtimeMinutes ?? existing.PlaytimeMinutes;
-        existing.LastUpdated = DateTime.UtcNow;
     }
+
+    protected override Task<List<EpicRawItem>> LoadExistingItemsAsync(IReadOnlyCollection<string> externalIds)
+        => DbSet.Where(item => externalIds.Contains(item.AppName)).ToListAsync();
 
     protected override Expression<Func<EpicRawItem, bool>> FindByExternalId(string id)
         => x => x.AppName == id;

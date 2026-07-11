@@ -1,5 +1,18 @@
 # Session History
 
+## Current Session Summary (2026-07-11)
+
+### What Changed
+
+**Cached Sync and Provider Freshness:**
+- Split the fast cached Ingest-to-Core sync from refresh-if-stale and forced provider refresh modes.
+- Added persistent tenant/platform provider freshness with a configurable 30-minute default; only
+  complete retrievals advance freshness, while force refresh continues to honor cooldowns.
+- Made the scheduler explicitly use refresh-if-stale and updated the Admin UI with separate fast,
+  slow, and force actions plus secret-free per-platform outcomes.
+- Preserved content-hash source identity/fingerprints, tenant/auth boundaries, and Backup V1's
+  exclusion of operational sync state.
+
 ## Current Session Summary (2026-07-09)
 
 ### What Changed

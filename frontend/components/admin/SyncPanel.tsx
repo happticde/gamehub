@@ -232,11 +232,13 @@ export function SyncPanel() {
             </Card>
 
             {/* Sync trigger — reuses the existing component */}
-            <div className="flex items-center justify-between border-b pb-6">
+            <div className="flex flex-col gap-4 border-b pb-6">
                 <div>
                     <h3 className="text-lg font-semibold tracking-tight">Library Unification</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Sweep all platform data from the Ingest service and merge into the unified library.
+                        Cached sync is the fast default and never contacts Steam, GOG, PlayStation, or Epic.
+                        Platform refresh can be slow; fresh providers are skipped for 30 minutes by default.
+                        Force refresh ignores freshness, but still respects credentials and rate-limit cooldowns.
                     </p>
                 </div>
                 <SyncTriggerButton />

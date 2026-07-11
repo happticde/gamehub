@@ -157,6 +157,11 @@ public class CoreContext : DbContext
             .HasIndex(item => new { item.TenantId, item.UnifiedGameId, item.Platform })
             .IsUnique();
         modelBuilder.Entity<LibraryItem>()
+            .HasIndex(item => new { item.TenantId, item.Platform, item.ExternalId });
+        modelBuilder.Entity<LibraryItem>()
+            .Property(item => item.SourceContentHash)
+            .HasMaxLength(64);
+        modelBuilder.Entity<LibraryItem>()
             .HasOne(item => item.UnifiedGame)
             .WithMany(game => game.Items)
             .HasForeignKey(item => new { item.TenantId, item.UnifiedGameId })

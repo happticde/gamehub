@@ -4,6 +4,7 @@ using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -122,6 +123,11 @@ builder.Services.AddDbContext<IngestContext>(options =>
             "Data Source=/app/data/Gamehub.db";
         options.UseSqlite(connectionString);
     }
+
+    // Ingest uses one provider-neutral migration stream. Its generated snapshot carries provider
+    // type annotations that differ between SQLite and PostgreSQL even when the schema delta does not.
+    options.ConfigureWarnings(warnings =>
+        warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
 
 var app = builder.Build();

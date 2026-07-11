@@ -92,6 +92,7 @@ public sealed class TenantIsolationTests : IDisposable
         var metadata = await tenantA.SyncMetadata.SingleAsync();
         Assert.Equal(Platform.Steam, metadata.Platform);
         Assert.Equal(new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc), metadata.LastSyncedAt);
+        Assert.Equal(new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc), metadata.LastSuccessfulProviderRetrievalAtUtc);
         Assert.Equal(TenantA, metadata.TenantId);
     }
 
@@ -132,7 +133,8 @@ public sealed class TenantIsolationTests : IDisposable
             {
                 TenantId = TenantB,
                 Platform = Platform.Steam,
-                LastSyncedAt = FixedNow.UtcDateTime
+                LastSyncedAt = FixedNow.UtcDateTime,
+                LastSuccessfulProviderRetrievalAtUtc = FixedNow.UtcDateTime
             },
             _ => throw new ArgumentOutOfRangeException(nameof(recordType), recordType, null)
         });
@@ -495,6 +497,7 @@ public sealed class TenantIsolationTests : IDisposable
         var metadata = await db.SyncMetadata.SingleAsync();
         Assert.Equal(TenantA, metadata.TenantId);
         Assert.Equal(Platform.Steam, metadata.Platform);
+        Assert.Null(metadata.LastSuccessfulProviderRetrievalAtUtc);
     }
 
     [Fact]
@@ -532,15 +535,13 @@ public sealed class TenantIsolationTests : IDisposable
             SET "DeletionRequestedAtUtc" = {pendingAtUtc}
             WHERE "Id" = {TenantA};
             """);
-        var game = new UnifiedGame { Title = "Preserved game", Slug = "preserved-game" };
-        game.Items.Add(new LibraryItem
-        {
-            Platform = Platform.Steam,
-            ExternalId = "preserved-item",
-            LastSynced = FixedNow.UtcDateTime
-        });
-        db.Add(game);
-        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "UnifiedGames"
+                ("TenantId", "Title", "Slug", "PlayStatus", "IsPlayStatusManual", "IsIgnored")
+            VALUES ({TenantA}, {"Preserved game"}, {"preserved-game"}, {0}, {false}, {false});
+            INSERT INTO "LibraryItems" ("TenantId", "UnifiedGameId", "Platform", "ExternalId", "LastSynced")
+            VALUES ({TenantA}, last_insert_rowid(), {(int)Platform.Steam}, {"preserved-item"}, {FixedNow.UtcDateTime});
+            """);
 
         await migrator.MigrateAsync();
         db.ChangeTracker.Clear();
@@ -568,7 +569,9 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.Equal("preserved-password-hash", upgradedAccount.PasswordHash);
         Assert.Equal(new string('A', 64), (await db.RefreshTokenSessions.SingleAsync()).TokenHash);
         Assert.Equal("Preserved game", (await db.UnifiedGames.SingleAsync()).Title);
-        Assert.Equal("preserved-item", (await db.LibraryItems.SingleAsync()).ExternalId);
+        var upgradedLibraryItem = await db.LibraryItems.SingleAsync();
+        Assert.Equal("preserved-item", upgradedLibraryItem.ExternalId);
+        Assert.Null(upgradedLibraryItem.SourceContentHash);
         var upgradedTenant = await db.Tenants.SingleAsync();
         Assert.Equal(TenantA, upgradedTenant.Id);
         Assert.Equal(pendingAtUtc, upgradedTenant.DeletionRequestedAtUtc);
@@ -702,7 +705,8 @@ public sealed class TenantIsolationTests : IDisposable
         db.SyncMetadata.Add(new SyncMetadata
         {
             Platform = Platform.Steam,
-            LastSyncedAt = lastSyncedAt
+            LastSyncedAt = lastSyncedAt,
+            LastSuccessfulProviderRetrievalAtUtc = lastSyncedAt
         });
         await db.SaveChangesAsync();
     }

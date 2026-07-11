@@ -49,15 +49,20 @@ public class UnificationServiceTests : IDisposable
     /// <summary>Helper to create a UnificationService with a mocked IngestClient.</summary>
     private UnificationService CreateService(
         IngestClient? client = null,
-        StoredRetrievalCooldown? retrievalCooldown = null)
+        StoredRetrievalCooldown? retrievalCooldown = null,
+        IConfiguration? configuration = null,
+        TimeProvider? timeProvider = null)
     {
         // Default: client that returns empty pages (no HTTP calls)
         client ??= CreateMockClient([]);
+        timeProvider ??= TimeProvider.System;
         return new UnificationService(
             _scopeFactory,
             client,
             NullLogger<UnificationService>.Instance,
-            retrievalCooldown ?? new StoredRetrievalCooldown(TimeProvider.System));
+            retrievalCooldown ?? new StoredRetrievalCooldown(timeProvider),
+            configuration ?? new ConfigurationBuilder().Build(),
+            timeProvider);
     }
 
     /// <summary>Creates a mock IngestClient that returns the given items on page 1.</summary>
@@ -94,6 +99,20 @@ public class UnificationServiceTests : IDisposable
         return new IngestClient(http, new MutableTenantContext(), configuration);
     }
 
+    private static IngestClient CreateMockClient(FakeHandler handler)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Services:IngestServiceKey"] = "test-service-key"
+            })
+            .Build();
+        return new IngestClient(
+            new HttpClient(handler) { BaseAddress = new Uri("http://ingest.test") },
+            new MutableTenantContext(),
+            configuration);
+    }
+
     [Fact]
     public async Task RunFullSync_NewTenant_RefusesSharedIngestData()
     {
@@ -118,7 +137,126 @@ public class UnificationServiceTests : IDisposable
             () => CreateService().RunFullSyncAsync());
 
         Assert.Equal(tenantId, exception.TenantId);
+
+        var cachedHandler = new FakeHandler([]);
+        var cachedResult = await CreateService(CreateMockClient(cachedHandler))
+            .RunSyncAsync(SyncExecutionMode.Cached);
+        Assert.Equal(0, cachedResult.Processed);
+        Assert.Equal(0, cachedHandler.StoredRetrieveRequests);
     }
+
+    [Fact]
+    public async Task RunSyncAsync_CachedMode_NeverContactsStoredRetrieval()
+    {
+        var handler = new FakeHandler([]);
+
+        var result = await CreateService(CreateMockClient(handler))
+            .RunSyncAsync(SyncExecutionMode.Cached);
+
+        Assert.Equal(0, handler.StoredRetrieveRequests);
+        Assert.All(result.Platforms, platform => Assert.Equal("Cached", platform.RefreshStatus));
+    }
+
+    [Fact]
+    public async Task RunSyncAsync_RefreshIfStale_RefreshesExpiredProviderAndPersistsFreshness()
+    {
+        var now = new DateTimeOffset(2030, 2, 3, 4, 5, 6, TimeSpan.Zero);
+        await SeedSyncMetadataAsync(Platform.Steam, now.UtcDateTime.AddHours(-1));
+        var handler = new FakeHandler([], successfulStoredRetrievePlatform: Platform.Steam);
+
+        var result = await CreateService(
+                CreateMockClient(handler),
+                configuration: FreshnessConfiguration(30),
+                timeProvider: new FixedTimeProvider(now))
+            .RunSyncAsync(SyncExecutionMode.RefreshIfStale);
+
+        Assert.Equal(1, handler.StoredRetrieveRequestsFor(Platform.Steam));
+        Assert.Equal("Updated", result.Platforms.Single(item => item.Platform == Platform.Steam).RefreshStatus);
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var persisted = await verifyDb.SyncMetadata.SingleAsync(item => item.Platform == Platform.Steam);
+        Assert.Equal(now.UtcDateTime, persisted.LastSuccessfulProviderRetrievalAtUtc);
+    }
+
+    [Fact]
+    public async Task RunSyncAsync_RefreshIfStale_SkipsFreshProvider()
+    {
+        var now = new DateTimeOffset(2030, 2, 3, 4, 5, 6, TimeSpan.Zero);
+        await SeedSyncMetadataAsync(Platform.Steam, now.UtcDateTime.AddMinutes(-5));
+        var handler = new FakeHandler([], successfulStoredRetrievePlatform: Platform.Steam);
+
+        var result = await CreateService(
+                CreateMockClient(handler),
+                configuration: FreshnessConfiguration(30),
+                timeProvider: new FixedTimeProvider(now))
+            .RunSyncAsync(SyncExecutionMode.RefreshIfStale);
+
+        Assert.Equal(0, handler.StoredRetrieveRequestsFor(Platform.Steam));
+        Assert.Equal("SkippedFresh", result.Platforms.Single(item => item.Platform == Platform.Steam).RefreshStatus);
+    }
+
+    [Fact]
+    public async Task RunSyncAsync_ForceRefresh_BypassesFreshnessButNotCooldown()
+    {
+        var now = new DateTimeOffset(2030, 2, 3, 4, 5, 6, TimeSpan.Zero);
+        await SeedSyncMetadataAsync(Platform.Steam, now.UtcDateTime.AddMinutes(-5));
+        await SeedSyncMetadataAsync(Platform.Epic, now.UtcDateTime.AddMinutes(-5));
+        var time = new FixedTimeProvider(now);
+        var cooldown = new StoredRetrievalCooldown(time);
+        cooldown.SetRetryAfter(TenantDefaults.DefaultTenantId, Platform.Epic, now.AddMinutes(10));
+        var handler = new FakeHandler([], successfulStoredRetrievePlatform: Platform.Steam);
+
+        var result = await CreateService(
+                CreateMockClient(handler),
+                cooldown,
+                FreshnessConfiguration(30),
+                time)
+            .RunSyncAsync(SyncExecutionMode.ForceRefresh);
+
+        Assert.Equal(1, handler.StoredRetrieveRequestsFor(Platform.Steam));
+        Assert.Equal(0, handler.StoredRetrieveRequestsFor(Platform.Epic));
+        Assert.Equal("Updated", result.Platforms.Single(item => item.Platform == Platform.Steam).RefreshStatus);
+        Assert.Equal("SkippedCooldown", result.Platforms.Single(item => item.Platform == Platform.Epic).RefreshStatus);
+    }
+
+    [Fact]
+    public async Task RunSyncAsync_PartialRetrieval_DoesNotAdvanceFreshness()
+    {
+        var now = new DateTimeOffset(2030, 2, 3, 4, 5, 6, TimeSpan.Zero);
+        var handler = new FakeHandler([], partialStoredRetrievePlatform: Platform.Epic);
+
+        var result = await CreateService(
+                CreateMockClient(handler),
+                timeProvider: new FixedTimeProvider(now))
+            .RunSyncAsync(SyncExecutionMode.RefreshIfStale);
+
+        Assert.Equal("Partial", result.Platforms.Single(item => item.Platform == Platform.Epic).RefreshStatus);
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        Assert.False(await verifyDb.SyncMetadata.AnyAsync(item =>
+            item.Platform == Platform.Epic && item.LastSuccessfulProviderRetrievalAtUtc != null));
+    }
+
+    private async Task SeedSyncMetadataAsync(Platform platform, DateTime providerRetrievalAtUtc)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        db.SyncMetadata.Add(new SyncMetadata
+        {
+            Platform = platform,
+            LastSyncedAt = providerRetrievalAtUtc,
+            LastSuccessfulProviderRetrievalAtUtc = providerRetrievalAtUtc
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static IConfiguration FreshnessConfiguration(int minutes) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Sync:ProviderFreshnessMinutes"] = minutes.ToString()
+            })
+            .Build();
 
     [Fact]
     public async Task RunFullSync_EpicRawFallbackMetadata_PopulatesEmptyCoreFields()
@@ -306,6 +444,8 @@ public class UnificationServiceTests : IDisposable
         Assert.Equal(1, audit.ItemsProcessed);
         Assert.Equal("Stored platform retrieval failed; existing raw data was exported.", audit.ErrorMessage);
         Assert.Equal(TenantDefaults.DefaultTenantId, audit.TenantId);
+        var freshness = await db.SyncMetadata.SingleAsync(record => record.Platform == Platform.Epic);
+        Assert.Null(freshness.LastSuccessfulProviderRetrievalAtUtc);
     }
 
     [Fact]
@@ -334,6 +474,103 @@ public class UnificationServiceTests : IDisposable
             audit.ErrorMessage);
         Assert.True(cooldown.TryGetRetryAfter(TenantDefaults.DefaultTenantId, Platform.Epic, out var recordedRetryAfter));
         Assert.Equal(retryAfterUtc, recordedRetryAfter);
+        var freshness = await db.SyncMetadata.SingleAsync(record => record.Platform == Platform.Epic);
+        Assert.Null(freshness.LastSuccessfulProviderRetrievalAtUtc);
+    }
+
+    [Fact]
+    public async Task RunFullSync_ExistingSourceIdWithChangedTitle_KeepsUnifiedGameAssociation()
+    {
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            db.UnifiedGames.Add(new UnifiedGame
+            {
+                Title = "Original Provider Title",
+                Slug = "original-provider-title",
+                Items =
+                [
+                    new LibraryItem
+                    {
+                        Platform = Platform.Psn,
+                        ExternalId = "CUSA00001",
+                        SourceContentHash = "old-hash"
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(CreateMockClient(Platform.Psn,
+        [
+            new RawGameDto
+            {
+                Id = "CUSA00001",
+                Name = "Renamed Provider Title",
+                ContentHash = "new-hash"
+            }
+        ]));
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await verifyDb.UnifiedGames.Include(item => item.Items).SingleAsync();
+        var source = Assert.Single(game.Items);
+        Assert.Equal(1, processed);
+        Assert.Equal("Original Provider Title", game.Title);
+        Assert.Equal("original-provider-title", game.Slug);
+        Assert.Equal("CUSA00001", source.ExternalId);
+        Assert.Equal("new-hash", source.SourceContentHash);
+    }
+
+    [Fact]
+    public async Task RunFullSync_AlreadyAppliedContentHash_SkipsWriteAndAdvancesCursor()
+    {
+        var originalLastSynced = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            db.UnifiedGames.Add(new UnifiedGame
+            {
+                Title = "Stable Game",
+                Slug = "stable-game",
+                Items =
+                [
+                    new LibraryItem
+                    {
+                        Platform = Platform.Steam,
+                        ExternalId = "730",
+                        SourceContentHash = "stable-hash",
+                        LastSynced = originalLastSynced
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(CreateMockClient(
+        [
+            new RawGameDto
+            {
+                Id = "730",
+                Name = "Stable Game",
+                ContentHash = "stable-hash"
+            }
+        ]));
+
+        var processed = await service.RunFullSyncAsync();
+
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var source = await verifyDb.LibraryItems.SingleAsync();
+        var metadata = await verifyDb.SyncMetadata.SingleAsync(item => item.Platform == Platform.Steam);
+        var audit = await verifyDb.SyncAuditLogs.SingleAsync(item => item.Platform == Platform.Steam);
+        Assert.Equal(0, processed);
+        Assert.Equal(originalLastSynced, source.LastSynced);
+        Assert.Equal("stable-hash", source.SourceContentHash);
+        Assert.True(metadata.LastSyncedAt > originalLastSynced);
+        Assert.Equal(0, audit.ItemsProcessed);
     }
 
     // =========================================================================
@@ -495,19 +732,36 @@ public class UnificationServiceTests : IDisposable
         Dictionary<Platform, List<RawGameDto>> itemsByPlatform,
         Platform? failingStoredRetrievePlatform = null,
         Platform? rateLimitedStoredRetrievePlatform = null,
-        DateTimeOffset? retryAfterUtc = null) : HttpMessageHandler
+        DateTimeOffset? retryAfterUtc = null,
+        Platform? successfulStoredRetrievePlatform = null,
+        Platform? partialStoredRetrievePlatform = null) : HttpMessageHandler
     {
         private readonly Dictionary<Platform, List<RawGameDto>> _itemsByPlatform = itemsByPlatform;
         private readonly Platform? _failingStoredRetrievePlatform = failingStoredRetrievePlatform;
         private readonly Platform? _rateLimitedStoredRetrievePlatform = rateLimitedStoredRetrievePlatform;
         private readonly DateTimeOffset? _retryAfterUtc = retryAfterUtc;
+        private readonly Platform? _successfulStoredRetrievePlatform = successfulStoredRetrievePlatform;
+        private readonly Platform? _partialStoredRetrievePlatform = partialStoredRetrievePlatform;
+        private readonly Dictionary<Platform, int> _storedRetrieveRequests = [];
+
+        public int StoredRetrieveRequests => _storedRetrieveRequests.Values.Sum();
+
+        public int StoredRetrieveRequestsFor(Platform platform) =>
+            _storedRetrieveRequests.GetValueOrDefault(platform);
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.Method == HttpMethod.Post)
             {
-                if (ReadStoredRetrievePlatform(request.RequestUri) == _rateLimitedStoredRetrievePlatform)
+                var storedPlatform = ReadStoredRetrievePlatform(request.RequestUri);
+                if (storedPlatform is { } requestedPlatform)
+                {
+                    _storedRetrieveRequests[requestedPlatform] =
+                        _storedRetrieveRequests.GetValueOrDefault(requestedPlatform) + 1;
+                }
+
+                if (storedPlatform == _rateLimitedStoredRetrievePlatform)
                 {
                     return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.TooManyRequests)
                     {
@@ -516,11 +770,21 @@ public class UnificationServiceTests : IDisposable
                     });
                 }
 
-                if (ReadStoredRetrievePlatform(request.RequestUri) == _failingStoredRetrievePlatform)
+                if (storedPlatform == _failingStoredRetrievePlatform)
                 {
                     return Task.FromResult(new HttpResponseMessage
                     {
                         StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+                    });
+                }
+
+                if (storedPlatform == _successfulStoredRetrievePlatform ||
+                    storedPlatform == _partialStoredRetrievePlatform)
+                {
+                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = System.Net.Http.Json.JsonContent.Create(
+                            new StoredRetrievalResponse(storedPlatform != _partialStoredRetrievePlatform))
                     });
                 }
 
@@ -572,6 +836,11 @@ public class UnificationServiceTests : IDisposable
                 ? platform
                 : null;
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
 

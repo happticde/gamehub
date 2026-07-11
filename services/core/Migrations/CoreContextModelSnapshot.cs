@@ -174,6 +174,10 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<int>("Platform")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("SourceContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("TenantId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
@@ -183,6 +187,8 @@ namespace GameHub.Core.Migrations.sqlite
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Platform", "ExternalId");
 
                     b.HasIndex("TenantId", "UnifiedGameId", "Platform")
                         .IsUnique();
@@ -299,6 +305,9 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastSuccessfulProviderRetrievalAtUtc")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("LastSyncedAt")
                         .HasColumnType("TEXT");

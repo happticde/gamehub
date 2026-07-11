@@ -114,6 +114,29 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
     }
 
     [Fact]
+    public async Task StoredEpicRetrieve_PartialProviderResult_ReturnsSecretFreeIncompleteSignal()
+    {
+        await StoreEpic(TenantA, "partial-epic-refresh-secret");
+        await using var db = CreateContext(TenantA);
+        var controller = CreateController(
+            db,
+            TenantA,
+            new CapturingSteamFetcher(),
+            new UnusedPsnFetcher(),
+            new PartialEpicFetcher());
+
+        var result = await controller.RetrieveStored(Platform.Epic, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<StoredRetrievalResponse>(ok.Value);
+        Assert.False(response.IsComplete);
+        Assert.DoesNotContain(
+            "partial-epic-refresh-secret",
+            JsonSerializer.Serialize(response),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StoredEpicRetrieve_RotationPersistenceFailure_ReturnsSanitizedFailureWithoutLoggingSecrets()
     {
         const string oldRefreshToken = "old-refresh-token-secret";
@@ -316,7 +339,7 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
 
     private sealed class UnusedEpicFetcher : IEpicFetcher
     {
-        public Task<List<JsonElement>> FetchGamesAsync(
+        public Task<EpicFetchResult> FetchGamesAsync(
             EpicPlatformCredential credential,
             CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Epic fetcher must not be called in this test.");
@@ -337,21 +360,29 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
     {
         public EpicPlatformCredential? Credential { get; private set; }
 
-        public Task<List<JsonElement>> FetchGamesAsync(
+        public Task<EpicFetchResult> FetchGamesAsync(
             EpicPlatformCredential credential,
             CancellationToken cancellationToken = default)
         {
             Credential = credential;
-            return Task.FromResult(new List<JsonElement>());
+            return Task.FromResult(new EpicFetchResult([], true));
         }
     }
 
     private sealed class ThrowingEpicFetcher(Exception exception) : IEpicFetcher
     {
-        public Task<List<JsonElement>> FetchGamesAsync(
+        public Task<EpicFetchResult> FetchGamesAsync(
             EpicPlatformCredential credential,
             CancellationToken cancellationToken = default) =>
             throw exception;
+    }
+
+    private sealed class PartialEpicFetcher : IEpicFetcher
+    {
+        public Task<EpicFetchResult> FetchGamesAsync(
+            EpicPlatformCredential credential,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new EpicFetchResult([], false));
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>, IDisposable
