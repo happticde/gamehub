@@ -48,7 +48,7 @@ public sealed class EpicGamesClient(
     private const string CatalogItemsUrl =
         "https://catalog-public-service-prod06.ol.epicgames.com/catalog/api/shared/namespace";
     private const int CatalogBatchSize = 20;
-    private const int MaxConcurrentCatalogBatches = 3;
+    private const int MaxConcurrentCatalogBatches = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 

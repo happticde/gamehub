@@ -303,7 +303,7 @@ public sealed class EpicGamesClientTests
             }
             if (IsLauncherAssetsRequest(request))
             {
-                return JsonResponse(BuildAssetsJson(65));
+                return JsonResponse(BuildAssetsJson(105));
             }
 
             var active = Interlocked.Increment(ref activeCatalogRequests);
@@ -322,10 +322,10 @@ public sealed class EpicGamesClientTests
 
         var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
 
-        Assert.Equal(65, games.Games.Count);
-        Assert.Equal(4, handler.CatalogRequestUris.Count);
+        Assert.Equal(105, games.Games.Count);
+        Assert.Equal(6, handler.CatalogRequestUris.Count);
         Assert.All(handler.CatalogRequestUris, uri => Assert.InRange(ReadCatalogIds(uri).Length, 1, 20));
-        Assert.InRange(maximumCatalogRequests, 2, 3);
+        Assert.Equal(5, maximumCatalogRequests);
     }
 
     [Fact]
@@ -344,7 +344,7 @@ public sealed class EpicGamesClientTests
             }
             if (IsLauncherAssetsRequest(request))
             {
-                return JsonResponse(BuildAssetsJson(100, namespaceName, "catalog-secret-id"));
+                return JsonResponse(BuildAssetsJson(140, namespaceName, "catalog-secret-id"));
             }
             if (request.RequestUri?.Query.Contains(catalogId, StringComparison.Ordinal) == true)
             {
@@ -363,7 +363,7 @@ public sealed class EpicGamesClientTests
 
         Assert.Equal(ProviderRequestFailure.RateLimited, exception.Failure);
         Assert.Equal("RateLimited", audit.Status);
-        Assert.InRange(handler.CatalogRequestUris.Count, 1, 3);
+        Assert.InRange(handler.CatalogRequestUris.Count, 1, 5);
         Assert.DoesNotContain(refreshToken, logs, StringComparison.Ordinal);
         Assert.DoesNotContain(catalogId, logs, StringComparison.Ordinal);
         Assert.DoesNotContain(namespaceName, logs, StringComparison.Ordinal);
