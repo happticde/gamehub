@@ -5,139 +5,85 @@ using GameHub.Core.Data;
 using GameHub.Core.Models.ProviderSync;
 using GameHub.Core.Services;
 using GameHub.Shared;
-using GameHub.Tests.Helpers;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace GameHub.Tests;
 
-/// <summary>Verifies the secret-free, tenant-scoped provider readiness read model.</summary>
-public sealed class ProviderSyncStatusServiceTests : IDisposable
+/// <summary>Verifies the secret-free, tenant-scoped provider refresh blocker read model.</summary>
+public sealed class ProviderSyncStatusServiceTests
 {
     private static readonly Guid TenantA = TenantDefaults.DefaultTenantId;
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
     private static readonly DateTimeOffset Now = new(2030, 2, 3, 4, 5, 6, TimeSpan.Zero);
     private readonly MutableTenantContext _tenantContext = new(TenantA);
     private readonly MutableTimeProvider _timeProvider = new(Now);
-    private readonly CoreContext _db;
-    private readonly Microsoft.Data.Sqlite.SqliteConnection _connection;
 
-    public ProviderSyncStatusServiceTests()
+    [Fact]
+    public async Task GetStatusAsync_ReturnsConfigurationStateForEverySupportedPlatform()
     {
-        (_db, _connection) = DatabaseFixture.CreateCoreContext(_tenantContext);
-    }
+        var result = await CreateService(Platform.Steam, Platform.Epic).GetStatusAsync();
 
-    public void Dispose()
-    {
-        _db.Dispose();
-        _connection.Dispose();
+        Assert.Equal(4, result.Providers.Count);
+        Assert.True(result.Providers.Single(item => item.Platform == Platform.Steam).IsConfigured);
+        Assert.True(result.Providers.Single(item => item.Platform == Platform.Epic).IsConfigured);
+        Assert.False(result.Providers.Single(item => item.Platform == Platform.Gog).IsConfigured);
+        Assert.False(result.Providers.Single(item => item.Platform == Platform.Psn).IsConfigured);
     }
 
     [Fact]
-    public async Task GetStatusAsync_UsesConfiguredFreshnessBoundary()
+    public async Task GetStatusAsync_ActiveAndElapsedCooldown_ExposesOnlyActiveCooldown()
     {
-        await SeedRefreshAsync(Platform.Steam, Now.AddMinutes(-14).UtcDateTime);
-        await SeedRefreshAsync(Platform.Gog, Now.AddMinutes(-15).UtcDateTime);
-
-        var result = await CreateService(15, Platform.Steam, Platform.Gog).GetStatusAsync();
-
-        var steam = result.Providers.Single(item => item.Platform == Platform.Steam);
-        var gog = result.Providers.Single(item => item.Platform == Platform.Gog);
-        Assert.Equal(ProviderFreshnessStatus.Fresh, steam.FreshnessStatus);
-        Assert.Equal(Now.AddMinutes(1).UtcDateTime, steam.FreshUntil);
-        Assert.Equal(ProviderFreshnessStatus.Stale, gog.FreshnessStatus);
-        Assert.Equal(Now.UtcDateTime, gog.FreshUntil);
-    }
-
-    [Fact]
-    public async Task GetStatusAsync_NeverRefreshedAndNotConfigured_ReturnsDistinctStates()
-    {
-        await SeedRefreshAsync(Platform.Steam, Now.AddMinutes(-1).UtcDateTime);
-
-        var result = await CreateService(30, Platform.Gog).GetStatusAsync();
-
-        var steam = result.Providers.Single(item => item.Platform == Platform.Steam);
-        var gog = result.Providers.Single(item => item.Platform == Platform.Gog);
-        Assert.Equal(ProviderFreshnessStatus.NotConfigured, steam.FreshnessStatus);
-        Assert.Null(steam.CooldownUntil);
-        Assert.Equal(ProviderFreshnessStatus.NeverRefreshed, gog.FreshnessStatus);
-        Assert.Null(gog.LastSuccessfulRefreshAt);
-        Assert.Null(gog.FreshUntil);
-    }
-
-    [Fact]
-    public async Task GetStatusAsync_ActiveAndElapsedCooldown_UsesLocalReadOnlyState()
-    {
-        await SeedRefreshAsync(Platform.Steam, Now.AddMinutes(-1).UtcDateTime);
         var cooldown = new StoredRetrievalCooldown(_timeProvider);
         cooldown.SetRetryAfter(TenantA, Platform.Steam, Now.AddMinutes(5));
-        var service = CreateService(30, cooldown, Platform.Steam);
+        var service = CreateService(cooldown, Platform.Steam);
 
         var active = (await service.GetStatusAsync()).Providers.Single(item => item.Platform == Platform.Steam);
-        Assert.Equal(ProviderFreshnessStatus.Cooldown, active.FreshnessStatus);
         Assert.Equal(Now.AddMinutes(5), active.CooldownUntil);
 
         _timeProvider.UtcNow = Now.AddMinutes(6);
         var elapsed = (await service.GetStatusAsync()).Providers.Single(item => item.Platform == Platform.Steam);
-        Assert.Equal(ProviderFreshnessStatus.Fresh, elapsed.FreshnessStatus);
         Assert.Null(elapsed.CooldownUntil);
-        Assert.False(cooldown.TryPeekActiveRetryAfter(TenantA, Platform.Steam, out _));
     }
 
     [Fact]
-    public async Task GetStatusAsync_NotConfiguredTakesPriorityOverCooldown()
+    public async Task GetStatusAsync_NotConfiguredPlatform_HidesHistoricalCooldown()
     {
-        await SeedRefreshAsync(Platform.Steam, Now.AddMinutes(-1).UtcDateTime);
         var cooldown = new StoredRetrievalCooldown(_timeProvider);
         cooldown.SetRetryAfter(TenantA, Platform.Steam, Now.AddMinutes(5));
 
-        var result = await CreateService(30, cooldown).GetStatusAsync();
-        var steam = result.Providers.Single(item => item.Platform == Platform.Steam);
+        var steam = (await CreateService(cooldown).GetStatusAsync())
+            .Providers.Single(item => item.Platform == Platform.Steam);
 
-        Assert.Equal(ProviderFreshnessStatus.NotConfigured, steam.FreshnessStatus);
+        Assert.False(steam.IsConfigured);
         Assert.Null(steam.CooldownUntil);
     }
 
     [Fact]
-    public async Task GetStatusAsync_IsolatedByAuthenticatedTenant()
+    public async Task GetStatusAsync_CooldownUsesAuthenticatedTenantOnly()
     {
-        _db.Tenants.Add(new Tenant
-        {
-            Id = TenantB,
-            Name = "Tenant B",
-            CreatedAtUtc = Now.UtcDateTime
-        });
-        await _db.SaveChangesAsync();
-        await SeedRefreshAsync(Platform.Steam, Now.AddMinutes(-1).UtcDateTime);
+        var cooldown = new StoredRetrievalCooldown(_timeProvider);
+        cooldown.SetRetryAfter(TenantA, Platform.Steam, Now.AddMinutes(5));
+        var service = CreateService(cooldown, Platform.Steam);
 
-        _tenantContext.TenantId = TenantB;
-        await SeedRefreshAsync(Platform.Steam, Now.AddHours(-1).UtcDateTime);
-
-        _tenantContext.TenantId = TenantA;
-        var service = CreateService(30, Platform.Steam);
         var tenantA = (await service.GetStatusAsync()).Providers.Single(item => item.Platform == Platform.Steam);
-
         _tenantContext.TenantId = TenantB;
         var tenantB = (await service.GetStatusAsync()).Providers.Single(item => item.Platform == Platform.Steam);
 
-        Assert.Equal(ProviderFreshnessStatus.Fresh, tenantA.FreshnessStatus);
-        Assert.Equal(ProviderFreshnessStatus.Stale, tenantB.FreshnessStatus);
-        Assert.Equal(Now.AddMinutes(-1).UtcDateTime, tenantA.LastSuccessfulRefreshAt);
-        Assert.Equal(Now.AddHours(-1).UtcDateTime, tenantB.LastSuccessfulRefreshAt);
+        Assert.Equal(Now.AddMinutes(5), tenantA.CooldownUntil);
+        Assert.Null(tenantB.CooldownUntil);
     }
 
     [Fact]
-    public async Task GetStatusAsync_DoesNotMutateOrExposeSecretsOrIdentifiers()
+    public async Task GetStatusAsync_DoesNotMutateCooldownOrExposeSecretsOrIdentifiers()
     {
-        await SeedRefreshAsync(Platform.Epic, Now.AddMinutes(-1).UtcDateTime);
-        _db.ChangeTracker.Clear();
-        var beforeCount = await _db.SyncMetadata.CountAsync();
+        var cooldown = new StoredRetrievalCooldown(_timeProvider);
+        cooldown.SetRetryAfter(TenantA, Platform.Epic, Now.AddMinutes(5));
 
-        var result = await CreateService(30, Platform.Epic).GetStatusAsync();
+        var result = await CreateService(cooldown, Platform.Epic).GetStatusAsync();
 
-        Assert.Equal(beforeCount, await _db.SyncMetadata.CountAsync());
-        Assert.False(_db.ChangeTracker.HasChanges());
+        Assert.True(cooldown.TryGetRetryAfter(TenantA, Platform.Epic, out var retryAfterUtc));
+        Assert.Equal(Now.AddMinutes(5), retryAfterUtc);
         var responseJson = JsonSerializer.Serialize(result);
         Assert.DoesNotContain("Tenant", responseJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("token", responseJson, StringComparison.OrdinalIgnoreCase);
@@ -147,24 +93,17 @@ public sealed class ProviderSyncStatusServiceTests : IDisposable
             property => property.Name.Contains("Id", StringComparison.OrdinalIgnoreCase));
     }
 
-    private ProviderSyncStatusService CreateService(
-        int freshnessMinutes,
-        params Platform[] configuredPlatforms) =>
-        CreateService(
-            freshnessMinutes,
-            new StoredRetrievalCooldown(_timeProvider),
-            configuredPlatforms);
+    private ProviderSyncStatusService CreateService(params Platform[] configuredPlatforms) =>
+        CreateService(new StoredRetrievalCooldown(_timeProvider), configuredPlatforms);
 
     private ProviderSyncStatusService CreateService(
-        int freshnessMinutes,
         StoredRetrievalCooldown cooldown,
         params Platform[] configuredPlatforms)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Services:IngestServiceKey"] = "test-service-key",
-                ["Sync:ProviderFreshnessMinutes"] = freshnessMinutes.ToString()
+                ["Services:IngestServiceKey"] = "test-service-key"
             })
             .Build();
         var client = new IngestClient(
@@ -175,24 +114,9 @@ public sealed class ProviderSyncStatusServiceTests : IDisposable
             _tenantContext,
             configuration);
         return new ProviderSyncStatusService(
-            _db,
             _tenantContext,
             client,
-            cooldown,
-            configuration,
-            _timeProvider);
-    }
-
-    private async Task SeedRefreshAsync(Platform platform, DateTime refreshedAtUtc)
-    {
-        _db.SyncMetadata.Add(new SyncMetadata
-        {
-            Platform = platform,
-            LastSyncedAt = DateTime.UnixEpoch,
-            LastSuccessfulProviderRetrievalAtUtc = refreshedAtUtc
-        });
-        await _db.SaveChangesAsync();
-        _db.ChangeTracker.Clear();
+            cooldown);
     }
 
     private sealed class CredentialStatusHandler(params Platform[] configuredPlatforms) : HttpMessageHandler

@@ -108,25 +108,14 @@ export interface PlatformCredentialManagement {
     credentials: PlatformCredentialStatus[];
 }
 
-/** Closed secret-free local freshness state returned for a sync provider. */
-export type ProviderFreshnessStatus =
-    | "NotConfigured"
-    | "NeverRefreshed"
-    | "Fresh"
-    | "Stale"
-    | "Cooldown";
-
-/** One provider from GET /api/library/sync/providers. */
+/** One actionable provider-refresh state from GET /api/library/sync/providers. */
 export interface ProviderSyncStatus {
     platform: Platform;
     isConfigured: boolean;
-    lastSuccessfulRefreshAt: string | null;
-    freshUntil: string | null;
-    freshnessStatus: ProviderFreshnessStatus;
     cooldownUntil: string | null;
 }
 
-/** Secret-free local readiness overview returned by GET /api/library/sync/providers. */
+/** Secret-free provider-refresh blockers returned by GET /api/library/sync/providers. */
 export interface ProviderSyncStatusResponse {
     providers: ProviderSyncStatus[];
 }

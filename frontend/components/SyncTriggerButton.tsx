@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DatabaseZap, RefreshCw, RotateCcw } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
+import { providerDisplayName, providerRefreshBlocker } from "@/lib/provider-sync-status";
 import type { ApiMessageResponse, LibrarySyncResult } from "@/types/api";
+import type { ProviderSyncStatus, ProviderSyncStatusResponse } from "@/types/game";
 
 const platformNames: Record<LibrarySyncResult["platforms"][number]["platform"], string> = {
     Steam: "Steam",
@@ -31,6 +33,28 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
     const [activeAction, setActiveAction] = useState<string | null>(null);
     const [resultMsg, setResultMsg] = useState("");
     const [platformResults, setPlatformResults] = useState<LibrarySyncResult["platforms"]>([]);
+    const [providerStatuses, setProviderStatuses] = useState<ProviderSyncStatus[]>([]);
+    const [readinessError, setReadinessError] = useState<string | null>(null);
+
+    const fetchRefreshReadiness = useCallback(async () => {
+        try {
+            const res = await fetch("/api/core/library/sync/providers", { cache: "no-store" });
+            if (!res.ok) {
+                setReadinessError("Refresh availability could not be checked.");
+                return;
+            }
+
+            const response: ProviderSyncStatusResponse = await res.json();
+            setProviderStatuses(response.providers);
+            setReadinessError(null);
+        } catch {
+            setReadinessError("Refresh availability could not be checked.");
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchRefreshReadiness();
+    }, [fetchRefreshReadiness]);
 
     const handleSync = async (endpoint: string, action: string) => {
         setActiveAction(action);
@@ -52,7 +76,7 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
                 setResultMsg(data.message || "Sync completed successfully.");
                 setPlatformResults(data.platforms);
 
-                await onSyncComplete?.();
+                await Promise.all([onSyncComplete?.(), fetchRefreshReadiness()]);
             }
         } catch (caughtError: unknown) {
             setResultMsg(`Error: ${getErrorMessage(caughtError, "The sync request failed.")}`);
@@ -60,6 +84,13 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
             setActiveAction(null);
         }
     };
+
+    const refreshBlockers = providerStatuses
+        .filter((provider) => !provider.isConfigured || provider.cooldownUntil)
+        .map((provider) => ({
+            platform: providerDisplayName(provider.platform),
+            message: providerRefreshBlocker(provider, formatTimestamp),
+        }));
 
     return (
         <div className="flex w-full flex-col items-start gap-3 md:w-auto md:items-end">
@@ -92,6 +123,19 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
                 </Button>
             </div>
 
+            {readinessError ? (
+                <p className="text-sm text-muted-foreground">{readinessError} Cached sync is still available.</p>
+            ) : refreshBlockers.length > 0 ? (
+                <div className="w-full space-y-1 text-sm text-muted-foreground md:text-right">
+                    <p className="font-medium text-foreground">Before refreshing platforms:</p>
+                    {refreshBlockers.map((blocker) => (
+                        <p key={blocker.platform}>
+                            {blocker.platform}: {blocker.message}
+                        </p>
+                    ))}
+                </div>
+            ) : null}
+
             {resultMsg && (
                 <div className="space-y-2 text-sm text-muted-foreground animate-in fade-in duration-300 md:text-right">
                     <p>{resultMsg}</p>
@@ -106,4 +150,14 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
             )}
         </div>
     );
+}
+
+function formatTimestamp(iso: string | null): string {
+    if (!iso) return "soon";
+    return new Date(iso).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
 }
