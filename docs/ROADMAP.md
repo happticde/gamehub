@@ -22,7 +22,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Statistics / Analytics | ✅ Complete board with charts and histograms |
 | Sync / Ignore logic | ✅ Auto-hide keywords + retroactive ignore |
 | Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
-| Provider freshness & sync readiness | ✅ Tenant-scoped local state endpoint + Admin Sync overview |
+| Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
 
 ---
 
@@ -51,12 +51,12 @@ Added 5-star ratings, Play Status tracking, and "Auto-Hide & Ignore" keyword log
 ### 6. Background Sync Scheduler ✅
 `SyncSchedulerService` (`BackgroundService`) runs `RunFullSyncAsync()` on a configurable interval (default 6h). `GET /api/library/sync/status` endpoint exposes scheduler state. Admin UI card with live status and auto-refresh. Disabled by default via `Sync:EnableScheduler`.
 
-**Provider freshness & sync readiness (2026-07-11):** Cached sync, refresh-if-stale, and force
-refresh are complete. The Admin Sync tab also shows tenant-scoped, secret-free local readiness for
-Steam, GOG, PlayStation, and Epic from persisted successful retrieval timestamps, the configured
-freshness window, encrypted-vault configuration booleans, and active transient cooldowns. It is not
-an external provider health check: opening the overview never contacts a provider, validates a
-credential, or starts a refresh.
+**Provider refresh blockers (2026-07-11):** Cached sync, refresh-if-stale, and force refresh are
+complete. The Admin Sync actions show only tenant-scoped, secret-free blockers that can change what
+the user should do before a refresh: missing encrypted-vault configuration and active transient
+cooldowns. They deliberately do not interpret a local successful-retrieval timestamp as evidence
+that a provider has new data. Opening the check never contacts a provider, validates a credential,
+or starts a refresh.
 
 ---
 
