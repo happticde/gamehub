@@ -97,12 +97,16 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         await StoreEpic(TenantB, "epic-refresh-b");
         await using var db = CreateContext(TenantA);
         var epic = new CapturingEpicFetcher();
-        var controller = CreateController(
+        var logger = new CapturingLogger<RetrieveController>();
+        var controller = new RetrieveController(
             db,
-            TenantA,
             new CapturingSteamFetcher(),
+            new UnusedGogFetcher(),
             new UnusedPsnFetcher(),
-            epic);
+            epic,
+            CreateCredentialService(db, TenantA),
+            logger,
+            NullLoggerFactory.Instance);
 
         var result = await controller.RetrieveStored(Platform.Epic, CancellationToken.None);
 
@@ -111,6 +115,11 @@ public sealed class StoredPlatformRetrievalTests : IDisposable
         var responseJson = JsonSerializer.Serialize(ok.Value);
         Assert.DoesNotContain("epic-refresh-a", responseJson, StringComparison.Ordinal);
         Assert.DoesNotContain("epic-refresh-b", responseJson, StringComparison.Ordinal);
+        var logs = string.Join("\n", logger.Messages);
+        Assert.Contains("Epic ingest batch completed", logs, StringComparison.Ordinal);
+        Assert.Contains("Epic stored retrieval finished", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("epic-refresh-a", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("epic-refresh-b", logs, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -45,6 +47,8 @@ public sealed class EpicGamesClient(
         "https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/Windows?label=Live";
     private const string CatalogItemsUrl =
         "https://catalog-public-service-prod06.ol.epicgames.com/catalog/api/shared/namespace";
+    private const int CatalogBatchSize = 20;
+    private const int MaxConcurrentCatalogBatches = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -95,6 +99,7 @@ public sealed class EpicGamesClient(
 
         try
         {
+            var oauthStarted = Stopwatch.GetTimestamp();
             var session = await StartSessionAsync(
                 new Dictionary<string, string>
                 {
@@ -103,15 +108,25 @@ public sealed class EpicGamesClient(
                     ["token_type"] = "eg1"
                 },
                 cancellationToken);
+            logger.LogInformation(
+                "Epic OAuth refresh completed in {DurationMilliseconds} ms",
+                Stopwatch.GetElapsedTime(oauthStarted).TotalMilliseconds);
 
             if (string.IsNullOrWhiteSpace(session.AccessToken))
             {
                 throw new EpicProviderException(EpicProviderFailure.Authentication);
             }
 
-            await PersistRefreshTokenRotationAsync(credential, session, cancellationToken);
+            var rotationStarted = Stopwatch.GetTimestamp();
+            if (await PersistRefreshTokenRotationAsync(credential, session, cancellationToken))
+            {
+                logger.LogInformation(
+                    "Epic refresh-token rotation persistence completed in {DurationMilliseconds} ms",
+                    Stopwatch.GetElapsedTime(rotationStarted).TotalMilliseconds);
+            }
 
             var launcherGames = await FetchLauncherGamesAsync(session.AccessToken, cancellationToken);
+            var mappingStarted = Stopwatch.GetTimestamp();
             var mapped = new List<JsonElement>();
             foreach (var rawItem in launcherGames.Items)
             {
@@ -123,10 +138,18 @@ public sealed class EpicGamesClient(
                     mapped.Add(mappedItem.Value);
                 }
             }
+            logger.LogInformation(
+                "Epic mapping completed in {DurationMilliseconds} ms with {MappedGames} mapped games and {SkippedCatalogEntries} skipped catalog entries",
+                Stopwatch.GetElapsedTime(mappingStarted).TotalMilliseconds,
+                mapped.Count,
+                launcherGames.SkippedCatalogRecords);
 
             logger.LogInformation(
-                "Epic Games: fetched {RawCount} launcher asset records, mapped {MappedCount} games, and skipped {SkippedCount} unavailable catalog records",
-                launcherGames.Items.Count,
+                "Epic Games retrieval completed with {AssetCount} assets, {QualifiedAssetCount} qualified assets, {UniqueCatalogPairCount} unique catalog pairs, {CatalogBatchCount} catalog batches, {MappedCount} mapped games, and {SkippedCount} skipped catalog entries",
+                launcherGames.AssetCount,
+                launcherGames.QualifiedAssetCount,
+                launcherGames.UniqueCatalogPairCount,
+                launcherGames.CatalogBatchCount,
                 mapped.Count,
                 launcherGames.SkippedCatalogRecords);
             await WriteAuditLogAsync(
@@ -150,7 +173,7 @@ public sealed class EpicGamesClient(
         catch (ProviderRequestException ex)
         {
             await WriteAuditLogAsync(ex.AuditStatus, 0, ex.GetSafeAuditMessage());
-            throw new HttpRequestException("Epic library request failed.", ex);
+            throw;
         }
         catch (EpicProviderException ex)
         {
@@ -224,7 +247,7 @@ public sealed class EpicGamesClient(
             ?? throw new JsonException("Epic authorization returned an empty response.");
     }
 
-    private async Task PersistRefreshTokenRotationAsync(
+    private async Task<bool> PersistRefreshTokenRotationAsync(
         EpicPlatformCredential credential,
         EpicOAuthSession session,
         CancellationToken cancellationToken)
@@ -232,7 +255,7 @@ public sealed class EpicGamesClient(
         if (string.IsNullOrWhiteSpace(session.RefreshToken)
             || string.Equals(session.RefreshToken, credential.RefreshToken, StringComparison.Ordinal))
         {
-            return;
+            return false;
         }
 
         await refreshTokenRotationStore.PersistIfRotatedAsync(
@@ -242,6 +265,7 @@ public sealed class EpicGamesClient(
                 session.AccountId ?? credential.AccountId,
                 session.DisplayName ?? credential.DisplayName),
             cancellationToken);
+        return true;
     }
 
     private static void ApplyEpicHeaders(HttpRequestMessage request)
@@ -256,10 +280,15 @@ public sealed class EpicGamesClient(
         string accessToken,
         CancellationToken cancellationToken)
     {
-        var items = new List<EpicLauncherGameRecord>();
-        var skippedCatalogRecords = 0;
+        var assetsStarted = Stopwatch.GetTimestamp();
         var assets = await FetchGameAssetsAsync(accessToken, cancellationToken);
+        logger.LogInformation(
+            "Epic launcher asset retrieval completed in {DurationMilliseconds} ms with {AssetCount} assets",
+            Stopwatch.GetElapsedTime(assetsStarted).TotalMilliseconds,
+            assets.Count);
+
         var seenAppNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var qualifiedAssets = new List<EpicQualifiedAsset>();
 
         foreach (var asset in assets)
         {
@@ -275,40 +304,57 @@ public sealed class EpicGamesClient(
                 continue;
             }
 
-            JsonElement? metadata;
-            try
-            {
-                metadata = await FetchCatalogMetadataAsync(
-                    accessToken,
-                    namespaceName,
-                    catalogItemId,
-                    cancellationToken);
-            }
-            catch (EpicProviderException ex) when (ex.Failure is
-                EpicProviderFailure.UpstreamUnavailable or EpicProviderFailure.MalformedResponse)
-            {
-                skippedCatalogRecords++;
-                logger.LogWarning(
-                    "Skipping Epic catalog metadata record because the provider response was unavailable or malformed");
-                continue;
-            }
-            catch (ProviderRequestException ex) when (ex.Failure == ProviderRequestFailure.UpstreamUnavailable)
-            {
-                skippedCatalogRecords++;
-                logger.LogWarning(
-                    "Skipping Epic catalog metadata record because the provider response was unavailable or malformed");
-                continue;
-            }
-            if (metadata is null)
-            {
-                skippedCatalogRecords++;
-                continue;
-            }
-
-            items.Add(new EpicLauncherGameRecord(asset, metadata.Value));
+            qualifiedAssets.Add(new EpicQualifiedAsset(
+                asset,
+                new EpicCatalogKey(namespaceName, catalogItemId)));
         }
 
-        return new EpicLauncherGameResult(items, skippedCatalogRecords);
+        var uniqueCatalogPairs = qualifiedAssets
+            .Select(item => item.CatalogKey)
+            .Distinct()
+            .ToArray();
+        var catalogBatches = uniqueCatalogPairs
+            .GroupBy(key => key.Namespace, StringComparer.Ordinal)
+            .SelectMany(group => group
+                .Chunk(CatalogBatchSize)
+                .Select(chunk => new EpicCatalogBatch(
+                    group.Key,
+                    chunk.Select(key => key.CatalogItemId).ToArray())))
+            .ToArray();
+
+        var catalogStarted = Stopwatch.GetTimestamp();
+        var catalogMetadata = await FetchCatalogMetadataBatchesAsync(
+            accessToken,
+            catalogBatches,
+            cancellationToken);
+        var items = new List<EpicLauncherGameRecord>();
+        var skippedCatalogRecords = 0;
+        foreach (var qualifiedAsset in qualifiedAssets)
+        {
+            if (!catalogMetadata.TryGetValue(qualifiedAsset.CatalogKey, out var metadata))
+            {
+                skippedCatalogRecords++;
+                continue;
+            }
+
+            items.Add(new EpicLauncherGameRecord(qualifiedAsset.Asset, metadata));
+        }
+
+        logger.LogInformation(
+            "Epic catalog metadata retrieval completed in {DurationMilliseconds} ms with {QualifiedAssetCount} qualified assets, {UniqueCatalogPairCount} unique catalog pairs, {CatalogBatchCount} batches, and {SkippedCatalogEntries} skipped catalog entries",
+            Stopwatch.GetElapsedTime(catalogStarted).TotalMilliseconds,
+            qualifiedAssets.Count,
+            uniqueCatalogPairs.Length,
+            catalogBatches.Length,
+            skippedCatalogRecords);
+
+        return new EpicLauncherGameResult(
+            items,
+            skippedCatalogRecords,
+            assets.Count,
+            qualifiedAssets.Count,
+            uniqueCatalogPairs.Length,
+            catalogBatches.Length);
     }
 
     private async Task<List<JsonElement>> FetchGameAssetsAsync(
@@ -346,15 +392,99 @@ public sealed class EpicGamesClient(
         }
     }
 
-    private async Task<JsonElement?> FetchCatalogMetadataAsync(
+    private async Task<IReadOnlyDictionary<EpicCatalogKey, JsonElement>> FetchCatalogMetadataBatchesAsync(
         string accessToken,
-        string namespaceName,
-        string catalogItemId,
+        IReadOnlyList<EpicCatalogBatch> batches,
         CancellationToken cancellationToken)
     {
+        if (batches.Count == 0)
+        {
+            return new Dictionary<EpicCatalogKey, JsonElement>();
+        }
+
+        var results = new ConcurrentDictionary<EpicCatalogKey, JsonElement>();
+        using var remainingWork = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var nextBatch = -1;
+        ProviderRequestException? rateLimit = null;
+        var rateLimitLock = new object();
+
+        async Task FetchWorkerAsync()
+        {
+            while (!remainingWork.IsCancellationRequested)
+            {
+                var batchIndex = Interlocked.Increment(ref nextBatch);
+                if (batchIndex >= batches.Count)
+                {
+                    return;
+                }
+
+                var batch = batches[batchIndex];
+                try
+                {
+                    var batchMetadata = await FetchCatalogMetadataBatchAsync(
+                        accessToken,
+                        batch,
+                        remainingWork.Token);
+                    foreach (var (catalogItemId, metadata) in batchMetadata)
+                    {
+                        results.TryAdd(new EpicCatalogKey(batch.Namespace, catalogItemId), metadata);
+                    }
+                }
+                catch (ProviderRequestException ex) when (ex.Failure == ProviderRequestFailure.RateLimited)
+                {
+                    lock (rateLimitLock)
+                    {
+                        rateLimit ??= ex;
+                    }
+                    remainingWork.Cancel();
+                    return;
+                }
+                catch (EpicProviderException ex) when (ex.Failure is
+                    EpicProviderFailure.UpstreamUnavailable or EpicProviderFailure.MalformedResponse)
+                {
+                    logger.LogWarning(
+                        "Skipping an Epic catalog metadata batch because the provider response was unavailable or malformed");
+                }
+                catch (ProviderRequestException ex) when (ex.Failure == ProviderRequestFailure.UpstreamUnavailable)
+                {
+                    logger.LogWarning(
+                        "Skipping an Epic catalog metadata batch because the provider response was unavailable or malformed");
+                }
+                catch (OperationCanceledException) when (
+                    remainingWork.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+        }
+
+        var workers = Enumerable.Range(0, Math.Min(MaxConcurrentCatalogBatches, batches.Count))
+            .Select(_ => FetchWorkerAsync())
+            .ToArray();
+        await Task.WhenAll(workers);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (rateLimitLock)
+        {
+            if (rateLimit is not null)
+            {
+                throw rateLimit;
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<IReadOnlyDictionary<string, JsonElement>> FetchCatalogMetadataBatchAsync(
+        string accessToken,
+        EpicCatalogBatch batch,
+        CancellationToken cancellationToken)
+    {
+        var ids = string.Join(
+            "&",
+            batch.CatalogItemIds.Select(id => $"id={Uri.EscapeDataString(id)}"));
         var url =
-            $"{CatalogItemsUrl}/{Uri.EscapeDataString(namespaceName)}/bulk/items" +
-            $"?id={Uri.EscapeDataString(catalogItemId)}" +
+            $"{CatalogItemsUrl}/{Uri.EscapeDataString(batch.Namespace)}/bulk/items" +
+            $"?{ids}" +
             "&includeDLCDetails=true&includeMainGameDetails=true&country=US&locale=en-US";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -378,13 +508,17 @@ public sealed class EpicGamesClient(
                 throw new EpicProviderException(EpicProviderFailure.MalformedResponse);
             }
 
-            if (document.RootElement.TryGetProperty(catalogItemId, out var metadata)
-                && metadata.ValueKind == JsonValueKind.Object)
+            var metadataById = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var catalogItemId in batch.CatalogItemIds)
             {
-                return metadata.Clone();
+                if (document.RootElement.TryGetProperty(catalogItemId, out var metadata)
+                    && metadata.ValueKind == JsonValueKind.Object)
+                {
+                    metadataById[catalogItemId] = metadata.Clone();
+                }
             }
 
-            return null;
+            return metadataById;
         }
     }
 
@@ -419,9 +553,19 @@ public sealed class EpicGamesClient(
 
     private sealed record EpicLauncherGameRecord(JsonElement Asset, JsonElement CatalogMetadata);
 
+    private readonly record struct EpicCatalogKey(string Namespace, string CatalogItemId);
+
+    private sealed record EpicQualifiedAsset(JsonElement Asset, EpicCatalogKey CatalogKey);
+
+    private sealed record EpicCatalogBatch(string Namespace, string[] CatalogItemIds);
+
     private sealed record EpicLauncherGameResult(
         List<EpicLauncherGameRecord> Items,
-        int SkippedCatalogRecords);
+        int SkippedCatalogRecords,
+        int AssetCount,
+        int QualifiedAssetCount,
+        int UniqueCatalogPairCount,
+        int CatalogBatchCount);
 
     private async Task WriteAuditLogAsync(string status, int count, string? error = null)
     {

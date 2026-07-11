@@ -61,6 +61,12 @@ and unifies the tenant's existing raw library instead.
 - Do not reconnect for `RateLimited` or `UpstreamUnavailable`; reconnect only after a credential
   rejection or an operator-confirmed credential problem.
 
+Core's existing standard HTTP resilience handler can retry the complete Core-to-Ingest stored
+retrieval POST after a transient failure. That retry boundary predates Epic catalog batching and is
+unchanged here. Because a replay can repeat OAuth refresh, catalog retrieval, and the idempotent raw
+batch upsert, operators must continue to avoid manual retry loops and must treat the Ingest audit
+history as the source of truth for each completed attempt.
+
 ## Payload-Drift Workflow
 
 Use this workflow for repeated `MalformedResponse`, repeated partial catalog skips, or a confirmed

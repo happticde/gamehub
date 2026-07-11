@@ -6,6 +6,7 @@ using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace GameHub.Ingest.Controllers;
@@ -176,16 +177,33 @@ public class RetrieveController : ControllerBase
 
     private async Task<IActionResult?> RetrieveStoredEpic(CancellationToken cancellationToken)
     {
-        var credential = await _credentials.GetEpicAsync(cancellationToken);
-        if (credential is null)
+        var totalStarted = Stopwatch.GetTimestamp();
+        var mappedGames = 0;
+        try
         {
-            return null;
-        }
+            var credential = await _credentials.GetEpicAsync(cancellationToken);
+            if (credential is null)
+            {
+                return null;
+            }
 
-        var result = await _epicFetcher.FetchGamesAsync(credential, cancellationToken);
-        _logger.LogInformation("Stored Epic retrieve completed: {Count} games processed", result.Games.Count);
-        await _epicIngest.IngestBatch(result.Games);
-        return Ok(new StoredRetrievalResponse(result.IsComplete));
+            var result = await _epicFetcher.FetchGamesAsync(credential, cancellationToken);
+            mappedGames = result.Games.Count;
+            var ingestStarted = Stopwatch.GetTimestamp();
+            await _epicIngest.IngestBatch(result.Games);
+            _logger.LogInformation(
+                "Epic ingest batch completed in {DurationMilliseconds} ms with {MappedGames} mapped games",
+                Stopwatch.GetElapsedTime(ingestStarted).TotalMilliseconds,
+                mappedGames);
+            return Ok(new StoredRetrievalResponse(result.IsComplete));
+        }
+        finally
+        {
+            _logger.LogInformation(
+                "Epic stored retrieval finished in {DurationMilliseconds} ms with {MappedGames} mapped games",
+                Stopwatch.GetElapsedTime(totalStarted).TotalMilliseconds,
+                mappedGames);
+        }
     }
 
     /// <summary>
