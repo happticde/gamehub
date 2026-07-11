@@ -24,8 +24,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Clock, Activity, CalendarClock, CheckCircle2, XCircle, Timer } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
+import { providerStatusDetail, providerStatusLabel } from "@/lib/provider-sync-status";
 import type { RetroactiveIgnoreResponse } from "@/types/api";
-import type { SyncAuditLog } from "@/types/game";
+import type { ProviderSyncStatus, ProviderSyncStatusResponse, SyncAuditLog } from "@/types/game";
 
 /** Shape returned by GET /api/library/sync/status */
 interface SyncSchedulerStatus {
@@ -75,6 +76,8 @@ export function SyncPanel() {
     // Scheduler status state
     const [status, setStatus] = useState<SyncSchedulerStatus | null>(null);
     const [statusError, setStatusError] = useState<string | null>(null);
+    const [providerStatuses, setProviderStatuses] = useState<ProviderSyncStatus[]>([]);
+    const [providerStatusError, setProviderStatusError] = useState<string | null>(null);
 
     const fetchLogs = useCallback(async () => {
         setIsLoading(true);
@@ -112,18 +115,34 @@ export function SyncPanel() {
         }
     }, []);
 
+    const fetchProviderStatuses = useCallback(async () => {
+        try {
+            const res = await fetch("/api/core/library/sync/providers", { cache: "no-store" });
+            if (res.ok) {
+                const response: ProviderSyncStatusResponse = await res.json();
+                setProviderStatuses(response.providers);
+                setProviderStatusError(null);
+            } else {
+                setProviderStatusError("Status " + res.status);
+            }
+        } catch (caughtError: unknown) {
+            setProviderStatusError(getErrorMessage(caughtError, "Unknown error"));
+        }
+    }, []);
+
     const refreshAfterSync = useCallback(async () => {
-        await Promise.all([fetchLogs(), fetchStatus()]);
-    }, [fetchLogs, fetchStatus]);
+        await Promise.all([fetchLogs(), fetchStatus(), fetchProviderStatuses()]);
+    }, [fetchLogs, fetchStatus, fetchProviderStatuses]);
 
     useEffect(() => {
         fetchLogs();
         fetchStatus();
+        fetchProviderStatuses();
 
         // Auto-refresh scheduler status every 30 seconds
         const interval = setInterval(fetchStatus, 30_000);
         return () => clearInterval(interval);
-    }, [fetchLogs, fetchStatus]);
+    }, [fetchLogs, fetchStatus, fetchProviderStatuses]);
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -237,13 +256,69 @@ export function SyncPanel() {
                 </CardContent>
             </Card>
 
+            {/* Provider readiness stays local to GameHub; this is not an external health check. */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-lg">Provider Freshness &amp; Sync Readiness</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        Local GameHub sync state only. This overview never contacts a provider.
+                    </p>
+                </CardHeader>
+                <CardContent>
+                    {providerStatusError ? (
+                        <p className="text-sm text-destructive">
+                            Could not load provider readiness: {providerStatusError}
+                        </p>
+                    ) : providerStatuses.length === 0 ? (
+                        <div className="flex items-center text-sm text-muted-foreground">
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Loading provider readiness...
+                        </div>
+                    ) : (
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {providerStatuses.map((provider) => (
+                                <div key={provider.platform} className="rounded-lg border p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="font-semibold">
+                                                {provider.platform === "Psn" ? "PlayStation" : provider.platform}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {provider.isConfigured ? "Configured" : "Not configured"}
+                                            </p>
+                                        </div>
+                                        <Badge
+                                            variant={
+                                                provider.freshnessStatus === "Fresh"
+                                                    ? "default"
+                                                    : provider.freshnessStatus === "Cooldown"
+                                                        ? "secondary"
+                                                        : "outline"
+                                            }
+                                        >
+                                            {providerStatusLabel(provider.freshnessStatus)}
+                                        </Badge>
+                                    </div>
+                                    <p className="mt-3 text-sm text-muted-foreground">
+                                        {providerStatusDetail(provider, formatTimestamp)}
+                                    </p>
+                                    <p className="mt-3 text-xs text-muted-foreground">
+                                        Last successful refresh: {formatTimestamp(provider.lastSuccessfulRefreshAt)}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
             {/* Sync trigger — reuses the existing component */}
             <div className="flex flex-col gap-4 border-b pb-6">
                 <div>
                     <h3 className="text-lg font-semibold tracking-tight">Library Unification</h3>
                     <p className="text-sm text-muted-foreground mt-1">
                         Cached sync is the fast default and never contacts Steam, GOG, PlayStation, or Epic.
-                        Platform refresh can be slow; fresh providers are skipped for 30 minutes by default.
+                        Platform refresh can be slow; providers inside the configured freshness window are skipped.
                         Force refresh ignores freshness, but still respects credentials and rate-limit cooldowns.
                     </p>
                 </div>
