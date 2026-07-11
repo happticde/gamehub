@@ -26,6 +26,8 @@ public class UnificationService
     private readonly IngestClient _client;
     private readonly ILogger<UnificationService> _logger;
     private readonly StoredRetrievalCooldown _retrievalCooldown;
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _providerFreshnessTtl;
     private const string EpicRawMetadataSource = "Epic Raw";
 
     /// <summary>Number of items to fetch per page from the Ingest service.</summary>
@@ -79,12 +81,17 @@ public class UnificationService
         IServiceScopeFactory scopeFactory,
         IngestClient client,
         ILogger<UnificationService> logger,
-        StoredRetrievalCooldown retrievalCooldown)
+        StoredRetrievalCooldown retrievalCooldown,
+        IConfiguration configuration,
+        TimeProvider timeProvider)
     {
         _scopeFactory = scopeFactory;
         _client = client;
         _logger = logger;
         _retrievalCooldown = retrievalCooldown;
+        _timeProvider = timeProvider;
+        _providerFreshnessTtl = TimeSpan.FromMinutes(
+            Math.Max(0, configuration.GetValue("Sync:ProviderFreshnessMinutes", 30)));
     }
 
     /// <summary>
@@ -93,33 +100,57 @@ public class UnificationService
     /// </summary>
     public async Task<int> RunFullSyncAsync()
     {
-        // Core delegates its authenticated tenant to Ingest, but newly provisioned tenants
-        // still lack encrypted platform credentials. Keep their sync path disabled until those
-        // credentials can populate a tenant-owned raw catalogue.
-        using (var policyScope = _scopeFactory.CreateScope())
+        var result = await RunSyncAsync(SyncExecutionMode.RefreshIfStale);
+        return result.Processed;
+    }
+
+    /// <summary>
+    /// Runs cached-only, refresh-if-stale, or forced-refresh synchronization for the active tenant.
+    /// Forced refresh bypasses only freshness; credential policy and active cooldowns still apply.
+    /// </summary>
+    public async Task<LibrarySyncResult> RunSyncAsync(
+        SyncExecutionMode mode,
+        CancellationToken cancellationToken = default)
+    {
+        if (mode != SyncExecutionMode.Cached)
         {
-            var tenantContext = policyScope.ServiceProvider.GetRequiredService<ITenantContext>();
-            var db = policyScope.ServiceProvider.GetRequiredService<CoreContext>();
-            var platformSyncEnabled = await db.Tenants
-                .Where(tenant => tenant.Id == tenantContext.TenantId)
-                .Select(tenant => tenant.PlatformSyncEnabled)
-                .SingleOrDefaultAsync();
-            if (!platformSyncEnabled)
-            {
-                throw new TenantPlatformSyncDisabledException(tenantContext.TenantId);
-            }
+            await RequirePlatformSyncEnabledAsync(cancellationToken);
         }
 
         int totalProcessed = 0;
+        var platformResults = new List<PlatformSyncResult>();
 
         foreach (var platform in Enum.GetValues<Platform>())
         {
-            var count = await SyncPlatformAsync(platform);
-            totalProcessed += count;
-            _logger.LogInformation("Synced {Count} items from {Platform}", count, platform);
+            var result = await SyncPlatformAsync(platform, mode, cancellationToken);
+            platformResults.Add(result);
+            totalProcessed += result.ItemsProcessed;
+            _logger.LogInformation(
+                "Synced {Count} cached items from {Platform} with provider status {RefreshStatus}",
+                result.ItemsProcessed,
+                platform,
+                result.RefreshStatus);
         }
 
-        return totalProcessed;
+        var message = mode == SyncExecutionMode.Cached
+            ? $"Cached library sync completed — {totalProcessed} changed items processed."
+            : $"Platform refresh and cached sync completed — {totalProcessed} changed items processed.";
+        return new LibrarySyncResult(mode.ToString(), totalProcessed, platformResults, message);
+    }
+
+    private async Task RequirePlatformSyncEnabledAsync(CancellationToken cancellationToken)
+    {
+        using var policyScope = _scopeFactory.CreateScope();
+        var tenantContext = policyScope.ServiceProvider.GetRequiredService<ITenantContext>();
+        var db = policyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var platformSyncEnabled = await db.Tenants
+            .Where(tenant => tenant.Id == tenantContext.TenantId)
+            .Select(tenant => tenant.PlatformSyncEnabled)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!platformSyncEnabled)
+        {
+            throw new TenantPlatformSyncDisabledException(tenantContext.TenantId);
+        }
     }
 
     /// <summary>
@@ -129,19 +160,26 @@ public class UnificationService
     ///   3. Upserting each page into the unified library
     ///   4. Updating the sync timestamp on success
     /// </summary>
-    private async Task<int> SyncPlatformAsync(Platform platform)
+    private async Task<PlatformSyncResult> SyncPlatformAsync(
+        Platform platform,
+        SyncExecutionMode mode,
+        CancellationToken cancellationToken)
     {
         int processed = 0;
 
         // Step 1: Get the last sync timestamp for this platform
         DateTime? lastSyncedAt;
+        DateTime? lastProviderRetrievalAtUtc;
         Guid tenantId;
         using (var scope = _scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
             tenantId = scope.ServiceProvider.GetRequiredService<ITenantContext>().TenantId;
-            var meta = await db.SyncMetadata.FirstOrDefaultAsync(m => m.Platform == platform);
+            var meta = await db.SyncMetadata.FirstOrDefaultAsync(
+                m => m.Platform == platform,
+                cancellationToken);
             lastSyncedAt = meta?.LastSyncedAt;
+            lastProviderRetrievalAtUtc = meta?.LastSuccessfulProviderRetrievalAtUtc;
         }
 
         _logger.LogInformation("Starting sync for {Platform}, last synced at: {LastSynced}",
@@ -154,11 +192,16 @@ public class UnificationService
         int received = 0;
         string auditStatus = "Success";
         string? errorMessage = null;
+        var refreshStatus = "Cached";
+        string? refreshDetail = null;
 
         try
         {
-            if (_retrievalCooldown.TryGetRetryAfter(tenantId, platform, out var retryAfterUtc))
+            if (mode != SyncExecutionMode.Cached &&
+                _retrievalCooldown.TryGetRetryAfter(tenantId, platform, out var retryAfterUtc))
             {
+                refreshStatus = "SkippedCooldown";
+                refreshDetail = $"Provider cooldown is active until {retryAfterUtc:O}.";
                 auditStatus = "PartialSuccess";
                 errorMessage = $"Stored platform retrieval is deferred until {retryAfterUtc:O}; existing raw data was exported.";
                 _logger.LogInformation(
@@ -167,25 +210,49 @@ public class UnificationService
                     tenantId,
                     retryAfterUtc);
             }
-            else
+            else if (mode != SyncExecutionMode.Cached &&
+                     mode != SyncExecutionMode.ForceRefresh &&
+                     lastProviderRetrievalAtUtc is { } lastRetrieval &&
+                     lastRetrieval > _timeProvider.GetUtcNow().UtcDateTime.Subtract(_providerFreshnessTtl))
+            {
+                refreshStatus = "SkippedFresh";
+                refreshDetail = $"Provider data is fresh from {lastRetrieval:O}.";
+                _logger.LogInformation(
+                    "Skipping fresh provider {Platform} for tenant {TenantId}; last complete retrieval was {LastRetrievalAtUtc}",
+                    platform,
+                    tenantId,
+                    lastRetrieval);
+            }
+            else if (mode != SyncExecutionMode.Cached)
             {
                 try
                 {
-                    var refreshed = await _client.RetrieveStoredAsync(platform);
-                    if (!refreshed)
+                    var refreshed = await _client.RetrieveStoredAsync(platform, cancellationToken);
+                    if (!refreshed.IsConfigured)
                     {
+                        refreshStatus = "NotConfigured";
                         _retrievalCooldown.Clear(tenantId, platform);
                         _logger.LogDebug(
                             "No stored credential configured for {Platform}; exporting existing raw data",
                             platform);
                     }
+                    else if (refreshed.IsComplete)
+                    {
+                        refreshStatus = "Updated";
+                        _retrievalCooldown.Clear(tenantId, platform);
+                        await UpdateProviderFreshnessAsync(platform, cancellationToken);
+                    }
                     else
                     {
-                        _retrievalCooldown.Clear(tenantId, platform);
+                        refreshStatus = "Partial";
+                        refreshDetail = "Provider retrieval completed only partially; freshness was not advanced.";
+                        auditStatus = "PartialSuccess";
+                        errorMessage = "Stored platform retrieval was partial; existing and updated raw data was exported.";
                     }
                 }
                 catch (StoredRetrievalRateLimitedException exception)
                 {
+                    refreshStatus = "SkippedCooldown";
                     if (exception.RetryAfterUtc is { } retryAfter)
                     {
                         _retrievalCooldown.SetRetryAfter(tenantId, platform, retryAfter);
@@ -200,9 +267,11 @@ public class UnificationService
                         platform,
                         tenantId);
                 }
-                catch (HttpRequestException) when (platform == Platform.Epic)
+                catch (HttpRequestException)
                 {
                     // An upstream refresh must not make an already stored tenant library unavailable.
+                    refreshStatus = "Failed";
+                    refreshDetail = "Provider retrieval failed; cached raw data was still synchronized.";
                     auditStatus = "PartialSuccess";
                     errorMessage = "Stored platform retrieval failed; existing raw data was exported.";
                     _logger.LogWarning(
@@ -231,7 +300,7 @@ public class UnificationService
             // Step 4: Update the sync timestamp
             if (received > 0)
             {
-                await UpdateSyncTimestampAsync(platform);
+                await UpdateSyncTimestampAsync(platform, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -253,10 +322,10 @@ public class UnificationService
                 NewGamesCreated = created,
                 ErrorMessage = errorMessage
             });
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(cancellationToken);
         }
 
-        return processed;
+        return new PlatformSyncResult(platform, refreshStatus, processed, refreshDetail);
     }
 
     /// <summary>
@@ -464,26 +533,56 @@ public class UnificationService
     /// Updates the SyncMetadata record for a platform with the current timestamp.
     /// Creates the record if this is the first sync for this platform.
     /// </summary>
-    private async Task UpdateSyncTimestampAsync(Platform platform)
+    private async Task UpdateSyncTimestampAsync(
+        Platform platform,
+        CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
 
-        var meta = await db.SyncMetadata.FirstOrDefaultAsync(m => m.Platform == platform);
+        var meta = await db.SyncMetadata.FirstOrDefaultAsync(
+            m => m.Platform == platform,
+            cancellationToken);
         if (meta == null)
         {
             db.SyncMetadata.Add(new SyncMetadata
             {
                 Platform = platform,
-                LastSyncedAt = DateTime.UtcNow
+                LastSyncedAt = _timeProvider.GetUtcNow().UtcDateTime
             });
         }
         else
         {
-            meta.LastSyncedAt = DateTime.UtcNow;
+            meta.LastSyncedAt = _timeProvider.GetUtcNow().UtcDateTime;
         }
 
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task UpdateProviderFreshnessAsync(
+        Platform platform,
+        CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var meta = await db.SyncMetadata.FirstOrDefaultAsync(
+            record => record.Platform == platform,
+            cancellationToken);
+        if (meta is null)
+        {
+            db.SyncMetadata.Add(new SyncMetadata
+            {
+                Platform = platform,
+                LastSyncedAt = DateTime.UnixEpoch,
+                LastSuccessfulProviderRetrievalAtUtc = _timeProvider.GetUtcNow().UtcDateTime
+            });
+        }
+        else
+        {
+            meta.LastSuccessfulProviderRetrievalAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     // =========================================================================

@@ -306,6 +306,9 @@ namespace GameHub.Core.Migrations.sqlite
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("LastSuccessfulProviderRetrievalAtUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("LastSyncedAt")
                         .HasColumnType("TEXT");
 

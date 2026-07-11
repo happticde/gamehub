@@ -50,19 +50,43 @@ public class LibraryController : ControllerBase
 
     /// <summary>
     /// POST: api/library/sync
-    /// Triggers an incremental sync from Ingest → Core.
-    /// Fetches new/updated records from all platforms and merges them into the unified library.
+    /// Triggers a fast incremental sync from cached Ingest data into Core without contacting any
+    /// external provider.
     /// </summary>
     [HttpPost("sync")]
-    public async Task<IActionResult> Sync()
-    {
-        _logger.LogInformation("Starting full library sync");
-        await _activityLog.LogAsync("SyncStarted", "Manual sync triggered from admin dashboard");
+    public Task<IActionResult> Sync(CancellationToken cancellationToken) =>
+        RunSyncAsync(SyncExecutionMode.Cached, "Manual cached sync", cancellationToken);
 
-        int count;
+    /// <summary>
+    /// POST: api/library/sync/refresh
+    /// Refreshes providers whose last complete retrieval is older than the configured TTL, then
+    /// synchronizes cached Ingest data into Core.
+    /// </summary>
+    [HttpPost("sync/refresh")]
+    public Task<IActionResult> RefreshAndSync(CancellationToken cancellationToken) =>
+        RunSyncAsync(SyncExecutionMode.RefreshIfStale, "Manual refresh-if-stale sync", cancellationToken);
+
+    /// <summary>
+    /// POST: api/library/sync/refresh/force
+    /// Bypasses provider freshness but retains credentials, tenant policy, authentication, and
+    /// active rate-limit cooldowns.
+    /// </summary>
+    [HttpPost("sync/refresh/force")]
+    public Task<IActionResult> ForceRefreshAndSync(CancellationToken cancellationToken) =>
+        RunSyncAsync(SyncExecutionMode.ForceRefresh, "Manual forced-refresh sync", cancellationToken);
+
+    private async Task<IActionResult> RunSyncAsync(
+        SyncExecutionMode mode,
+        string activityDescription,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Starting library sync in {SyncMode} mode", mode);
+        await _activityLog.LogAsync("SyncStarted", $"{activityDescription} triggered from admin dashboard");
+
+        LibrarySyncResult result;
         try
         {
-            count = await _unifier.RunFullSyncAsync();
+            result = await _unifier.RunSyncAsync(mode, cancellationToken);
         }
         catch (TenantPlatformSyncDisabledException exception)
         {
@@ -79,9 +103,14 @@ public class LibraryController : ControllerBase
             });
         }
 
-        _logger.LogInformation("Library sync completed: {Count} items processed", count);
-        await _activityLog.LogAsync("SyncFinished", $"Manual sync completed — {count} items processed");
-        return Ok(new { Processed = count, Message = "Sync completed successfully." });
+        _logger.LogInformation(
+            "Library sync completed in {SyncMode} mode: {Count} items processed",
+            mode,
+            result.Processed);
+        await _activityLog.LogAsync(
+            "SyncFinished",
+            $"{activityDescription} completed — {result.Processed} items processed");
+        return Ok(result);
     }
 
     /// <summary>

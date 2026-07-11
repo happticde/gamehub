@@ -92,6 +92,7 @@ public sealed class TenantIsolationTests : IDisposable
         var metadata = await tenantA.SyncMetadata.SingleAsync();
         Assert.Equal(Platform.Steam, metadata.Platform);
         Assert.Equal(new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc), metadata.LastSyncedAt);
+        Assert.Equal(new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc), metadata.LastSuccessfulProviderRetrievalAtUtc);
         Assert.Equal(TenantA, metadata.TenantId);
     }
 
@@ -132,7 +133,8 @@ public sealed class TenantIsolationTests : IDisposable
             {
                 TenantId = TenantB,
                 Platform = Platform.Steam,
-                LastSyncedAt = FixedNow.UtcDateTime
+                LastSyncedAt = FixedNow.UtcDateTime,
+                LastSuccessfulProviderRetrievalAtUtc = FixedNow.UtcDateTime
             },
             _ => throw new ArgumentOutOfRangeException(nameof(recordType), recordType, null)
         });
@@ -495,6 +497,7 @@ public sealed class TenantIsolationTests : IDisposable
         var metadata = await db.SyncMetadata.SingleAsync();
         Assert.Equal(TenantA, metadata.TenantId);
         Assert.Equal(Platform.Steam, metadata.Platform);
+        Assert.Null(metadata.LastSuccessfulProviderRetrievalAtUtc);
     }
 
     [Fact]
@@ -702,7 +705,8 @@ public sealed class TenantIsolationTests : IDisposable
         db.SyncMetadata.Add(new SyncMetadata
         {
             Platform = Platform.Steam,
-            LastSyncedAt = lastSyncedAt
+            LastSyncedAt = lastSyncedAt,
+            LastSuccessfulProviderRetrievalAtUtc = lastSyncedAt
         });
         await db.SaveChangesAsync();
     }

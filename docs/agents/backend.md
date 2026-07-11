@@ -47,7 +47,8 @@ Two ASP.NET Core microservices:
 - Pending deletion blocks ordinary JWT access and refresh rotation. Only the signed deletion route
   remains retryable. The local compatibility path still has no email/password recovery; configured
   OIDC delegates recovery to its trusted provider. Multi-user operation remains disabled.
-- Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`).
+- Sync Scheduler: `Sync:EnableScheduler` (bool, default `false`), `Sync:IntervalMinutes` (int, default `360`). Scheduled cycles use refresh-if-stale plus cached sync and never force providers.
+- Provider freshness: `Sync:ProviderFreshnessMinutes` (int, default `30`). The last complete provider retrieval is persisted per tenant/platform in operational `SyncMetadata`; cached sync never contacts providers, partial/failed retrievals do not advance freshness, and force refresh still respects active cooldowns.
 - Sync scheduler results are tenant-indexed in memory. The status endpoint resolves the active
   tenant through `ITenantContext`; only enabled configuration and the next-cycle time are shared.
 - Roadmap #8 isolation, lifecycle, production authentication/recovery, and guarded enablement are

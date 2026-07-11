@@ -20,10 +20,13 @@ public interface IEpicAuthenticationClient
 public interface IEpicFetcher
 {
     /// <summary>Fetches the user's Epic Games library using a stored refresh token.</summary>
-    Task<List<JsonElement>> FetchGamesAsync(
+    Task<EpicFetchResult> FetchGamesAsync(
         EpicPlatformCredential credential,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Epic games plus whether every provider record was retrieved successfully.</summary>
+public sealed record EpicFetchResult(List<JsonElement> Games, bool IsComplete);
 
 /// <summary>Minimal Epic Games API client following Legendary's launcher-compatible flow.</summary>
 public sealed class EpicGamesClient(
@@ -84,7 +87,7 @@ public sealed class EpicGamesClient(
             session.DisplayName);
     }
 
-    public async Task<List<JsonElement>> FetchGamesAsync(
+    public async Task<EpicFetchResult> FetchGamesAsync(
         EpicPlatformCredential credential,
         CancellationToken cancellationToken = default)
     {
@@ -132,7 +135,7 @@ public sealed class EpicGamesClient(
                 launcherGames.SkippedCatalogRecords == 0
                     ? null
                     : "Some Epic catalog metadata records were unavailable or malformed and were skipped.");
-            return mapped;
+            return new EpicFetchResult(mapped, launcherGames.SkippedCatalogRecords == 0);
         }
         catch (PlatformCredentialValidationException ex)
         {

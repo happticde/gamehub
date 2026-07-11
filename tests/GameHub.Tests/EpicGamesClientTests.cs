@@ -95,7 +95,8 @@ public sealed class EpicGamesClientTests
         var games = await client.FetchGamesAsync(
             new EpicPlatformCredential("old-refresh-token", "account-1", "Player"));
 
-        Assert.Empty(games);
+        Assert.Empty(games.Games);
+        Assert.True(games.IsComplete);
         Assert.Equal("old-refresh-token", rotationStore.CurrentCredential?.RefreshToken);
         Assert.Equal("new-refresh-token", rotationStore.RefreshedCredential?.RefreshToken);
         Assert.Equal("account-2", rotationStore.RefreshedCredential?.AccountId);
@@ -188,7 +189,8 @@ public sealed class EpicGamesClientTests
         var games = await client.FetchGamesAsync(new EpicPlatformCredential("epic-refresh-token"));
         var audit = await fixture.ReadSingleAuditLogAsync();
 
-        var game = Assert.Single(games);
+        var game = Assert.Single(games.Games);
+        Assert.False(games.IsComplete);
         Assert.Equal("AvailableCatalog", game.GetProperty("app_name").GetString());
         Assert.Equal("PartialSuccess", audit.Status);
         Assert.Equal(1, audit.GamesFound);

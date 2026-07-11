@@ -187,7 +187,9 @@ if (builder.Configuration.GetValue("Igdb:EnableBackgroundEnrichment", true))
 }
 
 // --- Background Sync Scheduler (#6) ---
-// Runs RunFullSyncAsync() on a configurable interval.
+// Runs refresh-if-stale plus cached sync on a configurable interval. Scheduled work never forces
+// provider retrieval and therefore shares the same freshness and cooldown protections as manual
+// refresh-if-stale sync.
 // Disabled by default — set Sync:EnableScheduler=true to activate.
 var syncStatus = new SyncSchedulerStatus
 {

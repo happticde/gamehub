@@ -54,7 +54,8 @@ public sealed class IngestClientTests
 
         var retrieved = await client.RetrieveStoredAsync(Platform.Gog);
 
-        Assert.True(retrieved);
+        Assert.True(retrieved.IsConfigured);
+        Assert.True(retrieved.IsComplete);
         Assert.Equal(HttpMethod.Post, handler.Request?.Method);
         Assert.Equal("/api/retrieve/gog/stored", handler.Request?.RequestUri?.AbsolutePath);
         Assert.Equal(
@@ -76,7 +77,8 @@ public sealed class IngestClientTests
 
         var retrieved = await client.RetrieveStoredAsync(Platform.Psn);
 
-        Assert.False(retrieved);
+        Assert.False(retrieved.IsConfigured);
+        Assert.False(retrieved.IsComplete);
     }
 
     [Fact]
@@ -133,7 +135,7 @@ public sealed class IngestClientTests
             Request = request;
             return Task.FromResult(new HttpResponseMessage(statusCode)
             {
-                Content = content ?? JsonContent.Create(new PagedResult<RawGameDto>())
+                Content = content ?? JsonContent.Create(new StoredRetrievalResponse(true))
             });
         }
     }

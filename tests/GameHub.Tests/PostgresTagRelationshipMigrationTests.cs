@@ -203,6 +203,7 @@ public sealed class PostgresTagRelationshipMigrationTests
             var metadata = await db.SyncMetadata.SingleAsync();
             Assert.Equal(TenantA, metadata.TenantId);
             Assert.Equal(Platform.Steam, metadata.Platform);
+            Assert.Null(metadata.LastSuccessfulProviderRetrievalAtUtc);
             var defaultTenant = await db.Tenants.SingleAsync();
             Assert.Null(defaultTenant.DeletionRequestedAtUtc);
         }

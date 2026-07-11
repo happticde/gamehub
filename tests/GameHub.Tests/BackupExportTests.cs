@@ -40,6 +40,23 @@ public sealed class BackupExportTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateBackup_ProviderFreshnessOperationalState_IsExcludedFromV1()
+    {
+        _db.SyncMetadata.Add(new SyncMetadata
+        {
+            Platform = Platform.Epic,
+            LastSyncedAt = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            LastSuccessfulProviderRetrievalAtUtc = new DateTime(2030, 1, 2, 3, 4, 5, DateTimeKind.Utc)
+        });
+        await _db.SaveChangesAsync();
+
+        var json = Encoding.UTF8.GetString(_serializer.Serialize(await _service.CreateBackupAsync()));
+
+        Assert.DoesNotContain("lastSuccessfulProviderRetrieval", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("2030-01-02", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CreateBackup_WithCompleteGame_PreservesDurableLibraryState()
     {
         var game = new UnifiedGame

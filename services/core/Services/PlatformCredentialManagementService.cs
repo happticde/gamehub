@@ -13,7 +13,8 @@ public sealed class PlatformCredentialManagementService(
     CoreContext db,
     ITenantContext tenantContext,
     IngestClient ingestClient,
-    ILogger<PlatformCredentialManagementService> logger)
+    ILogger<PlatformCredentialManagementService> logger,
+    TimeProvider timeProvider)
 {
     private static readonly HashSet<Platform> StoredRetrievalPlatforms =
     [
@@ -98,7 +99,8 @@ public sealed class PlatformCredentialManagementService(
             throw new TenantPlatformSyncDisabledException(tenantContext.TenantId);
         }
 
-        if (!await ingestClient.RetrieveStoredAsync(platform, cancellationToken))
+        var retrieval = await ingestClient.RetrieveStoredAsync(platform, cancellationToken);
+        if (!retrieval.IsConfigured)
         {
             // A missing credential means Core's activation state is stale. Disable immediately
             // so subsequent scheduled or manual sync attempts stay fail-closed.
@@ -106,10 +108,30 @@ public sealed class PlatformCredentialManagementService(
             throw new PlatformCredentialMissingException(platform);
         }
 
+        if (retrieval.IsComplete)
+        {
+            var metadata = await db.SyncMetadata.SingleOrDefaultAsync(
+                item => item.Platform == platform,
+                cancellationToken);
+            if (metadata is null)
+            {
+                metadata = new SyncMetadata
+                {
+                    Platform = platform,
+                    LastSyncedAt = DateTime.UnixEpoch
+                };
+                db.SyncMetadata.Add(metadata);
+            }
+
+            metadata.LastSuccessfulProviderRetrievalAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         logger.LogInformation(
-            "Retrieved {Platform} library using the encrypted credential for tenant {TenantId}",
+            "Retrieved {Platform} library using the encrypted credential for tenant {TenantId}; complete: {IsComplete}",
             platform,
-            tenantContext.TenantId);
+            tenantContext.TenantId,
+            retrieval.IsComplete);
     }
 
     /// <summary>Returns tenant-scoped Ingest audit history through trusted delegation.</summary>

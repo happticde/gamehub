@@ -73,9 +73,9 @@ public class IngestClient
 
     /// <summary>
     /// Asks Ingest to refresh one platform using the delegated tenant's encrypted credential.
-    /// Returns false when that tenant has no credential for the platform.
+    /// Returns whether a credential existed and whether the provider retrieval was complete.
     /// </summary>
-    public async Task<bool> RetrieveStoredAsync(
+    public async Task<StoredRetrievalResult> RetrieveStoredAsync(
         Platform platform,
         CancellationToken cancellationToken = default)
     {
@@ -84,7 +84,7 @@ public class IngestClient
         using var response = await _http.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            return false;
+            return new StoredRetrievalResult(false, false);
         }
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
@@ -95,7 +95,10 @@ public class IngestClient
         }
 
         response.EnsureSuccessStatusCode();
-        return true;
+        var result = await response.Content.ReadFromJsonAsync<StoredRetrievalResponse>(
+            JsonOptions,
+            cancellationToken);
+        return new StoredRetrievalResult(true, result?.IsComplete == true);
     }
 
     /// <summary>Returns tenant-scoped stored-retrieval audit entries from Ingest.</summary>
@@ -248,6 +251,9 @@ public class IngestClient
 
     private sealed record PlatformCredentialUpstreamError(string Message);
 }
+
+/// <summary>Core-side interpretation of a secret-free stored-retrieval response.</summary>
+public sealed record StoredRetrievalResult(bool IsConfigured, bool IsComplete);
 
 /// <summary>Secret-free Ingest guarded-mode state.</summary>
 public sealed record IngestMultiUserReadinessState(

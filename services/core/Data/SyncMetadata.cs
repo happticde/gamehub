@@ -18,4 +18,10 @@ public class SyncMetadata : ITenantOwned
 
     /// <summary>Timestamp of the last successful sync for this platform.</summary>
     public DateTime LastSyncedAt { get; set; }
+
+    /// <summary>
+    /// Timestamp of the last complete external provider retrieval. This operational checkpoint is
+    /// independent from cached Ingest-to-Core progress and is deliberately excluded from Backup V1.
+    /// </summary>
+    public DateTime? LastSuccessfulProviderRetrievalAtUtc { get; set; }
 }

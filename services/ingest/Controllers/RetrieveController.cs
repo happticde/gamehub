@@ -142,7 +142,8 @@ public class RetrieveController : ControllerBase
 
         var games = await _steamFetcher.FetchGamesAsync(credential.ApiKey, credential.SteamId);
         _logger.LogInformation("Stored Steam retrieve completed: {Count} games processed", games.Count);
-        return await _steamIngest.IngestBatch(games);
+        await _steamIngest.IngestBatch(games);
+        return Ok(new StoredRetrievalResponse(true));
     }
 
     private async Task<IActionResult?> RetrieveStoredGog(CancellationToken cancellationToken)
@@ -155,7 +156,8 @@ public class RetrieveController : ControllerBase
 
         var games = await _gogFetcher.FetchGamesAsync(credential.Cookie, credential.User);
         _logger.LogInformation("Stored GOG retrieve completed: {Count} games processed", games.Count);
-        return await _gogIngest.IngestBatch(games);
+        await _gogIngest.IngestBatch(games);
+        return Ok(new StoredRetrievalResponse(true));
     }
 
     private async Task<IActionResult?> RetrieveStoredPsn(CancellationToken cancellationToken)
@@ -168,7 +170,8 @@ public class RetrieveController : ControllerBase
 
         var games = await _psnFetcher.FetchGamesAsync(credential.Cookies);
         _logger.LogInformation("Stored PSN retrieve completed: {Count} games processed", games.Count);
-        return await _psnIngest.IngestBatch(games);
+        await _psnIngest.IngestBatch(games);
+        return Ok(new StoredRetrievalResponse(true));
     }
 
     private async Task<IActionResult?> RetrieveStoredEpic(CancellationToken cancellationToken)
@@ -179,9 +182,10 @@ public class RetrieveController : ControllerBase
             return null;
         }
 
-        var games = await _epicFetcher.FetchGamesAsync(credential, cancellationToken);
-        _logger.LogInformation("Stored Epic retrieve completed: {Count} games processed", games.Count);
-        return await _epicIngest.IngestBatch(games);
+        var result = await _epicFetcher.FetchGamesAsync(credential, cancellationToken);
+        _logger.LogInformation("Stored Epic retrieve completed: {Count} games processed", result.Games.Count);
+        await _epicIngest.IngestBatch(result.Games);
+        return Ok(new StoredRetrievalResponse(result.IsComplete));
     }
 
     /// <summary>
