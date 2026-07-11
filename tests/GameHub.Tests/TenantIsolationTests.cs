@@ -681,6 +681,7 @@ public sealed class TenantIsolationTests : IDisposable
         new(
             null!,
             null!,
+            null!,
             db,
             NullLogger<LibraryController>.Instance,
             syncStatus ?? new SyncSchedulerStatus(),

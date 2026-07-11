@@ -4,6 +4,13 @@
 
 ### What Changed
 
+**Provider Freshness & Sync Readiness:**
+- Added a tenant-scoped, secret-free Core endpoint and Admin Sync overview for Steam, GOG,
+  PlayStation, and Epic. It reports only locally known configuration, successful refresh timestamps,
+  configured freshness windows, and active cooldowns; it never contacts a provider or exposes
+  credentials, tokens, tenant identifiers, provider errors, or external health claims.
+- The overview refreshes on panel mount and after cached, refresh-if-stale, and force sync actions.
+
 **Cached Sync and Provider Freshness:**
 - Split the fast cached Ingest-to-Core sync from refresh-if-stale and forced provider refresh modes.
 - Added persistent tenant/platform provider freshness with a configurable 30-minute default; only

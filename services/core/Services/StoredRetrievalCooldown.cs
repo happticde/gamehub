@@ -23,6 +23,22 @@ public sealed class StoredRetrievalCooldown(TimeProvider timeProvider)
         return false;
     }
 
+    /// <summary>
+    /// Returns an active cooldown without removing an elapsed entry. Read-only status endpoints
+    /// use this so inspecting sync readiness never changes process-local cooldown state.
+    /// </summary>
+    public bool TryPeekActiveRetryAfter(Guid tenantId, Platform platform, out DateTimeOffset retryAfterUtc)
+    {
+        if (_retryAfterUtc.TryGetValue((tenantId, platform), out retryAfterUtc)
+            && retryAfterUtc > timeProvider.GetUtcNow())
+        {
+            return true;
+        }
+
+        retryAfterUtc = default;
+        return false;
+    }
+
     /// <summary>Stores the latest provider-directed retry time for the selected tenant and platform.</summary>
     public void SetRetryAfter(Guid tenantId, Platform platform, DateTimeOffset retryAfterUtc)
     {

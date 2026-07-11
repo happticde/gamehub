@@ -108,6 +108,7 @@ builder.Services.AddHttpClient<IngestClient>(c =>
     });
 builder.Services.AddScoped<UnificationService>();
 builder.Services.AddScoped<PlatformCredentialManagementService>();
+builder.Services.AddScoped<ProviderSyncStatusService>();
 builder.Services.AddScoped<AccountDeletionService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<BackupExportService>();

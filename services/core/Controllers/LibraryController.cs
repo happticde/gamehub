@@ -1,4 +1,5 @@
 using GameHub.Core.Data;
+using GameHub.Core.Models.ProviderSync;
 using GameHub.Core.Services;
 using GameHub.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -20,6 +21,7 @@ namespace GameHub.Core.Controllers;
 public class LibraryController : ControllerBase
 {
     private readonly UnificationService _unifier;
+    private readonly ProviderSyncStatusService _providerSyncStatus;
     private readonly EnrichmentService _enrichment;
     private readonly CoreContext _db;
     private readonly ILogger<LibraryController> _logger;
@@ -30,6 +32,7 @@ public class LibraryController : ControllerBase
 
     public LibraryController(
         UnificationService unifier,
+        ProviderSyncStatusService providerSyncStatus,
         EnrichmentService enrichment,
         CoreContext db,
         ILogger<LibraryController> logger,
@@ -39,6 +42,7 @@ public class LibraryController : ControllerBase
         IGameMetadataProvider metadataProvider)
     {
         _unifier = unifier;
+        _providerSyncStatus = providerSyncStatus;
         _enrichment = enrichment;
         _db = db;
         _logger = logger;
@@ -123,6 +127,18 @@ public class LibraryController : ControllerBase
     public IActionResult GetSyncStatus()
     {
         return Ok(_syncStatus.GetSnapshot(_tenantContext.TenantId));
+    }
+
+    /// <summary>
+    /// GET: api/library/sync/providers
+    /// Returns the authenticated tenant's secret-free local provider freshness and cooldown state.
+    /// </summary>
+    [HttpGet("sync/providers")]
+    public async Task<ActionResult<ProviderSyncStatusResponse>> GetProviderSyncStatus(
+        CancellationToken cancellationToken)
+    {
+        var status = await _providerSyncStatus.GetStatusAsync(cancellationToken);
+        return Ok(status);
     }
 
     /// <summary>

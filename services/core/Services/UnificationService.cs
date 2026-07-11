@@ -90,8 +90,7 @@ public class UnificationService
         _logger = logger;
         _retrievalCooldown = retrievalCooldown;
         _timeProvider = timeProvider;
-        _providerFreshnessTtl = TimeSpan.FromMinutes(
-            Math.Max(0, configuration.GetValue("Sync:ProviderFreshnessMinutes", 30)));
+        _providerFreshnessTtl = ProviderFreshnessWindow.FromConfiguration(configuration);
     }
 
     /// <summary>
