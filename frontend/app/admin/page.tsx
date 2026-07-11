@@ -16,6 +16,7 @@
  *   6. Backup     — export, validate, and restore portable backups
  */
 
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EnrichmentPanel } from "@/components/admin/EnrichmentPanel";
 import { IngestionPanel } from "@/components/admin/IngestionPanel";
@@ -24,8 +25,28 @@ import { ActivityPanel } from "@/components/admin/ActivityPanel";
 import { BackupRestorePanel } from "@/components/admin/BackupRestorePanel";
 import { PlatformCredentialsPanel } from "@/components/admin/PlatformCredentialsPanel";
 import { Settings, Sparkles, Download, RefreshCw, Bell, ArchiveRestore, KeyRound } from "lucide-react";
+import { DEFAULT_ADMIN_TAB, getAdminTab } from "@/lib/admin-tabs";
 
 export default function AdminPage() {
+    const pathname = usePathname();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const activeTab = getAdminTab(searchParams.get("tab"));
+
+    const selectTab = (tab: string) => {
+        const selectedTab = getAdminTab(tab);
+        const nextParams = new URLSearchParams(searchParams.toString());
+
+        if (selectedTab === DEFAULT_ADMIN_TAB) {
+            nextParams.delete("tab");
+        } else {
+            nextParams.set("tab", selectedTab);
+        }
+
+        const query = nextParams.toString();
+        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    };
+
     return (
         <div className="min-h-screen bg-background">
             <main className="container mx-auto px-4 md:px-8 py-8 md:py-12 max-w-screen-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -40,8 +61,8 @@ export default function AdminPage() {
                     </p>
                 </header>
 
-                {/* Tabbed interface — defaulting to the Enrichment tab */}
-                <Tabs defaultValue="enrichment" className="space-y-6">
+                {/* The URL preserves the selected tab across full page reloads. */}
+                <Tabs value={activeTab} onValueChange={selectTab} className="space-y-6">
                     <TabsList className="flex-wrap h-auto justify-start gap-1">
                         <TabsTrigger value="enrichment" className="gap-1.5">
                             <Sparkles className="h-4 w-4" />
