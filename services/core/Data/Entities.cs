@@ -114,6 +114,9 @@ public class Tag : ITenantOwned
     public int Id { get; set; }
     public Guid TenantId { get; set; }
     public string Name { get; set; } = "";
+
+    /// <summary>Whether this reusable tag definition was created by the tenant.</summary>
+    public bool IsCustomDefinition { get; set; }
     
     public ICollection<UnifiedGame> Games { get; set; } = new List<UnifiedGame>();
 }

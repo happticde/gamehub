@@ -1,16 +1,21 @@
 "use client";
 
-import { type FormEvent, useMemo, useState } from "react";
-import { Loader2, Plus, Tags, X } from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { Loader2, Plus, Tags, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { CustomTagUpdateResponse } from "@/types/game";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import type {
+    CustomTagUpdateResponse,
+    DeleteCustomTagResponse,
+    TagSuggestion
+} from "@/types/game";
 
 interface CustomTagEditorProps {
     gameId: number;
     initialTags: string[];
-    availableTags: string[];
+    availableTags: TagSuggestion[];
 }
 
 function normalizeTagName(value: string): string {
@@ -21,16 +26,30 @@ function normalizeTagName(value: string): string {
 export default function CustomTagEditor({ gameId, initialTags, availableTags }: CustomTagEditorProps) {
     const router = useRouter();
     const [tags, setTags] = useState(initialTags);
+    const [suggestions, setSuggestions] = useState(availableTags);
     const [input, setInput] = useState("");
+    const [suggestionsOpen, setSuggestionsOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [deletingTagId, setDeletingTagId] = useState<number | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [hasError, setHasError] = useState(false);
 
-    const suggestions = useMemo(
-        () => availableTags.filter(option =>
-            !tags.some(tag => tag.toLocaleLowerCase() === option.toLocaleLowerCase())),
-        [availableTags, tags]
-    );
+    useEffect(() => setSuggestions(availableTags), [availableTags]);
+
+    const visibleSuggestions = useMemo(() => {
+        const search = normalizeTagName(input).toLocaleLowerCase();
+        const visible = suggestions.filter(suggestion =>
+            !tags.some(tag => tag.toLocaleLowerCase() === suggestion.name.toLocaleLowerCase())
+            && (!search || suggestion.name.toLocaleLowerCase().includes(search))
+        );
+
+        return {
+            custom: visible.filter(suggestion => suggestion.isCustom),
+            system: visible.filter(suggestion => !suggestion.isCustom)
+        };
+    }, [input, suggestions, tags]);
+    const isBusy = isSaving || deletingTagId !== null;
+
     const persistTags = async (nextTags: string[], previousTags: string[]): Promise<boolean> => {
         setTags(nextTags);
         setIsSaving(true);
@@ -54,6 +73,7 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
             const persistedTags = payload?.customTags ?? nextTags;
             setTags(persistedTags);
             setMessage("Saved automatically.");
+            setSuggestionsOpen(false);
             router.refresh();
             return true;
         } catch (error: unknown) {
@@ -66,17 +86,17 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
         }
     };
 
-    const addTag = async (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        const normalized = normalizeTagName(input);
+    const addTagName = async (rawName: string) => {
+        const normalized = normalizeTagName(rawName);
         if (!normalized) return;
 
-        const suggestedName = availableTags.find(
-            tag => tag.toLocaleLowerCase() === normalized.toLocaleLowerCase()
+        const suggestion = suggestions.find(
+            candidate => candidate.name.toLocaleLowerCase() === normalized.toLocaleLowerCase()
         );
-        const name = suggestedName ?? normalized;
+        const name = suggestion?.name ?? normalized;
         if (tags.some(tag => tag.toLocaleLowerCase() === name.toLocaleLowerCase())) {
             setInput("");
+            setSuggestionsOpen(false);
             return;
         }
 
@@ -86,9 +106,90 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
         if (!saved) setInput(name);
     };
 
+    const addTag = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        void addTagName(input);
+    };
+
     const removeTag = (tagToRemove: string) => {
         const nextTags = tags.filter(tag => tag !== tagToRemove);
         void persistTags(nextTags, tags);
+    };
+
+    const deleteSuggestion = async (suggestion: TagSuggestion) => {
+        if (suggestion.usageCount > 0 && !window.confirm(
+            `Delete "${suggestion.name}" from ${suggestion.usageCount} game assignment${suggestion.usageCount === 1 ? "" : "s"}?`
+        )) {
+            return;
+        }
+
+        setDeletingTagId(suggestion.id);
+        setMessage(null);
+        setHasError(false);
+
+        try {
+            const response = await fetch(`/api/core/library/tags/${suggestion.id}`, {
+                method: "DELETE"
+            });
+            const payload = await response.json().catch(() => null) as
+                | (Partial<DeleteCustomTagResponse> & { message?: string })
+                | null;
+            if (!response.ok) {
+                throw new Error(payload?.message ?? "The custom tag could not be deleted.");
+            }
+
+            setSuggestions(current => current.filter(candidate => candidate.id !== suggestion.id));
+            setMessage(`Deleted "${suggestion.name}".`);
+            router.refresh();
+        } catch (error: unknown) {
+            setHasError(true);
+            setMessage(error instanceof Error ? error.message : "The custom tag could not be deleted.");
+        } finally {
+            setDeletingTagId(null);
+        }
+    };
+
+    const renderSuggestionGroup = (title: string, items: TagSuggestion[]) => {
+        if (items.length === 0) return null;
+
+        return (
+            <div>
+                <p className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {title}
+                </p>
+                <div className="space-y-0.5">
+                    {items.map(suggestion => (
+                        <div
+                            key={suggestion.id}
+                            className="flex items-center rounded-md hover:bg-muted"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => void addTagName(suggestion.name)}
+                                disabled={isBusy}
+                                className="min-w-0 flex-1 px-2 py-2 text-left text-sm disabled:opacity-50"
+                            >
+                                <span className="block truncate">{suggestion.name}</span>
+                            </button>
+                            {suggestion.isCustom && (
+                                <button
+                                    type="button"
+                                    onClick={() => void deleteSuggestion(suggestion)}
+                                    disabled={isBusy}
+                                    className="mr-1 rounded-md p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                                    aria-label={`Delete custom tag ${suggestion.name}`}
+                                    title="Delete custom tag"
+                                >
+                                    {deletingTagId === suggestion.id
+                                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                                        : <Trash2 className="h-4 w-4" />}
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -112,7 +213,7 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
                         <button
                             type="button"
                             onClick={() => removeTag(tag)}
-                            disabled={isSaving}
+                            disabled={isBusy}
                             className="rounded-full p-0.5 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             aria-label={`Remove ${tag}`}
                         >
@@ -123,22 +224,45 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
             </div>
 
             <form onSubmit={addTag} className="flex gap-2">
-                <Input
-                    value={input}
-                    onChange={event => setInput(event.target.value)}
-                    list={`tag-suggestions-${gameId}`}
-                    maxLength={64}
-                    placeholder="e.g. Cozy, Backlog 2026"
-                    aria-label="Custom tag name"
-                    disabled={isSaving || tags.length >= 50}
-                />
-                <datalist id={`tag-suggestions-${gameId}`}>
-                    {suggestions.map(tag => <option key={tag} value={tag} />)}
-                </datalist>
+                <Popover open={suggestionsOpen} onOpenChange={setSuggestionsOpen}>
+                    <PopoverAnchor asChild>
+                        <div className="min-w-0 flex-1">
+                            <Input
+                                value={input}
+                                onChange={event => {
+                                    setInput(event.target.value);
+                                    setSuggestionsOpen(true);
+                                }}
+                                onFocus={() => setSuggestionsOpen(true)}
+                                maxLength={64}
+                                placeholder="e.g. Cozy, Backlog 2026"
+                                aria-label="Custom tag name"
+                                aria-expanded={suggestionsOpen}
+                                disabled={isBusy || tags.length >= 50}
+                            />
+                        </div>
+                    </PopoverAnchor>
+                    <PopoverContent
+                        align="start"
+                        className="max-h-72 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-1"
+                        onOpenAutoFocus={event => event.preventDefault()}
+                    >
+                        {visibleSuggestions.custom.length === 0 && visibleSuggestions.system.length === 0 ? (
+                            <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                                No saved suggestions found.
+                            </p>
+                        ) : (
+                            <>
+                                {renderSuggestionGroup("Custom", visibleSuggestions.custom)}
+                                {renderSuggestionGroup("System Tags", visibleSuggestions.system)}
+                            </>
+                        )}
+                    </PopoverContent>
+                </Popover>
                 <Button
                     type="submit"
                     variant="outline"
-                    disabled={!normalizeTagName(input) || isSaving || tags.length >= 50}
+                    disabled={!normalizeTagName(input) || isBusy || tags.length >= 50}
                 >
                     {isSaving ? <Loader2 className="animate-spin" /> : <Plus data-icon="inline-start" />}
                     Add

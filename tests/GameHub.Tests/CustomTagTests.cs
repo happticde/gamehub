@@ -37,7 +37,11 @@ public sealed class CustomTagTests : IDisposable
             Genres = "RPG"
         };
         var automaticTag = new Tag { Name = "RPG" };
-        var removedCustomTag = new Tag { Name = "Old favorite" };
+        var removedCustomTag = new Tag
+        {
+            Name = "Old favorite",
+            IsCustomDefinition = true
+        };
         _db.AddRange(game, automaticTag, removedCustomTag);
         await _db.SaveChangesAsync();
         _db.Set<TagAssignment>().AddRange(
@@ -89,6 +93,79 @@ public sealed class CustomTagTests : IDisposable
         Assert.Equal(
             ["Backlog 2026", "Old favorite", "RPG"],
             await _db.Tags.OrderBy(tag => tag.Name).Select(tag => tag.Name).ToListAsync());
+        Assert.True((await _db.Tags.SingleAsync(tag => tag.Name == "Backlog 2026")).IsCustomDefinition);
+        Assert.True((await _db.Tags.SingleAsync(tag => tag.Name == "Old favorite")).IsCustomDefinition);
+        Assert.False((await _db.Tags.SingleAsync(tag => tag.Name == "RPG")).IsCustomDefinition);
+    }
+
+    [Fact]
+    public async Task GetTagSuggestions_CustomDefinitionsAppearBeforeSystemDefinitions()
+    {
+        var game = new UnifiedGame { Title = "Suggestion game", Slug = "suggestion-game" };
+        var customTag = new Tag { Name = "Wishlist", IsCustomDefinition = true };
+        var systemTag = new Tag { Name = "Action" };
+        _db.AddRange(game, customTag, systemTag);
+        await _db.SaveChangesAsync();
+        _db.Set<TagAssignment>().Add(new TagAssignment
+        {
+            UnifiedGameId = game.Id,
+            TagId = customTag.Id,
+            IsCustom = true
+        });
+        await _db.SaveChangesAsync();
+
+        var result = Assert.IsType<OkObjectResult>(await CreateController().GetTagSuggestions());
+        var suggestions = Assert.IsAssignableFrom<IEnumerable<object>>(result.Value).ToList();
+
+        Assert.Collection(
+            suggestions,
+            suggestion =>
+            {
+                Assert.Equal("Wishlist", GetProperty<string>(suggestion, "Name"));
+                Assert.True(GetProperty<bool>(suggestion, "IsCustom"));
+                Assert.Equal(1, GetProperty<int>(suggestion, "UsageCount"));
+            },
+            suggestion =>
+            {
+                Assert.Equal("Action", GetProperty<string>(suggestion, "Name"));
+                Assert.False(GetProperty<bool>(suggestion, "IsCustom"));
+            });
+    }
+
+    [Fact]
+    public async Task DeleteCustomTag_CustomDefinition_RemovesDefinitionAndAssignments()
+    {
+        var game = new UnifiedGame { Title = "Delete tag game", Slug = "delete-tag-game" };
+        var customTag = new Tag { Name = "Typoo", IsCustomDefinition = true };
+        _db.AddRange(game, customTag);
+        await _db.SaveChangesAsync();
+        _db.Set<TagAssignment>().Add(new TagAssignment
+        {
+            UnifiedGameId = game.Id,
+            TagId = customTag.Id,
+            IsCustom = true
+        });
+        await _db.SaveChangesAsync();
+
+        var result = Assert.IsType<OkObjectResult>(
+            await CreateController().DeleteCustomTag(customTag.Id));
+
+        Assert.Equal(1, GetProperty<int>(result.Value!, "RemovedAssignments"));
+        Assert.Empty(await _db.Tags.ToListAsync());
+        Assert.Empty(await _db.Set<TagAssignment>().ToListAsync());
+    }
+
+    [Fact]
+    public async Task DeleteCustomTag_SystemDefinition_ReturnsBadRequestWithoutMutation()
+    {
+        var systemTag = new Tag { Name = "Strategy" };
+        _db.Tags.Add(systemTag);
+        await _db.SaveChangesAsync();
+
+        var result = await CreateController().DeleteCustomTag(systemTag.Id);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("Strategy", (await _db.Tags.SingleAsync()).Name);
     }
 
     private LibraryController CreateController() =>

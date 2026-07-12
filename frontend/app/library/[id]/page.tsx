@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Building2, Star, Tag, Layers } from "lucide-react";
-import { Platform, PlayStatus } from "@/types/game";
+import { Platform, PlayStatus, TagSuggestion } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 import FixMatchDialog from "@/components/library/FixMatchDialog";
@@ -49,13 +49,13 @@ export default async function GameDetailPage({
     const { id } = await params;
 
     let game: ExpandedGame | null = null;
-    let availableTags: string[] = [];
+    let availableTags: TagSuggestion[] = [];
     let error: string | null = null;
 
     try {
         const [res, tagsRes] = await Promise.all([
             fetchCoreApi(`/library/${id}`, { cache: "no-store" }),
-            fetchCoreApi("/library/tags", { cache: "no-store" })
+            fetchCoreApi("/library/tag-suggestions", { cache: "no-store" })
         ]);
         if (!res.ok) {
             if (res.status === 404) {

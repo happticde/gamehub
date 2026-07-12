@@ -10,6 +10,21 @@ export interface CustomTagUpdateResponse {
     customTags: string[];
 }
 
+/** Categorized tenant-owned suggestion returned by GET /api/library/tag-suggestions. */
+export interface TagSuggestion {
+    id: number;
+    name: string;
+    isCustom: boolean;
+    usageCount: number;
+}
+
+/** Result returned by DELETE /api/library/tags/{tagId}. */
+export interface DeleteCustomTagResponse {
+    id: number;
+    name: string;
+    removedAssignments: number;
+}
+
 export interface LibraryItem {
     id: number;
     unifiedGameId: number;

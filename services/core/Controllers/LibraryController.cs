@@ -392,7 +392,7 @@ public class LibraryController : ControllerBase
 
     /// <summary>
     /// GET: api/library/tags
-    /// Returns the authenticated tenant's saved tag names for filters and custom-tag suggestions.
+    /// Returns the authenticated tenant's saved tag names for library filters.
     /// </summary>
     [HttpGet("tags")]
     public async Task<IActionResult> GetTags()
@@ -403,6 +403,74 @@ public class LibraryController : ControllerBase
             .ToListAsync();
 
         return Ok(tags);
+    }
+
+    /// <summary>
+    /// GET: api/library/tag-suggestions
+    /// Returns categorized tag suggestions owned by the authenticated tenant. Custom definitions
+    /// are ordered before provider-created system definitions.
+    /// </summary>
+    [HttpGet("tag-suggestions")]
+    public async Task<IActionResult> GetTagSuggestions(CancellationToken cancellationToken = default)
+    {
+        var suggestions = await _db.Tags
+            .AsNoTracking()
+            .OrderByDescending(tag => tag.IsCustomDefinition)
+            .ThenBy(tag => tag.Name)
+            .Select(tag => new
+            {
+                tag.Id,
+                tag.Name,
+                IsCustom = tag.IsCustomDefinition,
+                UsageCount = tag.Games.Count
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(suggestions);
+    }
+
+    /// <summary>
+    /// DELETE: api/library/tags/{tagId}
+    /// Deletes one custom tag definition owned by the authenticated tenant and its assignments.
+    /// Provider-created system definitions cannot be deleted through this endpoint.
+    /// </summary>
+    [HttpDelete("tags/{tagId:int}")]
+    public async Task<IActionResult> DeleteCustomTag(
+        int tagId,
+        CancellationToken cancellationToken = default)
+    {
+        var tag = await _db.Tags
+            .FirstOrDefaultAsync(candidate => candidate.Id == tagId, cancellationToken);
+        if (tag is null)
+        {
+            return NotFound(new { Message = $"Tag with ID {tagId} not found." });
+        }
+
+        if (!tag.IsCustomDefinition)
+        {
+            return BadRequest(new
+            {
+                Code = "system_tag_cannot_be_deleted",
+                Message = "Provider-created system tags cannot be deleted."
+            });
+        }
+
+        var removedAssignments = await _db.Set<TagAssignment>()
+            .CountAsync(assignment => assignment.TagId == tagId, cancellationToken);
+        _db.Tags.Remove(tag);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Deleted custom tag {TagId} and {AssignmentCount} assignments",
+            tagId,
+            removedAssignments);
+
+        return Ok(new
+        {
+            tag.Id,
+            tag.Name,
+            RemovedAssignments = removedAssignments
+        });
     }
 
     /// <summary>
@@ -511,7 +579,11 @@ public class LibraryController : ControllerBase
 
             if (!tenantTagsByName.TryGetValue(requestedName, out var tag))
             {
-                tag = new Tag { Name = requestedName };
+                tag = new Tag
+                {
+                    Name = requestedName,
+                    IsCustomDefinition = true
+                };
                 _db.Tags.Add(tag);
                 tenantTagsByName.Add(requestedName, tag);
             }

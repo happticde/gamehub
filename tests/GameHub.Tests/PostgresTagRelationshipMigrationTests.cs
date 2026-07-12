@@ -18,6 +18,51 @@ public sealed class PostgresTagRelationshipMigrationTests
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
     [Fact]
+    public async Task CustomTagDefinitionMigration_PostgresExistingCustomAssignment_BackfillsDefinitionOrigin()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            var migrator = db.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260712071829_AddCustomTagAssignmentsPostgres");
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "UnifiedGames"
+                    ("Id", "TenantId", "Title", "Slug", "PlayStatus", "IsPlayStatusManual", "IsIgnored")
+                VALUES
+                    ({7001}, {TenantA}, {"Migration tag game"}, {"migration-tag-game"}, {0}, {false}, {false});
+                INSERT INTO "Tags" ("Id", "TenantId", "Name")
+                VALUES
+                    ({7001}, {TenantA}, {"Legacy custom"}),
+                    ({7002}, {TenantA}, {"Legacy system"});
+                INSERT INTO "TagUnifiedGame" ("TenantId", "GamesId", "TagsId", "IsCustom")
+                VALUES ({TenantA}, {7001}, {7001}, {true});
+                """);
+
+            await migrator.MigrateAsync();
+            db.ChangeTracker.Clear();
+
+            var tags = await db.Tags.OrderBy(tag => tag.Id).ToListAsync();
+            Assert.True(tags[0].IsCustomDefinition);
+            Assert.False(tags[1].IsCustomDefinition);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
     public async Task AccountTypeMigration_PostgresFreshInstallEnforcesExternalCredentialBoundary()
     {
         var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
@@ -238,25 +283,22 @@ public sealed class PostgresTagRelationshipMigrationTests
             // nullable DeletionRequestedAtUtc column prematurely.
             await tenantA.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO "Tenants" ("Id", "Name", "PlatformSyncEnabled", "CreatedAtUtc")
-                VALUES ({TenantB}, {"Tenant B"}, {false}, {new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)})
+                VALUES ({TenantB}, {"Tenant B"}, {false}, {new DateTime(2026, 6, 21, 12, 0, 0, DateTimeKind.Utc)});
+                INSERT INTO "Tags" ("Id", "TenantId", "Name")
+                VALUES
+                    ({7001}, {TenantA}, {"Local tag"}),
+                    ({7002}, {TenantB}, {"Foreign legacy tag"});
                 """);
             var game = new UnifiedGame { Title = "Existing game", Slug = "existing-game" };
-            var localTag = new Tag { Name = "Local tag" };
-            tenantA.AddRange(game, localTag);
+            tenantA.UnifiedGames.Add(game);
             await tenantA.SaveChangesAsync();
 
-            int foreignTagId;
-            await using (var tenantB = new CoreContext(options, new FixedTenantContext(TenantB)))
-            {
-                var foreignTag = new Tag { Name = "Foreign legacy tag" };
-                tenantB.Tags.Add(foreignTag);
-                await tenantB.SaveChangesAsync();
-                foreignTagId = foreignTag.Id;
-            }
+            const int localTagId = 7001;
+            const int foreignTagId = 7002;
 
             await tenantA.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO "TagUnifiedGame" ("GamesId", "TagsId")
-                VALUES ({game.Id}, {localTag.Id}), ({game.Id}, {foreignTagId})
+                VALUES ({game.Id}, {localTagId}), ({game.Id}, {foreignTagId})
                 """);
 
             await migrator.MigrateAsync();
@@ -269,6 +311,7 @@ public sealed class PostgresTagRelationshipMigrationTests
                 ["Foreign legacy tag", "Local tag"],
                 upgradedGame.Tags.Select(tag => tag.Name).Order().ToArray());
             Assert.All(upgradedGame.Tags, tag => Assert.Equal(TenantA, tag.TenantId));
+            Assert.All(upgradedGame.Tags, tag => Assert.False(tag.IsCustomDefinition));
             var upgradedAssignments = await tenantA.Set<TagAssignment>().ToListAsync();
             Assert.Equal(2, upgradedAssignments.Count);
             Assert.All(upgradedAssignments, assignment => Assert.False(assignment.IsCustom));

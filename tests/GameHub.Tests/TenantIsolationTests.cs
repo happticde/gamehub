@@ -220,6 +220,7 @@ public sealed class TenantIsolationTests : IDisposable
     public async Task CustomTags_ActiveTenant_CannotReadOrModifyForeignTenantTags()
     {
         int foreignGameId;
+        int foreignTagId;
         await using (var tenantB = CreateContext(TenantB))
         {
             var foreignGame = new UnifiedGame
@@ -227,7 +228,11 @@ public sealed class TenantIsolationTests : IDisposable
                 Title = "Tenant B tagged game",
                 Slug = "tenant-b-tagged-game"
             };
-            var foreignTag = new Tag { Name = "Tenant B private tag" };
+            var foreignTag = new Tag
+            {
+                Name = "Tenant B private tag",
+                IsCustomDefinition = true
+            };
             tenantB.AddRange(foreignGame, foreignTag);
             await tenantB.SaveChangesAsync();
             tenantB.Set<TagAssignment>().Add(new TagAssignment
@@ -238,6 +243,7 @@ public sealed class TenantIsolationTests : IDisposable
             });
             await tenantB.SaveChangesAsync();
             foreignGameId = foreignGame.Id;
+            foreignTagId = foreignTag.Id;
         }
 
         await using (var tenantA = CreateContext(TenantA))
@@ -255,6 +261,9 @@ public sealed class TenantIsolationTests : IDisposable
                 foreignGameId,
                 new CustomTagUpdateRequest { Tags = ["Attempted overwrite"] });
             Assert.IsType<NotFoundObjectResult>(updateResult);
+
+            var deleteResult = await controller.DeleteCustomTag(foreignTagId);
+            Assert.IsType<NotFoundObjectResult>(deleteResult);
         }
 
         await using var verifyB = CreateContext(TenantB);
@@ -684,25 +693,22 @@ public sealed class TenantIsolationTests : IDisposable
         await migrator.MigrateAsync("20260621110001_EnforceTenantGameRelationships");
         await tenantA.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "Tenants" ("Id", "Name", "PlatformSyncEnabled", "CreatedAtUtc")
-            VALUES ({TenantB}, {"Tenant B"}, {false}, {FixedNow.UtcDateTime})
+            VALUES ({TenantB}, {"Tenant B"}, {false}, {FixedNow.UtcDateTime});
+            INSERT INTO "Tags" ("Id", "TenantId", "Name")
+            VALUES
+                ({7001}, {TenantA}, {"Local tag"}),
+                ({7002}, {TenantB}, {"Foreign legacy tag"});
             """);
         var game = new UnifiedGame { Title = "Existing game", Slug = "existing-game" };
-        var localTag = new Tag { Name = "Local tag" };
-        tenantA.AddRange(game, localTag);
+        tenantA.UnifiedGames.Add(game);
         await tenantA.SaveChangesAsync();
 
-        int foreignTagId;
-        await using (var tenantB = new CoreContext(options, new FixedTenantContext(TenantB)))
-        {
-            var foreignTag = new Tag { Name = "Foreign legacy tag" };
-            tenantB.Tags.Add(foreignTag);
-            await tenantB.SaveChangesAsync();
-            foreignTagId = foreignTag.Id;
-        }
+        const int localTagId = 7001;
+        const int foreignTagId = 7002;
 
         await tenantA.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "TagUnifiedGame" ("GamesId", "TagsId")
-            VALUES ({game.Id}, {localTag.Id}), ({game.Id}, {foreignTagId})
+            VALUES ({game.Id}, {localTagId}), ({game.Id}, {foreignTagId})
             """);
 
         await migrator.MigrateAsync();
@@ -715,6 +721,7 @@ public sealed class TenantIsolationTests : IDisposable
             ["Foreign legacy tag", "Local tag"],
             upgradedGame.Tags.Select(tag => tag.Name).Order().ToArray());
         Assert.All(upgradedGame.Tags, tag => Assert.Equal(TenantA, tag.TenantId));
+        Assert.All(upgradedGame.Tags, tag => Assert.False(tag.IsCustomDefinition));
         var upgradedAssignments = await tenantA.Set<TagAssignment>().ToListAsync();
         Assert.Equal(2, upgradedAssignments.Count);
         Assert.All(upgradedAssignments, assignment => Assert.False(assignment.IsCustom));
@@ -723,6 +730,40 @@ public sealed class TenantIsolationTests : IDisposable
             INSERT INTO "TagUnifiedGame" ("TenantId", "GamesId", "TagsId")
             VALUES ({TenantA}, {game.Id}, {foreignTagId})
             """));
+    }
+
+    [Fact]
+    public async Task CustomTagDefinitionMigration_ExistingCustomAssignment_BackfillsDefinitionOrigin()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite(connection)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260712071829_AddCustomTagAssignmentsPostgres");
+
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "UnifiedGames"
+                ("Id", "TenantId", "Title", "Slug", "PlayStatus", "IsPlayStatusManual", "IsIgnored")
+            VALUES
+                ({7001}, {TenantA}, {"Migration tag game"}, {"migration-tag-game"}, {0}, {false}, {false});
+            INSERT INTO "Tags" ("Id", "TenantId", "Name")
+            VALUES
+                ({7001}, {TenantA}, {"Legacy custom"}),
+                ({7002}, {TenantA}, {"Legacy system"});
+            INSERT INTO "TagUnifiedGame" ("TenantId", "GamesId", "TagsId", "IsCustom")
+            VALUES ({TenantA}, {7001}, {7001}, {true});
+            """);
+
+        await migrator.MigrateAsync();
+        db.ChangeTracker.Clear();
+
+        var tags = await db.Tags.OrderBy(tag => tag.Id).ToListAsync();
+        Assert.True(tags[0].IsCustomDefinition);
+        Assert.False(tags[1].IsCustomDefinition);
     }
 
     private CoreContext CreateContext(Guid tenantId) =>

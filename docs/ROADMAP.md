@@ -51,7 +51,9 @@ Added 5-star ratings, Play Status tracking, and "Auto-Hide & Ignore" keyword log
 
 **Custom tags (2026-07-12):** Game detail pages support tenant-scoped custom tag assignment and
 saved suggestions. Manual assignments survive metadata re-enrichment, while automatic genre tags
-remain replaceable. Cross-tenant reads, writes, and suggestions are covered by negative tests.
+remain replaceable. Suggestions show custom definitions before system tags, and custom definitions
+can be deleted inline. Cross-tenant reads, writes, suggestions, and deletion are covered by negative
+tests.
 
 ### 6. Background Sync Scheduler ✅
 `SyncSchedulerService` (`BackgroundService`) runs `RunFullSyncAsync()` on a configurable interval (default 6h). `GET /api/library/sync/status` endpoint exposes scheduler state. Admin UI card with live status and auto-refresh. Disabled by default via `Sync:EnableScheduler`.
