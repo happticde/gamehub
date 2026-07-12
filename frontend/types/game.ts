@@ -5,6 +5,11 @@ export interface Tag {
     name: string;
 }
 
+/** Persisted custom tags returned by PUT /api/library/{id}/tags. */
+export interface CustomTagUpdateResponse {
+    customTags: string[];
+}
+
 export interface LibraryItem {
     id: number;
     unifiedGameId: number;

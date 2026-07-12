@@ -36,6 +36,9 @@ Two ASP.NET Core microservices:
 - Tag assignments are explicit tenant-owned join rows with composite foreign keys to both the game
   and tag. SQLite and PostgreSQL upgrades preserve existing assignments and re-home any legacy
   cross-tenant tag name into the game's tenant before enforcing the boundary.
+- Custom tag assignments are marked on the tenant-owned join row. Provider enrichment replaces
+  only automatic genre assignments; custom assignments and unassigned tag definitions remain
+  durable so tenant-local suggestions survive edits.
 - Core→Ingest URL: `Services:IngestUrl` (default `http://localhost:5000`).
 - Provisioned tenants start platform-sync disabled. Core enables them only after a fresh vault
   status confirms at least one Steam, GOG, PSN, or Epic credential. Deletion disables first and only

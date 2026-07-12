@@ -104,6 +104,63 @@ public class EnrichmentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task EnrichGame_UpdatedGenres_PreservesCustomTagsAndReplacesAutomaticTags()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var service = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+
+        var game = new UnifiedGame { Title = "Tagged game", Slug = "tagged-game" };
+        var staleGenre = new Tag { Name = "Old genre" };
+        var customTag = new Tag { Name = "Cozy backlog" };
+        db.AddRange(game, staleGenre, customTag);
+        await db.SaveChangesAsync();
+        db.Set<TagAssignment>().AddRange(
+            new TagAssignment
+            {
+                UnifiedGameId = game.Id,
+                TagId = staleGenre.Id,
+                IsCustom = false
+            },
+            new TagAssignment
+            {
+                UnifiedGameId = game.Id,
+                TagId = customTag.Id,
+                IsCustom = true
+            });
+        await db.SaveChangesAsync();
+
+        _mockProvider.SearchResult = new GameMetadata(
+            ProviderId: 42,
+            CoverUrl: null,
+            Summary: null,
+            Genres: ["Action"],
+            FirstReleaseDate: null,
+            Rating: null,
+            MatchedTitle: "Tagged game");
+
+        Assert.True(await service.EnrichGameAsync(game.Id));
+
+        db.ChangeTracker.Clear();
+        var assignments = await db.Set<TagAssignment>()
+            .Include(assignment => assignment.Tag)
+            .OrderBy(assignment => assignment.Tag!.Name)
+            .ToListAsync();
+        Assert.Collection(
+            assignments,
+            assignment =>
+            {
+                Assert.Equal("Action", assignment.Tag!.Name);
+                Assert.False(assignment.IsCustom);
+            },
+            assignment =>
+            {
+                Assert.Equal("Cozy backlog", assignment.Tag!.Name);
+                Assert.True(assignment.IsCustom);
+            });
+    }
+
+    [Fact]
     public async Task EnrichGame_NoResult_SetsEnrichedAtOnly()
     {
         // Arrange

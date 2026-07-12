@@ -247,14 +247,38 @@ public class EnrichmentService
         game.MetadataProviderId = metadata.ProviderId;
         game.MetadataSource = _provider.ProviderName;
 
-        // Map genres to Tag entities
-        game.Tags.Clear();
-        foreach (var genre in metadata.Genres ?? [])
+        // Automatic genre assignments are replaceable, but a tenant's explicit assignment is
+        // durable even when a later provider response no longer contains the same genre.
+        var genreNames = (metadata.Genres ?? [])
+            .Where(genre => !string.IsNullOrWhiteSpace(genre))
+            .Select(genre => genre.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var assignments = await db.Set<TagAssignment>()
+            .Include(assignment => assignment.Tag)
+            .Where(assignment => assignment.UnifiedGameId == game.Id)
+            .ToListAsync();
+        var assignmentsByName = new Dictionary<string, TagAssignment>(StringComparer.OrdinalIgnoreCase);
+        foreach (var assignment in assignments.Where(assignment => assignment.Tag is not null))
         {
-            if (string.IsNullOrWhiteSpace(genre)) continue;
+            assignmentsByName.TryAdd(assignment.Tag!.Name, assignment);
+        }
+        var currentGenreNames = genreNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // Trim and normalize spacing
-            var normalizedGenre = genre.Trim();
+        foreach (var assignment in assignments.Where(assignment => !assignment.IsCustom))
+        {
+            if (assignment.Tag is null || !currentGenreNames.Contains(assignment.Tag.Name))
+            {
+                db.Set<TagAssignment>().Remove(assignment);
+            }
+        }
+
+        foreach (var normalizedGenre in genreNames)
+        {
+            if (assignmentsByName.ContainsKey(normalizedGenre))
+            {
+                continue;
+            }
 
             // Find existing tag or create a new one
             var tag = await db.Tags.FirstOrDefaultAsync(t => t.Name.ToLower() == normalizedGenre.ToLower());
@@ -262,11 +286,14 @@ public class EnrichmentService
             {
                 tag = new Tag { Name = normalizedGenre };
                 db.Tags.Add(tag);
-                // Optionally save here if you want to ensure the ID is generated immediately, 
-                // but adding it to the tracked game.Tags collection is usually sufficient.
             }
-            
-            game.Tags.Add(tag);
+
+            db.Set<TagAssignment>().Add(new TagAssignment
+            {
+                UnifiedGame = game,
+                Tag = tag,
+                IsCustom = false
+            });
         }
     }
 }

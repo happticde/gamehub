@@ -217,6 +217,58 @@ public sealed class TenantIsolationTests : IDisposable
     }
 
     [Fact]
+    public async Task CustomTags_ActiveTenant_CannotReadOrModifyForeignTenantTags()
+    {
+        int foreignGameId;
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            var foreignGame = new UnifiedGame
+            {
+                Title = "Tenant B tagged game",
+                Slug = "tenant-b-tagged-game"
+            };
+            var foreignTag = new Tag { Name = "Tenant B private tag" };
+            tenantB.AddRange(foreignGame, foreignTag);
+            await tenantB.SaveChangesAsync();
+            tenantB.Set<TagAssignment>().Add(new TagAssignment
+            {
+                UnifiedGameId = foreignGame.Id,
+                TagId = foreignTag.Id,
+                IsCustom = true
+            });
+            await tenantB.SaveChangesAsync();
+            foreignGameId = foreignGame.Id;
+        }
+
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            tenantA.Tags.Add(new Tag { Name = "Tenant A suggestion" });
+            await tenantA.SaveChangesAsync();
+
+            var controller = CreateLibraryController(tenantA);
+            var suggestionsResult = Assert.IsType<OkObjectResult>(await controller.GetTags());
+            Assert.Equal(
+                ["Tenant A suggestion"],
+                Assert.IsAssignableFrom<IEnumerable<string>>(suggestionsResult.Value));
+
+            var updateResult = await controller.UpdateCustomTags(
+                foreignGameId,
+                new CustomTagUpdateRequest { Tags = ["Attempted overwrite"] });
+            Assert.IsType<NotFoundObjectResult>(updateResult);
+        }
+
+        await using var verifyB = CreateContext(TenantB);
+        var foreignAssignment = await verifyB.Set<TagAssignment>()
+            .Include(assignment => assignment.Tag)
+            .SingleAsync();
+        Assert.True(foreignAssignment.IsCustom);
+        Assert.Equal("Tenant B private tag", foreignAssignment.Tag!.Name);
+        Assert.DoesNotContain(
+            await verifyB.Tags.ToListAsync(),
+            tag => tag.Name == "Attempted overwrite");
+    }
+
+    [Fact]
     public async Task UpdatePersonalTracking_ForeignTenantGame_ReturnsNotFoundWithoutMutation()
     {
         int foreignGameId;
@@ -663,7 +715,9 @@ public sealed class TenantIsolationTests : IDisposable
             ["Foreign legacy tag", "Local tag"],
             upgradedGame.Tags.Select(tag => tag.Name).Order().ToArray());
         Assert.All(upgradedGame.Tags, tag => Assert.Equal(TenantA, tag.TenantId));
-        Assert.Equal(2, await tenantA.Set<TagAssignment>().CountAsync());
+        var upgradedAssignments = await tenantA.Set<TagAssignment>().ToListAsync();
+        Assert.Equal(2, upgradedAssignments.Count);
+        Assert.All(upgradedAssignments, assignment => Assert.False(assignment.IsCustom));
 
         await Assert.ThrowsAsync<SqliteException>(() => tenantA.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "TagUnifiedGame" ("TenantId", "GamesId", "TagsId")

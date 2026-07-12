@@ -23,6 +23,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Sync / Ignore logic | ✅ Auto-hide keywords + retroactive ignore |
 | Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
 | Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
+| Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
 
 ---
 
@@ -47,6 +48,10 @@ A browsable UI for the unified library with cover grid, search/filter, game deta
 
 ### 5. Personal Tracking & Ignore ✅
 Added 5-star ratings, Play Status tracking, and "Auto-Hide & Ignore" keyword logic for junk entries.
+
+**Custom tags (2026-07-12):** Game detail pages support tenant-scoped custom tag assignment and
+saved suggestions. Manual assignments survive metadata re-enrichment, while automatic genre tags
+remain replaceable. Cross-tenant reads, writes, and suggestions are covered by negative tests.
 
 ### 6. Background Sync Scheduler ✅
 `SyncSchedulerService` (`BackgroundService`) runs `RunFullSyncAsync()` on a configurable interval (default 6h). `GET /api/library/sync/status` endpoint exposes scheduler state. Admin UI card with live status and auto-refresh. Disabled by default via `Sync:EnableScheduler`.

@@ -269,7 +269,9 @@ public sealed class PostgresTagRelationshipMigrationTests
                 ["Foreign legacy tag", "Local tag"],
                 upgradedGame.Tags.Select(tag => tag.Name).Order().ToArray());
             Assert.All(upgradedGame.Tags, tag => Assert.Equal(TenantA, tag.TenantId));
-            Assert.Equal(2, await tenantA.Set<TagAssignment>().CountAsync());
+            var upgradedAssignments = await tenantA.Set<TagAssignment>().ToListAsync();
+            Assert.Equal(2, upgradedAssignments.Count);
+            Assert.All(upgradedAssignments, assignment => Assert.False(assignment.IsCustom));
 
             await Assert.ThrowsAnyAsync<DbException>(() => tenantA.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO "TagUnifiedGame" ("TenantId", "GamesId", "TagsId")

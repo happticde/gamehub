@@ -1,5 +1,23 @@
 # Session History
 
+## Current Session Summary (2026-07-12)
+
+### What Changed
+
+**Tenant-Scoped Custom Tags:**
+- Added custom tag editing to the game detail page with tenant-local saved suggestions, reusable
+  names, validation, and support for removing assignments without deleting suggestion definitions.
+- Marked manual tag assignments independently from provider-generated genres so re-enrichment can
+  replace stale automatic tags without removing a tenant's custom tags.
+- Added SQLite/PostgreSQL migrations plus direct update, enrichment-preservation, migration-default,
+  and cross-tenant read/write isolation tests.
+
+### Known State / Pending
+
+- Saved suggestions include both provider-generated and user-created names within the active tenant;
+  there is no separate tag administration or deletion screen.
+- No dependency, `.env`, authentication-flow, or production configuration change was introduced.
+
 ## Current Session Summary (2026-07-11)
 
 ### What Changed

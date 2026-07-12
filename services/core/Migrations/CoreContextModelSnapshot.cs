@@ -366,6 +366,9 @@ namespace GameHub.Core.Migrations.sqlite
                         .HasColumnType("INTEGER")
                         .HasColumnName("TagsId");
 
+                    b.Property<bool>("IsCustom")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("TenantId", "UnifiedGameId", "TagId");
 
                     b.HasIndex("TenantId", "TagId");
