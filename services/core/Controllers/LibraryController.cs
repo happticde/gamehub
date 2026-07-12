@@ -20,6 +20,9 @@ namespace GameHub.Core.Controllers;
 [Authorize]
 public class LibraryController : ControllerBase
 {
+    private const int MaxCustomTagsPerGame = 50;
+    private const int MaxCustomTagNameLength = 64;
+
     private readonly UnificationService _unifier;
     private readonly ProviderSyncStatusService _providerSyncStatus;
     private readonly EnrichmentService _enrichment;
@@ -341,6 +344,13 @@ public class LibraryController : ControllerBase
         if (game == null)
             return NotFound(new { Message = $"Game with ID {id} not found." });
 
+        var customTags = await _db.Set<TagAssignment>()
+            .AsNoTracking()
+            .Where(assignment => assignment.UnifiedGameId == id && assignment.IsCustom)
+            .Select(assignment => assignment.Tag!.Name)
+            .OrderBy(name => name)
+            .ToListAsync();
+
         List<string> SplitCsv(string? csv) =>
             string.IsNullOrWhiteSpace(csv) ? new List<string>() : csv.Split(", ").ToList();
 
@@ -360,6 +370,7 @@ public class LibraryController : ControllerBase
             Developers = SplitCsv(game.Developers),
             Publishers = SplitCsv(game.Publishers),
             Tags = game.Tags.Select(t => t.Name).ToList(),
+            CustomTags = customTags,
 
             game.FirstReleaseDate,
             game.Rating,
@@ -381,8 +392,7 @@ public class LibraryController : ControllerBase
 
     /// <summary>
     /// GET: api/library/tags
-    /// Returns a flat list of all unique tag (genre) names currently in the database.
-    /// Used by frontend dropdown filters.
+    /// Returns the authenticated tenant's saved tag names for library filters.
     /// </summary>
     [HttpGet("tags")]
     public async Task<IActionResult> GetTags()
@@ -394,6 +404,219 @@ public class LibraryController : ControllerBase
 
         return Ok(tags);
     }
+
+    /// <summary>
+    /// GET: api/library/tag-suggestions
+    /// Returns categorized tag suggestions owned by the authenticated tenant. Custom definitions
+    /// are ordered before provider-created system definitions.
+    /// </summary>
+    [HttpGet("tag-suggestions")]
+    public async Task<IActionResult> GetTagSuggestions(CancellationToken cancellationToken = default)
+    {
+        var suggestions = await _db.Tags
+            .AsNoTracking()
+            .OrderByDescending(tag => tag.IsCustomDefinition)
+            .ThenBy(tag => tag.Name)
+            .Select(tag => new
+            {
+                tag.Id,
+                tag.Name,
+                IsCustom = tag.IsCustomDefinition,
+                UsageCount = tag.Games.Count
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(suggestions);
+    }
+
+    /// <summary>
+    /// DELETE: api/library/tags/{tagId}
+    /// Deletes one custom tag definition owned by the authenticated tenant and its assignments.
+    /// Provider-created system definitions cannot be deleted through this endpoint.
+    /// </summary>
+    [HttpDelete("tags/{tagId:int}")]
+    public async Task<IActionResult> DeleteCustomTag(
+        int tagId,
+        CancellationToken cancellationToken = default)
+    {
+        var tag = await _db.Tags
+            .FirstOrDefaultAsync(candidate => candidate.Id == tagId, cancellationToken);
+        if (tag is null)
+        {
+            return NotFound(new { Message = $"Tag with ID {tagId} not found." });
+        }
+
+        if (!tag.IsCustomDefinition)
+        {
+            return BadRequest(new
+            {
+                Code = "system_tag_cannot_be_deleted",
+                Message = "Provider-created system tags cannot be deleted."
+            });
+        }
+
+        var removedAssignments = await _db.Set<TagAssignment>()
+            .CountAsync(assignment => assignment.TagId == tagId, cancellationToken);
+        _db.Tags.Remove(tag);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Deleted custom tag {TagId} and {AssignmentCount} assignments",
+            tagId,
+            removedAssignments);
+
+        return Ok(new
+        {
+            tag.Id,
+            tag.Name,
+            RemovedAssignments = removedAssignments
+        });
+    }
+
+    /// <summary>
+    /// PUT: api/library/{id}/tags
+    /// Replaces the authenticated tenant's custom tags for one game. Tag definitions remain saved
+    /// after removal so they can be suggested again, while automatic genre assignments are kept.
+    /// </summary>
+    [HttpPut("{id}/tags")]
+    public async Task<IActionResult> UpdateCustomTags(
+        int id,
+        [FromBody] CustomTagUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Tags is null)
+        {
+            return BadRequest(new { Message = "The tags collection is required." });
+        }
+
+        var normalizedNames = new List<string>();
+        var requestedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawName in request.Tags)
+        {
+            var normalizedName = NormalizeCustomTagName(rawName);
+            if (normalizedName.Length == 0)
+            {
+                return BadRequest(new { Message = "Tag names cannot be empty." });
+            }
+
+            if (normalizedName.Length > MaxCustomTagNameLength)
+            {
+                return BadRequest(new
+                {
+                    Message = $"Tag names cannot exceed {MaxCustomTagNameLength} characters."
+                });
+            }
+
+            if (normalizedName.Any(char.IsControl))
+            {
+                return BadRequest(new { Message = "Tag names cannot contain control characters." });
+            }
+
+            if (requestedNames.Add(normalizedName))
+            {
+                normalizedNames.Add(normalizedName);
+            }
+        }
+
+        if (normalizedNames.Count > MaxCustomTagsPerGame)
+        {
+            return BadRequest(new
+            {
+                Message = $"A game cannot have more than {MaxCustomTagsPerGame} custom tags."
+            });
+        }
+
+        var game = await _db.UnifiedGames
+            .FirstOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        if (game is null)
+        {
+            return NotFound(new { Message = $"Game with ID {id} not found." });
+        }
+
+        var assignments = await _db.Set<TagAssignment>()
+            .Include(assignment => assignment.Tag)
+            .Where(assignment => assignment.UnifiedGameId == id)
+            .ToListAsync(cancellationToken);
+        var assignmentsByName = new Dictionary<string, TagAssignment>(StringComparer.OrdinalIgnoreCase);
+        foreach (var assignment in assignments.Where(assignment => assignment.Tag is not null))
+        {
+            assignmentsByName.TryAdd(assignment.Tag!.Name, assignment);
+        }
+
+        var tenantTagsByName = new Dictionary<string, Tag>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tag in await _db.Tags.ToListAsync(cancellationToken))
+        {
+            tenantTagsByName.TryAdd(tag.Name, tag);
+        }
+
+        var automaticGenreNames = SplitTagNames(game.Genres);
+        foreach (var assignment in assignments.Where(assignment => assignment.IsCustom))
+        {
+            if (assignment.Tag is not null && requestedNames.Contains(assignment.Tag.Name))
+            {
+                continue;
+            }
+
+            if (assignment.Tag is not null && automaticGenreNames.Contains(assignment.Tag.Name))
+            {
+                assignment.IsCustom = false;
+            }
+            else
+            {
+                _db.Set<TagAssignment>().Remove(assignment);
+            }
+        }
+
+        var savedNames = new List<string>();
+        foreach (var requestedName in normalizedNames)
+        {
+            if (assignmentsByName.TryGetValue(requestedName, out var existingAssignment))
+            {
+                existingAssignment.IsCustom = true;
+                savedNames.Add(existingAssignment.Tag!.Name);
+                continue;
+            }
+
+            if (!tenantTagsByName.TryGetValue(requestedName, out var tag))
+            {
+                tag = new Tag
+                {
+                    Name = requestedName,
+                    IsCustomDefinition = true
+                };
+                _db.Tags.Add(tag);
+                tenantTagsByName.Add(requestedName, tag);
+            }
+
+            _db.Set<TagAssignment>().Add(new TagAssignment
+            {
+                UnifiedGame = game,
+                Tag = tag,
+                IsCustom = true
+            });
+            savedNames.Add(tag.Name);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+        savedNames.Sort(StringComparer.OrdinalIgnoreCase);
+
+        _logger.LogInformation(
+            "Updated {CustomTagCount} custom tags for game {GameId}",
+            savedNames.Count,
+            id);
+
+        return Ok(new { CustomTags = savedNames });
+    }
+
+    private static string NormalizeCustomTagName(string? name) =>
+        string.Join(' ', (name ?? string.Empty)
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    private static HashSet<string> SplitTagNames(string? names) =>
+        string.IsNullOrWhiteSpace(names)
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : names.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// GET: api/library/developers
@@ -1144,6 +1367,13 @@ public class PersonalUpdateRequest
     public PlayStatus PlayStatus { get; set; }
     public int? UserRating { get; set; }
     public bool? IsIgnored { get; set; }
+}
+
+/// <summary>Request body for replacing one game's custom tags.</summary>
+public class CustomTagUpdateRequest
+{
+    /// <summary>Complete desired set of custom tag names for the game.</summary>
+    public IReadOnlyList<string>? Tags { get; set; }
 }
 
 /// <summary>Request body for the manual enrichment override endpoint.</summary>

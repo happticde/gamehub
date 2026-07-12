@@ -1,12 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Building2, Star, Tag, Layers } from "lucide-react";
-import { Platform, PlayStatus } from "@/types/game";
+import { Platform, PlayStatus, TagSuggestion } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 import FixMatchDialog from "@/components/library/FixMatchDialog";
 import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
 import CoverImageClient from "@/components/library/CoverImageClient";
+import CustomTagEditor from "@/components/library/CustomTagEditor";
 import { fetchCoreApi } from "@/lib/core-api";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -24,6 +25,7 @@ interface ExpandedGame {
     developers: string[];
     publishers: string[];
     tags: string[];
+    customTags: string[];
     firstReleaseDate: string | null;
     rating: number | null;
     playStatus: PlayStatus;
@@ -47,10 +49,14 @@ export default async function GameDetailPage({
     const { id } = await params;
 
     let game: ExpandedGame | null = null;
+    let availableTags: TagSuggestion[] = [];
     let error: string | null = null;
 
     try {
-        const res = await fetchCoreApi(`/library/${id}`, { cache: "no-store" });
+        const [res, tagsRes] = await Promise.all([
+            fetchCoreApi(`/library/${id}`, { cache: "no-store" }),
+            fetchCoreApi("/library/tag-suggestions", { cache: "no-store" })
+        ]);
         if (!res.ok) {
             if (res.status === 404) {
                 return (
@@ -67,6 +73,9 @@ export default async function GameDetailPage({
         }
         const gameDetails: ExpandedGame = await res.json();
         game = gameDetails;
+        if (tagsRes.ok) {
+            availableTags = await tagsRes.json();
+        }
     } catch (caughtError: unknown) {
         error = getErrorMessage(caughtError, "An unexpected error occurred.");
         console.error("Fetch Game Detail Error:", error);
@@ -191,6 +200,12 @@ export default async function GameDetailPage({
                         initialStatus={game.playStatus} 
                         initialRating={game.userRating} 
                         initialIsIgnored={game.isIgnored}
+                    />
+
+                    <CustomTagEditor
+                        gameId={game.id}
+                        initialTags={game.customTags}
+                        availableTags={availableTags}
                     />
 
                     {/* Your Library Status */}

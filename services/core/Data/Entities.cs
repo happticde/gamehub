@@ -51,7 +51,7 @@ public class UnifiedGame : ITenantOwned
     /// <summary>Comma-separated publisher companies involved.</summary>
     public string? Publishers { get; set; }
 
-    /// <summary>Automated categorization tags (e.g. Genres from IGDB).</summary>
+    /// <summary>Automatic categorization and tenant-assigned custom tags.</summary>
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();
 
     /// <summary>Original release date of the game.</summary>
@@ -114,6 +114,9 @@ public class Tag : ITenantOwned
     public int Id { get; set; }
     public Guid TenantId { get; set; }
     public string Name { get; set; } = "";
+
+    /// <summary>Whether this reusable tag definition was created by the tenant.</summary>
+    public bool IsCustomDefinition { get; set; }
     
     public ICollection<UnifiedGame> Games { get; set; } = new List<UnifiedGame>();
 }
@@ -126,6 +129,12 @@ public class TagAssignment : ITenantOwned
     public UnifiedGame? UnifiedGame { get; set; }
     public int TagId { get; set; }
     public Tag? Tag { get; set; }
+
+    /// <summary>
+    /// Whether the authenticated tenant explicitly assigned this tag. Automatic enrichment may
+    /// update non-custom assignments, but must never remove a custom assignment.
+    /// </summary>
+    public bool IsCustom { get; set; }
 }
 
 /// <summary>

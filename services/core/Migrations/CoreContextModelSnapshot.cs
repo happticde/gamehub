@@ -334,6 +334,9 @@ namespace GameHub.Core.Migrations.sqlite
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsCustomDefinition")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -365,6 +368,9 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<int>("TagId")
                         .HasColumnType("INTEGER")
                         .HasColumnName("TagsId");
+
+                    b.Property<bool>("IsCustom")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("TenantId", "UnifiedGameId", "TagId");
 
