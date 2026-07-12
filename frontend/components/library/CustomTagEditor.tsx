@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useMemo, useState } from "react";
-import { Check, Loader2, Plus, Tags, X } from "lucide-react";
+import { Loader2, Plus, Tags, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,16 +17,10 @@ function normalizeTagName(value: string): string {
     return value.trim().replace(/\s+/g, " ");
 }
 
-function sameTags(left: string[], right: string[]): boolean {
-    const normalize = (tags: string[]) => tags.map(tag => tag.toLocaleLowerCase()).sort();
-    return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
-}
-
 /** Lets a tenant assign existing suggestions or create durable custom tags for one game. */
 export default function CustomTagEditor({ gameId, initialTags, availableTags }: CustomTagEditorProps) {
     const router = useRouter();
     const [tags, setTags] = useState(initialTags);
-    const [savedTags, setSavedTags] = useState(initialTags);
     const [input, setInput] = useState("");
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
@@ -37,25 +31,8 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
             !tags.some(tag => tag.toLocaleLowerCase() === option.toLocaleLowerCase())),
         [availableTags, tags]
     );
-    const hasChanges = !sameTags(tags, savedTags);
-
-    const addTag = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        const normalized = normalizeTagName(input);
-        if (!normalized) return;
-
-        const suggestedName = availableTags.find(
-            tag => tag.toLocaleLowerCase() === normalized.toLocaleLowerCase()
-        );
-        const name = suggestedName ?? normalized;
-        if (!tags.some(tag => tag.toLocaleLowerCase() === name.toLocaleLowerCase())) {
-            setTags(current => [...current, name].sort((a, b) => a.localeCompare(b)));
-        }
-        setInput("");
-        setMessage(null);
-    };
-
-    const saveTags = async () => {
+    const persistTags = async (nextTags: string[], previousTags: string[]): Promise<boolean> => {
+        setTags(nextTags);
         setIsSaving(true);
         setMessage(null);
         setHasError(false);
@@ -64,7 +41,7 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
             const response = await fetch(`/api/core/library/${gameId}/tags`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tags })
+                body: JSON.stringify({ tags: nextTags })
             });
             const payload = await response.json().catch(() => null) as
                 | (Partial<CustomTagUpdateResponse> & { message?: string })
@@ -74,17 +51,44 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
                 throw new Error(payload?.message ?? "Custom tags could not be saved.");
             }
 
-            const persistedTags = payload?.customTags ?? tags;
+            const persistedTags = payload?.customTags ?? nextTags;
             setTags(persistedTags);
-            setSavedTags(persistedTags);
-            setMessage("Tags saved.");
+            setMessage("Saved automatically.");
             router.refresh();
+            return true;
         } catch (error: unknown) {
+            setTags(previousTags);
             setHasError(true);
             setMessage(error instanceof Error ? error.message : "Custom tags could not be saved.");
+            return false;
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const addTag = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const normalized = normalizeTagName(input);
+        if (!normalized) return;
+
+        const suggestedName = availableTags.find(
+            tag => tag.toLocaleLowerCase() === normalized.toLocaleLowerCase()
+        );
+        const name = suggestedName ?? normalized;
+        if (tags.some(tag => tag.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+            setInput("");
+            return;
+        }
+
+        const nextTags = [...tags, name].sort((a, b) => a.localeCompare(b));
+        setInput("");
+        const saved = await persistTags(nextTags, tags);
+        if (!saved) setInput(name);
+    };
+
+    const removeTag = (tagToRemove: string) => {
+        const nextTags = tags.filter(tag => tag !== tagToRemove);
+        void persistTags(nextTags, tags);
     };
 
     return (
@@ -107,10 +111,8 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
                         {tag}
                         <button
                             type="button"
-                            onClick={() => {
-                                setTags(current => current.filter(candidate => candidate !== tag));
-                                setMessage(null);
-                            }}
+                            onClick={() => removeTag(tag)}
+                            disabled={isSaving}
                             className="rounded-full p-0.5 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             aria-label={`Remove ${tag}`}
                         >
@@ -138,22 +140,17 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
                     variant="outline"
                     disabled={!normalizeTagName(input) || isSaving || tags.length >= 50}
                 >
-                    <Plus data-icon="inline-start" /> Add
+                    {isSaving ? <Loader2 className="animate-spin" /> : <Plus data-icon="inline-start" />}
+                    Add
                 </Button>
             </form>
 
-            <div className="mt-3 flex items-center justify-between gap-3">
-                <p
-                    className={`min-h-5 text-xs ${hasError ? "text-destructive" : "text-muted-foreground"}`}
-                    role={hasError ? "alert" : "status"}
-                >
-                    {message}
-                </p>
-                <Button type="button" onClick={saveTags} disabled={!hasChanges || isSaving}>
-                    {isSaving ? <Loader2 className="animate-spin" /> : <Check />}
-                    Save
-                </Button>
-            </div>
+            <p
+                className={`mt-3 min-h-5 text-xs ${hasError ? "text-destructive" : "text-muted-foreground"}`}
+                role={hasError ? "alert" : "status"}
+            >
+                {isSaving ? "Saving…" : message}
+            </p>
         </section>
     );
 }

@@ -6,7 +6,8 @@
 
 **Tenant-Scoped Custom Tags:**
 - Added custom tag editing to the game detail page with tenant-local saved suggestions, reusable
-  names, validation, and support for removing assignments without deleting suggestion definitions.
+  names, validation, immediate add/remove persistence, and support for removing assignments without
+  deleting suggestion definitions.
 - Marked manual tag assignments independently from provider-generated genres so re-enrichment can
   replace stale automatic tags without removing a tenant's custom tags.
 - Added SQLite/PostgreSQL migrations plus direct update, enrichment-preservation, migration-default,
