@@ -381,6 +381,7 @@ public class LibraryController : ControllerBase
             
             Items = game.Items.Select(i => new
             {
+                i.Id,
                 i.Platform,
                 i.ExternalId,
                 i.LastSynced
@@ -1227,6 +1228,8 @@ public class LibraryController : ControllerBase
         if (item.UnifiedGame == null)
             return BadRequest(new { Message = "Library item is not linked to any game" });
 
+        var originalGameId = item.UnifiedGame.Id;
+
         _logger.LogInformation("Splitting {Platform} item '{ExternalId}' from game '{Game}'",
             item.Platform, item.ExternalId, item.UnifiedGame.Title);
 
@@ -1277,7 +1280,7 @@ public class LibraryController : ControllerBase
         {
             Message = $"Split '{item.Platform}' entry into new game '{newTitle}'.",
             NewGameId = newGame.Id,
-            OriginalGameId = item.UnifiedGame.Id
+            OriginalGameId = originalGameId
         });
     }
 
