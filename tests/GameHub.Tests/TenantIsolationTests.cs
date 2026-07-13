@@ -97,6 +97,37 @@ public sealed class TenantIsolationTests : IDisposable
     }
 
     [Fact]
+    public async Task GetById_ActiveTenantDetail_IncludesInternalLibraryItemId()
+    {
+        int gameId;
+        int itemId;
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var game = CreateGameWithItem(
+                "Tenant A detail game",
+                "tenant-a-detail-game",
+                Platform.Steam,
+                "tenant-a-detail-item");
+            tenantA.UnifiedGames.Add(game);
+            await tenantA.SaveChangesAsync();
+            gameId = game.Id;
+            itemId = Assert.Single(game.Items).Id;
+        }
+
+        await using var detailContext = CreateContext(TenantA);
+        var result = Assert.IsType<OkObjectResult>(
+            await CreateLibraryController(detailContext).GetById(gameId));
+        Assert.NotNull(result.Value);
+        var detail = result.Value!;
+        var items = GetProperty<IEnumerable<object>>(detail, "Items");
+        var item = Assert.Single(items);
+
+        Assert.Equal(itemId, GetProperty<int>(item, "Id"));
+        Assert.Equal(Platform.Steam, GetProperty<Platform>(item, "Platform"));
+        Assert.Equal("tenant-a-detail-item", GetProperty<string>(item, "ExternalId"));
+    }
+
+    [Fact]
     public async Task SyncStatus_ActiveTenant_DoesNotExposeOtherTenantResult()
     {
         var status = new SyncSchedulerStatus { IsEnabled = true };
@@ -458,6 +489,61 @@ public sealed class TenantIsolationTests : IDisposable
         Assert.Equal("tenant-b-psn", Assert.Single(unchanged.Items).ExternalId);
         Assert.Empty(verifyB.ManualLinks);
         Assert.Empty(verifyB.ActivityLogs);
+    }
+
+    [Fact]
+    public async Task SplitGame_ActiveTenantItem_CreatesTenantOwnedManualLink()
+    {
+        int originalGameId;
+        int splitItemId;
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var game = new UnifiedGame
+            {
+                Title = "Tenant A combined game",
+                Slug = "tenant-a-combined-game",
+                Items =
+                [
+                    new LibraryItem { Platform = Platform.Steam, ExternalId = "tenant-a-steam" },
+                    new LibraryItem { Platform = Platform.Psn, ExternalId = "tenant-a-psn" }
+                ]
+            };
+            tenantA.UnifiedGames.Add(game);
+            await tenantA.SaveChangesAsync();
+            originalGameId = game.Id;
+            splitItemId = game.Items.Single(item => item.Platform == Platform.Psn).Id;
+        }
+
+        int newGameId;
+        await using (var splitContext = CreateContext(TenantA))
+        {
+            var result = Assert.IsType<OkObjectResult>(
+                await CreateLibraryController(splitContext).SplitGame(new SplitRequest
+                {
+                    LibraryItemId = splitItemId
+                }));
+            Assert.NotNull(result.Value);
+            var response = result.Value!;
+            newGameId = GetProperty<int>(response, "NewGameId");
+
+            Assert.Equal(originalGameId, GetProperty<int>(response, "OriginalGameId"));
+        }
+
+        await using var verify = CreateContext(TenantA);
+        var original = await verify.UnifiedGames
+            .Include(game => game.Items)
+            .SingleAsync(game => game.Id == originalGameId);
+        var split = await verify.UnifiedGames
+            .Include(game => game.Items)
+            .SingleAsync(game => game.Id == newGameId);
+        var manualLink = await verify.ManualLinks.SingleAsync();
+
+        Assert.Equal("tenant-a-steam", Assert.Single(original.Items).ExternalId);
+        Assert.Equal(splitItemId, Assert.Single(split.Items).Id);
+        Assert.Equal(TenantA, manualLink.TenantId);
+        Assert.Equal(newGameId, manualLink.UnifiedGameId);
+        Assert.Equal(Platform.Psn, manualLink.Platform);
+        Assert.Equal("tenant-a-psn", manualLink.ExternalId);
     }
 
     [Fact]

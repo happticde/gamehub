@@ -8,6 +8,7 @@ import FixMatchDialog from "@/components/library/FixMatchDialog";
 import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
 import CoverImageClient from "@/components/library/CoverImageClient";
 import CustomTagEditor from "@/components/library/CustomTagEditor";
+import SplitPlatformItemDialog from "@/components/library/SplitPlatformItemDialog";
 import { fetchCoreApi } from "@/lib/core-api";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -34,6 +35,7 @@ interface ExpandedGame {
     metadataSource: string | null;
     enrichedAt: string | null;
     items: {
+        id: number;
         platform: Platform;
         externalId: string;
         lastSynced: string;
@@ -219,16 +221,25 @@ export default async function GameDetailPage({
                         </div>
                         {game.items.length > 0 ? (
                             <ul className="space-y-3">
-                                {game.items.map((item, i) => (
-                                    <li key={i} className="flex flex-col gap-1">
-                                        <div className="flex items-center justify-between">
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold shadow-sm ${getPlatformColor(item.platform.toString())}`}>
-                                                {item.platform}
-                                            </span>
+                                {game.items.map((item) => (
+                                    <li key={item.id} className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0 space-y-1.5">
+                                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold shadow-sm ${getPlatformColor(item.platform.toString())}`}>
+                                                    {item.platform}
+                                                </span>
+                                                <div className="break-all text-xs text-muted-foreground">
+                                                    ID: {item.externalId}
+                                                </div>
+                                            </div>
+                                            {game.items.length > 1 && (
+                                                <SplitPlatformItemDialog
+                                                    libraryItemId={item.id}
+                                                    platform={item.platform}
+                                                    externalId={item.externalId}
+                                                />
+                                            )}
                                         </div>
-                                        <span className="text-xs text-muted-foreground ml-1">
-                                            ID: {item.externalId}
-                                        </span>
                                     </li>
                                 ))}
                             </ul>
