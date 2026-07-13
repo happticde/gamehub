@@ -352,6 +352,65 @@ public sealed class TenantIsolationTests : IDisposable
     }
 
     [Fact]
+    public async Task MergeGames_PreviouslySplitItem_ReassignsTenantOwnedManualLinkToTarget()
+    {
+        int sourceGameId;
+        int targetGameId;
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            var source = CreateGameWithItem(
+                "Tenant A split source",
+                "tenant-a-split-source",
+                Platform.Gog,
+                "tenant-a-gog");
+            var target = CreateGameWithItem(
+                "Tenant A original target",
+                "tenant-a-original-target",
+                Platform.Steam,
+                "tenant-a-steam");
+            tenantA.UnifiedGames.AddRange(source, target);
+            await tenantA.SaveChangesAsync();
+
+            tenantA.ManualLinks.Add(new ManualLink
+            {
+                Platform = Platform.Gog,
+                ExternalId = "tenant-a-gog",
+                UnifiedGameId = source.Id
+            });
+            await tenantA.SaveChangesAsync();
+            sourceGameId = source.Id;
+            targetGameId = target.Id;
+        }
+
+        await using (var mergeContext = CreateContext(TenantA))
+        {
+            var result = Assert.IsType<OkObjectResult>(
+                await CreateLibraryController(mergeContext).MergeGames(new MergeRequest
+                {
+                    SourceGameId = sourceGameId,
+                    TargetGameId = targetGameId
+                }));
+            Assert.NotNull(result.Value);
+            Assert.Equal(targetGameId, GetProperty<int>(result.Value!, "TargetGameId"));
+        }
+
+        await using var verify = CreateContext(TenantA);
+        var remainingGame = await verify.UnifiedGames
+            .Include(game => game.Items)
+            .SingleAsync();
+        var manualLink = await verify.ManualLinks.SingleAsync();
+
+        Assert.Equal(targetGameId, remainingGame.Id);
+        Assert.Equal(
+            [Platform.Steam, Platform.Gog],
+            remainingGame.Items.Select(item => item.Platform).OrderBy(platform => platform));
+        Assert.Equal(TenantA, manualLink.TenantId);
+        Assert.Equal(targetGameId, manualLink.UnifiedGameId);
+        Assert.Equal(Platform.Gog, manualLink.Platform);
+        Assert.Equal("tenant-a-gog", manualLink.ExternalId);
+    }
+
+    [Fact]
     public async Task MergeGames_ForeignTenantSource_ReturnsNotFoundWithoutMutation()
     {
         int targetGameId;

@@ -9,6 +9,7 @@ import ScreenshotCarousel from "@/components/library/ScreenshotCarousel";
 import CoverImageClient from "@/components/library/CoverImageClient";
 import CustomTagEditor from "@/components/library/CustomTagEditor";
 import SplitPlatformItemDialog from "@/components/library/SplitPlatformItemDialog";
+import MergeGameDialog from "@/components/library/MergeGameDialog";
 import { fetchCoreApi } from "@/lib/core-api";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -212,12 +213,19 @@ export default async function GameDetailPage({
 
                     {/* Your Library Status */}
                     <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                        <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                        <div className="mb-4 space-y-3 border-b border-border pb-3">
                             <h3 className="flex items-center gap-2 font-semibold text-lg">
                                 <Layers className="h-5 w-5 text-primary" />
                                 Library
                             </h3>
-                            <FixMatchDialog gameId={game.id} initialTitle={game.title} />
+                            <div className="grid grid-cols-2 gap-2">
+                                <MergeGameDialog
+                                    sourceGameId={game.id}
+                                    sourceTitle={game.title}
+                                    sourcePlatforms={game.items.map((item) => item.platform)}
+                                />
+                                <FixMatchDialog gameId={game.id} initialTitle={game.title} />
+                            </div>
                         </div>
                         {game.items.length > 0 ? (
                             <ul className="space-y-3">
