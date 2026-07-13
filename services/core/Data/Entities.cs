@@ -11,6 +11,14 @@ public enum PlayStatus
     Abandoned
 }
 
+/// <summary>Supported physical console platforms for manually owned game copies.</summary>
+public enum PhysicalGamePlatform
+{
+    PS3,
+    PS4,
+    PS5
+}
+
 public class UnifiedGame : ITenantOwned
 {
     public int Id { get; set; }
@@ -18,6 +26,7 @@ public class UnifiedGame : ITenantOwned
     public string Title { get; set; } = "";
     public string Slug { get; set; } = "";
     public List<LibraryItem> Items { get; set; } = [];
+    public List<PhysicalGameCopy> PhysicalCopies { get; set; } = [];
 
     // --- Personal Tracking ---
     public PlayStatus PlayStatus { get; set; } = PlayStatus.Unplayed;
@@ -68,6 +77,19 @@ public class UnifiedGame : ITenantOwned
 
     /// <summary>When metadata was last enriched. Null means never enriched.</summary>
     public DateTime? EnrichedAt { get; set; }
+}
+
+/// <summary>
+/// One tenant-owned physical game copy. Copies intentionally have independent identifiers so a
+/// tenant may own multiple copies of the same game on the same console.
+/// </summary>
+public class PhysicalGameCopy : ITenantOwned
+{
+    public int Id { get; set; }
+    public Guid TenantId { get; set; }
+    public int UnifiedGameId { get; set; }
+    public UnifiedGame? UnifiedGame { get; set; }
+    public PhysicalGamePlatform Platform { get; set; }
 }
 
 public class LibraryItem : ITenantOwned

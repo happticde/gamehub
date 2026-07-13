@@ -13,6 +13,7 @@ export default function GameCard({ game }: GameCardProps) {
     const platforms = game.platforms
         ? Array.from(new Set(game.platforms.map(p => p.platform)))
         : [];
+    const physicalPlatforms = Array.from(new Set(game.physicalCopies?.map(copy => copy.platform) ?? []));
 
     // Extract the first developer from the comma-separated string (if available)
     const developer = game.developers?.split(",")[0]?.trim();
@@ -105,6 +106,17 @@ export default function GameCard({ game }: GameCardProps) {
                         <p className="mt-1.5 text-xs text-muted-foreground/80 line-clamp-1">
                             {developer}{developer && releaseYear && " · "}{releaseYear}
                         </p>
+                    )}
+
+                    {physicalPlatforms.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-dashed border-primary/25 pt-2">
+                            <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-primary">Physical</span>
+                            {physicalPlatforms.map((platform) => (
+                                <span key={platform} className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                    {platform}
+                                </span>
+                            ))}
+                        </div>
                     )}
 
                     {/* Genres & Personal Rating */}

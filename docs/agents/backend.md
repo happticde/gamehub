@@ -33,6 +33,9 @@ Two ASP.NET Core microservices:
 - Tenant-owned game relationships: Library items, manual links, and enrichment audit rows reference
   games through `(TenantId, UnifiedGameId)`. PostgreSQL enforces composite foreign keys; SQLite
   migrations preserve existing tables and enforce the same insert/update boundary with triggers.
+- Physical game copies are separate from digital `LibraryItem` providers. They support only PS3,
+  PS4, and PS5, allow duplicates, and reference games through the same composite tenant/game
+  boundary in both SQLite and PostgreSQL.
 - Tag assignments are explicit tenant-owned join rows with composite foreign keys to both the game
   and tag. SQLite and PostgreSQL upgrades preserve existing assignments and re-home any legacy
   cross-tenant tag name into the game's tenant before enforcing the boundary.

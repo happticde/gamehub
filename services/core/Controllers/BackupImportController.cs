@@ -68,9 +68,10 @@ public sealed class BackupImportController : ControllerBase
         }
 
         _logger.LogInformation(
-            "Validated GameHub backup with {GameCount} games and {ItemCount} platform items",
+            "Validated GameHub backup with {GameCount} games, {ItemCount} platform items, and {PhysicalCopyCount} physical copies",
             validation.Summary.GameCount,
-            validation.Summary.PlatformItemCount);
+            validation.Summary.PlatformItemCount,
+            validation.Summary.PhysicalCopyCount);
         return Ok(validation);
     }
 
@@ -118,9 +119,10 @@ public sealed class BackupImportController : ControllerBase
         }
 
         _logger.LogInformation(
-            "Restored GameHub backup with {GameCount} games and {ItemCount} platform items",
+            "Restored GameHub backup with {GameCount} games, {ItemCount} platform items, and {PhysicalCopyCount} physical copies",
             result.Summary.GameCount,
-            result.Summary.PlatformItemCount);
+            result.Summary.PlatformItemCount,
+            result.Summary.PhysicalCopyCount);
         return Ok(result);
     }
 

@@ -11,6 +11,7 @@ export default function GameCardCompact({ game }: GameCardCompactProps) {
     const platforms = game.platforms
         ? Array.from(new Set(game.platforms.map(p => p.platform)))
         : [];
+    const physicalPlatforms = Array.from(new Set(game.physicalCopies?.map(copy => copy.platform) ?? []));
 
     return (
         <Link href={`/library/${game.id}`} className="block h-full group">
@@ -62,6 +63,16 @@ export default function GameCardCompact({ game }: GameCardCompactProps) {
                                     key={platform}
                                     className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[9px] font-bold shadow-sm uppercase ${getPlatformColor(platform)}`}
                                 >
+                                    {platform}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    {physicalPlatforms.length > 0 && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1 border-t border-white/25 pt-1">
+                            <span className="text-[8px] font-semibold uppercase text-white/70">Physical</span>
+                            {physicalPlatforms.map((platform) => (
+                                <span key={platform} className="rounded-sm border border-white/30 bg-white/15 px-1.5 py-0.5 text-[9px] font-bold text-white">
                                     {platform}
                                 </span>
                             ))}

@@ -1,5 +1,28 @@
 # Session History
 
+## Current Session Summary (2026-07-13)
+
+### What Changed
+
+**Physical Collection Phase 1:**
+- Added independently identified, tenant-owned PS3/PS4/PS5 physical copies without extending the
+  digital provider or `LibraryItem` model. Detail/list payloads, separate library filters, CRUD
+  endpoints, and the mobile detail UI keep physical and synchronized digital ownership distinct.
+- Manual merge moves every source copy without deduplication; manual split still moves only the
+  selected digital item and leaves physical copies on the original game.
+- Added SQLite/PostgreSQL migrations with composite tenant/game relationships and platform checks,
+  plus CRUD, detail/filter, cross-tenant, merge/split, fresh/upgrade migration, and portability tests.
+- Introduced Backup V2 for the new `physicalCopies` shape. V1 remains explicitly supported with no
+  physical data; V2 export/validation/restore and CSV export include physical copies while ownership
+  always comes from the authenticated restore context.
+
+### Known State / Pending
+
+- Barcode storage/normalization, MediaDevices access, scanning, product lookup, and automatic game
+  matching/creation remain a separate follow-up phase.
+- No dependency, authentication, cookie, digital sync, `ManualLink`, `.env`, or production
+  configuration change was introduced.
+
 ## Current Session Summary (2026-07-12)
 
 ### What Changed

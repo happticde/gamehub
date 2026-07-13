@@ -13,8 +13,11 @@ public sealed class BackupExportService
     /// <summary>Stable identifier written to every GameHub backup.</summary>
     public const string FormatName = "gamehub-backup";
 
-    /// <summary>Current backup schema version.</summary>
-    public const int CurrentFormatVersion = 1;
+    /// <summary>Current backup schema version. V2 adds physical copies.</summary>
+    public const int CurrentFormatVersion = 2;
+
+    /// <summary>Oldest backup version accepted by restore.</summary>
+    public const int MinimumSupportedFormatVersion = 1;
 
     private readonly CoreContext _db;
     private readonly TimeProvider _timeProvider;
@@ -41,6 +44,7 @@ public sealed class BackupExportService
             .AsNoTracking()
             .AsSplitQuery()
             .Include(game => game.Items)
+            .Include(game => game.PhysicalCopies)
             .Include(game => game.Tags)
             .OrderBy(game => game.Slug)
             .ThenBy(game => game.Id)
@@ -92,6 +96,11 @@ public sealed class BackupExportService
                 .Select(link => new BackupManualLinkV1(
                     link.Platform,
                     link.ExternalId))
+                .ToList(),
+            game.PhysicalCopies
+                .OrderBy(copy => copy.Platform)
+                .ThenBy(copy => copy.Id)
+                .Select(copy => new BackupPhysicalGameCopyV2(copy.Platform))
                 .ToList()))
             .ToList();
 

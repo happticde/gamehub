@@ -12,6 +12,7 @@ export default function GameListRow({ game }: GameListRowProps) {
     const platforms = game.platforms
         ? Array.from(new Set(game.platforms.map(p => p.platform)))
         : [];
+    const physicalPlatforms = Array.from(new Set(game.physicalCopies?.map(copy => copy.platform) ?? []));
 
     const developer = game.developers?.split(",")[0]?.trim();
     const releaseYear = game.firstReleaseDate ? new Date(game.firstReleaseDate).getFullYear() : null;
@@ -62,6 +63,11 @@ export default function GameListRow({ game }: GameListRowProps) {
                             {platform}
                         </span>
                     ))}
+                    {physicalPlatforms.length > 0 && (
+                        <span className="basis-full border-t border-dashed border-primary/25 pt-1 text-[9px] font-medium uppercase tracking-wide text-primary">
+                            Physical {physicalPlatforms.join(" · ")}
+                        </span>
+                    )}
                 </div>
 
                 {/* Play Status (Hidden on mobile) */}

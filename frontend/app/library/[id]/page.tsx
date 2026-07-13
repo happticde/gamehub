@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Building2, Star, Tag, Layers } from "lucide-react";
-import { Platform, PlayStatus, TagSuggestion } from "@/types/game";
+import { PhysicalGameCopy, Platform, PlayStatus, TagSuggestion } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import PersonalTrackingClient from "@/components/PersonalTrackingClient";
 import FixMatchDialog from "@/components/library/FixMatchDialog";
@@ -10,6 +10,7 @@ import CoverImageClient from "@/components/library/CoverImageClient";
 import CustomTagEditor from "@/components/library/CustomTagEditor";
 import SplitPlatformItemDialog from "@/components/library/SplitPlatformItemDialog";
 import MergeGameDialog from "@/components/library/MergeGameDialog";
+import PhysicalCollection from "@/components/library/PhysicalCollection";
 import { fetchCoreApi } from "@/lib/core-api";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -41,6 +42,7 @@ interface ExpandedGame {
         externalId: string;
         lastSynced: string;
     }[];
+    physicalCopies: PhysicalGameCopy[];
 }
 
 export default async function GameDetailPage({
@@ -209,6 +211,11 @@ export default async function GameDetailPage({
                         gameId={game.id}
                         initialTags={game.customTags}
                         availableTags={availableTags}
+                    />
+
+                    <PhysicalCollection
+                        gameId={game.id}
+                        initialCopies={game.physicalCopies}
                     />
 
                     {/* Your Library Status */}

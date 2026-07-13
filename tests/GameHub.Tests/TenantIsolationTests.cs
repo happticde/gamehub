@@ -1073,7 +1073,8 @@ public sealed class TenantIsolationTests : IDisposable
                         null, null, null, null, null, null, null, null, null, null, null, null, null),
                     ["Shared tag"],
                     [new BackupLibraryItemV1(Platform.Steam, "42", FixedNow.UtcDateTime)],
-                    [new BackupManualLinkV1(Platform.Steam, "42")])
+                    [new BackupManualLinkV1(Platform.Steam, "42")],
+                    [])
             ]);
 
     private sealed class FixedTenantContext(Guid tenantId) : ITenantContext

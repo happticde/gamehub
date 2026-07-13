@@ -51,6 +51,7 @@ function SummaryGrid({ summary }: { summary: BackupSummary }) {
     const metrics = [
         ["Games", summary.gameCount],
         ["Platform items", summary.platformItemCount],
+        ["Physical copies", summary.physicalCopyCount],
         ["Manual links", summary.manualLinkCount],
         ["Tags", summary.tagCount],
     ] as const;
@@ -323,7 +324,8 @@ export function BackupRestorePanel() {
                                         <AlertDialogTitle>Restore this backup?</AlertDialogTitle>
                                         <AlertDialogDescription>
                                             {validation.summary.gameCount.toLocaleString()} games and{" "}
-                                            {validation.summary.platformItemCount.toLocaleString()} platform items
+                                            {validation.summary.platformItemCount.toLocaleString()} platform items and{" "}
+                                            {validation.summary.physicalCopyCount.toLocaleString()} physical copies
                                             will be written. The operation is accepted only when the target library is empty.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>

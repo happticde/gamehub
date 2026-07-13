@@ -12,12 +12,12 @@ and still requires explicit operator configuration.
 
 | Area | Reads and writes reviewed | Isolation boundary |
 |------|---------------------------|--------------------|
-| EF Core ownership | `UnifiedGame`, `LibraryItem`, `Tag`, `TagAssignment`, `ManualLink`, `EnrichmentAuditLog`, `ActivityLog`, `SyncAuditLog`, and `SyncMetadata` | Global query filters select the trusted `ITenantContext`; the save guard assigns ownership and rejects foreign-tenant creates, updates, and deletes. Tenant-aware keys and relationships enforce game and tag associations below the query-filter layer. |
+| EF Core ownership | `UnifiedGame`, `LibraryItem`, `PhysicalGameCopy`, `Tag`, `TagAssignment`, `ManualLink`, `EnrichmentAuditLog`, `ActivityLog`, `SyncAuditLog`, and `SyncMetadata` | Global query filters select the trusted `ITenantContext`; the save guard assigns ownership and rejects foreign-tenant creates, updates, and deletes. Tenant-aware keys and relationships enforce game, physical-copy, and tag associations below the query-filter layer. |
 | Library API | Library list/detail/random, tags, developers, publishers, enrichment history/stats, sync history, analytics, retroactive ignore, personal tracking, merge, split, and activity feed | All durable reads and mutations use tenant-filtered Core sets. Direct cross-tenant tests cover personal tracking, merge, split, operational history, and activity reads. |
 | Sync orchestration | Manual sync, `UnificationService` page processing, manual-link lookup, slug matching, `SyncMetadata` incremental cursors, and `SyncAuditLog` writes | Request sync uses the authenticated tenant. Every child context created by the unifier resolves the same trusted tenant. Metadata natural keys are unique per `(TenantId, Platform)`. |
 | Background work | `TenantJobRunner`, scheduled sync, and background enrichment | A server-selected `TenantExecutionContext` creates an isolated scope per tenant. Tests verify per-tenant progress, audit/activity ownership, policy skips, error continuation, and enrichment batch limits. |
 | Scheduler status | `/api/library/sync/status` and in-memory scheduler results | Results, error text, running state, and processed counts are stored per tenant. Only the schedule-enabled flag and next-cycle time are shared operational configuration. |
-| Backup and restore | JSON/CSV export, validation context, empty-library check, restore, and restore activity | Export and restore are scoped to the active tenant; other tenants neither appear in output nor block or change restore. The V1 document remains tenant-neutral. |
+| Backup and restore | JSON/CSV export, validation context, empty-library check, restore, and restore activity | Export and restore are scoped to the active tenant; other tenants neither appear in output nor block or change restore. V1/V2 documents remain tenant-neutral, and V2 physical copies receive ownership only from the trusted restore context. |
 | Credential policy | Core credential management, stored retrieval delegation, and `Tenant.PlatformSyncEnabled` updates | Core selects the tenant from trusted authentication, delegates it with the service key, and updates only that tenant's sync policy. Cross-tenant activation/deactivation tests exist. |
 | Identity and sessions | Account bootstrap/provisioning/login and rotating refresh sessions | Account discovery is intentionally global until credentials establish the tenant. Email uniqueness, password verification, unguessable token-hash lookup, rotation, expiry, and revocation form the trust boundary; request bodies cannot select an authenticated tenant. |
 | Account lifecycle | Password change, global refresh-session revocation, pending deletion, Core cleanup, and Core→Ingest deletion delegation | Signed account/tenant claims select the identity. Current-password confirmation protects password change and deletion. Pending deletion blocks ordinary JWT access; Ingest and Core cleanup are idempotent and tenant-filtered. |
@@ -118,3 +118,12 @@ External deletion requires a fresh exact OIDC proof and produces only a deletion
 accepted on one method and route. Completed deletion persists an issuer/subject tombstone before
 the live mapping cascades, so JIT cannot undo deletion. GameHub logout and Keycloak lifecycle remain
 separate; provider events and back-channel logout are not implemented.
+
+## Physical collection follow-up verification (2026-07-13)
+
+`PhysicalGameCopy` is tenant-owned and relates to `UnifiedGame` through `(TenantId, UnifiedGameId)`.
+SQLite and PostgreSQL enforce the composite relationship, and both providers constrain the physical
+platform to PS3, PS4, or PS5. Direct tests cover cross-tenant read/delete denial, foreign-game write
+rejection, same-platform coexistence across tenants, merge/split behavior, and V2 backup export and
+restore isolation. Request bodies contain only the physical platform; tenant ownership is never
+accepted from client data.

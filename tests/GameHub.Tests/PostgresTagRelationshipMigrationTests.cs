@@ -18,6 +18,94 @@ public sealed class PostgresTagRelationshipMigrationTests
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
     [Fact]
+    public async Task PhysicalCopyMigration_PostgresUpgradePreservesGamesAndEnforcesBoundaries()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            var migrator = db.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260712073612_CategorizeCustomTagDefinitionsPostgres");
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "Tenants" ("Id", "Name", "PlatformSyncEnabled", "CreatedAtUtc", "DeletionRequestedAtUtc")
+                VALUES ({TenantB}, {"Tenant B"}, {false}, {new DateTime(2026, 7, 13, 20, 0, 0, DateTimeKind.Utc)}, NULL);
+                INSERT INTO "UnifiedGames" ("TenantId", "Title", "Slug", "PlayStatus", "IsPlayStatusManual", "IsIgnored")
+                VALUES ({TenantA}, {"Preserved"}, {"preserved-physical-postgres"}, {0}, {false}, {false});
+                """);
+
+            await migrator.MigrateAsync();
+            var gameId = await db.UnifiedGames.Select(game => game.Id).SingleAsync();
+            db.PhysicalGameCopies.Add(new PhysicalGameCopy
+            {
+                UnifiedGameId = gameId,
+                Platform = PhysicalGamePlatform.PS4
+            });
+            await db.SaveChangesAsync();
+
+            Assert.Equal("Preserved", (await db.UnifiedGames.SingleAsync()).Title);
+            Assert.Equal(PhysicalGamePlatform.PS4, (await db.PhysicalGameCopies.SingleAsync()).Platform);
+            await Assert.ThrowsAnyAsync<DbException>(() => db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "PhysicalGameCopies" ("TenantId", "UnifiedGameId", "Platform")
+                VALUES ({TenantB}, {gameId}, {(int)PhysicalGamePlatform.PS5})
+                """));
+            await Assert.ThrowsAnyAsync<DbException>(() => db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "PhysicalGameCopies" ("TenantId", "UnifiedGameId", "Platform")
+                VALUES ({TenantA}, {gameId}, {99})
+                """));
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
+    public async Task PhysicalCopyMigration_PostgresFreshInstallCreatesUsableSchema()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            await db.Database.MigrateAsync();
+            var game = new UnifiedGame { Title = "Fresh", Slug = "fresh-physical-postgres" };
+            db.UnifiedGames.Add(game);
+            await db.SaveChangesAsync();
+            db.PhysicalGameCopies.Add(new PhysicalGameCopy
+            {
+                UnifiedGameId = game.Id,
+                Platform = PhysicalGamePlatform.PS5
+            });
+            await db.SaveChangesAsync();
+
+            Assert.Equal(PhysicalGamePlatform.PS5, (await db.PhysicalGameCopies.SingleAsync()).Platform);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
     public async Task CustomTagDefinitionMigration_PostgresExistingCustomAssignment_BackfillsDefinitionOrigin()
     {
         var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");

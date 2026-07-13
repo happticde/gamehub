@@ -1,4 +1,10 @@
 export type Platform = "Steam" | "Psn" | "Gog" | "Epic";
+export type PhysicalGamePlatform = "PS3" | "PS4" | "PS5";
+
+export interface PhysicalGameCopy {
+    id: number;
+    platform: PhysicalGamePlatform;
+}
 
 export interface Tag {
     id: number;
@@ -40,6 +46,7 @@ export interface UnifiedGame {
     title: string;
     slug: string;
     platforms: LibraryItem[];
+    physicalCopies: PhysicalGameCopy[];
 
     // Personal Tracking
     playStatus: PlayStatus;
@@ -173,6 +180,7 @@ export interface BackupSummary {
     platformItemCount: number;
     manualLinkCount: number;
     tagCount: number;
+    physicalCopyCount: number;
 }
 
 /** Machine-readable issue returned for an invalid backup upload. */
