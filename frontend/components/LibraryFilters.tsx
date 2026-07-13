@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Filter, Eye, EyeOff, Shuffle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -42,6 +42,8 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
     const [isPickingRandom, setIsPickingRandom] = useState(false);
+    const pendingRefreshParams = useRef<string | null>(null);
+    const currentParams = searchParams.toString();
 
     // Read current state from URL
     const defaultSearch = searchParams.get("search") || "";
@@ -73,17 +75,35 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         availablePublishers.length > 0,
     ].filter(Boolean).length;
 
+    // A search-param navigation can update the address bar while Next.js still shows a cached
+    // React Server Component payload. Refresh only after useSearchParams confirms that the target
+    // URL is active; refreshing immediately after router.push could refresh the previous URL.
+    useEffect(() => {
+        if (pendingRefreshParams.current !== currentParams) return;
+
+        pendingRefreshParams.current = null;
+        startTransition(() => {
+            router.refresh();
+        });
+    }, [currentParams, router]);
+
     // Generic URL push helper
     const pushParams = useCallback(
         (updater: (params: URLSearchParams) => void) => {
-            const params = new URLSearchParams(searchParams.toString());
+            const params = new URLSearchParams(currentParams);
             updater(params);
             params.delete("page");
+
+            const nextParams = params.toString();
+            if (nextParams === currentParams) return;
+
+            pendingRefreshParams.current = nextParams;
+            const href = nextParams ? `${pathname}?${nextParams}` : pathname;
             startTransition(() => {
-                router.push(`${pathname}?${params.toString()}`);
+                router.push(href);
             });
         },
-        [pathname, router, searchParams]
+        [currentParams, pathname, router]
     );
 
     // --- Filter updaters ---
