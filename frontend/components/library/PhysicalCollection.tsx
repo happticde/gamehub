@@ -237,7 +237,6 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
                                 <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
                                     {copy.platform}
                                 </span>
-                                <p className="mt-1 text-xs text-muted-foreground">Copy #{copy.id}</p>
                                 {copy.normalizedGtin && (
                                     <p className="mt-1 font-mono text-xs text-muted-foreground">GTIN {copy.normalizedGtin}</p>
                                 )}
@@ -251,7 +250,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
                                     setRemoveError(null);
                                     setCopyToRemove(copy);
                                 }}
-                                aria-label={`Remove ${copy.platform} physical copy ${copy.id}`}
+                                aria-label={`Remove ${copy.platform} physical copy`}
                             >
                                 <Trash2 />
                             </Button>
@@ -270,7 +269,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
                     <AlertDialogHeader>
                         <AlertDialogTitle>Remove this physical copy?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This removes only copy #{copyToRemove?.id} ({copyToRemove?.platform}). The game and any other copies stay in your library.
+                            This removes only the {copyToRemove?.platform} physical copy. The game and any other copies stay in your library.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     {removeError && <ErrorMessage message={removeError} />}
