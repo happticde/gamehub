@@ -16,10 +16,17 @@ export interface PhysicalGtinCandidate {
     copyCount: number;
 }
 
+/** Untrusted, non-persisted hint returned by an optional server-side product catalogue. */
+export interface PhysicalProductCatalogSuggestion {
+    title: string;
+    platform: PhysicalGamePlatform | null;
+}
+
 /** Response from GET /api/library/physical-copies/gtin-lookup. */
 export interface PhysicalGtinLookupResponse {
     normalizedGtin: string;
     candidates: PhysicalGtinCandidate[];
+    externalSuggestions: PhysicalProductCatalogSuggestion[];
 }
 
 /** Minimal game shape used by the physical capture search. */

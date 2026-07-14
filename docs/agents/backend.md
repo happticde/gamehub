@@ -15,6 +15,11 @@ Two ASP.NET Core microservices:
 
 ## Configuration
 - Auth: `Authentication:ApiKey` in appsettings.json or `Authentication__ApiKey` env var. Empty = legacy auth-disabled mode. `Authentication:TenantId` maps the API key to a trusted tenant claim. Setting `Authentication:Jwt:SigningKey` (minimum 32 UTF-8 bytes) enables JWT validation and token issuance. `Authentication:Jwt:RefreshTokenLifetimeDays` controls rotating opaque refresh sessions (default 30, range 1–90).
+- Physical product catalogue: `ProductCatalog:Provider` accepts only `None` until ADR-014's
+  permission and representative benchmark gate is satisfied. `ProductCatalog:TimeoutMilliseconds`
+  defaults to 1500 and accepts 250–5000. No catalogue credential exists in Phase 2B. Local
+  tenant-confirmed GTIN mappings always suppress an external call; failures return no hint and do
+  not block manual capture.
 - Guarded production multi-user mode: `MultiUser:Enabled` defaults to `false` and is independent
   from OIDC. Active mode requires validated OIDC/JWT, mirrored Frontend auth/Secure-cookie/switch
   state, strong independent operator/delegation/JWT/BFF trust, Ingest vault readiness, and an

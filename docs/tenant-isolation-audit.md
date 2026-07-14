@@ -135,3 +135,19 @@ transaction; request bodies still cannot select ownership. Backup V3 restores re
 the authenticated tenant without importing source ownership. Direct tests cover same-GTIN
 coexistence across tenants, non-inference, conflicting local mappings, foreign targets, duplicate
 copies, manual capture, parallel slug allocation, and cross-tenant V3 restore.
+
+Phase 2B keeps this tenant-owned mapping authoritative. The local query completes before any
+external adapter decision; one or more local candidates suppress the provider call entirely.
+On a local miss, the provider receives only the canonical GTIN and never receives a tenant ID,
+game ID, copy ID, local candidate, credential, or other tenant data. Returned title/platform hints
+are transient, untrusted, and contain no selectable game ID. They are neither persisted nor shared
+between tenants, and the browser must explicitly copy one into search/manual fields before the
+existing confirmed write can occur.
+
+Direct tests prove that conflicting local mappings suppress the provider, another tenant's mapping
+neither leaks nor suppresses a local-miss lookup, invalid GTINs never invoke the provider, and an
+external hit performs no game/copy write or selection. Disabled, no-result, 429, temporary failure,
+timeout, and malformed responses all return an empty external-hint list without raw GTINs,
+credentials, provider payloads, diagnostics, or status details in logs/browser responses. No
+database schema, backup format, authentication, cookie, digital sync, or cross-tenant learning path
+was added in Phase 2B.

@@ -22,6 +22,7 @@ import type {
     PhysicalGameSearchResult,
     PhysicalGtinCandidate,
     PhysicalGtinLookupResponse,
+    PhysicalProductCatalogSuggestion,
 } from "@/types/game";
 
 const PHYSICAL_PLATFORMS: readonly PhysicalGamePlatform[] = ["PS3", "PS4", "PS5"];
@@ -38,6 +39,7 @@ export function PhysicalGameCapture() {
     const [gtinInput, setGtinInput] = useState("");
     const [normalizedGtin, setNormalizedGtin] = useState<string | null>(null);
     const [gtinCandidates, setGtinCandidates] = useState<PhysicalGtinCandidate[]>([]);
+    const [externalSuggestions, setExternalSuggestions] = useState<PhysicalProductCatalogSuggestion[]>([]);
     const [gtinPending, setGtinPending] = useState(false);
     const [search, setSearch] = useState("");
     const [searchResults, setSearchResults] = useState<PhysicalGameSearchResult[]>([]);
@@ -103,9 +105,11 @@ export function PhysicalGameCapture() {
 
             setNormalizedGtin(data.normalizedGtin);
             setGtinCandidates(data.candidates);
+            setExternalSuggestions(data.externalSuggestions);
         } catch (caughtError: unknown) {
             setNormalizedGtin(null);
             setGtinCandidates([]);
+            setExternalSuggestions([]);
             setError(getErrorMessage(caughtError, "The GTIN could not be validated."));
         } finally {
             setGtinPending(false);
@@ -123,6 +127,25 @@ export function PhysicalGameCapture() {
         setManualMode(true);
         setSelectedGame(null);
         setSearchResults([]);
+        setError(null);
+    };
+
+    const applyExternalSuggestionToSearch = (suggestion: PhysicalProductCatalogSuggestion) => {
+        setManualMode(false);
+        setSelectedGame(null);
+        setManualTitle("");
+        setSearch(suggestion.title);
+        if (suggestion.platform) setPlatform(suggestion.platform);
+        setError(null);
+    };
+
+    const applyExternalSuggestionToManualGame = (suggestion: PhysicalProductCatalogSuggestion) => {
+        setManualMode(true);
+        setSelectedGame(null);
+        setSearch("");
+        setSearchResults([]);
+        setManualTitle(suggestion.title);
+        if (suggestion.platform) setPlatform(suggestion.platform);
         setError(null);
     };
 
@@ -188,6 +211,7 @@ export function PhysicalGameCapture() {
                             setGtinInput(event.target.value);
                             setNormalizedGtin(null);
                             setGtinCandidates([]);
+                            setExternalSuggestions([]);
                         }}
                         placeholder="UPC-A, EAN-13, or GTIN-14"
                         aria-label="GTIN"
@@ -209,6 +233,7 @@ export function PhysicalGameCapture() {
                                 setGtinInput(rawValue);
                                 setNormalizedGtin(null);
                                 setGtinCandidates([]);
+                                setExternalSuggestions([]);
                                 void validateGtin(rawValue);
                             }}
                         />
@@ -241,6 +266,48 @@ export function PhysicalGameCapture() {
                                         slug: candidate.slug,
                                     })}
                                 />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {externalSuggestions.length > 0 && (
+                    <div className="mt-4 rounded-lg border border-sky-500/35 bg-sky-500/10 p-3">
+                        <p className="text-sm font-medium">External catalogue suggestions</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            These are untrusted hints. Applying one only fills fields; it never selects or saves a game.
+                        </p>
+                        <div className="mt-3 grid gap-3">
+                            {externalSuggestions.map((suggestion, index) => (
+                                <div
+                                    key={`${suggestion.title}-${suggestion.platform ?? "unknown"}-${index}`}
+                                    className="rounded-md border bg-background/70 p-3"
+                                >
+                                    <p className="font-medium">{suggestion.title}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Platform hint: {suggestion.platform ?? "Not provided"}
+                                    </p>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => applyExternalSuggestionToSearch(suggestion)}
+                                            disabled={saving}
+                                        >
+                                            Search my library
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => applyExternalSuggestionToManualGame(suggestion)}
+                                            disabled={saving}
+                                        >
+                                            Use for a new manual game
+                                        </Button>
+                                    </div>
+                                </div>
                             ))}
                         </div>
                     </div>

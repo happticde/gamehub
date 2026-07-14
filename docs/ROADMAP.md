@@ -24,7 +24,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
 | Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
 | Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
-| Physical collection | ✅ Phase 2A global confirmed capture + optional UPC-A/EAN-13 foundation |
+| Physical collection | ✅ Phase 2B neutral catalogue adapter/harness; production provider blocked |
 
 ---
 
@@ -149,7 +149,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   documents remain tenant-neutral. Cross-tenant isolation, active-tenant empty-library behavior,
   and physical-copy ownership are covered by tests. See [ADR-008](adr/008-data-portability-format.md).
 
-### 13. Physical Collection — Phase 2A ✅ / Catalogue and OCR Deferred
+### 13. Physical Collection — Phase 2B Neutral Adapter ✅ / Provider Selection and OCR Deferred
 - **Phase 1 (2026-07-13)**: Tenant-owned physical-copy records with independent IDs can be added to
   an existing Unified Game, listed in detail and library payloads, filtered separately by PS3, PS4,
   or PS5, and removed with confirmation. Multiple copies of the same game/platform are valid.
@@ -167,9 +167,24 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Portability**: Backup V3 and CSV include optional canonical GTINs. Restore accepts V1, V2, and
   V3, rejects invalid V3 values before writes, assigns ownership from authentication, and allows
   repeated GTINs.
-- **Remaining scope**: External product-catalogue resolution/provider selection and benchmarking,
-  OCR/cover recognition, automatic assignment/creation, regional or edition data, and
-  `PhysicalRelease` remain deferred.
+- **Phase 2B (2026-07-14)**: A provider-neutral Core adapter now keeps tenant-local confirmed
+  mappings first, validates only normalized GTINs, bounds provider calls with a short timeout, and
+  safely degrades across disabled/no-result/429/5xx/timeout/malformed outcomes. External title and
+  PS3/PS4/PS5 hints are visibly separate and require an explicit copy-to-search/manual action plus
+  the unchanged final confirmation; they never select or write automatically.
+- **Provider decision**: No production provider was selected. Official-source review found the
+  closest game-specific candidate (PriceCharting) has an unresolved third-party-software license
+  boundary; MobyGames lacks a documented direct product-code REST lookup; generic barcode services
+  publish no target-platform/region coverage. No representative dataset or paid access was
+  available, so no hit-rate, accuracy, latency, or availability claim is made. See
+  [Physical Product Catalogue Evaluation](physical-product-catalog-evaluation.md).
+- **Benchmark and configuration**: The Docker-runnable neutral harness consumes an operator-owned
+  EU/US PS3/PS4/PS5 dataset and emits sanitized measured outcomes without raw GTINs or payloads.
+  Production remains `ProductCatalog:Provider=None`; there is no provider credential variable in
+  this phase.
+- **Remaining scope**: Written provider usage permission, representative live benchmarking,
+  production provider/credential selection, OCR/cover recognition, automatic assignment/creation,
+  regional or edition data, and `PhysicalRelease` remain deferred.
 
 ### 14. Discovery: "Surprise Me" (Random Pick) ✅
 - **Feature**: Random game selection button that respects active filters (e.g., "Random RPG I haven't finished").
@@ -320,7 +335,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
 | **Multi-user readiness** | #8 technically complete; operator activation remains explicit and default-off ✅ |
 | **AI integration** | #11 MCP Server (High Value) |
-| **Data & Portability** | #12 Import/Export → #13 catalogue/OCR follow-ups (Phase 2A capture complete) |
+| **Data & Portability** | #12 Import/Export → #13 provider evidence/OCR follow-ups (Phase 2B neutral boundary complete) |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
 | **Future platform integration** | #16 Epic authentication and stored retrieval → #17 guided GOG/PSN account connect |
 | **Controlled onboarding** | #18 Registration/invitations → #19 provider lifecycle follow-ups (personal JIT implemented) |

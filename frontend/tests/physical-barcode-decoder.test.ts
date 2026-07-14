@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { startPhysicalBarcodeDecoder } from "../lib/physical-barcode-decoder.ts";
 
@@ -86,4 +87,23 @@ test("native decoder ignores unsupported symbologies without exposing their valu
             Reflect.deleteProperty(globalThis, "BarcodeDetector");
         }
     }
+});
+
+test("external catalogue suggestions remain separate and require an explicit apply action", async () => {
+    const component = await readFile(
+        new URL("../components/physical/PhysicalGameCapture.tsx", import.meta.url),
+        "utf8",
+    );
+    const suggestionSection = component.slice(
+        component.indexOf("External catalogue suggestions"),
+        component.indexOf("</section>", component.indexOf("External catalogue suggestions")),
+    );
+
+    assert.match(suggestionSection, /Search my library/);
+    assert.match(suggestionSection, /Use for a new manual game/);
+    assert.match(suggestionSection, /never selects or saves a game/);
+    assert.doesNotMatch(suggestionSection, /selectExistingGame/);
+    assert.match(component, /setSelectedGame\(null\)/);
+    assert.match(component, /confirmed: true/);
+    assert.doesNotMatch(component, /providerStatus|rawProviderError|credential/i);
 });

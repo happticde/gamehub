@@ -33,6 +33,10 @@
   provider and deletion tokens never enter JavaScript, JSON responses, or `localStorage`.
 - Operator readiness is intentionally not exposed to Client Components. The secret-free status API
   is an operator API-key endpoint, not a tenant-facing admin dashboard.
+- Physical-catalogue suggestions are transient untrusted hints returned through `/api/core/*` and
+  displayed separately from tenant-local confirmed GTIN mappings. Only explicit buttons may seed
+  search or manual title/platform fields; they must clear any selected game and never bypass the
+  final confirmation write. Provider disablement or failure is an empty-hint manual fallback.
 
 ## Mobile-First Conventions (2026-03-26)
 - **Viewport**: Always use `userScalable: false` in `layout.tsx` to prevent iOS input zoom.
