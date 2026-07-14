@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Plus } from "lucide-react";
 import { PagedResult, UnifiedGame } from "@/types/game";
 import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
@@ -137,6 +139,12 @@ export default async function LibraryPage({
                         Explore your aggregated collection of {totalCount > 0 ? totalCount : "0"} synchronized games.
                     </p>
                 </div>
+                <Link
+                    href="/physical/add"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                >
+                    <Plus className="h-4 w-4" /> Add physical game
+                </Link>
             </div>
 
             {error ? (

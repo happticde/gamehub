@@ -417,6 +417,39 @@ public class UnificationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunFullSync_LaterDigitalTitle_AttachesToManualPhysicalGameWithSameSlug()
+    {
+        int manualGameId;
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+            var capture = await new PhysicalGameCaptureService(db).CaptureManualAsync(
+                "Physical Only Adventure",
+                PhysicalGamePlatform.PS5,
+                "00012345000058");
+            manualGameId = capture.GameId;
+        }
+
+        var service = CreateService(CreateMockClient(
+        [
+            new RawGameDto { Id = "physical-only-steam", Name = "Physical Only Adventure" }
+        ]));
+
+        await service.RunFullSyncAsync();
+
+        using var verifyScope = _scopeFactory.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await verifyDb.UnifiedGames
+            .Include(candidate => candidate.Items)
+            .Include(candidate => candidate.PhysicalCopies)
+            .SingleAsync();
+        Assert.Equal(manualGameId, game.Id);
+        Assert.Equal("physical-only-adventure", game.Slug);
+        Assert.Equal("physical-only-steam", Assert.Single(game.Items).ExternalId);
+        Assert.Equal("00012345000058", Assert.Single(game.PhysicalCopies).NormalizedGtin);
+    }
+
+    [Fact]
     public async Task RunFullSync_EpicStoredRetrievalFailure_ExportsExistingRawDataAsPartialSuccess()
     {
         var service = CreateService(CreateMockClient(

@@ -18,7 +18,7 @@ public sealed class BackupJsonSerializer
         JsonSerializer.SerializeToUtf8Bytes(backup, _options);
 
     /// <summary>
-    /// Deserializes a V1 backup document. JSON contract errors are reported as exceptions
+    /// Deserializes a supported backup document. JSON contract errors are reported as exceptions
     /// so callers can convert them into structured validation responses.
     /// </summary>
     public async Task<GameHubBackupV1?> DeserializeAsync(

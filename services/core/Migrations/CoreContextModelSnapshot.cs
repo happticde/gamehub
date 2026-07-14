@@ -233,6 +233,10 @@ namespace GameHub.Core.Migrations.sqlite
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("NormalizedGtin")
+                        .HasMaxLength(14)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Platform")
                         .HasColumnType("INTEGER");
 
@@ -245,6 +249,8 @@ namespace GameHub.Core.Migrations.sqlite
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "NormalizedGtin");
 
                     b.HasIndex("TenantId", "UnifiedGameId", "Platform");
 

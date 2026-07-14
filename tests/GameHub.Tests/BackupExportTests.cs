@@ -102,7 +102,11 @@ public sealed class BackupExportTests : IDisposable
             ],
             PhysicalCopies =
             [
-                new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5 },
+                new PhysicalGameCopy
+                {
+                    Platform = PhysicalGamePlatform.PS5,
+                    NormalizedGtin = "00012345000058"
+                },
                 new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS3 }
             ]
         };
@@ -155,9 +159,13 @@ public sealed class BackupExportTests : IDisposable
         var manualLink = Assert.Single(exportedGame.ManualLinks);
         Assert.Equal(Platform.Steam, manualLink.Platform);
         Assert.Equal("292030", manualLink.ExternalId);
+        var physicalCopies = Assert.IsAssignableFrom<IReadOnlyList<BackupPhysicalGameCopyV2>>(
+            exportedGame.PhysicalCopies);
         Assert.Equal(
             [PhysicalGamePlatform.PS3, PhysicalGamePlatform.PS5],
-            exportedGame.PhysicalCopies!.Select(copy => copy.Platform));
+            physicalCopies.Select(copy => copy.Platform));
+        Assert.Null(physicalCopies[0].NormalizedGtin);
+        Assert.Equal("00012345000058", physicalCopies[1].NormalizedGtin);
     }
 
     [Fact]
@@ -198,12 +206,12 @@ public sealed class BackupExportTests : IDisposable
 
         var file = Assert.IsType<FileContentResult>(result);
         Assert.Equal("application/json; charset=utf-8", file.ContentType);
-        Assert.Equal("gamehub-backup-v2-20260619-103000.json", file.FileDownloadName);
+        Assert.Equal("gamehub-backup-v3-20260619-103000.json", file.FileDownloadName);
 
         using var json = JsonDocument.Parse(file.FileContents);
         var root = json.RootElement;
         Assert.Equal("gamehub-backup", root.GetProperty("format").GetString());
-        Assert.Equal(2, root.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(3, root.GetProperty("formatVersion").GetInt32());
 
         var exportedGame = root.GetProperty("games")[0];
         Assert.Equal("Playing", exportedGame.GetProperty("personalTracking").GetProperty("playStatus").GetString());
@@ -251,7 +259,7 @@ public sealed class BackupExportTests : IDisposable
                             new DateTime(2026, 6, 18, 8, 0, 0, DateTimeKind.Utc))
                     ],
                     [new BackupManualLinkV1(Platform.Steam, "42")],
-                    [new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS4)])
+                    [new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS4, "00012345000058")])
             ]);
 
         var bytes = _csvSerializer.Serialize(backup);
@@ -262,6 +270,7 @@ public sealed class BackupExportTests : IDisposable
         Assert.Contains("\r\n'=2+2,formula-game,Completed,5,True,False", csv);
         Assert.Contains("Steam:42", csv);
         Assert.Contains("PS4", csv);
+        Assert.Contains("PS4:'00012345000058", csv);
         Assert.Contains("92.5,IGDB,123", csv);
         Assert.Contains("\"Line 1, \"\"quoted\"\"\nLine 2\"\r\n", csv);
     }

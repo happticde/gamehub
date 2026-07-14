@@ -227,7 +227,8 @@ public sealed class BackupImportService
                 PhysicalCopies = (backupGame.PhysicalCopies ?? [])
                     .Select(copy => new PhysicalGameCopy
                     {
-                        Platform = copy.Platform
+                        Platform = copy.Platform,
+                        NormalizedGtin = copy.NormalizedGtin
                     })
                     .ToList()
             };
@@ -470,7 +471,7 @@ public sealed class BackupImportService
         {
             addError(
                 "missing_physical_copies",
-                "The physical copies collection is required in a V2 backup.",
+                "The physical copies collection is required in a V2 or V3 backup.",
                 $"{gamePath}.physicalCopies");
             return;
         }
@@ -491,6 +492,37 @@ public sealed class BackupImportService
                     "invalid_physical_platform",
                     $"Unknown physical platform '{copy.Platform}'.",
                     $"{copyPath}.platform");
+            }
+
+            if (formatVersion == 2 && copy.NormalizedGtin is not null)
+            {
+                addError(
+                    "physical_gtin_not_supported_in_v2",
+                    "Normalized GTINs require backup format version 3.",
+                    $"{copyPath}.normalizedGtin");
+                continue;
+            }
+
+            if (formatVersion == 3 && copy.NormalizedGtin is not null)
+            {
+                var normalization = GtinNormalizer.Normalize(copy.NormalizedGtin);
+                if (!normalization.IsValid)
+                {
+                    addError(
+                        "invalid_normalized_gtin",
+                        normalization.Error!,
+                        $"{copyPath}.normalizedGtin");
+                }
+                else if (!string.Equals(
+                    normalization.NormalizedGtin,
+                    copy.NormalizedGtin,
+                    StringComparison.Ordinal))
+                {
+                    addError(
+                        "non_canonical_normalized_gtin",
+                        "A backup GTIN must use the canonical 14-digit representation.",
+                        $"{copyPath}.normalizedGtin");
+                }
             }
         }
     }

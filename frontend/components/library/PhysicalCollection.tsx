@@ -13,6 +13,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
     Dialog,
     DialogContent,
@@ -44,6 +45,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
     const router = useRouter();
     const [copies, setCopies] = useState(initialCopies);
     const [selectedPlatform, setSelectedPlatform] = useState<PhysicalGamePlatform>("PS5");
+    const [gtinInput, setGtinInput] = useState("");
     const [addOpen, setAddOpen] = useState(false);
     const [copyToRemove, setCopyToRemove] = useState<PhysicalGameCopy | null>(null);
     const [pendingAction, setPendingAction] = useState<"add" | "remove" | null>(null);
@@ -67,7 +69,10 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
             const response = await fetch(`/api/core/library/${gameId}/physical-copies`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ platform: selectedPlatform }),
+                body: JSON.stringify({
+                    platform: selectedPlatform,
+                    gtin: gtinInput.trim() || null,
+                }),
             });
             const data = await response.json().catch(() => null) as
                 | PhysicalGameCopy
@@ -84,6 +89,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
             }
 
             setCopies((current) => [...current, data].sort(compareCopies));
+            setGtinInput("");
             setAddOpen(false);
             router.refresh();
         } catch (caughtError: unknown) {
@@ -171,6 +177,27 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
                                     ))}
                                 </SelectContent>
                             </Select>
+
+                            <label className="block pt-2 text-sm font-medium" htmlFor="physical-gtin">
+                                GTIN (optional)
+                            </label>
+                            <Input
+                                id="physical-gtin"
+                                className="h-10"
+                                inputMode="numeric"
+                                autoComplete="off"
+                                value={gtinInput}
+                                onChange={(event) => setGtinInput(event.target.value)}
+                                placeholder="UPC-A, EAN-13, or GTIN-14"
+                                disabled={pendingAction !== null}
+                            />
+
+                            <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                                <p><span className="text-muted-foreground">Confirm platform:</span> {selectedPlatform}</p>
+                                <p className="mt-1 break-all">
+                                    <span className="text-muted-foreground">GTIN:</span> {gtinInput.trim() || "None"}
+                                </p>
+                            </div>
                         </div>
 
                         {addError && <ErrorMessage message={addError} />}
@@ -210,7 +237,9 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
                                 <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
                                     {copy.platform}
                                 </span>
-                                <p className="mt-1 text-xs text-muted-foreground">Copy #{copy.id}</p>
+                                {copy.normalizedGtin && (
+                                    <p className="mt-1 font-mono text-xs text-muted-foreground">GTIN {copy.normalizedGtin}</p>
+                                )}
                             </div>
                             <Button
                                 type="button"
@@ -221,7 +250,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
                                     setRemoveError(null);
                                     setCopyToRemove(copy);
                                 }}
-                                aria-label={`Remove ${copy.platform} physical copy ${copy.id}`}
+                                aria-label={`Remove ${copy.platform} physical copy`}
                             >
                                 <Trash2 />
                             </Button>
@@ -240,7 +269,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
                     <AlertDialogHeader>
                         <AlertDialogTitle>Remove this physical copy?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This removes only copy #{copyToRemove?.id} ({copyToRemove?.platform}). The game and any other copies stay in your library.
+                            This removes only the {copyToRemove?.platform} physical copy. The game and any other copies stay in your library.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     {removeError && <ErrorMessage message={removeError} />}

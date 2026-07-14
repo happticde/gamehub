@@ -18,6 +18,7 @@ namespace GameHub.Tests;
 /// <summary>Integration coverage for tenant-owned physical game copies.</summary>
 public sealed class PhysicalCollectionTests : IDisposable
 {
+    private const string ValidGtin = "00012345000058";
     private static readonly Guid TenantA = TenantDefaults.DefaultTenantId;
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
     private static readonly Guid TenantC = Guid.Parse("00000000-0000-0000-0000-000000000003");
@@ -98,6 +99,250 @@ public sealed class PhysicalCollectionTests : IDisposable
     }
 
     [Fact]
+    public async Task PhysicalCopies_CrudPayloads_AcceptOptionalGtinAndPreserveDuplicates()
+    {
+        int gameId;
+        await using (var db = CreateContext(TenantA))
+        {
+            var game = new UnifiedGame { Title = "GTIN payload", Slug = "gtin-payload" };
+            db.UnifiedGames.Add(game);
+            await db.SaveChangesAsync();
+            gameId = game.Id;
+        }
+
+        await using var actionDb = CreateContext(TenantA);
+        var controller = CreateController(actionDb, TenantA);
+        var withGtin = Assert.IsType<ObjectResult>(await controller.AddPhysicalCopy(
+            gameId,
+            new AddPhysicalGameCopyRequest
+            {
+                Platform = PhysicalGamePlatform.PS5,
+                Gtin = "012345000058"
+            }));
+        var duplicateGtin = Assert.IsType<ObjectResult>(await controller.AddPhysicalCopy(
+            gameId,
+            new AddPhysicalGameCopyRequest
+            {
+                Platform = PhysicalGamePlatform.PS5,
+                Gtin = ValidGtin
+            }));
+        var withoutGtin = Assert.IsType<ObjectResult>(await controller.AddPhysicalCopy(
+            gameId,
+            new AddPhysicalGameCopyRequest { Platform = PhysicalGamePlatform.PS3 }));
+
+        Assert.Equal(ValidGtin, GetProperty<string>(withGtin.Value!, "NormalizedGtin"));
+        Assert.Equal(ValidGtin, GetProperty<string>(duplicateGtin.Value!, "NormalizedGtin"));
+        Assert.Null(withoutGtin.Value!.GetType().GetProperty("NormalizedGtin")!.GetValue(withoutGtin.Value));
+        Assert.Equal(3, await actionDb.PhysicalGameCopies.CountAsync());
+        Assert.Equal(2, await actionDb.PhysicalGameCopies.CountAsync(copy => copy.NormalizedGtin == ValidGtin));
+
+        var invalid = Assert.IsType<BadRequestObjectResult>(await controller.AddPhysicalCopy(
+            gameId,
+            new AddPhysicalGameCopyRequest
+            {
+                Platform = PhysicalGamePlatform.PS5,
+                Gtin = "012345000059"
+            }));
+        Assert.Equal("invalid_gtin", GetProperty<string>(invalid.Value!, "Code"));
+    }
+
+    [Fact]
+    public async Task GtinLookup_IsTenantLocalAndReturnsEveryConflictingCandidate()
+    {
+        await using (var tenantA = CreateContext(TenantA))
+        {
+            tenantA.UnifiedGames.AddRange(
+                new UnifiedGame
+                {
+                    Title = "Tenant A first",
+                    Slug = "tenant-a-first-gtin",
+                    PhysicalCopies =
+                    [
+                        new PhysicalGameCopy
+                        {
+                            Platform = PhysicalGamePlatform.PS4,
+                            NormalizedGtin = ValidGtin
+                        },
+                        new PhysicalGameCopy
+                        {
+                            Platform = PhysicalGamePlatform.PS5,
+                            NormalizedGtin = ValidGtin
+                        }
+                    ]
+                },
+                new UnifiedGame
+                {
+                    Title = "Tenant A conflicting",
+                    Slug = "tenant-a-conflicting-gtin",
+                    PhysicalCopies =
+                    [
+                        new PhysicalGameCopy
+                        {
+                            Platform = PhysicalGamePlatform.PS3,
+                            NormalizedGtin = ValidGtin
+                        }
+                    ]
+                });
+            await tenantA.SaveChangesAsync();
+        }
+
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            tenantB.UnifiedGames.Add(new UnifiedGame
+            {
+                Title = "Tenant B private",
+                Slug = "tenant-b-private-gtin",
+                PhysicalCopies =
+                [
+                    new PhysicalGameCopy
+                    {
+                        Platform = PhysicalGamePlatform.PS5,
+                        NormalizedGtin = ValidGtin
+                    }
+                ]
+            });
+            await tenantB.SaveChangesAsync();
+        }
+
+        await using var tenantARead = CreateContext(TenantA);
+        var tenantAResult = Assert.IsType<OkObjectResult>(await CreateController(tenantARead, TenantA)
+            .LookupPhysicalGtin("012345000058"));
+        Assert.Equal(ValidGtin, GetProperty<string>(tenantAResult.Value!, "NormalizedGtin"));
+        var tenantACandidates = GetProperty<IReadOnlyList<PhysicalGtinCandidate>>(
+            tenantAResult.Value!,
+            "Candidates");
+        Assert.Equal(2, tenantACandidates.Count);
+        Assert.DoesNotContain(tenantACandidates, candidate => candidate.Title == "Tenant B private");
+        Assert.Equal(2, tenantACandidates.Single(candidate => candidate.Title == "Tenant A first").CopyCount);
+
+        await using var tenantBRead = CreateContext(TenantB);
+        var tenantBResult = Assert.IsType<OkObjectResult>(await CreateController(tenantBRead, TenantB)
+            .LookupPhysicalGtin(ValidGtin));
+        var tenantBCandidates = GetProperty<IReadOnlyList<PhysicalGtinCandidate>>(
+            tenantBResult.Value!,
+            "Candidates");
+        Assert.Equal("Tenant B private", Assert.Single(tenantBCandidates).Title);
+    }
+
+    [Fact]
+    public async Task CapturePhysicalGame_RequiresConfirmationAndRejectsForeignTarget()
+    {
+        int foreignGameId;
+        await using (var tenantB = CreateContext(TenantB))
+        {
+            var foreignGame = new UnifiedGame { Title = "Foreign", Slug = "foreign-capture-target" };
+            tenantB.UnifiedGames.Add(foreignGame);
+            await tenantB.SaveChangesAsync();
+            foreignGameId = foreignGame.Id;
+        }
+
+        await using var tenantA = CreateContext(TenantA);
+        var controller = CreateController(tenantA, TenantA);
+        var unconfirmed = await controller.CapturePhysicalGame(new CapturePhysicalGameRequest
+        {
+            ManualGameTitle = "Never created",
+            Platform = PhysicalGamePlatform.PS5,
+            Confirmed = false
+        });
+        Assert.IsType<BadRequestObjectResult>(unconfirmed);
+        Assert.Empty(tenantA.UnifiedGames);
+
+        var foreign = await controller.CapturePhysicalGame(new CapturePhysicalGameRequest
+        {
+            ExistingGameId = foreignGameId,
+            Platform = PhysicalGamePlatform.PS5,
+            Confirmed = true
+        });
+        Assert.IsType<NotFoundObjectResult>(foreign);
+        Assert.Empty(tenantA.PhysicalGameCopies);
+    }
+
+    [Fact]
+    public async Task CapturePhysicalGame_ManualGameAndCopyAreAtomicAndUseDeterministicSlugCollision()
+    {
+        await using (var seed = CreateContext(TenantA))
+        {
+            seed.UnifiedGames.AddRange(
+                new UnifiedGame { Title = "Existing", Slug = "same-title" },
+                new UnifiedGame { Title = "Existing manual", Slug = "same-title-manual-2" });
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var actionDb = CreateContext(TenantA))
+        {
+            var result = Assert.IsType<ObjectResult>(await CreateController(actionDb, TenantA)
+                .CapturePhysicalGame(new CapturePhysicalGameRequest
+                {
+                    ManualGameTitle = "Same Title",
+                    Platform = PhysicalGamePlatform.PS4,
+                    Gtin = "012345000058",
+                    Confirmed = true
+                }));
+            Assert.Equal(StatusCodes.Status201Created, result.StatusCode);
+            Assert.True(GetProperty<bool>(result.Value!, "CreatedManualGame"));
+            Assert.Equal("same-title-manual-3", GetProperty<string>(result.Value!, "Slug"));
+        }
+
+        await using (var verify = CreateContext(TenantA))
+        {
+            var manual = await verify.UnifiedGames
+                .Include(game => game.PhysicalCopies)
+                .SingleAsync(game => game.Slug == "same-title-manual-3");
+            Assert.Equal(ValidGtin, Assert.Single(manual.PhysicalCopies).NormalizedGtin);
+        }
+
+        await using (var failingDb = CreateContext(TenantA))
+        {
+            await Assert.ThrowsAsync<DbUpdateException>(() => new PhysicalGameCaptureService(failingDb)
+                .CaptureManualAsync("Atomic failure", (PhysicalGamePlatform)99, null));
+        }
+
+        await using var verifyFailure = CreateContext(TenantA);
+        Assert.False(await verifyFailure.UnifiedGames.AnyAsync(game => game.Slug == "atomic-failure"));
+        Assert.False(await verifyFailure.PhysicalGameCopies.AnyAsync(copy => copy.UnifiedGame!.Slug == "atomic-failure"));
+    }
+
+    [Fact]
+    public async Task CaptureManualGame_ParallelRequestsAllocateDistinctSlugs()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"gamehub-physical-{Guid.NewGuid():N}.db");
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite($"Data Source={databasePath};Default Timeout=5")
+            .Options;
+
+        try
+        {
+            await using (var setup = new CoreContext(options, new FixedTenantContext(TenantA)))
+            {
+                await setup.Database.EnsureCreatedAsync();
+            }
+
+            async Task<PhysicalCaptureResult> CaptureAsync()
+            {
+                await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+                return await new PhysicalGameCaptureService(db).CaptureManualAsync(
+                    "Parallel Manual Game",
+                    PhysicalGamePlatform.PS5,
+                    ValidGtin);
+            }
+
+            var captures = await Task.WhenAll(CaptureAsync(), CaptureAsync());
+
+            Assert.Equal(2, captures.Select(capture => capture.Slug).Distinct().Count());
+            Assert.Contains("parallel-manual-game", captures.Select(capture => capture.Slug));
+            Assert.Contains("parallel-manual-game-manual-2", captures.Select(capture => capture.Slug));
+
+            await using var verify = new CoreContext(options, new FixedTenantContext(TenantA));
+            Assert.Equal(2, await verify.UnifiedGames.CountAsync());
+            Assert.Equal(2, await verify.PhysicalGameCopies.CountAsync(copy => copy.NormalizedGtin == ValidGtin));
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task PhysicalCopies_CrossTenantReadsWritesAndRelationships_AreRejected()
     {
         int tenantBGameId;
@@ -167,7 +412,7 @@ public sealed class PhysicalCollectionTests : IDisposable
                 Slug = "physical-merge-source",
                 PhysicalCopies =
                 [
-                    new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5 },
+                    new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5, NormalizedGtin = ValidGtin },
                     new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5 }
                 ]
             };
@@ -198,6 +443,7 @@ public sealed class PhysicalCollectionTests : IDisposable
         var copies = await verify.PhysicalGameCopies.OrderBy(copy => copy.Id).ToListAsync();
         Assert.Equal(3, copies.Count);
         Assert.All(copies, copy => Assert.Equal(targetId, copy.UnifiedGameId));
+        Assert.Equal(ValidGtin, copies.Single(copy => copy.NormalizedGtin is not null).NormalizedGtin);
     }
 
     [Fact]
@@ -217,7 +463,14 @@ public sealed class PhysicalCollectionTests : IDisposable
                     new LibraryItem { Platform = Platform.Steam, ExternalId = "steam" },
                     new LibraryItem { Platform = Platform.Gog, ExternalId = "gog" }
                 ],
-                PhysicalCopies = [new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS3 }]
+                PhysicalCopies =
+                [
+                    new PhysicalGameCopy
+                    {
+                        Platform = PhysicalGamePlatform.PS3,
+                        NormalizedGtin = ValidGtin
+                    }
+                ]
             };
             db.UnifiedGames.Add(game);
             await db.SaveChangesAsync();
@@ -237,12 +490,18 @@ public sealed class PhysicalCollectionTests : IDisposable
         var copy = await verify.PhysicalGameCopies.SingleAsync();
         Assert.Equal(physicalCopyId, copy.Id);
         Assert.Equal(originalGameId, copy.UnifiedGameId);
+        Assert.Equal(ValidGtin, copy.NormalizedGtin);
     }
 
     [Fact]
     public async Task BackupExportAndRestore_PhysicalCopiesRemainTenantIsolated()
     {
-        await SeedPhysicalGameAsync(TenantA, "Tenant A backup", "tenant-a-backup", PhysicalGamePlatform.PS3);
+        await SeedPhysicalGameAsync(
+            TenantA,
+            "Tenant A backup",
+            "tenant-a-backup",
+            PhysicalGamePlatform.PS3,
+            ValidGtin);
         await SeedPhysicalGameAsync(TenantB, "Tenant B backup", "tenant-b-backup", PhysicalGamePlatform.PS5);
 
         GameHub.Core.Models.Backup.GameHubBackupV1 backup;
@@ -254,6 +513,7 @@ public sealed class PhysicalCollectionTests : IDisposable
 
         Assert.Equal("Tenant A backup", Assert.Single(backup.Games).Title);
         Assert.Equal(PhysicalGamePlatform.PS3, Assert.Single(backup.Games[0].PhysicalCopies!).Platform);
+        Assert.Equal(ValidGtin, Assert.Single(backup.Games[0].PhysicalCopies!).NormalizedGtin);
 
         await using (var tenantC = CreateContext(TenantC))
         {
@@ -265,6 +525,7 @@ public sealed class PhysicalCollectionTests : IDisposable
             var restored = await tenantC.PhysicalGameCopies.SingleAsync();
             Assert.Equal(TenantC, restored.TenantId);
             Assert.Equal(PhysicalGamePlatform.PS3, restored.Platform);
+            Assert.Equal(ValidGtin, restored.NormalizedGtin);
         }
 
         await using var verifyB = CreateContext(TenantB);
@@ -298,12 +559,19 @@ public sealed class PhysicalCollectionTests : IDisposable
         db.PhysicalGameCopies.Add(new PhysicalGameCopy
         {
             UnifiedGameId = gameId,
-            Platform = PhysicalGamePlatform.PS4
+            Platform = PhysicalGamePlatform.PS4,
+            NormalizedGtin = ValidGtin
+        });
+        db.PhysicalGameCopies.Add(new PhysicalGameCopy
+        {
+            UnifiedGameId = gameId,
+            Platform = PhysicalGamePlatform.PS4,
+            NormalizedGtin = ValidGtin
         });
         await db.SaveChangesAsync();
 
         Assert.Equal("Preserved", (await db.UnifiedGames.SingleAsync()).Title);
-        Assert.Equal(PhysicalGamePlatform.PS4, (await db.PhysicalGameCopies.SingleAsync()).Platform);
+        Assert.Equal(2, await db.PhysicalGameCopies.CountAsync(copy => copy.NormalizedGtin == ValidGtin));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "PhysicalGameCopies" ("TenantId", "UnifiedGameId", "Platform")
             VALUES ({TenantB}, {gameId}, {(int)PhysicalGamePlatform.PS5})
@@ -332,11 +600,13 @@ public sealed class PhysicalCollectionTests : IDisposable
         db.PhysicalGameCopies.Add(new PhysicalGameCopy
         {
             UnifiedGameId = game.Id,
-            Platform = PhysicalGamePlatform.PS5
+            Platform = PhysicalGamePlatform.PS5,
+            NormalizedGtin = ValidGtin
         });
         await db.SaveChangesAsync();
 
         Assert.Equal(PhysicalGamePlatform.PS5, (await db.PhysicalGameCopies.SingleAsync()).Platform);
+        Assert.Equal(ValidGtin, (await db.PhysicalGameCopies.SingleAsync()).NormalizedGtin);
     }
 
     private CoreContext CreateContext(Guid tenantId) => new(_options, new FixedTenantContext(tenantId));
@@ -345,14 +615,22 @@ public sealed class PhysicalCollectionTests : IDisposable
         Guid tenantId,
         string title,
         string slug,
-        PhysicalGamePlatform platform)
+        PhysicalGamePlatform platform,
+        string? normalizedGtin = null)
     {
         await using var db = CreateContext(tenantId);
         db.UnifiedGames.Add(new UnifiedGame
         {
             Title = title,
             Slug = slug,
-            PhysicalCopies = [new PhysicalGameCopy { Platform = platform }]
+            PhysicalCopies =
+            [
+                new PhysicalGameCopy
+                {
+                    Platform = platform,
+                    NormalizedGtin = normalizedGtin
+                }
+            ]
         });
         await db.SaveChangesAsync();
     }

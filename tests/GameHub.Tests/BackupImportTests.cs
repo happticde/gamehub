@@ -155,7 +155,11 @@ public sealed class BackupImportTests : IDisposable
             ],
             PhysicalCopies =
             [
-                new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5 },
+                new PhysicalGameCopy
+                {
+                    Platform = PhysicalGamePlatform.PS5,
+                    NormalizedGtin = "00012345000058"
+                },
                 new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5 }
             ]
         };
@@ -217,6 +221,9 @@ public sealed class BackupImportTests : IDisposable
         Assert.Equal("FPS", Assert.Single(restoredDoom.Tags).Name);
         Assert.Equal(2, restoredDoom.PhysicalCopies.Count);
         Assert.All(restoredDoom.PhysicalCopies, copy => Assert.Equal(PhysicalGamePlatform.PS5, copy.Platform));
+        Assert.Equal(
+            "00012345000058",
+            restoredDoom.PhysicalCopies.Single(copy => copy.NormalizedGtin is not null).NormalizedGtin);
 
         Assert.Equal(1, await _db.Tags.CountAsync());
         var restoredLink = await _db.ManualLinks.SingleAsync();
@@ -294,6 +301,74 @@ public sealed class BackupImportTests : IDisposable
         Assert.True(result.Restored);
         Assert.Empty(_db.PhysicalGameCopies);
         Assert.Equal("Legacy", (await _db.UnifiedGames.SingleAsync()).Title);
+    }
+
+    [Fact]
+    public async Task Restore_V2BackupWithCopiesWithoutGtin_RemainsSupported()
+    {
+        var game = CreateGame("v2-physical", "V2 Physical", "v2", []) with
+        {
+            PhysicalCopies =
+            [
+                new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS3),
+                new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS3)
+            ]
+        };
+        var backup = CreateBackup(game) with { FormatVersion = 2 };
+
+        var validation = _service.Validate(backup);
+        var restore = await _service.RestoreAsync(backup);
+
+        Assert.True(validation.IsValid);
+        Assert.True(restore.Restored);
+        var copies = await _db.PhysicalGameCopies.ToListAsync();
+        Assert.Equal(2, copies.Count);
+        Assert.All(copies, copy => Assert.Null(copy.NormalizedGtin));
+    }
+
+    [Fact]
+    public async Task Restore_V3Backup_AllowsRepeatedCanonicalGtins()
+    {
+        var game = CreateGame("v3-physical", "V3 Physical", "v3", []) with
+        {
+            PhysicalCopies =
+            [
+                new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS4, "00012345000058"),
+                new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS4, "00012345000058")
+            ]
+        };
+        var backup = CreateBackup(game);
+
+        var validation = _service.Validate(backup);
+        var restore = await _service.RestoreAsync(backup);
+
+        Assert.True(validation.IsValid);
+        Assert.True(restore.Restored);
+        Assert.Equal(
+            2,
+            await _db.PhysicalGameCopies.CountAsync(copy => copy.NormalizedGtin == "00012345000058"));
+    }
+
+    [Theory]
+    [InlineData("00012345000059", "invalid_normalized_gtin")]
+    [InlineData("012345000058", "non_canonical_normalized_gtin")]
+    public async Task Restore_V3BackupRejectsInvalidGtinBeforeWriting(string gtin, string errorCode)
+    {
+        var game = CreateGame("invalid-v3", "Invalid V3", "invalid-v3", []) with
+        {
+            PhysicalCopies =
+            [new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS5, gtin)]
+        };
+        var backup = CreateBackup(game);
+
+        var validation = _service.Validate(backup);
+        var restore = await _service.RestoreAsync(backup);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Code == errorCode);
+        Assert.False(restore.Restored);
+        Assert.Empty(_db.UnifiedGames);
+        Assert.Empty(_db.PhysicalGameCopies);
     }
 
     [Fact]

@@ -12,6 +12,7 @@ import { LogoutButton } from "@/components/LogoutButton";
 /** Navigation links shared between desktop and mobile menus */
 const NAV_LINKS = [
     { href: "/library", label: "Unified Library", match: (p: string) => p.startsWith("/library") || p === "/" },
+    { href: "/physical/add", label: "Add Physical", match: (p: string) => p.startsWith("/physical") },
     { href: "/stats", label: "Stats", match: (p: string) => p.startsWith("/stats") },
     { href: "/admin", label: "Admin", match: (p: string) => p.startsWith("/admin") },
 ] as const;

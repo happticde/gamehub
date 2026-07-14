@@ -5,7 +5,8 @@ namespace GameHub.Core.Models.Backup;
 
 /// <summary>
 /// Versioned provider-independent GameHub backup document. The type name is retained for source
-/// compatibility; format version 2 adds physical copies while version 1 remains importable.
+/// compatibility; V2 adds physical copies and V3 adds optional normalized GTINs while V1 and V2
+/// remain importable.
 /// </summary>
 /// <param name="Format">Stable format identifier used during validation.</param>
 /// <param name="FormatVersion">Schema version of this document.</param>
@@ -28,7 +29,7 @@ public sealed record GameHubBackupV1(
 /// <param name="Items">Owned platform entries.</param>
 /// <param name="ManualLinks">Manual matching overrides targeting this game.</param>
 /// <param name="PhysicalCopies">
-/// Physical copies in V2. Null represents a V1 document where the field did not exist.
+/// Physical copies in V2 and V3. Null represents a V1 document where the field did not exist.
 /// </param>
 public sealed record BackupGameV1(
     string Title,
@@ -104,6 +105,9 @@ public sealed record BackupManualLinkV1(
     Platform Platform,
     string ExternalId);
 
-/// <summary>One physical game copy introduced by backup format V2.</summary>
+/// <summary>One physical game copy introduced by V2 and extended with an optional GTIN in V3.</summary>
 /// <param name="Platform">Supported physical PlayStation platform.</param>
-public sealed record BackupPhysicalGameCopyV2(PhysicalGamePlatform Platform);
+/// <param name="NormalizedGtin">Optional canonical GTIN-14. This must be null in V2.</param>
+public sealed record BackupPhysicalGameCopyV2(
+    PhysicalGamePlatform Platform,
+    string? NormalizedGtin = null);

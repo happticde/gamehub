@@ -4,6 +4,39 @@ export type PhysicalGamePlatform = "PS3" | "PS4" | "PS5";
 export interface PhysicalGameCopy {
     id: number;
     platform: PhysicalGamePlatform;
+    normalizedGtin: string | null;
+}
+
+/** One game suggested by a tenant-local confirmed GTIN lookup. */
+export interface PhysicalGtinCandidate {
+    gameId: number;
+    title: string;
+    slug: string;
+    platforms: PhysicalGamePlatform[];
+    copyCount: number;
+}
+
+/** Response from GET /api/library/physical-copies/gtin-lookup. */
+export interface PhysicalGtinLookupResponse {
+    normalizedGtin: string;
+    candidates: PhysicalGtinCandidate[];
+}
+
+/** Minimal game shape used by the physical capture search. */
+export interface PhysicalGameSearchResult {
+    id: number;
+    title: string;
+    slug: string;
+    coverUrl: string | null;
+}
+
+/** Response from POST /api/library/physical-copies/capture. */
+export interface PhysicalCaptureResponse {
+    gameId: number;
+    title: string;
+    slug: string;
+    createdManualGame: boolean;
+    copy: PhysicalGameCopy;
 }
 
 export interface Tag {

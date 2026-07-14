@@ -4,26 +4,31 @@
 
 ### What Changed
 
-**Physical Collection Capture Strategy:**
-- Reassessed barcode, manual search, OCR, visual recognition, and bulk import from the product,
-  browser, catalogue, privacy, tenant, domain-model, and portability perspectives.
-- Added ADR-014. Phase 2 is now a global, human-confirmed assisted-capture funnel instead of a
-  barcode-only feature: manual tenant search remains universal, barcode is the primary optional
-  accelerator, and OCR is a bounded on-device fallback experiment.
-- Recorded that physical-only titles need explicit manual game creation; provider, barcode, OCR,
-  and image results may rank candidates but can never automatically create or assign a game.
-- Defined nullable, non-unique normalized GTIN storage on confirmed copies as the minimal future
-  model, with scanner symbology kept transient and tenant-local reuse only. A later
-  `PhysicalRelease` entity is deferred until release metadata creates a demonstrated need.
-- Reserved Backup V3 for durable barcode fields while preserving V1/V2 import semantics.
+**Physical Collection Phase 2A:**
+- Added a global mobile-first, human-confirmed capture funnel with tenant search, explicit existing
+  game selection, deliberate manual-game creation, PS3/PS4/PS5 selection, optional camera scanning
+  or typed GTIN, and a final visible confirmation before every write.
+- Added centralized server normalization for GTIN-12, GTIN-13, and GTIN-14 into canonical GTIN-14,
+  including GS1 check digits, leading-zero preservation, bounded visual separators, and explicit
+  rejection of ambiguous eight-digit UPC-E/EAN-8 input.
+- Added nullable non-unique `PhysicalGameCopy.NormalizedGtin`, tenant-local indexed lookup returning
+  all conflicting candidates, atomic existing/manual capture, deterministic parallel-safe manual
+  slug collisions, and later digital-sync reuse of the normal manual slug.
+- Added native `BarcodeDetector` progressive enhancement plus dynamically loaded
+  `@zxing/browser` 0.2.1 fallback. Camera frames remain local; audio is never requested; tracks stop
+  on success, cancellation, close, navigation, and unmount.
+- Introduced Backup V3 optional `normalizedGtin`, canonical validation before writes, repeated-value
+  restore, authenticated ownership, V1/V2 compatibility, and spreadsheet-safe CSV text.
+- Added SQLite and PostgreSQL migrations plus normalization, CRUD, payload, lookup, conflict,
+  cross-tenant, transaction, concurrency, sync, merge/split, backup, migration, and decoder tests.
 
 ### Known State / Pending
 
-- No decoder, OCR engine, product provider, dependency, schema, endpoint, or UI was implemented or
-  selected. Provider coverage and the barcode/OCR UX must first be benchmarked on representative
-  PS3/PS4/PS5 regional and special-edition cases.
-- No `.env`, authentication, cookie, digital sync, production configuration, or dependency file was
-  changed.
+- External product resolution/provider selection, provider metadata import, OCR/cover recognition,
+  automatic assignment/creation, GTIN-8/UPC-E expansion, `PhysicalRelease`, edition, and region
+  remain deferred.
+- No `.env`, authentication, cookie, digital provider/sync behavior, `ManualLink`, or production
+  configuration was changed. The only dependency addition is the reviewed barcode decoder.
 
 ## Current Session Summary (2026-07-13)
 

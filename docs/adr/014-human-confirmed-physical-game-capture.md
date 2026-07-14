@@ -193,13 +193,59 @@ always comes from the authenticated tenant context, and repeated GTINs remain va
 No backup version change occurs merely from accepting this ADR; V3 is introduced only with durable
 barcode storage.
 
+## Phase 2A Implementation Status (2026-07-14)
+
+The deterministic global capture and barcode-foundation slice is implemented:
+
+- `PhysicalGameCopy` retains its independent tenant-owned ID and now has only one additional
+  nullable `NormalizedGtin` string. The non-unique `(TenantId, NormalizedGtin)` index supports local
+  lookup while repeated values remain valid globally, across tenants, across games, and across
+  multiple copies of one game.
+- One server-side normalizer accepts checksum-valid GTIN-12, GTIN-13, and GTIN-14 plus single ASCII
+  spaces or hyphens between digit groups, then stores the zero-padded GTIN-14 representation.
+  Eight-digit input is deliberately rejected: GS1 documents that EAN-8 encodes GTIN-8 while UPC-E
+  carries a compressed GTIN-12 in the same displayed length, so a raw untrusted value cannot safely
+  choose the meaning. UPC-E is not silently treated as GTIN-8.
+- The global mobile-first UI searches tenant-owned games, lists every tenant-local GTIN candidate,
+  requires explicit selection when mappings conflict, supports deliberate manual-game creation,
+  and shows title, existing/new record, PS3/PS4/PS5 platform, and optional canonical GTIN before the
+  confirmed write. The detail-page quick-add remains available and accepts copies without a GTIN.
+- Existing-game capture is tenant-filtered. Manual game plus physical copy is one serializable
+  transaction; the existing slug generator is reused, collisions receive deterministic
+  `-manual-N` suffixes without merging, and the unsuffixed normal case remains discoverable by later
+  digital synchronization.
+- Camera capture starts only from a visible action, requests video without audio with an
+  environment-facing preference, and stops every track on success, cancellation, close, navigation,
+  or unmount. Native `BarcodeDetector` is used only after runtime format checks; the fallback is
+  dynamically loaded and frames never leave the device.
+- Backup V3 is implemented with optional per-copy `normalizedGtin`. New exports use V3; validation
+  rejects invalid or non-canonical values before writes; repeated values are valid; V1 and V2 remain
+  importable; restore derives ownership from the authenticated tenant; CSV renders the GTIN as text.
+
+### Decoder dependency decision
+
+The reviewed fallback is `@zxing/browser` 0.2.1, published 2026-07-06 under MIT. Its required
+`@zxing/library` 0.23.0 peer is Apache-2.0 and describes itself as maintenance-mode-only, although it
+was updated in April 2026. Registry metadata reports approximately 5.8 MB and 11.9 MB unpacked
+installation size respectively; dynamic import keeps this code outside the initial capture page
+path. The libraries support browser video decoding plus EAN-13 and UPC-A. No OCR, image-recognition,
+or product-catalogue dependency was added; the runtime reader is constrained to EAN-13 and UPC-A
+and does not enable QR capture.
+
+### Deliberate remaining scope
+
+External product resolution, provider selection and benchmarking, OCR/cover recognition, GTIN-8 or
+UPC-E expansion with trusted provenance, regional/edition metadata, and a `PhysicalRelease` entity
+remain open. A first-time unknown barcode therefore continues to tenant search or explicit manual
+creation, and no scan or provider data can create or select a game automatically.
+
 ## Rollout Plan
 
-1. **Global deterministic intake:** tenant-scoped search, explicit platform selection, and tested
-   manual game creation for physical-only titles.
-2. **Barcode proof and storage:** decoder abstraction, manual GTIN entry, validation, tenant-local
-   confirmed mapping, provider adapter, human confirmation, a nullable copy field, migrations, and
-   Backup V3.
+1. **Completed in Phase 2A:** global deterministic intake with tenant-scoped search, explicit
+   platform selection, tested manual game creation, local barcode decoding/manual GTIN entry,
+   tenant-local confirmed mappings, nullable copy storage, migrations, and Backup V3.
+2. **Deferred from Phase 2A:** benchmark and select a provider-neutral external product adapter only
+   if it improves first-time unknown-code capture without weakening confirmation or availability.
 3. **Provider selection:** choose and configure a production provider only after the representative
    coverage and operational benchmark.
 4. **OCR experiment:** compare the failed/no-barcode fallback with manual search on real cases; ship

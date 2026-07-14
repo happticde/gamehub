@@ -127,3 +127,11 @@ platform to PS3, PS4, or PS5. Direct tests cover cross-tenant read/delete denial
 rejection, same-platform coexistence across tenants, merge/split behavior, and V2 backup export and
 restore isolation. Request bodies contain only the physical platform; tenant ownership is never
 accepted from client data.
+
+Phase 2A adds a nullable, non-unique canonical GTIN to each copy and indexes it by tenant. Lookup
+begins from the filtered `PhysicalGameCopies` set and returns every conflicting game candidate only
+inside the authenticated tenant. Capture rejects a foreign game target; manual game plus copy is one
+transaction; request bodies still cannot select ownership. Backup V3 restores repeated GTINs into
+the authenticated tenant without importing source ownership. Direct tests cover same-GTIN
+coexistence across tenants, non-inference, conflicting local mappings, foreign targets, duplicate
+copies, manual capture, parallel slug allocation, and cross-tenant V3 restore.

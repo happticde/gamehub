@@ -113,6 +113,7 @@ builder.Services.AddScoped<AccountDeletionService>();
 builder.Services.AddScoped<ActivityLogService>();
 builder.Services.AddScoped<BackupExportService>();
 builder.Services.AddScoped<BackupImportService>();
+builder.Services.AddScoped<PhysicalGameCaptureService>();
 builder.Services.AddSingleton<BackupCsvSerializer>();
 builder.Services.AddSingleton<BackupJsonSerializer>();
 builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
