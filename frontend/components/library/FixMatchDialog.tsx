@@ -2,27 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2, Link2 } from "lucide-react";
+import { MetadataSearchResultCard } from "@/components/library/MetadataSearchResultCard";
 import { getErrorMessage } from "@/lib/errors";
 import type { ApiMessageResponse } from "@/types/api";
-
-interface SearchResult {
-    providerId: number;
-    matchedTitle: string;
-    coverUrl: string | null;
-    firstReleaseDate: string | null;
-    summary: string | null;
-}
+import type { MetadataSearchResult } from "@/types/game";
 
 export default function FixMatchDialog({ gameId, initialTitle }: { gameId: number, initialTitle: string }) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState(initialTitle);
-    const [results, setResults] = useState<SearchResult[]>([]);
+    const [results, setResults] = useState<MetadataSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isApplying, setIsApplying] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -38,7 +31,7 @@ export default function FixMatchDialog({ gameId, initialTitle }: { gameId: numbe
         try {
             const res = await fetch(`/api/core/library/enrichment/search?title=${encodeURIComponent(query)}&limit=10`);
             if (!res.ok) throw new Error("Search failed");
-            const data: SearchResult[] = await res.json();
+            const data: MetadataSearchResult[] = await res.json();
             setResults(data || []);
         } catch (caughtError: unknown) {
             setError(getErrorMessage(caughtError, "Failed to search."));
@@ -110,35 +103,15 @@ export default function FixMatchDialog({ gameId, initialTitle }: { gameId: numbe
                                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                             </div>
                         ) : results && results.length > 0 ? (
-                            results.map((r) => (
-                                <div key={r.providerId} className="flex gap-4 p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                                    <div className="w-16 h-20 bg-muted rounded overflow-hidden shrink-0 relative">
-                                        {r.coverUrl ? (
-                                            <Image src={r.coverUrl} alt="Cover" fill className="object-cover" unoptimized />
-                                        ) : (
-                                            <div className="flex items-center justify-center h-full text-xs text-muted-foreground">No img</div>
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-semibold text-sm truncate">{r.matchedTitle || "Unknown Title"}</h4>
-                                        <div className="text-xs text-muted-foreground mb-2">
-                                            {r.firstReleaseDate ? new Date(r.firstReleaseDate).getFullYear() : "Unknown Year"} • ID: {r.providerId}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground line-clamp-2">
-                                            {r.summary || "No description available."}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center">
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            onClick={() => handleSelect(r.providerId)}
-                                            disabled={isApplying !== null}
-                                        >
-                                            {isApplying === r.providerId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Select"}
-                                        </Button>
-                                    </div>
-                                </div>
+                            results.map((result) => (
+                                <MetadataSearchResultCard
+                                    key={result.providerId}
+                                    result={result}
+                                    actionLabel="Select"
+                                    onAction={() => handleSelect(result.providerId)}
+                                    pending={isApplying === result.providerId}
+                                    disabled={isApplying !== null}
+                                />
                             ))
                         ) : !isSearching && query !== initialTitle ? (
                             <div className="text-center py-10 text-muted-foreground">No results found for &quot;{query}&quot;.</div>

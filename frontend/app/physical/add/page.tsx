@@ -11,7 +11,7 @@ export default function AddPhysicalGamePage() {
             <div className="mb-7">
                 <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Add physical game</h1>
                 <p className="mt-2 text-muted-foreground">
-                    Add a PS3, PS4, or PS5 copy from anywhere. GameHub writes only after your final confirmation.
+                    Find the game on IGDB, choose PS3, PS4, or PS5, and review everything before GameHub writes.
                 </p>
             </div>
             <PhysicalGameCapture />

@@ -24,7 +24,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
 | Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
 | Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
-| Physical collection | ✅ Phase 2B neutral catalogue adapter/harness; production provider blocked |
+| Physical collection | ✅ Manual-first IGDB capture; barcode/catalogue UI deferred |
 
 ---
 
@@ -149,7 +149,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   documents remain tenant-neutral. Cross-tenant isolation, active-tenant empty-library behavior,
   and physical-copy ownership are covered by tests. See [ADR-008](adr/008-data-portability-format.md).
 
-### 13. Physical Collection — Phase 2B Neutral Adapter ✅ / Provider Selection and OCR Deferred
+### 13. Physical Collection — Manual-First IGDB Capture ✅
 - **Phase 1 (2026-07-13)**: Tenant-owned physical-copy records with independent IDs can be added to
   an existing Unified Game, listed in detail and library payloads, filtered separately by PS3, PS4,
   or PS5, and removed with confirmation. Multiple copies of the same game/platform are valid.
@@ -157,21 +157,27 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   `LibraryItem`, sync, or `ManualLink` semantics. Composite tenant/game relationships are enforced
   in SQLite and PostgreSQL. Manual merge moves every copy to the target; manual split moves only the
   selected digital item and leaves physical copies on the original game.
-- **Phase 2A (2026-07-14)**: [ADR-014](adr/014-human-confirmed-physical-game-capture.md) is implemented
-  as a global mobile-first, human-confirmed funnel. Tenant search is universal; explicit manual-game
-  creation covers physical-only titles; optional UPC-A/EAN-13 scan or typed GTIN can reuse every
-  conflicting tenant-local confirmed mapping without selecting a winner.
+- **Active capture workflow (2026-07-14)**: [ADR-014](adr/014-human-confirmed-physical-game-capture.md)
+  now defines a manual-first IGDB funnel. It reuses the Fix Match provider search and result card,
+  requires explicit result selection and an initially empty PS3/PS4/PS5 choice, shows a final
+  summary, and writes only after confirmation.
+- **Tenant-local create/reuse**: Core verifies the selected provider ID again, reuses only the
+  authenticated tenant's exact `(MetadataSource, MetadataProviderId)` match, or atomically creates
+  an enriched tenant-owned game plus its first physical copy. Title similarity never authorizes a
+  link, another tenant's match is invisible, and repeated copies remain valid.
+- **Search behavior**: Title search is debounced, cancelled, and protected by a request-generation
+  guard. Loading, no-result, and sanitized provider-failure states are explicit. IGDB platform data
+  is displayed only as a hint and never selects the physical platform.
 - **GTIN and privacy**: Copies store a nullable, non-unique canonical GTIN-14 string with a
-  tenant-appropriate lookup index. Camera frames stay local; video-only capture starts from a visible
-  action and all tracks are stopped on every exit path. Scanner symbology and raw input are transient.
+  tenant-appropriate lookup index. The active UI no longer offers scanning, typed GTIN, confirmed
+  GTIN candidates, or external product-catalogue suggestions.
 - **Portability**: Backup V3 and CSV include optional canonical GTINs. Restore accepts V1, V2, and
   V3, rejects invalid V3 values before writes, assigns ownership from authentication, and allows
   repeated GTINs.
-- **Phase 2B (2026-07-14)**: A provider-neutral Core adapter now keeps tenant-local confirmed
+- **Retained Phase 2B infrastructure**: A provider-neutral Core adapter keeps tenant-local confirmed
   mappings first, validates only normalized GTINs, bounds provider calls with a short timeout, and
-  safely degrades across disabled/no-result/429/5xx/timeout/malformed outcomes. External title and
-  PS3/PS4/PS5 hints are visibly separate and require an explicit copy-to-search/manual action plus
-  the unchanged final confirmation; they never select or write automatically.
+  safely degrades across disabled/no-result/429/5xx/timeout/malformed outcomes. It and the benchmark
+  harness remain default-disabled technical boundaries and are no longer wired into the active UI.
 - **Provider decision**: No production provider was selected. Official-source review found the
   closest game-specific candidate (PriceCharting) has an unresolved third-party-software license
   boundary; MobyGames lacks a documented direct product-code REST lookup; generic barcode services
@@ -188,9 +194,10 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   verified PS3/PS4/PS5 or EU/US coverage, no reliable platform field, and no suitable evidence for
   a production selection. Any evaluation requires written usage review and a representative live
   benchmark; it is deliberately not assigned to a defined next milestone.
-- **Remaining scope**: Written provider usage permission, representative live benchmarking,
-  production provider/credential selection, OCR/cover recognition, automatic assignment/creation,
-  regional or edition data, and `PhysicalRelease` remain deferred.
+- **Unscheduled experimental backlog**: Barcode capture, OCR/cover recognition, provider selection,
+  representative catalogue benchmarking, regional or edition data, and `PhysicalRelease` remain
+  unassigned to a defined next milestone. IGDB coverage for physical editions or regions is not
+  claimed.
 
 ### 14. Discovery: "Surprise Me" (Random Pick) ✅
 - **Feature**: Random game selection button that respects active filters (e.g., "Random RPG I haven't finished").
@@ -341,7 +348,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
 | **Multi-user readiness** | #8 technically complete; operator activation remains explicit and default-off ✅ |
 | **AI integration** | #11 MCP Server (High Value) |
-| **Data & Portability** | #12 Import/Export → #13 provider evidence/OCR follow-ups (Phase 2B neutral boundary complete) |
+| **Data & Portability** | #12 Import/Export → #13 manual-first IGDB physical capture complete |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
 | **Future platform integration** | #16 Epic authentication and stored retrieval → #17 guided GOG/PSN account connect |
 | **Controlled onboarding** | #18 Registration/invitations → #19 provider lifecycle follow-ups (personal JIT implemented) |

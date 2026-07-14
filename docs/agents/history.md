@@ -4,6 +4,27 @@
 
 ### What Changed
 
+**Manual-First IGDB Physical Capture:**
+- Fixed the second-new-game path when a provider capture reuses an existing tenant genre. The game
+  and copy now receive trusted tenant ownership and a durable game ID before composite tag joins
+  are built, while both saves remain inside the same serializable transaction. Regression coverage
+  proves shared-genre reuse and rollback when the metadata/tag save fails.
+- Replaced the visible barcode/GTIN/catalogue funnel with a three-step IGDB title search, explicit
+  result selection, initially empty PS3/PS4/PS5 selection, and final confirmation-only write.
+- Reused the Fix Match enrichment endpoint, provider-neutral DTO, and shared result card. Search is
+  debounced, cancelled, generation-guarded against stale responses, and has explicit loading,
+  no-result, and sanitized failure states.
+- Added a confirmed server workflow that re-verifies the selected provider ID, reuses only an exact
+  tenant-local `(MetadataSource, MetadataProviderId)` identity, or atomically creates an enriched
+  tenant-owned game and first physical copy. Duplicate copies remain valid and no digital item,
+  manual link, or sync semantics change.
+- Removed the now-unused camera component, browser decoder, decoder tests, and ZXing dependency.
+  GTIN columns/normalization/lookups, Backup V3, and the provider-neutral catalogue adapter/harness
+  remain intact but are not exposed in the active UI.
+- Updated ADR-014, Roadmap item #13, and the tenant-isolation audit. Barcode/OCR and the UPC Database
+  experiment remain uncommitted backlog without a defined next milestone; no IGDB physical-edition
+  or region coverage is claimed.
+
 **Physical Collection Phase 2B:**
 - Reviewed PriceCharting, MobyGames, Barcode Lookup, UPCitemdb, and Verified by GS1 using only
   official documentation. No production provider was selected because compatible usage permission,
@@ -40,15 +61,20 @@
 
 ### Verification
 
-- Core, Ingest, and the product-catalogue benchmark harness build in the devcontainer with zero
-  warnings and errors.
-- The full .NET suite passes 387 tests. Physical capture frontend tests pass 3 tests; repository-wide
-  frontend lint and the Next.js production build pass.
+- The new provider-capture integration tests cover IGDB hits/no-result/safe failure, confirmation,
+  exact same-tenant reuse, cross-tenant non-reuse, atomic creation, duplicates, and absence of
+  digital/manual-link writes using fakes only. Frontend state tests cover stale responses, explicit
+  selection/platform/confirmation, write-free back/cancel, and absent barcode/catalogue UI.
+- Core builds in the devcontainer with zero warnings and errors. The full .NET suite passes 393
+  tests. Physical capture frontend tests pass 4 tests; repository-wide frontend lint and the
+  Next.js production build pass.
 - The synthetic disabled-provider harness smoke run returns only the safe `Disabled` outcome and
   exit code 2, as designed. It is not a live provider benchmark.
 
 ### Known State / Pending
 
+- No live IGDB request was executed. IGDB availability remains required by the active capture UI,
+  and IGDB does not guarantee physical edition, packaging, region, or product-code coverage.
 - Production provider selection remains blocked on written usage permission, provider access, and a
   representative verified EU/US PS3/PS4/PS5 benchmark dataset. OCR/cover recognition, automatic
   assignment/creation, GTIN-8/UPC-E expansion, `PhysicalRelease`, edition, and region remain

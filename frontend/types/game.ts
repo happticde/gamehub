@@ -7,43 +7,24 @@ export interface PhysicalGameCopy {
     normalizedGtin: string | null;
 }
 
-/** One game suggested by a tenant-local confirmed GTIN lookup. */
-export interface PhysicalGtinCandidate {
-    gameId: number;
-    title: string;
-    slug: string;
-    platforms: PhysicalGamePlatform[];
-    copyCount: number;
-}
-
-/** Untrusted, non-persisted hint returned by an optional server-side product catalogue. */
-export interface PhysicalProductCatalogSuggestion {
-    title: string;
-    platform: PhysicalGamePlatform | null;
-}
-
-/** Response from GET /api/library/physical-copies/gtin-lookup. */
-export interface PhysicalGtinLookupResponse {
-    normalizedGtin: string;
-    candidates: PhysicalGtinCandidate[];
-    externalSuggestions: PhysicalProductCatalogSuggestion[];
-}
-
-/** Minimal game shape used by the physical capture search. */
-export interface PhysicalGameSearchResult {
-    id: number;
-    title: string;
-    slug: string;
-    coverUrl: string | null;
-}
-
 /** Response from POST /api/library/physical-copies/capture. */
 export interface PhysicalCaptureResponse {
     gameId: number;
     title: string;
     slug: string;
+    createdGame: boolean;
     createdManualGame: boolean;
     copy: PhysicalGameCopy;
+}
+
+/** Provider-neutral game result returned by the existing enrichment search endpoint. */
+export interface MetadataSearchResult {
+    providerId: number;
+    matchedTitle: string | null;
+    coverUrl: string | null;
+    firstReleaseDate: string | null;
+    summary: string | null;
+    platforms: string[] | null;
 }
 
 export interface Tag {

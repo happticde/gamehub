@@ -151,3 +151,17 @@ timeout, and malformed responses all return an empty external-hint list without 
 credentials, provider payloads, diagnostics, or status details in logs/browser responses. No
 database schema, backup format, authentication, cookie, digital sync, or cross-tenant learning path
 was added in Phase 2B.
+
+The manual-first IGDB follow-up removes barcode, GTIN, and catalogue suggestions from the active UI
+while preserving that server-side infrastructure. The authenticated enrichment search is stateless
+and writes no tenant data. A confirmed capture re-fetches the explicitly selected provider ID, then
+queries `UnifiedGames` through the active tenant filter for the exact
+`(MetadataSource, MetadataProviderId)` pair. It never uses an unfiltered query, caller tenant ID,
+title equality, or another tenant's match. On a local miss, the verified metadata, automatic tags,
+and first physical copy are committed atomically with ownership supplied by `CoreContext`.
+
+Direct two-tenant tests prove that an identical IGDB ID in another tenant is neither reused nor
+disclosed, an exact same-tenant identity is reused, provider-backed creation remains tenant-owned,
+multiple same-platform copies remain valid, and no `LibraryItem` or `ManualLink` is created. Search,
+missing-result, provider-failure, and unconfirmed requests are write-free and expose only sanitized
+messages. No global IGDB mapping, schema, backup, authentication, cookie, or sync change was added.
