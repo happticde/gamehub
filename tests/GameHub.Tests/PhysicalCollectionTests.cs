@@ -303,6 +303,184 @@ public sealed class PhysicalCollectionTests : IDisposable
     }
 
     [Fact]
+    public async Task MetadataSearch_HitsNoResultsAndFailureAreSafeAndWriteFree()
+    {
+        var metadata = CreateMetadata(7001, "Search hit");
+        await using var db = CreateContext(TenantA);
+
+        var hitResult = Assert.IsType<OkObjectResult>(await CreateController(
+            db,
+            TenantA,
+            new FakeMetadataProvider([metadata], metadata)).SearchEnrichment("Search hit"));
+        Assert.Equal(metadata, Assert.Single(Assert.IsType<List<GameMetadata>>(hitResult.Value)));
+
+        var emptyResult = Assert.IsType<OkObjectResult>(await CreateController(
+            db,
+            TenantA,
+            new FakeMetadataProvider([], null)).SearchEnrichment("Missing"));
+        Assert.Empty(Assert.IsType<List<GameMetadata>>(emptyResult.Value));
+
+        const string secretDiagnostic = "provider-secret-response";
+        var errorResult = Assert.IsType<ObjectResult>(await CreateController(
+            db,
+            TenantA,
+            new FakeMetadataProvider([], null, new InvalidOperationException(secretDiagnostic)))
+            .SearchEnrichment("Failure"));
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, errorResult.StatusCode);
+        Assert.DoesNotContain(secretDiagnostic, GetProperty<string>(errorResult.Value!, "Message"));
+        Assert.Empty(db.UnifiedGames);
+        Assert.Empty(db.PhysicalGameCopies);
+    }
+
+    [Fact]
+    public async Task CapturePhysicalGame_ProviderIdentityReusesOnlyTenantLocalGameAndAllowsDuplicates()
+    {
+        var metadata = CreateMetadata(7002, "Provider match");
+        int tenantAGameId;
+        await using (var tenantASeed = CreateContext(TenantA))
+        {
+            var game = new UnifiedGame
+            {
+                Title = "Tenant A match",
+                Slug = "provider-match",
+                MetadataSource = "IGDB",
+                MetadataProviderId = metadata.ProviderId
+            };
+            tenantASeed.UnifiedGames.Add(game);
+            await tenantASeed.SaveChangesAsync();
+            tenantAGameId = game.Id;
+        }
+
+        int tenantBGameId;
+        await using (var tenantBSeed = CreateContext(TenantB))
+        {
+            var game = new UnifiedGame
+            {
+                Title = "Tenant B private match",
+                Slug = "provider-match",
+                MetadataSource = "IGDB",
+                MetadataProviderId = metadata.ProviderId
+            };
+            tenantBSeed.UnifiedGames.Add(game);
+            await tenantBSeed.SaveChangesAsync();
+            tenantBGameId = game.Id;
+        }
+
+        await using (var actionDb = CreateContext(TenantA))
+        {
+            var controller = CreateController(
+                actionDb,
+                TenantA,
+                new FakeMetadataProvider([], metadata));
+            for (var copy = 0; copy < 2; copy++)
+            {
+                var result = Assert.IsType<ObjectResult>(await controller.CapturePhysicalGame(
+                    new CapturePhysicalGameRequest
+                    {
+                        MetadataProviderId = metadata.ProviderId,
+                        Platform = PhysicalGamePlatform.PS4,
+                        Confirmed = true
+                    }));
+                Assert.Equal(StatusCodes.Status201Created, result.StatusCode);
+                Assert.Equal(tenantAGameId, GetProperty<int>(result.Value!, "GameId"));
+                Assert.False(GetProperty<bool>(result.Value!, "CreatedGame"));
+            }
+        }
+
+        await using var tenantAVerify = CreateContext(TenantA);
+        Assert.Single(tenantAVerify.UnifiedGames);
+        Assert.Equal(2, await tenantAVerify.PhysicalGameCopies.CountAsync());
+
+        await using var tenantBVerify = CreateContext(TenantB);
+        Assert.Equal(tenantBGameId, (await tenantBVerify.UnifiedGames.SingleAsync()).Id);
+        Assert.Empty(tenantBVerify.PhysicalGameCopies);
+    }
+
+    [Fact]
+    public async Task CapturePhysicalGame_NewProviderGameAndCopyAreAtomicTenantOwnedAndDoNotLinkDigitalItems()
+    {
+        var metadata = CreateMetadata(7003, "Physical-only IGDB game");
+        await using (var actionDb = CreateContext(TenantC))
+        {
+            var result = Assert.IsType<ObjectResult>(await CreateController(
+                actionDb,
+                TenantC,
+                new FakeMetadataProvider([], metadata)).CapturePhysicalGame(
+                new CapturePhysicalGameRequest
+                {
+                    MetadataProviderId = metadata.ProviderId,
+                    Platform = PhysicalGamePlatform.PS5,
+                    Confirmed = true
+                }));
+            Assert.Equal(StatusCodes.Status201Created, result.StatusCode);
+            Assert.True(GetProperty<bool>(result.Value!, "CreatedGame"));
+            Assert.False(GetProperty<bool>(result.Value!, "CreatedManualGame"));
+        }
+
+        await using var verify = CreateContext(TenantC);
+        var game = await verify.UnifiedGames
+            .Include(candidate => candidate.PhysicalCopies)
+            .Include(candidate => candidate.Tags)
+            .SingleAsync();
+        Assert.Equal(TenantC, game.TenantId);
+        Assert.Equal(metadata.ProviderId, game.MetadataProviderId);
+        Assert.Equal("IGDB", game.MetadataSource);
+        Assert.Equal(metadata.CoverUrl, game.CoverUrl);
+        Assert.Equal(PhysicalGamePlatform.PS5, Assert.Single(game.PhysicalCopies).Platform);
+        Assert.Contains(game.Tags, tag => tag.Name == "Action");
+        Assert.Empty(verify.LibraryItems);
+        Assert.Empty(verify.ManualLinks);
+
+        await using var otherTenant = CreateContext(TenantA);
+        Assert.DoesNotContain(otherTenant.UnifiedGames, candidate => candidate.MetadataProviderId == metadata.ProviderId);
+    }
+
+    [Fact]
+    public async Task CapturePhysicalGame_UnconfirmedMissingOrFailedProviderLookupPerformsNoWrite()
+    {
+        const string secretDiagnostic = "provider-secret-response";
+        await using var db = CreateContext(TenantA);
+        var failingProvider = new FakeMetadataProvider(
+            [],
+            null,
+            byIdException: new InvalidOperationException(secretDiagnostic));
+        var controller = CreateController(db, TenantA, failingProvider);
+
+        Assert.IsType<BadRequestObjectResult>(await controller.CapturePhysicalGame(
+            new CapturePhysicalGameRequest
+            {
+                MetadataProviderId = 7004,
+                Platform = PhysicalGamePlatform.PS3,
+                Confirmed = false
+            }));
+        Assert.Equal(0, failingProvider.GetByIdCalls);
+
+        var failed = Assert.IsType<ObjectResult>(await controller.CapturePhysicalGame(
+            new CapturePhysicalGameRequest
+            {
+                MetadataProviderId = 7004,
+                Platform = PhysicalGamePlatform.PS3,
+                Confirmed = true
+            }));
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, failed.StatusCode);
+        Assert.DoesNotContain(secretDiagnostic, GetProperty<string>(failed.Value!, "Message"));
+
+        var missing = Assert.IsType<NotFoundObjectResult>(await CreateController(
+            db,
+            TenantA,
+            new FakeMetadataProvider([], null)).CapturePhysicalGame(
+            new CapturePhysicalGameRequest
+            {
+                MetadataProviderId = 7005,
+                Platform = PhysicalGamePlatform.PS3,
+                Confirmed = true
+            }));
+        Assert.Equal("metadata_game_not_found", GetProperty<string>(missing.Value!, "Code"));
+        Assert.Empty(db.UnifiedGames);
+        Assert.Empty(db.PhysicalGameCopies);
+    }
+
+    [Fact]
     public async Task CaptureManualGame_ParallelRequestsAllocateDistinctSlugs()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"gamehub-physical-{Guid.NewGuid():N}.db");
@@ -635,7 +813,10 @@ public sealed class PhysicalCollectionTests : IDisposable
         await db.SaveChangesAsync();
     }
 
-    private static LibraryController CreateController(CoreContext db, Guid tenantId) =>
+    private static LibraryController CreateController(
+        CoreContext db,
+        Guid tenantId,
+        IGameMetadataProvider? metadataProvider = null) =>
         new(
             null!,
             null!,
@@ -645,7 +826,21 @@ public sealed class PhysicalCollectionTests : IDisposable
             new SyncSchedulerStatus(),
             new FixedTenantContext(tenantId),
             new ActivityLogService(db),
-            null!);
+            metadataProvider!);
+
+    private static GameMetadata CreateMetadata(int providerId, string title) => new(
+        providerId,
+        "https://images.example.test/cover.jpg",
+        "Fixture summary",
+        ["Action"],
+        new DateTime(2020, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+        87.5,
+        title,
+        ["PlayStation 4"],
+        ["https://images.example.test/artwork.jpg"],
+        ["https://images.example.test/screenshot.jpg"],
+        ["Fixture Developer"],
+        ["Fixture Publisher"]);
 
     private static T GetProperty<T>(object value, string propertyName)
     {
@@ -659,6 +854,35 @@ public sealed class PhysicalCollectionTests : IDisposable
     private sealed class FixedTenantContext(Guid tenantId) : ITenantContext
     {
         public Guid TenantId { get; } = tenantId;
+    }
+
+    private sealed class FakeMetadataProvider(
+        List<GameMetadata> searchResults,
+        GameMetadata? byIdResult,
+        Exception? searchException = null,
+        Exception? byIdException = null) : IGameMetadataProvider
+    {
+        public string ProviderName => "IGDB";
+        public int GetByIdCalls { get; private set; }
+
+        public Task<GameMetadata?> SearchAsync(string title, CancellationToken ct = default) =>
+            Task.FromResult(searchResults.FirstOrDefault());
+
+        public Task<List<GameMetadata>> SearchManyAsync(
+            string title,
+            int limit = 10,
+            CancellationToken ct = default) =>
+            searchException is null
+                ? Task.FromResult(searchResults.Take(limit).ToList())
+                : Task.FromException<List<GameMetadata>>(searchException);
+
+        public Task<GameMetadata?> GetByIdAsync(int providerId, CancellationToken ct = default)
+        {
+            GetByIdCalls += 1;
+            return byIdException is null
+                ? Task.FromResult(byIdResult?.ProviderId == providerId ? byIdResult : null)
+                : Task.FromException<GameMetadata?>(byIdException);
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

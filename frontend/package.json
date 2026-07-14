@@ -5,13 +5,12 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3005",
     "build": "next build",
-    "test:physical-capture": "node --no-warnings --test tests/physical-barcode-decoder.test.ts",
+    "test:physical-capture": "node --no-warnings --test tests/physical-igdb-capture.test.ts",
     "test:security": "node --no-warnings --test tests/*.test.mjs",
     "start": "next start -H 0.0.0.0",
     "lint": "eslint"
   },
   "dependencies": {
-    "@zxing/browser": "0.2.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

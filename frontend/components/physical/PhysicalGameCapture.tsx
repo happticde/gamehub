@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Gamepad2, Loader2, Plus, Search, ScanBarcode } from "lucide-react";
-import { CameraBarcodeScanner } from "@/components/physical/CameraBarcodeScanner";
+import { ArrowLeft, Check, Gamepad2, Loader2, Search } from "lucide-react";
+import { MetadataSearchResultCard } from "@/components/library/MetadataSearchResultCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,161 +13,48 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { useDebouncedMetadataSearch } from "@/hooks/useDebouncedMetadataSearch";
 import { getErrorMessage } from "@/lib/errors";
 import type { ApiMessageResponse } from "@/types/api";
 import type {
-    PagedResult,
+    MetadataSearchResult,
     PhysicalCaptureResponse,
     PhysicalGamePlatform,
-    PhysicalGameSearchResult,
-    PhysicalGtinCandidate,
-    PhysicalGtinLookupResponse,
-    PhysicalProductCatalogSuggestion,
 } from "@/types/game";
 
 const PHYSICAL_PLATFORMS: readonly PhysicalGamePlatform[] = ["PS3", "PS4", "PS5"];
-
-interface SelectedGame {
-    id: number;
-    title: string;
-    slug: string;
-}
+type CaptureStep = "search" | "platform" | "confirm";
 
 export function PhysicalGameCapture() {
     const router = useRouter();
     const requestInFlight = useRef(false);
-    const [gtinInput, setGtinInput] = useState("");
-    const [normalizedGtin, setNormalizedGtin] = useState<string | null>(null);
-    const [gtinCandidates, setGtinCandidates] = useState<PhysicalGtinCandidate[]>([]);
-    const [externalSuggestions, setExternalSuggestions] = useState<PhysicalProductCatalogSuggestion[]>([]);
-    const [gtinPending, setGtinPending] = useState(false);
-    const [search, setSearch] = useState("");
-    const [searchResults, setSearchResults] = useState<PhysicalGameSearchResult[]>([]);
-    const [searchPending, setSearchPending] = useState(false);
-    const [selectedGame, setSelectedGame] = useState<SelectedGame | null>(null);
-    const [manualMode, setManualMode] = useState(false);
-    const [manualTitle, setManualTitle] = useState("");
-    const [platform, setPlatform] = useState<PhysicalGamePlatform>("PS5");
+    const [step, setStep] = useState<CaptureStep>("search");
+    const [query, setQuery] = useState("");
+    const [selectedResult, setSelectedResult] = useState<MetadataSearchResult | null>(null);
+    const [platform, setPlatform] = useState<PhysicalGamePlatform | null>(null);
     const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const search = useDebouncedMetadataSearch(query, step === "search");
 
-    useEffect(() => {
-        const query = search.trim();
-        if (query.length < 2 || manualMode) {
-            setSearchResults([]);
-            setSearchPending(false);
-            return;
-        }
-
-        const controller = new AbortController();
-        const timer = setTimeout(async () => {
-            setSearchPending(true);
-            try {
-                const response = await fetch(
-                    `/api/core/library?search=${encodeURIComponent(query)}&pageSize=10&sortBy=title`,
-                    { signal: controller.signal },
-                );
-                if (!response.ok) throw new Error("Game search is temporarily unavailable.");
-                const page = await response.json() as PagedResult<PhysicalGameSearchResult>;
-                setSearchResults(page.items);
-            } catch (caughtError: unknown) {
-                if (!(caughtError instanceof DOMException && caughtError.name === "AbortError")) {
-                    setError(getErrorMessage(caughtError, "Game search is temporarily unavailable."));
-                }
-            } finally {
-                if (!controller.signal.aborted) setSearchPending(false);
-            }
-        }, 250);
-
-        return () => {
-            clearTimeout(timer);
-            controller.abort();
-        };
-    }, [manualMode, search]);
-
-    const validateGtin = async (value = gtinInput) => {
-        const trimmed = value.trim();
-        if (!trimmed || gtinPending) return;
-
-        setGtinPending(true);
-        setError(null);
-        try {
-            const response = await fetch(
-                `/api/core/library/physical-copies/gtin-lookup?gtin=${encodeURIComponent(trimmed)}`,
-            );
-            const data = await response.json().catch(() => null) as
-                | PhysicalGtinLookupResponse
-                | ApiMessageResponse
-                | null;
-            if (!response.ok || !data || !("normalizedGtin" in data)) {
-                throw new Error(readApiMessage(data, "The GTIN is invalid."));
-            }
-
-            setNormalizedGtin(data.normalizedGtin);
-            setGtinCandidates(data.candidates);
-            setExternalSuggestions(data.externalSuggestions);
-        } catch (caughtError: unknown) {
-            setNormalizedGtin(null);
-            setGtinCandidates([]);
-            setExternalSuggestions([]);
-            setError(getErrorMessage(caughtError, "The GTIN could not be validated."));
-        } finally {
-            setGtinPending(false);
-        }
+    const selectResult = (result: MetadataSearchResult) => {
+        setSelectedResult(result);
+        setPlatform(null);
+        setSaveError(null);
     };
-
-    const selectExistingGame = (game: SelectedGame) => {
-        setSelectedGame(game);
-        setManualMode(false);
-        setManualTitle("");
-        setError(null);
-    };
-
-    const beginManualGame = () => {
-        setManualMode(true);
-        setSelectedGame(null);
-        setSearchResults([]);
-        setError(null);
-    };
-
-    const applyExternalSuggestionToSearch = (suggestion: PhysicalProductCatalogSuggestion) => {
-        setManualMode(false);
-        setSelectedGame(null);
-        setManualTitle("");
-        setSearch(suggestion.title);
-        if (suggestion.platform) setPlatform(suggestion.platform);
-        setError(null);
-    };
-
-    const applyExternalSuggestionToManualGame = (suggestion: PhysicalProductCatalogSuggestion) => {
-        setManualMode(true);
-        setSelectedGame(null);
-        setSearch("");
-        setSearchResults([]);
-        setManualTitle(suggestion.title);
-        if (suggestion.platform) setPlatform(suggestion.platform);
-        setError(null);
-    };
-
-    const targetTitle = manualMode ? manualTitle.trim() : selectedGame?.title ?? "";
-    const hasValidatedOptionalGtin = gtinInput.trim().length === 0 || normalizedGtin !== null;
-    const canSave = targetTitle.length > 0 && hasValidatedOptionalGtin && !saving;
 
     const saveCapture = async () => {
-        if (!canSave || requestInFlight.current) return;
+        if (step !== "confirm" || !selectedResult || !platform || requestInFlight.current) return;
 
         requestInFlight.current = true;
         setSaving(true);
-        setError(null);
+        setSaveError(null);
         try {
             const response = await fetch("/api/core/library/physical-copies/capture", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    existingGameId: manualMode ? null : selectedGame?.id,
-                    manualGameTitle: manualMode ? manualTitle.trim() : null,
+                    metadataProviderId: selectedResult.providerId,
                     platform,
-                    gtin: normalizedGtin,
                     confirmed: true,
                 }),
             });
@@ -182,272 +69,185 @@ export function PhysicalGameCapture() {
             router.push(`/library/${data.gameId}`);
             router.refresh();
         } catch (caughtError: unknown) {
-            setError(getErrorMessage(caughtError, "The physical game could not be saved."));
+            setSaveError(getErrorMessage(caughtError, "The physical game could not be saved."));
             requestInFlight.current = false;
             setSaving(false);
         }
     };
 
+    const selectedTitle = selectedResult?.matchedTitle?.trim() || "Unknown title";
+
     return (
         <div className="space-y-6">
-            <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
-                <div className="mb-4 flex items-start gap-3">
-                    <span className="rounded-full bg-primary/10 p-2 text-primary"><ScanBarcode className="h-5 w-5" /></span>
-                    <div>
-                        <h2 className="font-semibold">1. Optional barcode</h2>
-                        <p className="text-sm text-muted-foreground">
-                            Scan UPC-A/EAN-13 or enter a GTIN. Unknown codes continue to normal search.
-                        </p>
-                    </div>
-                </div>
+            {step === "search" && (
+                <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+                    <StepHeading icon={<Search className="h-5 w-5" />} title="1. Search IGDB">
+                        Search by title, then explicitly select the correct result.
+                    </StepHeading>
 
-                <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                        className="h-10"
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={gtinInput}
-                        onChange={(event) => {
-                            setGtinInput(event.target.value);
-                            setNormalizedGtin(null);
-                            setGtinCandidates([]);
-                            setExternalSuggestions([]);
-                        }}
-                        placeholder="UPC-A, EAN-13, or GTIN-14"
-                        aria-label="GTIN"
-                        disabled={saving}
-                    />
-                    <div className="flex gap-2">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => void validateGtin()}
-                            disabled={!gtinInput.trim() || gtinPending || saving}
-                        >
-                            {gtinPending ? <Loader2 className="animate-spin" /> : <Check />}
-                            Validate
-                        </Button>
-                        <CameraBarcodeScanner
-                            disabled={saving || gtinPending}
-                            onDetected={(rawValue) => {
-                                setGtinInput(rawValue);
-                                setNormalizedGtin(null);
-                                setGtinCandidates([]);
-                                setExternalSuggestions([]);
-                                void validateGtin(rawValue);
+                    <div className="relative">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            className="h-10 pl-9 pr-10"
+                            value={query}
+                            onChange={(event) => {
+                                setQuery(event.target.value);
+                                setSelectedResult(null);
+                                setPlatform(null);
+                                setSaveError(null);
                             }}
+                            placeholder="Search for a game on IGDB"
+                            aria-label="IGDB game title"
+                            autoComplete="off"
                         />
+                        {search.pending && (
+                            <Loader2 aria-label="Searching IGDB" className="absolute right-3 top-3 h-4 w-4 animate-spin" />
+                        )}
                     </div>
-                </div>
 
-                {normalizedGtin && (
-                    <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">
-                        Validated canonical GTIN: <span className="font-mono font-semibold">{normalizedGtin}</span>
-                    </p>
-                )}
-
-                {gtinCandidates.length > 0 && (
-                    <div className="mt-4 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3">
-                        <p className="text-sm font-medium">
-                            {gtinCandidates.length === 1
-                                ? "A tenant-local confirmed association was found. Select it if it is correct."
-                                : "Conflicting tenant-local associations were found. Choose the correct game explicitly."}
+                    {query.trim().length < 2 && (
+                        <p className="mt-3 text-sm text-muted-foreground">Enter at least two characters to search.</p>
+                    )}
+                    {search.error && (
+                        <p role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                            {search.error} No game or physical copy was created. You can adjust the title and retry.
                         </p>
-                        <div className="mt-2 grid gap-2">
-                            {gtinCandidates.map((candidate) => (
-                                <GameChoice
-                                    key={candidate.gameId}
-                                    title={candidate.title}
-                                    description={`${candidate.copyCount} confirmed copy/copies · ${candidate.platforms.join(", ")}`}
-                                    selected={selectedGame?.id === candidate.gameId}
-                                    onSelect={() => selectExistingGame({
-                                        id: candidate.gameId,
-                                        title: candidate.title,
-                                        slug: candidate.slug,
-                                    })}
+                    )}
+                    {!search.pending && !search.error && search.completedQuery && search.results.length === 0 && (
+                        <p className="mt-4 rounded-lg border bg-muted/40 p-4 text-center text-sm text-muted-foreground">
+                            No IGDB results found for &quot;{search.completedQuery}&quot;. Try a shorter or alternate title.
+                        </p>
+                    )}
+
+                    {search.results.length > 0 && (
+                        <div className="mt-4 grid gap-3">
+                            {search.results.map((result) => (
+                                <MetadataSearchResultCard
+                                    key={result.providerId}
+                                    result={result}
+                                    actionLabel="Select"
+                                    selected={selectedResult?.providerId === result.providerId}
+                                    onAction={() => selectResult(result)}
+                                    showPlatformHint
                                 />
                             ))}
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {externalSuggestions.length > 0 && (
-                    <div className="mt-4 rounded-lg border border-sky-500/35 bg-sky-500/10 p-3">
-                        <p className="text-sm font-medium">External catalogue suggestions</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            These are untrusted hints. Applying one only fills fields; it never selects or saves a game.
+                    <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                        <Button type="button" variant="ghost" onClick={() => router.push("/library")}>Cancel</Button>
+                        <Button type="button" disabled={!selectedResult} onClick={() => setStep("platform")}>
+                            Continue with selected game
+                        </Button>
+                    </div>
+                </section>
+            )}
+
+            {step === "platform" && selectedResult && (
+                <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+                    <StepHeading icon={<Gamepad2 className="h-5 w-5" />} title="2. Choose the physical platform">
+                        IGDB platform data is only a hint. GameHub never selects PS3, PS4, or PS5 for you.
+                    </StepHeading>
+
+                    <div className="rounded-lg border bg-muted/30 p-4">
+                        <p className="font-semibold">{selectedTitle}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            IGDB platform hint: {selectedResult.platforms?.length
+                                ? selectedResult.platforms.join(", ")
+                                : "Not provided"}
                         </p>
-                        <div className="mt-3 grid gap-3">
-                            {externalSuggestions.map((suggestion, index) => (
-                                <div
-                                    key={`${suggestion.title}-${suggestion.platform ?? "unknown"}-${index}`}
-                                    className="rounded-md border bg-background/70 p-3"
-                                >
-                                    <p className="font-medium">{suggestion.title}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                        Platform hint: {suggestion.platform ?? "Not provided"}
-                                    </p>
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => applyExternalSuggestionToSearch(suggestion)}
-                                            disabled={saving}
-                                        >
-                                            Search my library
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => applyExternalSuggestionToManualGame(suggestion)}
-                                            disabled={saving}
-                                        >
-                                            Use for a new manual game
-                                        </Button>
-                                    </div>
-                                </div>
+                    </div>
+
+                    <label className="mt-5 block text-sm font-medium" htmlFor="capture-platform">Physical platform</label>
+                    <Select
+                        value={platform ?? ""}
+                        onValueChange={(value) => setPlatform(value as PhysicalGamePlatform)}
+                    >
+                        <SelectTrigger id="capture-platform" className="mt-2 h-10 w-full sm:w-52">
+                            <SelectValue placeholder="Choose PS3, PS4, or PS5" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {PHYSICAL_PLATFORMS.map((value) => (
+                                <SelectItem key={value} value={value}>{value}</SelectItem>
                             ))}
-                        </div>
-                    </div>
-                )}
-            </section>
+                        </SelectContent>
+                    </Select>
 
-            <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
-                <div className="mb-4 flex items-start gap-3">
-                    <span className="rounded-full bg-primary/10 p-2 text-primary"><Search className="h-5 w-5" /></span>
-                    <div>
-                        <h2 className="font-semibold">2. Choose the game</h2>
-                        <p className="text-sm text-muted-foreground">Search your tenant library or explicitly create a manual game.</p>
-                    </div>
-                </div>
-
-                {!manualMode ? (
-                    <div className="space-y-3">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                className="h-10 pl-9"
-                                value={search}
-                                onChange={(event) => setSearch(event.target.value)}
-                                placeholder="Search existing games"
-                                disabled={saving}
-                            />
-                            {searchPending && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin" />}
-                        </div>
-
-                        {searchResults.length > 0 && (
-                            <div className="grid gap-2">
-                                {searchResults.map((game) => (
-                                    <GameChoice
-                                        key={game.id}
-                                        title={game.title}
-                                        description="Existing unified game"
-                                        selected={selectedGame?.id === game.id}
-                                        onSelect={() => selectExistingGame(game)}
-                                    />
-                                ))}
-                            </div>
-                        )}
-
-                        <Button type="button" variant="outline" onClick={beginManualGame} disabled={saving}>
-                            <Plus /> Create a new manual game instead
+                    <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                        <Button type="button" variant="ghost" onClick={() => setStep("search")}>
+                            <ArrowLeft /> Back to search
+                        </Button>
+                        <Button type="button" disabled={!platform} onClick={() => setStep("confirm")}>
+                            Review selection
                         </Button>
                     </div>
-                ) : (
-                    <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
-                        <label className="text-sm font-medium" htmlFor="manual-game-title">New manual game title</label>
-                        <Input
-                            id="manual-game-title"
-                            className="h-10"
-                            value={manualTitle}
-                            maxLength={200}
-                            onChange={(event) => setManualTitle(event.target.value)}
-                            placeholder="Exact game title"
-                            disabled={saving}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                            A scan never creates this automatically. The title will use GameHub&apos;s existing slug matching for later digital sync.
+                </section>
+            )}
+
+            {step === "confirm" && selectedResult && platform && (
+                <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+                    <StepHeading icon={<Check className="h-5 w-5" />} title="3. Confirm physical game">
+                        This is the only step that can create a game or physical copy.
+                    </StepHeading>
+
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                        <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                            <Summary label="Game title" value={selectedTitle} />
+                            <Summary label="IGDB ID" value={String(selectedResult.providerId)} />
+                            <Summary label="Physical platform" value={platform} />
+                            <Summary label="GameHub action" value="Reuse an exact tenant-local IGDB match, or create a new tenant-owned game" />
+                        </dl>
+                    </div>
+
+                    {saveError && (
+                        <p role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                            {saveError}
                         </p>
-                        <Button type="button" variant="ghost" onClick={() => setManualMode(false)} disabled={saving}>
-                            Return to existing game search
+                    )}
+
+                    <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                            <Button type="button" variant="ghost" disabled={saving} onClick={() => setStep("platform")}>
+                                <ArrowLeft /> Back to platform
+                            </Button>
+                            <Button type="button" variant="outline" disabled={saving} onClick={() => router.push("/library")}>
+                                Cancel
+                            </Button>
+                        </div>
+                        <Button type="button" size="lg" disabled={saving} onClick={() => void saveCapture()}>
+                            {saving ? <Loader2 className="animate-spin" /> : <Check />}
+                            {saving ? "Saving…" : "Confirm and add physical game"}
                         </Button>
                     </div>
-                )}
-            </section>
-
-            <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
-                <div className="mb-4 flex items-start gap-3">
-                    <span className="rounded-full bg-primary/10 p-2 text-primary"><Gamepad2 className="h-5 w-5" /></span>
-                    <div>
-                        <h2 className="font-semibold">3. Platform and confirmation</h2>
-                        <p className="text-sm text-muted-foreground">Review every persisted value before saving.</p>
-                    </div>
-                </div>
-
-                <label className="text-sm font-medium" htmlFor="capture-platform">Physical platform</label>
-                <Select value={platform} onValueChange={(value) => setPlatform(value as PhysicalGamePlatform)} disabled={saving}>
-                    <SelectTrigger id="capture-platform" className="mt-2 h-10 w-full sm:w-52"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                        {PHYSICAL_PLATFORMS.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-
-                <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4">
-                    <h3 className="font-semibold">Confirm physical game</h3>
-                    <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                        <Summary label="Game title" value={targetTitle || "Choose a game first"} />
-                        <Summary label="Game record" value={manualMode ? "New manual unified game" : selectedGame ? "Existing unified game" : "Not selected"} />
-                        <Summary label="Physical platform" value={platform} />
-                        <Summary label="Normalized GTIN" value={normalizedGtin ?? (gtinInput.trim() ? "Validate the entered GTIN" : "None")} mono={Boolean(normalizedGtin)} />
-                    </dl>
-                </div>
-
-                {error && <p role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
-
-                <Button type="button" size="lg" className="mt-5 w-full sm:w-auto" disabled={!canSave} onClick={() => void saveCapture()}>
-                    {saving ? <Loader2 className="animate-spin" /> : <Check />}
-                    {saving ? "Saving…" : "Confirm and add physical game"}
-                </Button>
-            </section>
+                </section>
+            )}
         </div>
     );
 }
 
-function GameChoice({ title, description, selected, onSelect }: {
-    title: string;
-    description: string;
-    selected: boolean;
-    onSelect(): void;
-}) {
+function StepHeading({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
     return (
-        <button
-            type="button"
-            className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${selected ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}
-            onClick={onSelect}
-        >
-            <span>
-                <span className="block font-medium">{title}</span>
-                <span className="block text-xs text-muted-foreground">{description}</span>
-            </span>
-            {selected && <Check className="h-5 w-5 text-primary" />}
-        </button>
+        <div className="mb-5 flex items-start gap-3">
+            <span className="rounded-full bg-primary/10 p-2 text-primary">{icon}</span>
+            <div>
+                <h2 className="font-semibold">{title}</h2>
+                <p className="text-sm text-muted-foreground">{children}</p>
+            </div>
+        </div>
     );
 }
 
-function Summary({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function Summary({ label, value }: { label: string; value: string }) {
     return (
         <div>
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-            <dd className={`mt-1 font-medium ${mono ? "font-mono" : ""}`}>{value}</dd>
+            <dd className="mt-1 font-medium">{value}</dd>
         </div>
     );
 }
 
 function readApiMessage(data: unknown, fallback: string) {
     if (!data || typeof data !== "object") return fallback;
-
     if ("message" in data && typeof data.message === "string") return data.message;
     if ("Message" in data && typeof data.Message === "string") return data.Message;
     return fallback;

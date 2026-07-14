@@ -19,7 +19,8 @@ Two ASP.NET Core microservices:
   permission and representative benchmark gate is satisfied. `ProductCatalog:TimeoutMilliseconds`
   defaults to 1500 and accepts 250–5000. No catalogue credential exists in Phase 2B. Local
   tenant-confirmed GTIN mappings always suppress an external call; failures return no hint and do
-  not block manual capture.
+  not block manual capture. The adapter and GTIN lookup remain technical infrastructure but are not
+  exposed by the active manual-first IGDB physical-capture UI.
 - Guarded production multi-user mode: `MultiUser:Enabled` defaults to `false` and is independent
   from OIDC. Active mode requires validated OIDC/JWT, mirrored Frontend auth/Secure-cookie/switch
   state, strong independent operator/delegation/JWT/BFF trust, Ingest vault readiness, and an
@@ -40,7 +41,9 @@ Two ASP.NET Core microservices:
   migrations preserve existing tables and enforce the same insert/update boundary with triggers.
 - Physical game copies are separate from digital `LibraryItem` providers. They support only PS3,
   PS4, and PS5, allow duplicates, and reference games through the same composite tenant/game
-  boundary in both SQLite and PostgreSQL.
+  boundary in both SQLite and PostgreSQL. Confirmed IGDB capture re-verifies the provider ID and
+  reuses only an exact tenant-local metadata identity, or atomically creates the enriched game and
+  first copy; title similarity and cross-tenant matches are never linkage authority.
 - Tag assignments are explicit tenant-owned join rows with composite foreign keys to both the game
   and tag. SQLite and PostgreSQL upgrades preserve existing assignments and re-home any legacy
   cross-tenant tag name into the game's tenant before enforcing the boundary.

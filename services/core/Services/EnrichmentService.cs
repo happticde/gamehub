@@ -84,7 +84,11 @@ public class EnrichmentService
         // Skip updating EnrichedAt on Error so the background service retries it later
         if (auditStatus != "Error")
         {
-            await ApplyMetadataAsync(db, game, metadata);
+            game.EnrichedAt = DateTime.UtcNow;
+            if (metadata is not null)
+            {
+                await GameMetadataApplicator.ApplyAsync(db, game, metadata, _provider.ProviderName, ct);
+            }
         }
 
         // Record the audit log
@@ -223,77 +227,4 @@ public class EnrichmentService
         return enrichedGames.Count;
     }
 
-    /// <summary>
-    /// Applies the metadata from a provider response to a UnifiedGame entity.
-    /// If metadata is null (no match found), only EnrichedAt is set to avoid re-trying.
-    /// </summary>
-    private async Task ApplyMetadataAsync(CoreContext db, UnifiedGame game, GameMetadata? metadata)
-    {
-        game.EnrichedAt = DateTime.UtcNow;
-
-        if (metadata == null)
-            return;
-
-        game.CoverUrl = metadata.CoverUrl;
-        game.Summary = metadata.Summary;
-        game.Genres = metadata.Genres?.Count > 0 ? string.Join(", ", metadata.Genres) : null;
-        game.Platforms = metadata.Platforms?.Count > 0 ? string.Join(", ", metadata.Platforms) : null;
-        game.Artworks = metadata.Artworks?.Count > 0 ? string.Join(", ", metadata.Artworks) : null;
-        game.Screenshots = metadata.Screenshots?.Count > 0 ? string.Join(", ", metadata.Screenshots) : null;
-        game.Developers = metadata.Developers?.Count > 0 ? string.Join(", ", metadata.Developers) : null;
-        game.Publishers = metadata.Publishers?.Count > 0 ? string.Join(", ", metadata.Publishers) : null;
-        game.FirstReleaseDate = metadata.FirstReleaseDate;
-        game.Rating = metadata.Rating;
-        game.MetadataProviderId = metadata.ProviderId;
-        game.MetadataSource = _provider.ProviderName;
-
-        // Automatic genre assignments are replaceable, but a tenant's explicit assignment is
-        // durable even when a later provider response no longer contains the same genre.
-        var genreNames = (metadata.Genres ?? [])
-            .Where(genre => !string.IsNullOrWhiteSpace(genre))
-            .Select(genre => genre.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var assignments = await db.Set<TagAssignment>()
-            .Include(assignment => assignment.Tag)
-            .Where(assignment => assignment.UnifiedGameId == game.Id)
-            .ToListAsync();
-        var assignmentsByName = new Dictionary<string, TagAssignment>(StringComparer.OrdinalIgnoreCase);
-        foreach (var assignment in assignments.Where(assignment => assignment.Tag is not null))
-        {
-            assignmentsByName.TryAdd(assignment.Tag!.Name, assignment);
-        }
-        var currentGenreNames = genreNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var assignment in assignments.Where(assignment => !assignment.IsCustom))
-        {
-            if (assignment.Tag is null || !currentGenreNames.Contains(assignment.Tag.Name))
-            {
-                db.Set<TagAssignment>().Remove(assignment);
-            }
-        }
-
-        foreach (var normalizedGenre in genreNames)
-        {
-            if (assignmentsByName.ContainsKey(normalizedGenre))
-            {
-                continue;
-            }
-
-            // Find existing tag or create a new one
-            var tag = await db.Tags.FirstOrDefaultAsync(t => t.Name.ToLower() == normalizedGenre.ToLower());
-            if (tag == null)
-            {
-                tag = new Tag { Name = normalizedGenre };
-                db.Tags.Add(tag);
-            }
-
-            db.Set<TagAssignment>().Add(new TagAssignment
-            {
-                UnifiedGame = game,
-                Tag = tag,
-                IsCustom = false
-            });
-        }
-    }
 }

@@ -1,5 +1,6 @@
 using System.Data;
 using GameHub.Core.Data;
+using GameHub.Shared;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -82,7 +83,109 @@ public sealed class PhysicalGameCaptureService
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return new PhysicalCaptureResult(game.Id, game.Title, game.Slug, false, copy);
+        return new PhysicalCaptureResult(game.Id, game.Title, game.Slug, false, false, copy);
+    }
+
+    /// <summary>
+    /// Reuses the authenticated tenant's game with the same provider identity, or creates a fully
+    /// enriched tenant-owned game and its first physical copy atomically. Provider identity is
+    /// never matched across tenants and title similarity is not treated as linkage authority.
+    /// </summary>
+    public async Task<PhysicalCaptureResult> CaptureProviderGameAsync(
+        GameMetadata metadata,
+        string providerName,
+        PhysicalGamePlatform platform,
+        string? normalizedGtin,
+        CancellationToken cancellationToken = default)
+    {
+        var title = metadata.MatchedTitle?.Trim();
+        if (metadata.ProviderId <= 0
+            || string.IsNullOrWhiteSpace(providerName)
+            || string.IsNullOrWhiteSpace(title)
+            || title.Length > MaxManualTitleLength)
+        {
+            throw new PhysicalCaptureValidationException(
+                "The selected metadata result does not contain a valid game identity and title.");
+        }
+
+        var baseSlug = UnificationService.GenerateSlug(title);
+        if (baseSlug.Length == 0)
+        {
+            throw new PhysicalCaptureValidationException(
+                "The selected game title must contain at least one letter or digit.");
+        }
+
+        for (var attempt = 0; attempt < MaxSlugAttempts; attempt++)
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+            try
+            {
+                var existingGame = await _db.UnifiedGames
+                    .Where(game => game.MetadataSource == providerName
+                        && game.MetadataProviderId == metadata.ProviderId)
+                    .OrderBy(game => game.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (existingGame is not null)
+                {
+                    var existingCopy = new PhysicalGameCopy
+                    {
+                        UnifiedGameId = existingGame.Id,
+                        Platform = platform,
+                        NormalizedGtin = normalizedGtin
+                    };
+                    _db.PhysicalGameCopies.Add(existingCopy);
+                    await _db.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return new PhysicalCaptureResult(
+                        existingGame.Id,
+                        existingGame.Title,
+                        existingGame.Slug,
+                        false,
+                        false,
+                        existingCopy);
+                }
+
+                var game = new UnifiedGame
+                {
+                    Title = title,
+                    Slug = await SelectAvailableSlugAsync(baseSlug, cancellationToken),
+                    PhysicalCopies =
+                    [
+                        new PhysicalGameCopy
+                        {
+                            Platform = platform,
+                            NormalizedGtin = normalizedGtin
+                        }
+                    ]
+                };
+                _db.UnifiedGames.Add(game);
+                await GameMetadataApplicator.ApplyAsync(
+                    _db,
+                    game,
+                    metadata,
+                    providerName,
+                    cancellationToken);
+                await _db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new PhysicalCaptureResult(
+                    game.Id,
+                    game.Title,
+                    game.Slug,
+                    true,
+                    false,
+                    game.PhysicalCopies[0]);
+            }
+            catch (Exception exception) when (IsRetryableWriteConflict(exception) && attempt < MaxSlugAttempts - 1)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                _db.ChangeTracker.Clear();
+                await Task.Delay(TimeSpan.FromMilliseconds(10 * (attempt + 1)), cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException("A unique provider-backed game slug could not be allocated.");
     }
 
     /// <summary>
@@ -139,6 +242,7 @@ public sealed class PhysicalGameCaptureService
                     game.Id,
                     game.Title,
                     game.Slug,
+                    true,
                     true,
                     game.PhysicalCopies[0]);
             }
@@ -219,6 +323,7 @@ public sealed record PhysicalCaptureResult(
     int GameId,
     string Title,
     string Slug,
+    bool CreatedGame,
     bool CreatedManualGame,
     PhysicalGameCopy Copy);
 

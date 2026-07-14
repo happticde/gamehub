@@ -599,14 +599,25 @@ public class LibraryController : ControllerBase
             return BadRequest(new { Message = $"Physical platform '{request.Platform}' is not supported." });
         }
 
+        var hasProviderGame = request.MetadataProviderId.HasValue;
+        if (request.MetadataProviderId <= 0)
+        {
+            return BadRequest(new
+            {
+                Code = "invalid_provider_game",
+                Message = "Choose a valid metadata search result."
+            });
+        }
+
         var hasExistingGame = request.ExistingGameId.HasValue;
         var hasManualGame = !string.IsNullOrWhiteSpace(request.ManualGameTitle);
-        if (hasExistingGame == hasManualGame)
+        var targetCount = (hasProviderGame ? 1 : 0) + (hasExistingGame ? 1 : 0) + (hasManualGame ? 1 : 0);
+        if (targetCount != 1)
         {
             return BadRequest(new
             {
                 Code = "invalid_capture_target",
-                Message = "Choose exactly one existing game or explicitly provide a new manual game title."
+                Message = "Choose exactly one metadata result, existing game, or new manual game title."
             });
         }
 
@@ -625,21 +636,61 @@ public class LibraryController : ControllerBase
         PhysicalCaptureResult? result;
         try
         {
-            result = hasExistingGame
-                ? await _physicalCapture.CaptureExistingAsync(
+            if (hasProviderGame)
+            {
+                GameMetadata? metadata;
+                try
+                {
+                    metadata = await _metadataProvider.GetByIdAsync(
+                        request.MetadataProviderId!.Value,
+                        cancellationToken);
+                }
+                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning("Metadata lookup failed during confirmed physical capture");
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                    {
+                        Code = "metadata_lookup_unavailable",
+                        Message = "The selected game could not be verified right now. No changes were saved."
+                    });
+                }
+
+                if (metadata is null)
+                {
+                    return NotFound(new
+                    {
+                        Code = "metadata_game_not_found",
+                        Message = "The selected game is no longer available. No changes were saved."
+                    });
+                }
+
+                result = await _physicalCapture.CaptureProviderGameAsync(
+                    metadata,
+                    _metadataProvider.ProviderName,
+                    request.Platform,
+                    normalizedGtin,
+                    cancellationToken);
+            }
+            else if (hasExistingGame)
+            {
+                result = await _physicalCapture.CaptureExistingAsync(
                     request.ExistingGameId!.Value,
                     request.Platform,
                     normalizedGtin,
-                    cancellationToken)
-                : await _physicalCapture.CaptureManualAsync(
+                    cancellationToken);
+            }
+            else
+            {
+                result = await _physicalCapture.CaptureManualAsync(
                     request.ManualGameTitle!,
                     request.Platform,
                     normalizedGtin,
                     cancellationToken);
+            }
         }
         catch (PhysicalCaptureValidationException exception)
         {
-            return BadRequest(new { Code = "invalid_manual_game", Message = exception.Message });
+            return BadRequest(new { Code = "invalid_capture_game", Message = exception.Message });
         }
 
         if (result is null)
@@ -648,10 +699,11 @@ public class LibraryController : ControllerBase
         }
 
         _logger.LogInformation(
-            "Captured physical copy {PhysicalCopyId} on {PhysicalPlatform} for game {GameId}; manual game created: {CreatedManualGame}",
+            "Captured physical copy {PhysicalCopyId} on {PhysicalPlatform} for game {GameId}; game created: {CreatedGame}; manual game created: {CreatedManualGame}",
             result.Copy.Id,
             result.Copy.Platform,
             result.GameId,
+            result.CreatedGame,
             result.CreatedManualGame);
 
         return StatusCode(StatusCodes.Status201Created, new
@@ -659,6 +711,7 @@ public class LibraryController : ControllerBase
             result.GameId,
             result.Title,
             result.Slug,
+            result.CreatedGame,
             result.CreatedManualGame,
             Copy = new
             {
@@ -1078,13 +1131,31 @@ public class LibraryController : ControllerBase
     /// Used for the manual enrichment override feature.
     /// </summary>
     [HttpGet("enrichment/search")]
-    public async Task<IActionResult> SearchEnrichment([FromQuery] string title, [FromQuery] int limit = 10)
+    public async Task<IActionResult> SearchEnrichment(
+        [FromQuery] string title,
+        [FromQuery] int limit = 10,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(title))
             return BadRequest(new { Message = "Title is required" });
 
-        var results = await _metadataProvider.SearchManyAsync(title, limit);
-        return Ok(results);
+        try
+        {
+            var results = await _metadataProvider.SearchManyAsync(
+                title,
+                Math.Clamp(limit, 1, 20),
+                cancellationToken);
+            return Ok(results);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("Metadata search is temporarily unavailable");
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                Code = "metadata_search_unavailable",
+                Message = "Game search is temporarily unavailable. Try again shortly."
+            });
+        }
     }
 
     /// <summary>
@@ -1692,6 +1763,12 @@ public sealed class AddPhysicalGameCopyRequest
 /// <summary>Confirmed request for the global physical-game capture flow.</summary>
 public sealed class CapturePhysicalGameRequest
 {
+    /// <summary>
+    /// Explicitly selected metadata-provider game ID. The server verifies it and reuses only an
+    /// exact tenant-local provider identity before creating a new tenant-owned game.
+    /// </summary>
+    public int? MetadataProviderId { get; set; }
+
     /// <summary>Existing tenant-owned game ID, mutually exclusive with <see cref="ManualGameTitle"/>.</summary>
     public int? ExistingGameId { get; set; }
 
