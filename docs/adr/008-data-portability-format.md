@@ -71,8 +71,17 @@ intentional because multiple copies of the same game and platform are valid.
 
 Restore continues to accept supported V1 documents. Because V1 predates physical collection data,
 an omitted `physicalCopies` field has the defined meaning "no physical copies." A V1 document that
-tries to carry V2 physical entries is rejected instead of being interpreted ambiguously. New exports use V2,
-and restore always assigns physical-copy ownership from the authenticated tenant context.
+tries to carry V2 physical entries is rejected instead of being interpreted ambiguously. New
+exports use V2, and restore always assigns physical-copy ownership from the authenticated tenant
+context.
+
+## Future Assisted-Capture Portability Decision (2026-07-14)
+
+[ADR-014](014-human-confirmed-physical-game-capture.md) reframes the barcode follow-up as a
+human-confirmed hybrid capture flow. When normalized GTIN becomes durable physical-copy data,
+GameHub will introduce Backup V3 rather than silently extend V2. V3 will keep that field optional
+and continue to accept V1 (no physical copies) and V2 (physical copies without barcode data).
+Accepting ADR-014 alone does not change the current V2 format.
 
 ## Rationale
 
