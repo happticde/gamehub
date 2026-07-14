@@ -24,7 +24,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
 | Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
 | Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
-| Physical collection | ✅ Phase 1 manual PS3/PS4/PS5 copy management; barcode phase pending |
+| Physical collection | ✅ Phase 1 manual PS3/PS4/PS5 copies; hybrid assisted capture planned |
 
 ---
 
@@ -149,7 +149,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   documents remain tenant-neutral. Cross-tenant isolation, active-tenant empty-library behavior,
   and physical-copy ownership are covered by tests. See [ADR-008](adr/008-data-portability-format.md).
 
-### 13. Physical Collection — Phase 1 ✅ / Barcode Phase Pending
+### 13. Physical Collection — Phase 1 ✅ / Assisted Capture Planned
 - **Phase 1 (2026-07-13)**: Tenant-owned physical-copy records with independent IDs can be added to
   an existing Unified Game, listed in detail and library payloads, filtered separately by PS3, PS4,
   or PS5, and removed with confirmation. Multiple copies of the same game/platform are valid.
@@ -160,9 +160,14 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Portability**: Backup V2 and CSV export include physical copies. Restore accepts V1 (no physical
   data by definition) and V2, assigns ownership from the authenticated tenant, and never imports a
   tenant ID.
-- **Remaining barcode phase**: Add explicit UPC/EAN storage and normalization, user-visible camera
-  permission/MediaDevices scanning, barcode recognition, external product lookup, and reviewed
-  matching/creation UX. None of those capabilities are part of Phase 1.
+- **Phase 2 direction (2026-07-14)**: [ADR-014](adr/014-human-confirmed-physical-game-capture.md)
+  rejects barcode-only automatic assignment in favor of a global, human-confirmed capture funnel.
+  Tenant-scoped manual search is the universal path; barcode scan/manual GTIN entry is the primary
+  optional accelerator; on-device OCR is evaluated only as a fallback search hint. Physical-only
+  titles require explicit manual game creation rather than provider- or OCR-driven automatic writes.
+- **Future data evolution**: Confirmed codes may be stored as a nullable normalized GTIN on a copy
+  without a uniqueness constraint. Durable barcode data requires Backup V3; V1/V2 import
+  compatibility and authenticated tenant ownership remain mandatory.
 
 ### 14. Discovery: "Surprise Me" (Random Pick) ✅
 - **Feature**: Random game selection button that respects active filters (e.g., "Random RPG I haven't finished").
