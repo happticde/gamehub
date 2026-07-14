@@ -58,6 +58,22 @@ Before multi-user operation is enabled, Roadmap item #8 must include all of the 
 
 No backup format change is required if only ownership semantics change. A new format version is required when the JSON document shape or restored data meaning changes incompatibly.
 
+## Physical Collection Format Decision (2026-07-13)
+
+Physical copies are durable user-owned library data and therefore must survive export and restore.
+Adding a `physicalCopies` collection to each game is not treated as a silent V1 extension: the V1
+parser deliberately rejects unknown fields, so older GameHub versions cannot consume that changed
+shape. Phase 1 therefore introduces format version 2.
+
+V2 adds one required `physicalCopies` array per game. Each entry contains only the supported physical
+platform (`PS3`, `PS4`, or `PS5`); database IDs and tenant IDs remain excluded. Repeated entries are
+intentional because multiple copies of the same game and platform are valid.
+
+Restore continues to accept supported V1 documents. Because V1 predates physical collection data,
+an omitted `physicalCopies` field has the defined meaning "no physical copies." A V1 document that
+tries to carry V2 physical entries is rejected instead of being interpreted ambiguously. New exports use V2,
+and restore always assigns physical-copy ownership from the authenticated tenant context.
+
 ## Rationale
 
 - JSON preserves nested relationships without database-specific identifiers.
@@ -113,3 +129,4 @@ work are recorded in the [Core Tenant-Isolation Audit](../tenant-isolation-audit
 4. **Completed:** Add a separate flat CSV export for spreadsheet use.
 5. **Completed:** Scope export and restore preconditions/writes to the authenticated tenant.
 6. **Completed:** Add cross-tenant export, restore, ownership, and equivalent-key isolation tests.
+7. **Completed:** Add Backup V2 physical-copy export/validation/restore while retaining defined V1 import.

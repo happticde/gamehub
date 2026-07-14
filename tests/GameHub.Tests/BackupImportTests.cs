@@ -76,7 +76,7 @@ public sealed class BackupImportTests : IDisposable
     {
         var backup = CreateBackup(CreateGame("doom", "DOOM", "379720", ["Action"])) with
         {
-            FormatVersion = 2
+            FormatVersion = BackupExportService.CurrentFormatVersion + 1
         };
         await using var stream = new MemoryStream(_serializer.Serialize(backup));
 
@@ -99,6 +99,11 @@ public sealed class BackupImportTests : IDisposable
             [
                 new BackupLibraryItemV1(Platform.Steam, "10", FixedNow.UtcDateTime),
                 new BackupLibraryItemV1(Platform.Steam, "11", FixedNow.UtcDateTime)
+            ],
+            PhysicalCopies =
+            [
+                new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS5),
+                new BackupPhysicalGameCopyV2(PhysicalGamePlatform.PS5)
             ]
         };
         var secondGame = CreateGame("duplicate", "Second", "10", ["Action"]);
@@ -147,6 +152,11 @@ public sealed class BackupImportTests : IDisposable
                     ExternalId = "379720",
                     LastSynced = FixedNow.UtcDateTime.AddDays(-1)
                 }
+            ],
+            PhysicalCopies =
+            [
+                new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5 },
+                new PhysicalGameCopy { Platform = PhysicalGamePlatform.PS5 }
             ]
         };
         var quake = new UnifiedGame
@@ -181,6 +191,7 @@ public sealed class BackupImportTests : IDisposable
         var (parsed, validation) = await _service.ReadAndValidateAsync(stream);
 
         Assert.True(validation.IsValid);
+        Assert.Equal(2, validation.Summary.PhysicalCopyCount);
         var restore = await _service.RestoreAsync(parsed!);
 
         Assert.True(restore.Restored);
@@ -188,6 +199,7 @@ public sealed class BackupImportTests : IDisposable
 
         var restoredGames = await _db.UnifiedGames
             .Include(game => game.Items)
+            .Include(game => game.PhysicalCopies)
             .Include(game => game.Tags)
             .OrderBy(game => game.Slug)
             .ToListAsync();
@@ -203,6 +215,8 @@ public sealed class BackupImportTests : IDisposable
         Assert.Equal("IGDB", restoredDoom.MetadataSource);
         Assert.Equal("379720", Assert.Single(restoredDoom.Items).ExternalId);
         Assert.Equal("FPS", Assert.Single(restoredDoom.Tags).Name);
+        Assert.Equal(2, restoredDoom.PhysicalCopies.Count);
+        Assert.All(restoredDoom.PhysicalCopies, copy => Assert.Equal(PhysicalGamePlatform.PS5, copy.Platform));
 
         Assert.Equal(1, await _db.Tags.CountAsync());
         var restoredLink = await _db.ManualLinks.SingleAsync();
@@ -228,6 +242,58 @@ public sealed class BackupImportTests : IDisposable
         Assert.Equal(1, await _db.UnifiedGames.CountAsync());
         Assert.NotNull(await _db.UnifiedGames.SingleOrDefaultAsync(game => game.Slug == "existing"));
         Assert.Empty(_db.ActivityLogs);
+    }
+
+    [Fact]
+    public async Task Restore_V1BackupWithoutPhysicalCopies_RemainsSupported()
+    {
+        const string v1Json = """
+            {
+              "format": "gamehub-backup",
+              "formatVersion": 1,
+              "exportedAtUtc": "2026-06-19T14:00:00Z",
+              "games": [
+                {
+                  "title": "Legacy",
+                  "slug": "legacy",
+                  "personalTracking": {
+                    "playStatus": "Unplayed",
+                    "userRating": null,
+                    "isPlayStatusManual": false,
+                    "isIgnored": false
+                  },
+                  "metadata": {
+                    "coverUrl": null,
+                    "summary": null,
+                    "genres": null,
+                    "platforms": null,
+                    "artworks": null,
+                    "screenshots": null,
+                    "developers": null,
+                    "publishers": null,
+                    "firstReleaseDate": null,
+                    "rating": null,
+                    "metadataProviderId": null,
+                    "metadataSource": null,
+                    "enrichedAt": null
+                  },
+                  "tags": [],
+                  "items": [],
+                  "manualLinks": []
+                }
+              ]
+            }
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(v1Json));
+
+        var (v1, validation) = await _service.ReadAndValidateAsync(stream);
+        var result = await _service.RestoreAsync(v1!);
+
+        Assert.NotNull(v1);
+        Assert.True(validation.IsValid);
+        Assert.True(result.Restored);
+        Assert.Empty(_db.PhysicalGameCopies);
+        Assert.Equal("Legacy", (await _db.UnifiedGames.SingleAsync()).Title);
     }
 
     [Fact]
@@ -314,7 +380,8 @@ public sealed class BackupImportTests : IDisposable
                 null),
             tags,
             [new BackupLibraryItemV1(Platform.Steam, externalId, FixedNow.UtcDateTime)],
-            [new BackupManualLinkV1(Platform.Steam, externalId)]);
+            [new BackupManualLinkV1(Platform.Steam, externalId)],
+            []);
 
     private static FormFile CreateFormFile(byte[] content)
     {

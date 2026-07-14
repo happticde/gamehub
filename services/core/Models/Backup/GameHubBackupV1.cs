@@ -4,7 +4,8 @@ using GameHub.Shared;
 namespace GameHub.Core.Models.Backup;
 
 /// <summary>
-/// Version 1 of the provider-independent GameHub backup document.
+/// Versioned provider-independent GameHub backup document. The type name is retained for source
+/// compatibility; format version 2 adds physical copies while version 1 remains importable.
 /// </summary>
 /// <param name="Format">Stable format identifier used during validation.</param>
 /// <param name="FormatVersion">Schema version of this document.</param>
@@ -26,6 +27,9 @@ public sealed record GameHubBackupV1(
 /// <param name="Tags">Associated tag names.</param>
 /// <param name="Items">Owned platform entries.</param>
 /// <param name="ManualLinks">Manual matching overrides targeting this game.</param>
+/// <param name="PhysicalCopies">
+/// Physical copies in V2. Null represents a V1 document where the field did not exist.
+/// </param>
 public sealed record BackupGameV1(
     string Title,
     string Slug,
@@ -33,7 +37,8 @@ public sealed record BackupGameV1(
     BackupMetadataV1 Metadata,
     IReadOnlyList<string> Tags,
     IReadOnlyList<BackupLibraryItemV1> Items,
-    IReadOnlyList<BackupManualLinkV1> ManualLinks);
+    IReadOnlyList<BackupManualLinkV1> ManualLinks,
+    IReadOnlyList<BackupPhysicalGameCopyV2>? PhysicalCopies = null);
 
 /// <summary>
 /// Personal library state that must survive a backup and restore cycle.
@@ -98,3 +103,7 @@ public sealed record BackupLibraryItemV1(
 public sealed record BackupManualLinkV1(
     Platform Platform,
     string ExternalId);
+
+/// <summary>One physical game copy introduced by backup format V2.</summary>
+/// <param name="Platform">Supported physical PlayStation platform.</param>
+public sealed record BackupPhysicalGameCopyV2(PhysicalGamePlatform Platform);

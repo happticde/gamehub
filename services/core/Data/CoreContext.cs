@@ -29,6 +29,7 @@ public class CoreContext : DbContext
     // --- Unified Tables (Owned by Core) ---
     public DbSet<UnifiedGame> UnifiedGames => Set<UnifiedGame>();
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
+    public DbSet<PhysicalGameCopy> PhysicalGameCopies => Set<PhysicalGameCopy>();
     public DbSet<Tag> Tags => Set<Tag>();
 
     // --- Sync Tracking ---
@@ -140,6 +141,7 @@ public class CoreContext : DbContext
 
         ConfigureTenantOwned(modelBuilder.Entity<UnifiedGame>());
         ConfigureTenantOwned(modelBuilder.Entity<LibraryItem>());
+        ConfigureTenantOwned(modelBuilder.Entity<PhysicalGameCopy>());
         ConfigureTenantOwned(modelBuilder.Entity<Tag>());
         ConfigureTenantOwned(modelBuilder.Entity<TagAssignment>());
         ConfigureTenantOwned(modelBuilder.Entity<SyncMetadata>());
@@ -167,6 +169,18 @@ public class CoreContext : DbContext
             .HasForeignKey(item => new { item.TenantId, item.UnifiedGameId })
             .HasPrincipalKey(game => new { game.TenantId, game.Id })
             .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PhysicalGameCopy>(entity =>
+        {
+            entity.HasIndex(copy => new { copy.TenantId, copy.UnifiedGameId, copy.Platform });
+            entity.HasOne(copy => copy.UnifiedGame)
+                .WithMany(game => game.PhysicalCopies)
+                .HasForeignKey(copy => new { copy.TenantId, copy.UnifiedGameId })
+                .HasPrincipalKey(game => new { game.TenantId, game.Id })
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_PhysicalGameCopies_Platform",
+                "\"Platform\" IN (0, 1, 2)"));
+        });
         modelBuilder.Entity<Tag>()
             .HasIndex(tag => new { tag.TenantId, tag.Name })
             .IsUnique();

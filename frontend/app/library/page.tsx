@@ -34,6 +34,13 @@ export default async function LibraryPage({
         platforms = Array.isArray(resolvedParams.platforms) ? resolvedParams.platforms : [resolvedParams.platforms];
     }
 
+    let physicalPlatforms: string[] = [];
+    if (resolvedParams.physicalPlatforms) {
+        physicalPlatforms = Array.isArray(resolvedParams.physicalPlatforms)
+            ? resolvedParams.physicalPlatforms
+            : [resolvedParams.physicalPlatforms];
+    }
+
     let playStatus: string[] = [];
     if (resolvedParams.playStatus) {
         playStatus = Array.isArray(resolvedParams.playStatus) ? resolvedParams.playStatus : [resolvedParams.playStatus];
@@ -76,6 +83,9 @@ export default async function LibraryPage({
 
         // Append all platforms array values exactly as ASP.NET MVC expects them
         platforms.forEach(p => query.append("platforms", p));
+
+        // Physical console ownership has a separate query key and never enters the provider enum.
+        physicalPlatforms.forEach(p => query.append("physicalPlatforms", p));
 
         // Append play statuses exactly as ASP.NET MVC expects them
         playStatus.forEach(s => query.append("playStatus", s));

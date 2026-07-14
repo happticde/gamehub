@@ -7,11 +7,13 @@ namespace GameHub.Core.Models.Backup;
 /// <param name="PlatformItemCount">Number of owned platform entries.</param>
 /// <param name="ManualLinkCount">Number of manual matching overrides.</param>
 /// <param name="TagCount">Number of distinct tag names.</param>
+/// <param name="PhysicalCopyCount">Number of independently owned physical copies.</param>
 public sealed record BackupSummary(
     int GameCount,
     int PlatformItemCount,
     int ManualLinkCount,
-    int TagCount);
+    int TagCount,
+    int PhysicalCopyCount = 0);
 
 /// <summary>
 /// A machine-readable validation issue with an optional JSON path.

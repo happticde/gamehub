@@ -24,6 +24,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
 | Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
 | Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
+| Physical collection | ✅ Phase 1 manual PS3/PS4/PS5 copy management; barcode phase pending |
 
 ---
 
@@ -141,15 +142,27 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 ### 12. Data Portability (Backup & Restore) ✅
 - **Feature**: GameHub-specific import/export via JSON/CSV.
 - **Goal**: Full manual backup of entire unified library (metadata, ratings, play status).
-- **Current scope**: JSON V1 export, validation, transactional empty-library restore, Admin UI, and spreadsheet-safe CSV export are implemented for the single-user deployment model.
-- **Multi-tenancy status**: Export and restore are scoped to the authenticated tenant while the V1
-  document remains tenant-neutral. Cross-tenant isolation and active-tenant empty-library behavior
-  are covered by tests. See [ADR-008](adr/008-data-portability-format.md).
+- **Current scope**: JSON V2 export, validation, transactional empty-library restore, Admin UI, and
+  spreadsheet-safe CSV export are implemented. V2 adds physical copies; supported V1 backups remain
+  importable and restore an empty physical collection by definition.
+- **Multi-tenancy status**: Export and restore are scoped to the authenticated tenant while backup
+  documents remain tenant-neutral. Cross-tenant isolation, active-tenant empty-library behavior,
+  and physical-copy ownership are covered by tests. See [ADR-008](adr/008-data-portability-format.md).
 
-### 13. Physical Collection (Barcode Scanning)
-- **Scanner**: Web-based barcode scanner (MediaDevices API) for physical game cases.
-- **Platforms**: Support for PS3, PS4, and PS5 as distinct physical platforms.
-- **Lookup**: Resolve barcodes to titles and automatically enrich via IGDB.
+### 13. Physical Collection — Phase 1 ✅ / Barcode Phase Pending
+- **Phase 1 (2026-07-13)**: Tenant-owned physical-copy records with independent IDs can be added to
+  an existing Unified Game, listed in detail and library payloads, filtered separately by PS3, PS4,
+  or PS5, and removed with confirmation. Multiple copies of the same game/platform are valid.
+- **Data invariants**: Physical copies do not extend the digital provider enum or participate in
+  `LibraryItem`, sync, or `ManualLink` semantics. Composite tenant/game relationships are enforced
+  in SQLite and PostgreSQL. Manual merge moves every copy to the target; manual split moves only the
+  selected digital item and leaves physical copies on the original game.
+- **Portability**: Backup V2 and CSV export include physical copies. Restore accepts V1 (no physical
+  data by definition) and V2, assigns ownership from the authenticated tenant, and never imports a
+  tenant ID.
+- **Remaining barcode phase**: Add explicit UPC/EAN storage and normalization, user-visible camera
+  permission/MediaDevices scanning, barcode recognition, external product lookup, and reviewed
+  matching/creation UX. None of those capabilities are part of Phase 1.
 
 ### 14. Discovery: "Surprise Me" (Random Pick) ✅
 - **Feature**: Random game selection button that respects active filters (e.g., "Random RPG I haven't finished").

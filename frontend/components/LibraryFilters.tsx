@@ -49,6 +49,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const defaultSearch = searchParams.get("search") || "";
     const defaultTags = searchParams.getAll("tags");
     const defaultPlatforms = searchParams.getAll("platforms");
+    const defaultPhysicalPlatforms = searchParams.getAll("physicalPlatforms");
     const defaultPlayStatuses = searchParams.getAll("playStatus");
     const defaultDevelopers = searchParams.getAll("developers");
     const defaultPublishers = searchParams.getAll("publishers");
@@ -60,6 +61,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
     const defaultIncludeIgnored = searchParams.get("includeIgnored") === "true";
 
     const AVAILABLE_PLATFORMS = ["Steam", "Gog", "Psn", "Epic"];
+    const AVAILABLE_PHYSICAL_PLATFORMS = ["PS3", "PS4", "PS5"];
     const AVAILABLE_PLAY_STATUSES = ["Unplayed", "Played", "Playing", "Completed", "Abandoned"];
 
     const [searchQuery, setSearchQuery] = useState(defaultSearch);
@@ -128,6 +130,14 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         (newPlatforms: string[]) => pushParams((p) => {
             p.delete("platforms");
             newPlatforms.forEach(pl => p.append("platforms", pl));
+        }),
+        [pushParams]
+    );
+
+    const updatePhysicalPlatformsUrl = useCallback(
+        (newPlatforms: string[]) => pushParams((p) => {
+            p.delete("physicalPlatforms");
+            newPlatforms.forEach(platform => p.append("physicalPlatforms", platform));
         }),
         [pushParams]
     );
@@ -213,7 +223,8 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
         <>
             {/* Row 2: Core filters (always visible) */}
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
-                <div className="w-full sm:w-[200px]">
+                <div className="w-full space-y-1 sm:w-[200px]">
+                    <span className="block text-xs font-medium text-muted-foreground">Digital libraries</span>
                     <MultiSelect
                         options={AVAILABLE_PLATFORMS}
                         selected={defaultPlatforms}
@@ -221,6 +232,18 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
                         placeholder="Platforms..."
                         searchPlaceholder="Search platforms..."
                         emptyMessage="No platforms found."
+                    />
+                </div>
+
+                <div className="w-full space-y-1 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-2 sm:w-[200px]">
+                    <span className="block text-xs font-medium text-primary">Physical collection</span>
+                    <MultiSelect
+                        options={AVAILABLE_PHYSICAL_PLATFORMS}
+                        selected={defaultPhysicalPlatforms}
+                        onChange={updatePhysicalPlatformsUrl}
+                        placeholder="Physical platforms..."
+                        searchPlaceholder="Search consoles..."
+                        emptyMessage="No consoles found."
                     />
                 </div>
 

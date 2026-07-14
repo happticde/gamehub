@@ -227,6 +227,33 @@ namespace GameHub.Core.Migrations.sqlite
                     b.ToTable("ManualLinks");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.PhysicalGameCopy", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Platform")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000001"));
+
+                    b.Property<int>("UnifiedGameId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "UnifiedGameId", "Platform");
+
+                    b.ToTable("PhysicalGameCopies", t =>
+                        {
+                            t.HasCheckConstraint("CK_PhysicalGameCopies_Platform", "\"Platform\" IN (0, 1, 2)");
+                        });
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.RefreshTokenSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -616,6 +643,24 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Navigation("UnifiedGame");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.PhysicalGameCopy", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GameHub.Core.Data.UnifiedGame", "UnifiedGame")
+                        .WithMany("PhysicalCopies")
+                        .HasForeignKey("TenantId", "UnifiedGameId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("UnifiedGame");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.RefreshTokenSession", b =>
                 {
                     b.HasOne("GameHub.Core.Data.UserAccount", "UserAccount")
@@ -704,6 +749,8 @@ namespace GameHub.Core.Migrations.sqlite
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
                 {
                     b.Navigation("Items");
+
+                    b.Navigation("PhysicalCopies");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UserAccount", b =>

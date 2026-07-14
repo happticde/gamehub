@@ -47,9 +47,11 @@ public sealed class BackupController : ControllerBase
         var fileName = $"gamehub-backup-v{backup.FormatVersion}-{backup.ExportedAtUtc:yyyyMMdd-HHmmss}.json";
 
         _logger.LogInformation(
-            "Created GameHub backup with {GameCount} games and {ItemCount} platform items",
+            "Created GameHub V{FormatVersion} backup with {GameCount} games, {ItemCount} platform items, and {PhysicalCopyCount} physical copies",
+            backup.FormatVersion,
             backup.Games.Count,
-            backup.Games.Sum(game => game.Items.Count));
+            backup.Games.Sum(game => game.Items.Count),
+            backup.Games.Sum(game => game.PhysicalCopies?.Count ?? 0));
 
         return File(content, "application/json; charset=utf-8", fileName);
     }

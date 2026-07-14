@@ -146,8 +146,9 @@ public class LibraryController : ControllerBase
 
     /// <summary>
     /// GET: api/library?search=witcher&amp;tags=RPG&amp;sortBy=rating&amp;sortOrder=desc&amp;page=1
-    /// Returns a paginated list of unified games with their platform tags.
-    /// Supports filtering by search text, tags, platforms, developer, and publisher.
+    /// Returns a paginated list of unified games with digital and physical ownership data.
+    /// Supports filtering by search text, tags, digital platforms, physical platforms, developer,
+    /// and publisher.
     /// Supports sorting by title (default), rating, or releasedate.
     /// </summary>
     [HttpGet]
@@ -155,6 +156,7 @@ public class LibraryController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
         [FromQuery] Platform[]? platforms,
+        [FromQuery] PhysicalGamePlatform[]? physicalPlatforms,
         [FromQuery] PlayStatus[]? playStatus,
         [FromQuery] string[]? developer,
         [FromQuery] string[]? publisher,
@@ -168,10 +170,19 @@ public class LibraryController : ControllerBase
         if (pageSize > 500) pageSize = 500;
         if (page < 1) page = 1;
 
-        var query = BuildLibraryQuery(search, tags, platforms, playStatus, developer, publisher, includeIgnored);
+        var query = BuildLibraryQuery(
+            search,
+            tags,
+            platforms,
+            physicalPlatforms,
+            playStatus,
+            developer,
+            publisher,
+            includeIgnored);
         
         // Includes are needed for the returned shape
         query = query.Include(g => g.Items)
+                     .Include(g => g.PhysicalCopies)
                      .Include(g => g.Tags);
 
         // Get total count for pagination metadata
@@ -216,7 +227,16 @@ public class LibraryController : ControllerBase
                 i.Platform,
                 i.ExternalId,
                 i.LastSynced
-            }).ToList()
+            }).ToList(),
+            PhysicalCopies = g.PhysicalCopies
+                .OrderBy(copy => copy.Platform)
+                .ThenBy(copy => copy.Id)
+                .Select(copy => new
+                {
+                    copy.Id,
+                    copy.Platform
+                })
+                .ToList()
         });
 
         // Use the untyped or object-typed PagedResult since we mapped to an anonymous type
@@ -239,12 +259,21 @@ public class LibraryController : ControllerBase
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
         [FromQuery] Platform[]? platforms,
+        [FromQuery] PhysicalGamePlatform[]? physicalPlatforms,
         [FromQuery] PlayStatus[]? playStatus,
         [FromQuery] string[]? developer,
         [FromQuery] string[]? publisher,
         [FromQuery] bool includeIgnored = false)
     {
-        var query = BuildLibraryQuery(search, tags, platforms, playStatus, developer, publisher, includeIgnored);
+        var query = BuildLibraryQuery(
+            search,
+            tags,
+            platforms,
+            physicalPlatforms,
+            playStatus,
+            developer,
+            publisher,
+            includeIgnored);
 
         var randomGameId = await query
             .OrderBy(g => Guid.NewGuid())
@@ -263,6 +292,7 @@ public class LibraryController : ControllerBase
         string? search,
         string[]? tags,
         Platform[]? platforms,
+        PhysicalGamePlatform[]? physicalPlatforms,
         PlayStatus[]? playStatus,
         string[]? developer,
         string[]? publisher,
@@ -295,6 +325,13 @@ public class LibraryController : ControllerBase
         if (platforms != null && platforms.Length > 0)
         {
             query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
+        }
+
+        // Physical ownership is deliberately separate from digital provider platforms.
+        if (physicalPlatforms != null && physicalPlatforms.Length > 0)
+        {
+            query = query.Where(g =>
+                g.PhysicalCopies.Any(copy => physicalPlatforms.Contains(copy.Platform)));
         }
 
         // Filter by PlayStatus if any are provided
@@ -337,6 +374,7 @@ public class LibraryController : ControllerBase
     {
         var game = await _db.UnifiedGames
             .Include(g => g.Items)
+            .Include(g => g.PhysicalCopies)
             .Include(g => g.Tags)
             .AsNoTracking()
             .FirstOrDefaultAsync(g => g.Id == id);
@@ -385,10 +423,119 @@ public class LibraryController : ControllerBase
                 i.Platform,
                 i.ExternalId,
                 i.LastSynced
-            }).ToList()
+            }).ToList(),
+            PhysicalCopies = game.PhysicalCopies
+                .OrderBy(copy => copy.Platform)
+                .ThenBy(copy => copy.Id)
+                .Select(copy => new
+                {
+                    copy.Id,
+                    copy.Platform
+                })
+                .ToList()
         };
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// GET: api/library/{id}/physical-copies
+    /// Lists the authenticated tenant's physical copies assigned to one unified game.
+    /// </summary>
+    [HttpGet("{id}/physical-copies")]
+    public async Task<IActionResult> GetPhysicalCopies(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Listing physical copies for game {GameId}", id);
+
+        if (!await _db.UnifiedGames.AsNoTracking().AnyAsync(game => game.Id == id, cancellationToken))
+        {
+            return NotFound(new { Message = $"Game with ID {id} not found." });
+        }
+
+        var copies = await _db.PhysicalGameCopies
+            .AsNoTracking()
+            .Where(copy => copy.UnifiedGameId == id)
+            .OrderBy(copy => copy.Platform)
+            .ThenBy(copy => copy.Id)
+            .Select(copy => new
+            {
+                copy.Id,
+                copy.Platform
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(copies);
+    }
+
+    /// <summary>
+    /// POST: api/library/{id}/physical-copies
+    /// Adds one independently identified physical copy to the authenticated tenant's game.
+    /// </summary>
+    [HttpPost("{id}/physical-copies")]
+    public async Task<IActionResult> AddPhysicalCopy(
+        int id,
+        [FromBody] AddPhysicalGameCopyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(request.Platform))
+        {
+            return BadRequest(new { Message = $"Physical platform '{request.Platform}' is not supported." });
+        }
+
+        if (!await _db.UnifiedGames.AnyAsync(game => game.Id == id, cancellationToken))
+        {
+            return NotFound(new { Message = $"Game with ID {id} not found." });
+        }
+
+        var copy = new PhysicalGameCopy
+        {
+            UnifiedGameId = id,
+            Platform = request.Platform
+        };
+        _db.PhysicalGameCopies.Add(copy);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Added physical copy {PhysicalCopyId} on {PhysicalPlatform} to game {GameId}",
+            copy.Id,
+            copy.Platform,
+            id);
+
+        return StatusCode(StatusCodes.Status201Created, new
+        {
+            copy.Id,
+            copy.Platform
+        });
+    }
+
+    /// <summary>
+    /// DELETE: api/library/{id}/physical-copies/{copyId}
+    /// Removes one concrete physical copy owned by the authenticated tenant.
+    /// </summary>
+    [HttpDelete("{id}/physical-copies/{copyId}")]
+    public async Task<IActionResult> RemovePhysicalCopy(
+        int id,
+        int copyId,
+        CancellationToken cancellationToken = default)
+    {
+        var copy = await _db.PhysicalGameCopies.FirstOrDefaultAsync(
+            candidate => candidate.Id == copyId && candidate.UnifiedGameId == id,
+            cancellationToken);
+        if (copy is null)
+        {
+            return NotFound(new { Message = $"Physical copy with ID {copyId} was not found for game {id}." });
+        }
+
+        _db.PhysicalGameCopies.Remove(copy);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Removed physical copy {PhysicalCopyId} from game {GameId}",
+            copyId,
+            id);
+        return NoContent();
     }
 
     /// <summary>
@@ -1113,8 +1260,9 @@ public class LibraryController : ControllerBase
     ///
     /// Merges two UnifiedGame records into one:
     ///   1. Moves all LibraryItems from the source game to the target game
-    ///   2. Creates ManualLinks for each moved item (so future syncs respect the override)
-    ///   3. Deletes the now-empty source game
+    ///   2. Moves every physical copy from the source to the target without deduplication
+    ///   3. Creates ManualLinks for each moved digital item (so future syncs respect the override)
+    ///   4. Deletes the now-empty source game
     ///
     /// Use this when the same game appears as two separate entries due to
     /// different titles across storefronts (e.g. "GOTY Edition" vs base game).
@@ -1125,6 +1273,7 @@ public class LibraryController : ControllerBase
         // Load both games with their LibraryItems
         var source = await _db.UnifiedGames
             .Include(g => g.Items)
+            .Include(g => g.PhysicalCopies)
             .FirstOrDefaultAsync(g => g.Id == request.SourceGameId);
 
         var target = await _db.UnifiedGames
@@ -1182,6 +1331,13 @@ public class LibraryController : ControllerBase
             {
                 manualLink.UnifiedGameId = target.Id;
             }
+        }
+
+        // Physical copies are independent owned objects. Multiple copies on the same console are
+        // valid, so merge always moves every source copy and never deduplicates them.
+        foreach (var physicalCopy in source.PhysicalCopies.ToList())
+        {
+            physicalCopy.UnifiedGameId = target.Id;
         }
 
         // Delete the now-empty source game
@@ -1362,6 +1518,13 @@ public class SplitRequest
 {
     /// <summary>ID of the LibraryItem to detach into its own UnifiedGame.</summary>
     public int LibraryItemId { get; set; }
+}
+
+/// <summary>Request body for adding one physical game copy.</summary>
+public sealed class AddPhysicalGameCopyRequest
+{
+    /// <summary>Supported physical console platform. Tenant ownership comes from authentication.</summary>
+    public PhysicalGamePlatform Platform { get; set; }
 }
 
 /// <summary>Request body for the personal tracking update endpoint.</summary>

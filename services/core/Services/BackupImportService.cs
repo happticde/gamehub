@@ -88,7 +88,8 @@ public sealed class BackupImportService
                 "format");
         }
 
-        if (backup.FormatVersion != BackupExportService.CurrentFormatVersion)
+        if (backup.FormatVersion is < BackupExportService.MinimumSupportedFormatVersion
+            or > BackupExportService.CurrentFormatVersion)
         {
             AddError(
                 "unsupported_version",
@@ -145,6 +146,11 @@ public sealed class BackupImportService
             ValidateTags(game.Tags, gamePath, AddError);
             ValidateItems(game.Items, gamePath, libraryItems, AddError);
             ValidateManualLinks(game.ManualLinks, gamePath, manualLinks, AddError);
+            ValidatePhysicalCopies(
+                game.PhysicalCopies,
+                backup.FormatVersion,
+                gamePath,
+                AddError);
         }
 
         return CreateResult(backup, errors);
@@ -172,6 +178,7 @@ public sealed class BackupImportService
 
         var targetHasData = await _db.UnifiedGames.AnyAsync(cancellationToken)
             || await _db.LibraryItems.AnyAsync(cancellationToken)
+            || await _db.PhysicalGameCopies.AnyAsync(cancellationToken)
             || await _db.ManualLinks.AnyAsync(cancellationToken)
             || await _db.Tags.AnyAsync(cancellationToken);
 
@@ -215,6 +222,12 @@ public sealed class BackupImportService
                         Platform = item.Platform,
                         ExternalId = item.ExternalId,
                         LastSynced = item.LastSynced
+                    })
+                    .ToList(),
+                PhysicalCopies = (backupGame.PhysicalCopies ?? [])
+                    .Select(copy => new PhysicalGameCopy
+                    {
+                        Platform = copy.Platform
                     })
                     .ToList()
             };
@@ -434,6 +447,54 @@ public sealed class BackupImportService
         }
     }
 
+    private static void ValidatePhysicalCopies(
+        IReadOnlyList<BackupPhysicalGameCopyV2>? copies,
+        int formatVersion,
+        string gamePath,
+        Action<string, string, string?> addError)
+    {
+        if (formatVersion == 1)
+        {
+            if (copies is not null)
+            {
+                addError(
+                    "physical_copies_not_supported_in_v1",
+                    "Physical copies require backup format version 2.",
+                    $"{gamePath}.physicalCopies");
+            }
+
+            return;
+        }
+
+        if (copies is null)
+        {
+            addError(
+                "missing_physical_copies",
+                "The physical copies collection is required in a V2 backup.",
+                $"{gamePath}.physicalCopies");
+            return;
+        }
+
+        for (var copyIndex = 0; copyIndex < copies.Count; copyIndex++)
+        {
+            var copy = copies[copyIndex];
+            var copyPath = $"{gamePath}.physicalCopies[{copyIndex}]";
+            if (copy is null)
+            {
+                addError("missing_physical_copy", "Physical copies cannot be null.", copyPath);
+                continue;
+            }
+
+            if (!Enum.IsDefined(copy.Platform))
+            {
+                addError(
+                    "invalid_physical_platform",
+                    $"Unknown physical platform '{copy.Platform}'.",
+                    $"{copyPath}.platform");
+            }
+        }
+    }
+
     private static BackupValidationResult CreateResult(
         GameHubBackupV1 backup,
         IReadOnlyList<BackupValidationError> errors) =>
@@ -464,6 +525,7 @@ public sealed class BackupImportService
 
         var itemCount = 0;
         var manualLinkCount = 0;
+        var physicalCopyCount = 0;
         var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var game in backup.Games)
@@ -475,6 +537,7 @@ public sealed class BackupImportService
 
             itemCount += game.Items?.Count ?? 0;
             manualLinkCount += game.ManualLinks?.Count ?? 0;
+            physicalCopyCount += game.PhysicalCopies?.Count ?? 0;
 
             if (game.Tags is not null)
             {
@@ -489,6 +552,7 @@ public sealed class BackupImportService
             backup.Games.Count,
             itemCount,
             manualLinkCount,
-            tags.Count);
+            tags.Count,
+            physicalCopyCount);
     }
 }
