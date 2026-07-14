@@ -1,0 +1,13 @@
+{
+  "datasetName": "synthetic-harness-smoke-only",
+  "cases": [
+    {
+      "caseId": "synthetic-disabled-001",
+      "gtin": "00012345000058",
+      "region": "TEST",
+      "expectedTitle": "Synthetic title, not provider evidence",
+      "expectedPlatform": "PS4",
+      "expectedResult": false
+    }
+  ]
+}

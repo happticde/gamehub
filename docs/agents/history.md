@@ -4,6 +4,22 @@
 
 ### What Changed
 
+**Physical Collection Phase 2B:**
+- Reviewed PriceCharting, MobyGames, Barcode Lookup, UPCitemdb, and Verified by GS1 using only
+  official documentation. No production provider was selected because compatible usage permission,
+  representative EU/US PS3/PS4/PS5 data, and provider access are missing; no hit-rate, accuracy,
+  latency, or availability figures were invented.
+- Added a provider-neutral, default-disabled Core adapter with canonical-GTIN-only input,
+  tenant-local-first precedence, short timeout, bounded/sanitized hints, and silent fallback for
+  disabled, no-result, rate-limit, upstream, timeout, and malformed-response outcomes.
+- Added a visibly separate external-suggestion UI. Explicit actions can seed tenant search or a
+  manual title/platform, but clear any selected game and never create, select, link, or save
+  automatically; the Phase 2A confirmation remains the only write path.
+- Added a Docker-runnable benchmark harness and operator dataset contract. Sanitized reports omit
+  raw GTINs, returned titles, provider payloads, credentials, and errors. No live benchmark ran.
+- Added fake/fixture-only coverage for local conflicts, provider outcomes, invalid input,
+  cross-tenant isolation, sanitization, write-free suggestions, and benchmark reporting.
+
 **Physical Collection Phase 2A:**
 - Added a global mobile-first, human-confirmed capture funnel with tenant search, explicit existing
   game selection, deliberate manual-game creation, PS3/PS4/PS5 selection, optional camera scanning
@@ -22,13 +38,24 @@
 - Added SQLite and PostgreSQL migrations plus normalization, CRUD, payload, lookup, conflict,
   cross-tenant, transaction, concurrency, sync, merge/split, backup, migration, and decoder tests.
 
+### Verification
+
+- Core, Ingest, and the product-catalogue benchmark harness build in the devcontainer with zero
+  warnings and errors.
+- The full .NET suite passes 387 tests. Physical capture frontend tests pass 3 tests; repository-wide
+  frontend lint and the Next.js production build pass.
+- The synthetic disabled-provider harness smoke run returns only the safe `Disabled` outcome and
+  exit code 2, as designed. It is not a live provider benchmark.
+
 ### Known State / Pending
 
-- External product resolution/provider selection, provider metadata import, OCR/cover recognition,
-  automatic assignment/creation, GTIN-8/UPC-E expansion, `PhysicalRelease`, edition, and region
-  remain deferred.
-- No `.env`, authentication, cookie, digital provider/sync behavior, `ManualLink`, or production
-  configuration was changed. The only dependency addition is the reviewed barcode decoder.
+- Production provider selection remains blocked on written usage permission, provider access, and a
+  representative verified EU/US PS3/PS4/PS5 benchmark dataset. OCR/cover recognition, automatic
+  assignment/creation, GTIN-8/UPC-E expansion, `PhysicalRelease`, edition, and region remain
+  deferred.
+- Production is explicitly `ProductCatalog:Provider=None`; no provider credential variable or new
+  dependency exists. No `.env`, authentication, cookie, digital provider/sync behavior,
+  `ManualLink`, database schema, or backup format was changed in Phase 2B.
 
 ## Current Session Summary (2026-07-13)
 

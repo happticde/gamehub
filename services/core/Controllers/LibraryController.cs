@@ -33,6 +33,7 @@ public class LibraryController : ControllerBase
     private readonly ActivityLogService _activityLog;
     private readonly IGameMetadataProvider _metadataProvider;
     private readonly PhysicalGameCaptureService _physicalCapture;
+    private readonly PhysicalProductLookupService _physicalProductLookup;
 
     public LibraryController(
         UnificationService unifier,
@@ -44,7 +45,8 @@ public class LibraryController : ControllerBase
         ITenantContext tenantContext,
         ActivityLogService activityLog,
         IGameMetadataProvider metadataProvider,
-        PhysicalGameCaptureService? physicalCapture = null)
+        PhysicalGameCaptureService? physicalCapture = null,
+        PhysicalProductLookupService? physicalProductLookup = null)
     {
         _unifier = unifier;
         _providerSyncStatus = providerSyncStatus;
@@ -56,6 +58,7 @@ public class LibraryController : ControllerBase
         _activityLog = activityLog;
         _metadataProvider = metadataProvider;
         _physicalCapture = physicalCapture ?? new PhysicalGameCaptureService(db);
+        _physicalProductLookup = physicalProductLookup ?? CreateDisabledPhysicalProductLookup(_physicalCapture);
     }
 
     /// <summary>
@@ -545,18 +548,32 @@ public class LibraryController : ControllerBase
             return BadRequest(new { Code = "invalid_gtin", Message = normalization.Error });
         }
 
-        var candidates = await _physicalCapture.LookupAsync(
+        var lookup = await _physicalProductLookup.LookupAsync(
             normalization.NormalizedGtin!,
             cancellationToken);
         _logger.LogInformation(
-            "Physical GTIN lookup returned {CandidateCount} tenant-local candidates",
-            candidates.Count);
+            "Physical GTIN lookup returned {CandidateCount} tenant-local candidates and {SuggestionCount} external suggestions",
+            lookup.LocalCandidates.Count,
+            lookup.ExternalSuggestions.Count);
 
         return Ok(new
         {
             normalization.NormalizedGtin,
-            Candidates = candidates
+            Candidates = lookup.LocalCandidates,
+            ExternalSuggestions = lookup.ExternalSuggestions
         });
+    }
+
+    private static PhysicalProductLookupService CreateDisabledPhysicalProductLookup(
+        PhysicalGameCaptureService physicalCapture)
+    {
+        var settings = PhysicalProductCatalogSettings.FromConfiguration(
+            new ConfigurationBuilder().Build());
+        var client = new PhysicalProductCatalogClient(
+            new DisabledPhysicalProductCatalogProvider(),
+            settings,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PhysicalProductCatalogClient>.Instance);
+        return new PhysicalProductLookupService(physicalCapture, client);
     }
 
     /// <summary>

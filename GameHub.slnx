@@ -15,4 +15,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/GameHub.Tests/GameHub.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/product-catalog-benchmark/GameHub.ProductCatalogBenchmark.csproj" />
+  </Folder>
 </Solution>

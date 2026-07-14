@@ -239,15 +239,50 @@ UPC-E expansion with trusted provenance, regional/edition metadata, and a `Physi
 remain open. A first-time unknown barcode therefore continues to tenant search or explicit manual
 creation, and no scan or provider data can create or select a game automatically.
 
+## Phase 2B Implementation Status (2026-07-14)
+
+The provider-neutral lookup boundary and reproducible evaluation harness are implemented, but no
+production catalogue provider is selected:
+
+- Official documentation was reviewed for PriceCharting, MobyGames, Barcode Lookup, UPCitemdb, and
+  Verified by GS1. PriceCharting has the closest documented game-specific UPC and region-aware
+  console model, but published third-party-software restrictions require express permission.
+  MobyGames has strong release/product-code provenance but no documented direct product-code REST
+  lookup and lists product-code access only in Silver. Generic barcode catalogues publish no
+  PS3/PS4/PS5 or EU/US coverage, while Verified by GS1 is not a game-release catalogue.
+- No representative, verified EU/US PS3/PS4/PS5 dataset or paid provider access was available.
+  Therefore no hit rate, accuracy, latency, or availability percentage is claimed, and Core accepts
+  only `ProductCatalog:Provider=None` until the documented decision gate is satisfied.
+- Core now exposes a provider-neutral interface, a disabled adapter, a bounded client with a
+  250–5,000 ms configurable timeout (1,500 ms default), safe classifications for no-result, 429,
+  temporary failure, timeout, and malformed payloads, and local-first orchestration. A confirmed
+  tenant-local mapping prevents any provider call. A local miss may return only bounded title and
+  PS3/PS4/PS5 hints; raw identifiers, payloads, credentials, status details, and errors are absent
+  from browser responses and logs.
+- The capture UI renders external hints separately from confirmed tenant-local associations.
+  Explicit buttons can copy a hint into tenant search or a new manual title and optional platform;
+  both actions clear any selected game and still require the existing final confirmation write.
+  Provider disablement or failure returns an empty hint list and leaves search/manual creation
+  unchanged.
+- `tools/product-catalog-benchmark` runs an operator-owned dataset through the same adapter boundary,
+  records safe per-case outcomes and latency, and omits GTINs, returned titles, payloads, credentials,
+  and errors from its report. It exits with a distinct non-success code when only `None` is
+  configured so a harness check cannot be mistaken for a live benchmark.
+
+The full official-source comparison, license blockers, dataset contract, and runbook are in
+[Physical Product Catalogue Evaluation](../physical-product-catalog-evaluation.md). No live
+benchmark was executed in this phase.
+
 ## Rollout Plan
 
 1. **Completed in Phase 2A:** global deterministic intake with tenant-scoped search, explicit
    platform selection, tested manual game creation, local barcode decoding/manual GTIN entry,
    tenant-local confirmed mappings, nullable copy storage, migrations, and Backup V3.
-2. **Deferred from Phase 2A:** benchmark and select a provider-neutral external product adapter only
-   if it improves first-time unknown-code capture without weakening confirmation or availability.
-3. **Provider selection:** choose and configure a production provider only after the representative
-   coverage and operational benchmark.
+2. **Completed in Phase 2B:** add the neutral server adapter, local-first/fail-open orchestration,
+   safe external-hint UI, provider failure fixtures/fakes, and reproducible benchmark harness.
+3. **Blocked provider selection:** obtain compatible written usage rights, provider access, and a
+   representative verified EU/US PS3/PS4/PS5 dataset; then run and publish the measured benchmark
+   before adding a production provider or credential variable.
 4. **OCR experiment:** compare the failed/no-barcode fallback with manual search on real cases; ship
    only if it materially improves successful confirmation time without weakening privacy or
    correctness.
@@ -290,5 +325,6 @@ creation, and no scan or provider data can create or select a game automatically
 - [Tesseract.js](https://github.com/naptha/tesseract.js)
 - [MobyGames API](https://www.mobygames.com/info/api/)
 - [MobyGames release and product-code standards](https://www.mobygames.com/info/standards/)
+- [Physical Product Catalogue Evaluation](../physical-product-catalog-evaluation.md)
 - [ADR-008: Data Portability Format](008-data-portability-format.md)
 - [Core Tenant-Isolation Audit](../tenant-isolation-audit.md)
