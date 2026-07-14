@@ -182,6 +182,12 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   EU/US PS3/PS4/PS5 dataset and emits sanitized measured outcomes without raw GTINs or payloads.
   Production remains `ProductCatalog:Provider=None`; there is no provider credential variable in
   this phase.
+- **Experimental backlog (not a milestone commitment)**: [UPC Database](https://upcdatabase.org/api)
+  may be evaluated as an opt-in, server-side **title-only** suggestion provider. Its documented
+  UPC/EAN lookup and bearer-token API make it a plausible adapter experiment, but it publishes no
+  verified PS3/PS4/PS5 or EU/US coverage, no reliable platform field, and no suitable evidence for
+  a production selection. Any evaluation requires written usage review and a representative live
+  benchmark; it is deliberately not assigned to a defined next milestone.
 - **Remaining scope**: Written provider usage permission, representative live benchmarking,
   production provider/credential selection, OCR/cover recognition, automatic assignment/creation,
   regional or edition data, and `PhysicalRelease` remain deferred.
