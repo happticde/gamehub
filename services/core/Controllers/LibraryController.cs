@@ -32,6 +32,7 @@ public class LibraryController : ControllerBase
     private readonly ITenantContext _tenantContext;
     private readonly ActivityLogService _activityLog;
     private readonly IGameMetadataProvider _metadataProvider;
+    private readonly PhysicalGameCaptureService _physicalCapture;
 
     public LibraryController(
         UnificationService unifier,
@@ -42,7 +43,8 @@ public class LibraryController : ControllerBase
         SyncSchedulerStatus syncStatus,
         ITenantContext tenantContext,
         ActivityLogService activityLog,
-        IGameMetadataProvider metadataProvider)
+        IGameMetadataProvider metadataProvider,
+        PhysicalGameCaptureService? physicalCapture = null)
     {
         _unifier = unifier;
         _providerSyncStatus = providerSyncStatus;
@@ -53,6 +55,7 @@ public class LibraryController : ControllerBase
         _tenantContext = tenantContext;
         _activityLog = activityLog;
         _metadataProvider = metadataProvider;
+        _physicalCapture = physicalCapture ?? new PhysicalGameCaptureService(db);
     }
 
     /// <summary>
@@ -234,7 +237,8 @@ public class LibraryController : ControllerBase
                 .Select(copy => new
                 {
                     copy.Id,
-                    copy.Platform
+                    copy.Platform,
+                    copy.NormalizedGtin
                 })
                 .ToList()
         });
@@ -430,7 +434,8 @@ public class LibraryController : ControllerBase
                 .Select(copy => new
                 {
                     copy.Id,
-                    copy.Platform
+                    copy.Platform,
+                    copy.NormalizedGtin
                 })
                 .ToList()
         };
@@ -462,7 +467,8 @@ public class LibraryController : ControllerBase
             .Select(copy => new
             {
                 copy.Id,
-                copy.Platform
+                copy.Platform,
+                copy.NormalizedGtin
             })
             .ToListAsync(cancellationToken);
 
@@ -484,6 +490,18 @@ public class LibraryController : ControllerBase
             return BadRequest(new { Message = $"Physical platform '{request.Platform}' is not supported." });
         }
 
+        string? normalizedGtin = null;
+        if (!string.IsNullOrWhiteSpace(request.Gtin))
+        {
+            var normalization = GtinNormalizer.Normalize(request.Gtin);
+            if (!normalization.IsValid)
+            {
+                return BadRequest(new { Code = "invalid_gtin", Message = normalization.Error });
+            }
+
+            normalizedGtin = normalization.NormalizedGtin;
+        }
+
         if (!await _db.UnifiedGames.AnyAsync(game => game.Id == id, cancellationToken))
         {
             return NotFound(new { Message = $"Game with ID {id} not found." });
@@ -492,7 +510,8 @@ public class LibraryController : ControllerBase
         var copy = new PhysicalGameCopy
         {
             UnifiedGameId = id,
-            Platform = request.Platform
+            Platform = request.Platform,
+            NormalizedGtin = normalizedGtin
         };
         _db.PhysicalGameCopies.Add(copy);
         await _db.SaveChangesAsync(cancellationToken);
@@ -506,7 +525,130 @@ public class LibraryController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, new
         {
             copy.Id,
-            copy.Platform
+            copy.Platform,
+            copy.NormalizedGtin
+        });
+    }
+
+    /// <summary>
+    /// GET: api/library/physical-copies/gtin-lookup
+    /// Returns every tenant-local game candidate previously confirmed for one normalized GTIN.
+    /// </summary>
+    [HttpGet("physical-copies/gtin-lookup")]
+    public async Task<IActionResult> LookupPhysicalGtin(
+        [FromQuery] string? gtin,
+        CancellationToken cancellationToken = default)
+    {
+        var normalization = GtinNormalizer.Normalize(gtin);
+        if (!normalization.IsValid)
+        {
+            return BadRequest(new { Code = "invalid_gtin", Message = normalization.Error });
+        }
+
+        var candidates = await _physicalCapture.LookupAsync(
+            normalization.NormalizedGtin!,
+            cancellationToken);
+        _logger.LogInformation(
+            "Physical GTIN lookup returned {CandidateCount} tenant-local candidates",
+            candidates.Count);
+
+        return Ok(new
+        {
+            normalization.NormalizedGtin,
+            Candidates = candidates
+        });
+    }
+
+    /// <summary>
+    /// POST: api/library/physical-copies/capture
+    /// Atomically adds a confirmed physical copy to an existing game or a new manual game.
+    /// </summary>
+    [HttpPost("physical-copies/capture")]
+    public async Task<IActionResult> CapturePhysicalGame(
+        [FromBody] CapturePhysicalGameRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!request.Confirmed)
+        {
+            return BadRequest(new
+            {
+                Code = "confirmation_required",
+                Message = "Confirm the game, physical platform, and optional GTIN before saving."
+            });
+        }
+
+        if (!Enum.IsDefined(request.Platform))
+        {
+            return BadRequest(new { Message = $"Physical platform '{request.Platform}' is not supported." });
+        }
+
+        var hasExistingGame = request.ExistingGameId.HasValue;
+        var hasManualGame = !string.IsNullOrWhiteSpace(request.ManualGameTitle);
+        if (hasExistingGame == hasManualGame)
+        {
+            return BadRequest(new
+            {
+                Code = "invalid_capture_target",
+                Message = "Choose exactly one existing game or explicitly provide a new manual game title."
+            });
+        }
+
+        string? normalizedGtin = null;
+        if (!string.IsNullOrWhiteSpace(request.Gtin))
+        {
+            var normalization = GtinNormalizer.Normalize(request.Gtin);
+            if (!normalization.IsValid)
+            {
+                return BadRequest(new { Code = "invalid_gtin", Message = normalization.Error });
+            }
+
+            normalizedGtin = normalization.NormalizedGtin;
+        }
+
+        PhysicalCaptureResult? result;
+        try
+        {
+            result = hasExistingGame
+                ? await _physicalCapture.CaptureExistingAsync(
+                    request.ExistingGameId!.Value,
+                    request.Platform,
+                    normalizedGtin,
+                    cancellationToken)
+                : await _physicalCapture.CaptureManualAsync(
+                    request.ManualGameTitle!,
+                    request.Platform,
+                    normalizedGtin,
+                    cancellationToken);
+        }
+        catch (PhysicalCaptureValidationException exception)
+        {
+            return BadRequest(new { Code = "invalid_manual_game", Message = exception.Message });
+        }
+
+        if (result is null)
+        {
+            return NotFound(new { Message = $"Game with ID {request.ExistingGameId} not found." });
+        }
+
+        _logger.LogInformation(
+            "Captured physical copy {PhysicalCopyId} on {PhysicalPlatform} for game {GameId}; manual game created: {CreatedManualGame}",
+            result.Copy.Id,
+            result.Copy.Platform,
+            result.GameId,
+            result.CreatedManualGame);
+
+        return StatusCode(StatusCodes.Status201Created, new
+        {
+            result.GameId,
+            result.Title,
+            result.Slug,
+            result.CreatedManualGame,
+            Copy = new
+            {
+                result.Copy.Id,
+                result.Copy.Platform,
+                result.Copy.NormalizedGtin
+            }
         });
     }
 
@@ -1525,6 +1667,28 @@ public sealed class AddPhysicalGameCopyRequest
 {
     /// <summary>Supported physical console platform. Tenant ownership comes from authentication.</summary>
     public PhysicalGamePlatform Platform { get; set; }
+
+    /// <summary>Optional typed or scanned GTIN. It is normalized and validated server-side.</summary>
+    public string? Gtin { get; set; }
+}
+
+/// <summary>Confirmed request for the global physical-game capture flow.</summary>
+public sealed class CapturePhysicalGameRequest
+{
+    /// <summary>Existing tenant-owned game ID, mutually exclusive with <see cref="ManualGameTitle"/>.</summary>
+    public int? ExistingGameId { get; set; }
+
+    /// <summary>Explicit title for a new manual game, mutually exclusive with <see cref="ExistingGameId"/>.</summary>
+    public string? ManualGameTitle { get; set; }
+
+    /// <summary>Supported physical PlayStation platform.</summary>
+    public PhysicalGamePlatform Platform { get; set; }
+
+    /// <summary>Optional typed or scanned GTIN. It is normalized and validated server-side.</summary>
+    public string? Gtin { get; set; }
+
+    /// <summary>Must be true only after the user has reviewed the final capture summary.</summary>
+    public bool Confirmed { get; set; }
 }
 
 /// <summary>Request body for the personal tracking update endpoint.</summary>

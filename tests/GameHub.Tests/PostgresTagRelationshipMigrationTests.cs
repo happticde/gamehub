@@ -14,6 +14,7 @@ namespace GameHub.Tests;
 /// <summary>Runs the tenant-safe tag upgrade against a real PostgreSQL database when configured.</summary>
 public sealed class PostgresTagRelationshipMigrationTests
 {
+    private const string ValidGtin = "00012345000058";
     private static readonly Guid TenantA = TenantDefaults.DefaultTenantId;
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
@@ -48,12 +49,19 @@ public sealed class PostgresTagRelationshipMigrationTests
             db.PhysicalGameCopies.Add(new PhysicalGameCopy
             {
                 UnifiedGameId = gameId,
-                Platform = PhysicalGamePlatform.PS4
+                Platform = PhysicalGamePlatform.PS4,
+                NormalizedGtin = ValidGtin
+            });
+            db.PhysicalGameCopies.Add(new PhysicalGameCopy
+            {
+                UnifiedGameId = gameId,
+                Platform = PhysicalGamePlatform.PS4,
+                NormalizedGtin = ValidGtin
             });
             await db.SaveChangesAsync();
 
             Assert.Equal("Preserved", (await db.UnifiedGames.SingleAsync()).Title);
-            Assert.Equal(PhysicalGamePlatform.PS4, (await db.PhysicalGameCopies.SingleAsync()).Platform);
+            Assert.Equal(2, await db.PhysicalGameCopies.CountAsync(copy => copy.NormalizedGtin == ValidGtin));
             await Assert.ThrowsAnyAsync<DbException>(() => db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO "PhysicalGameCopies" ("TenantId", "UnifiedGameId", "Platform")
                 VALUES ({TenantB}, {gameId}, {(int)PhysicalGamePlatform.PS5})
@@ -93,11 +101,13 @@ public sealed class PostgresTagRelationshipMigrationTests
             db.PhysicalGameCopies.Add(new PhysicalGameCopy
             {
                 UnifiedGameId = game.Id,
-                Platform = PhysicalGamePlatform.PS5
+                Platform = PhysicalGamePlatform.PS5,
+                NormalizedGtin = ValidGtin
             });
             await db.SaveChangesAsync();
 
             Assert.Equal(PhysicalGamePlatform.PS5, (await db.PhysicalGameCopies.SingleAsync()).Platform);
+            Assert.Equal(ValidGtin, (await db.PhysicalGameCopies.SingleAsync()).NormalizedGtin);
         }
         finally
         {

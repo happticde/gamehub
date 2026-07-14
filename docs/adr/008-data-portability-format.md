@@ -75,13 +75,22 @@ tries to carry V2 physical entries is rejected instead of being interpreted ambi
 exports use V2, and restore always assigns physical-copy ownership from the authenticated tenant
 context.
 
-## Future Assisted-Capture Portability Decision (2026-07-14)
+## Assisted-Capture Portability Implementation (2026-07-14)
 
 [ADR-014](014-human-confirmed-physical-game-capture.md) reframes the barcode follow-up as a
-human-confirmed hybrid capture flow. When normalized GTIN becomes durable physical-copy data,
-GameHub will introduce Backup V3 rather than silently extend V2. V3 will keep that field optional
-and continue to accept V1 (no physical copies) and V2 (physical copies without barcode data).
-Accepting ADR-014 alone does not change the current V2 format.
+human-confirmed hybrid capture flow. Durable normalized GTIN data is now implemented through Backup
+V3 rather than a silent V2 extension.
+
+V3 adds one optional `normalizedGtin` string to each physical-copy entry. New exports use V3 and
+write the canonical 14-digit form. Validation checks length, characters, GS1 check digit, and
+canonical zero-padding before any restore write. Repeated GTINs remain valid because the value
+identifies a trade-item class, not an owned copy.
+
+Restore still accepts V1 as a document with no physical copies and V2 as physical copies without
+GTIN data. V2 documents carrying a non-null GTIN are rejected. V3 restore never reads tenant IDs
+from the document and always derives copy ownership from the authenticated tenant context. The CSV
+view includes platform-qualified canonical GTIN text so spreadsheet software does not discard
+leading zeroes.
 
 ## Rationale
 
@@ -139,3 +148,5 @@ work are recorded in the [Core Tenant-Isolation Audit](../tenant-isolation-audit
 5. **Completed:** Scope export and restore preconditions/writes to the authenticated tenant.
 6. **Completed:** Add cross-tenant export, restore, ownership, and equivalent-key isolation tests.
 7. **Completed:** Add Backup V2 physical-copy export/validation/restore while retaining defined V1 import.
+8. **Completed:** Add Backup V3 optional canonical GTIN export/validation/restore while retaining
+   defined V1 and V2 imports and spreadsheet-safe CSV output.

@@ -90,6 +90,12 @@ public class PhysicalGameCopy : ITenantOwned
     public int UnifiedGameId { get; set; }
     public UnifiedGame? UnifiedGame { get; set; }
     public PhysicalGamePlatform Platform { get; set; }
+
+    /// <summary>
+    /// Optional canonical GTIN-14 confirmed by the tenant. It identifies a trade-item class, not
+    /// this copy, so repeated values are intentionally allowed.
+    /// </summary>
+    public string? NormalizedGtin { get; set; }
 }
 
 public class LibraryItem : ITenantOwned

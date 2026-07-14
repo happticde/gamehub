@@ -22,6 +22,7 @@ public sealed class BackupCsvSerializer
         "Last Synced",
         "Manual Links",
         "Physical Copies",
+        "Physical GTINs",
         "Tags",
         "Genres",
         "Release Platforms",
@@ -61,6 +62,9 @@ public sealed class BackupCsvSerializer
                 string.Join("; ", game.Items.Select(item => $"{item.Platform}:{FormatDateTime(item.LastSynced)}")),
                 string.Join("; ", game.ManualLinks.Select(link => $"{link.Platform}:{link.ExternalId}")),
                 string.Join("; ", (game.PhysicalCopies ?? []).Select(copy => copy.Platform)),
+                string.Join("; ", (game.PhysicalCopies ?? [])
+                    .Where(copy => copy.NormalizedGtin is not null)
+                    .Select(copy => $"{copy.Platform}:'{copy.NormalizedGtin}")),
                 string.Join("; ", game.Tags),
                 game.Metadata.Genres,
                 game.Metadata.Platforms,

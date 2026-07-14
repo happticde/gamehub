@@ -13,8 +13,8 @@ public sealed class BackupExportService
     /// <summary>Stable identifier written to every GameHub backup.</summary>
     public const string FormatName = "gamehub-backup";
 
-    /// <summary>Current backup schema version. V2 adds physical copies.</summary>
-    public const int CurrentFormatVersion = 2;
+    /// <summary>Current backup schema version. V3 adds optional normalized GTINs.</summary>
+    public const int CurrentFormatVersion = 3;
 
     /// <summary>Oldest backup version accepted by restore.</summary>
     public const int MinimumSupportedFormatVersion = 1;
@@ -32,7 +32,7 @@ public sealed class BackupExportService
     }
 
     /// <summary>
-    /// Creates a consistent, deterministically ordered V1 backup snapshot.
+    /// Creates a consistent, deterministically ordered current-version backup snapshot.
     /// </summary>
     public async Task<GameHubBackupV1> CreateBackupAsync(CancellationToken cancellationToken = default)
     {
@@ -100,7 +100,7 @@ public sealed class BackupExportService
             game.PhysicalCopies
                 .OrderBy(copy => copy.Platform)
                 .ThenBy(copy => copy.Id)
-                .Select(copy => new BackupPhysicalGameCopyV2(copy.Platform))
+                .Select(copy => new BackupPhysicalGameCopyV2(copy.Platform, copy.NormalizedGtin))
                 .ToList()))
             .ToList();
 

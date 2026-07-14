@@ -24,7 +24,7 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Background Sync Scheduler | ✅ BackgroundService + status endpoint + admin UI |
 | Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
 | Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
-| Physical collection | ✅ Phase 1 manual PS3/PS4/PS5 copies; hybrid assisted capture planned |
+| Physical collection | ✅ Phase 2A global confirmed capture + optional UPC-A/EAN-13 foundation |
 
 ---
 
@@ -142,14 +142,14 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 ### 12. Data Portability (Backup & Restore) ✅
 - **Feature**: GameHub-specific import/export via JSON/CSV.
 - **Goal**: Full manual backup of entire unified library (metadata, ratings, play status).
-- **Current scope**: JSON V2 export, validation, transactional empty-library restore, Admin UI, and
-  spreadsheet-safe CSV export are implemented. V2 adds physical copies; supported V1 backups remain
-  importable and restore an empty physical collection by definition.
+- **Current scope**: JSON V3 export, validation, transactional empty-library restore, Admin UI, and
+  spreadsheet-safe CSV export are implemented. V2 adds physical copies and V3 adds an optional
+  canonical GTIN per copy; supported V1 and V2 backups remain importable.
 - **Multi-tenancy status**: Export and restore are scoped to the authenticated tenant while backup
   documents remain tenant-neutral. Cross-tenant isolation, active-tenant empty-library behavior,
   and physical-copy ownership are covered by tests. See [ADR-008](adr/008-data-portability-format.md).
 
-### 13. Physical Collection — Phase 1 ✅ / Assisted Capture Planned
+### 13. Physical Collection — Phase 2A ✅ / Catalogue and OCR Deferred
 - **Phase 1 (2026-07-13)**: Tenant-owned physical-copy records with independent IDs can be added to
   an existing Unified Game, listed in detail and library payloads, filtered separately by PS3, PS4,
   or PS5, and removed with confirmation. Multiple copies of the same game/platform are valid.
@@ -157,17 +157,19 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   `LibraryItem`, sync, or `ManualLink` semantics. Composite tenant/game relationships are enforced
   in SQLite and PostgreSQL. Manual merge moves every copy to the target; manual split moves only the
   selected digital item and leaves physical copies on the original game.
-- **Portability**: Backup V2 and CSV export include physical copies. Restore accepts V1 (no physical
-  data by definition) and V2, assigns ownership from the authenticated tenant, and never imports a
-  tenant ID.
-- **Phase 2 direction (2026-07-14)**: [ADR-014](adr/014-human-confirmed-physical-game-capture.md)
-  rejects barcode-only automatic assignment in favor of a global, human-confirmed capture funnel.
-  Tenant-scoped manual search is the universal path; barcode scan/manual GTIN entry is the primary
-  optional accelerator; on-device OCR is evaluated only as a fallback search hint. Physical-only
-  titles require explicit manual game creation rather than provider- or OCR-driven automatic writes.
-- **Future data evolution**: Confirmed codes may be stored as a nullable normalized GTIN on a copy
-  without a uniqueness constraint. Durable barcode data requires Backup V3; V1/V2 import
-  compatibility and authenticated tenant ownership remain mandatory.
+- **Phase 2A (2026-07-14)**: [ADR-014](adr/014-human-confirmed-physical-game-capture.md) is implemented
+  as a global mobile-first, human-confirmed funnel. Tenant search is universal; explicit manual-game
+  creation covers physical-only titles; optional UPC-A/EAN-13 scan or typed GTIN can reuse every
+  conflicting tenant-local confirmed mapping without selecting a winner.
+- **GTIN and privacy**: Copies store a nullable, non-unique canonical GTIN-14 string with a
+  tenant-appropriate lookup index. Camera frames stay local; video-only capture starts from a visible
+  action and all tracks are stopped on every exit path. Scanner symbology and raw input are transient.
+- **Portability**: Backup V3 and CSV include optional canonical GTINs. Restore accepts V1, V2, and
+  V3, rejects invalid V3 values before writes, assigns ownership from authentication, and allows
+  repeated GTINs.
+- **Remaining scope**: External product-catalogue resolution/provider selection and benchmarking,
+  OCR/cover recognition, automatic assignment/creation, regional or edition data, and
+  `PhysicalRelease` remain deferred.
 
 ### 14. Discovery: "Surprise Me" (Random Pick) ✅
 - **Feature**: Random game selection button that respects active filters (e.g., "Random RPG I haven't finished").
@@ -318,7 +320,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 | **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
 | **Multi-user readiness** | #8 technically complete; operator activation remains explicit and default-off ✅ |
 | **AI integration** | #11 MCP Server (High Value) |
-| **Data & Portability** | #12 Import/Export → #13 Barcode Scanning |
+| **Data & Portability** | #12 Import/Export → #13 catalogue/OCR follow-ups (Phase 2A capture complete) |
 | **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
 | **Future platform integration** | #16 Epic authentication and stored retrieval → #17 guided GOG/PSN account connect |
 | **Controlled onboarding** | #18 Registration/invitations → #19 provider lifecycle follow-ups (personal JIT implemented) |

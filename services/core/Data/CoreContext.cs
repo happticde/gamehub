@@ -172,6 +172,8 @@ public class CoreContext : DbContext
         modelBuilder.Entity<PhysicalGameCopy>(entity =>
         {
             entity.HasIndex(copy => new { copy.TenantId, copy.UnifiedGameId, copy.Platform });
+            entity.HasIndex(copy => new { copy.TenantId, copy.NormalizedGtin });
+            entity.Property(copy => copy.NormalizedGtin).HasMaxLength(14);
             entity.HasOne(copy => copy.UnifiedGame)
                 .WithMany(game => game.PhysicalCopies)
                 .HasForeignKey(copy => new { copy.TenantId, copy.UnifiedGameId })
