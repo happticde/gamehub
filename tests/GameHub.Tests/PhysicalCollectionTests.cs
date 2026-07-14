@@ -436,6 +436,64 @@ public sealed class PhysicalCollectionTests : IDisposable
     }
 
     [Fact]
+    public async Task CapturePhysicalGame_SecondProviderGameReusesTenantGenreWithoutOwnershipConflict()
+    {
+        foreach (var metadata in new[]
+        {
+            CreateMetadata(7010, "First provider game"),
+            CreateMetadata(7011, "Second provider game")
+        })
+        {
+            await using var actionDb = CreateContext(TenantB);
+            var result = Assert.IsType<ObjectResult>(await CreateController(
+                actionDb,
+                TenantB,
+                new FakeMetadataProvider([], metadata)).CapturePhysicalGame(
+                new CapturePhysicalGameRequest
+                {
+                    MetadataProviderId = metadata.ProviderId,
+                    Platform = PhysicalGamePlatform.PS5,
+                    Confirmed = true
+                }));
+            Assert.Equal(StatusCodes.Status201Created, result.StatusCode);
+        }
+
+        await using var verify = CreateContext(TenantB);
+        Assert.Equal(2, await verify.UnifiedGames.CountAsync());
+        Assert.Equal(2, await verify.PhysicalGameCopies.CountAsync());
+        Assert.Single(verify.Tags);
+        Assert.Equal(2, await verify.Set<TagAssignment>().CountAsync());
+        Assert.All(
+            await verify.Set<TagAssignment>().ToListAsync(),
+            assignment => Assert.Equal(TenantB, assignment.TenantId));
+    }
+
+    [Fact]
+    public async Task CaptureProviderGame_MetadataSaveFailureRollsBackInitialGameAndCopy()
+    {
+        var interceptor = new FailOnSecondSaveChangesInterceptor();
+        var failingOptions = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptor)
+            .Options;
+
+        await using (var failingDb = new CoreContext(failingOptions, new FixedTenantContext(TenantC)))
+        {
+            await Assert.ThrowsAsync<DbUpdateException>(() => new PhysicalGameCaptureService(failingDb)
+                .CaptureProviderGameAsync(
+                    CreateMetadata(7012, "Rolled back provider game"),
+                    "IGDB",
+                    PhysicalGamePlatform.PS4,
+                    null));
+        }
+
+        await using var verify = CreateContext(TenantC);
+        Assert.DoesNotContain(verify.UnifiedGames, game => game.MetadataProviderId == 7012);
+        Assert.DoesNotContain(verify.UnifiedGames, game => game.Title == "Rolled back provider game");
+        Assert.Empty(verify.PhysicalGameCopies);
+    }
+
+    [Fact]
     public async Task CapturePhysicalGame_UnconfirmedMissingOrFailedProviderLookupPerformsNoWrite()
     {
         const string secretDiagnostic = "provider-secret-response";
@@ -888,5 +946,23 @@ public sealed class PhysicalCollectionTests : IDisposable
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class FailOnSecondSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        private int _saveCount;
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _saveCount) == 2)
+            {
+                throw new DbUpdateException("Fixture failure during metadata save.");
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 }

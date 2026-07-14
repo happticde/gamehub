@@ -5,6 +5,10 @@
 ### What Changed
 
 **Manual-First IGDB Physical Capture:**
+- Fixed the second-new-game path when a provider capture reuses an existing tenant genre. The game
+  and copy now receive trusted tenant ownership and a durable game ID before composite tag joins
+  are built, while both saves remain inside the same serializable transaction. Regression coverage
+  proves shared-genre reuse and rollback when the metadata/tag save fails.
 - Replaced the visible barcode/GTIN/catalogue funnel with a three-step IGDB title search, explicit
   result selection, initially empty PS3/PS4/PS5 selection, and final confirmation-only write.
 - Reused the Fix Match enrichment endpoint, provider-neutral DTO, and shared result card. Search is
@@ -61,7 +65,7 @@
   exact same-tenant reuse, cross-tenant non-reuse, atomic creation, duplicates, and absence of
   digital/manual-link writes using fakes only. Frontend state tests cover stale responses, explicit
   selection/platform/confirmation, write-free back/cancel, and absent barcode/catalogue UI.
-- Core builds in the devcontainer with zero warnings and errors. The full .NET suite passes 391
+- Core builds in the devcontainer with zero warnings and errors. The full .NET suite passes 393
   tests. Physical capture frontend tests pass 4 tests; repository-wide frontend lint and the
   Next.js production build pass.
 - The synthetic disabled-provider harness smoke run returns only the safe `Disabled` outcome and

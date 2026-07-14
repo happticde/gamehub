@@ -161,6 +161,13 @@ public sealed class PhysicalGameCaptureService
                     ]
                 };
                 _db.UnifiedGames.Add(game);
+
+                // Persist the tenant-owned game and copy before building composite tag joins. A
+                // new TagAssignment includes TenantId in its primary key, so EF may otherwise
+                // generate a temporary GUID before the save guard can assign the trusted tenant.
+                // Both saves remain inside this transaction and therefore commit or roll back as
+                // one provider-capture operation.
+                await _db.SaveChangesAsync(cancellationToken);
                 await GameMetadataApplicator.ApplyAsync(
                     _db,
                     game,
