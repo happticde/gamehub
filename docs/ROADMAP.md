@@ -205,11 +205,16 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Implemented**: The Core random-library endpoint respects active filters, and the frontend
   provides a "Surprise Me" action that navigates to the selected game.
 
-### 15. Power-User Maintenance Tools
-- **Direct Enrichment**: Allow manual input of IGDB ID for instant, accurate matching.
-- **Advanced Pagination**: Customizable page sizes, FIRST/LAST navigation, and direct page jumping.
-- **Manual Split**: Ability to separate platform entries from a unified game into their own records.
-- **Robust Sorting**: Logic to gracefully handle missing years or ratings (coalesce nulls).
+### 15. Power-User Maintenance Tools — Direct Matching Complete
+- **Direct Enrichment ✅ (2026-07-15)**: Fix Match now keeps exact provider-ID entry separate from
+  title search. Core verifies the positive provider ID before changing the tenant-owned game,
+  rejects missing or mismatched provider results without altering existing metadata or custom tags,
+  applies successful metadata and audit writes atomically, and returns sanitized temporary-provider
+  failures. Direct cross-tenant game access fails before any provider call.
+- **Advanced Pagination — partial**: FIRST/LAST navigation and direct page jumping are implemented.
+  Customizable page sizes remain the outstanding slice.
+- **Manual Split ✅**: Platform entries can be separated from a unified game into their own records.
+- **Robust Sorting ✅**: Missing years and ratings are coalesced to deterministic sort positions.
 
 ### 16. Epic Authentication & Stored Retrieval ✅ MVP
 - **Current behavior**: Admin Credentials can store Epic retrieval credentials through the encrypted
@@ -349,7 +354,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 | **Multi-user readiness** | #8 technically complete; operator activation remains explicit and default-off ✅ |
 | **AI integration** | #11 MCP Server (High Value) |
 | **Data & Portability** | #12 Import/Export → #13 manual-first IGDB physical capture complete |
-| **Maintenance & UI** | #15 Power-User Tools → ~~#14 Random Pick~~ ✅ Done |
+| **Maintenance & UI** | #15 customizable page sizes remain → ~~#14 Random Pick~~ ✅ Done |
 | **Future platform integration** | #16 Epic authentication and stored retrieval → #17 guided GOG/PSN account connect |
 | **Controlled onboarding** | #18 Registration/invitations → #19 provider lifecycle follow-ups (personal JIT implemented) |
 | **General SaaS readiness** | #20 operations, administration, security review, and release gate |

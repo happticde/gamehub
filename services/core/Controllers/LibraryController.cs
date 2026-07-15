@@ -1161,31 +1161,48 @@ public class LibraryController : ControllerBase
     /// <summary>
     /// POST: api/library/{id}/enrichment/override
     /// Body: { "providerId": 1234 }
-    /// Manually overrides the metadata provider ID for a game and re-enriches it.
+    /// Verifies an explicit metadata provider ID, then atomically applies that exact match.
     /// </summary>
     [HttpPost("{id}/enrichment/override")]
-    public async Task<IActionResult> OverrideEnrichment(int id, [FromBody] OverrideRequest request)
+    public async Task<IActionResult> OverrideEnrichment(
+        int id,
+        [FromBody] OverrideRequest request,
+        CancellationToken cancellationToken = default)
     {
-        var game = await _db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == id);
-        if (game == null)
-            return NotFound(new { Message = $"Game with ID {id} not found." });
-
-        if (!request.ProviderId.HasValue)
-            return BadRequest(new { Message = "ProviderId is required." });
-
-        game.MetadataProviderId = request.ProviderId.Value;
-        game.MetadataSource = _metadataProvider.ProviderName;
-        await _db.SaveChangesAsync();
-
-        // Re-enrich immediately using the forcefully updated provider ID
-        var success = await _enrichment.EnrichGameAsync(id, force: true);
-        if (!success)
-            return StatusCode(500, new { Message = "Failed to enrich game with the new provider ID." });
+        var providerId = request.ProviderId.GetValueOrDefault();
+        var result = await _enrichment.ApplyProviderMatchAsync(id, providerId, cancellationToken);
+        switch (result.Status)
+        {
+            case DirectEnrichmentStatus.InvalidProviderId:
+                return BadRequest(new
+                {
+                    Code = "invalid_metadata_provider_id",
+                    Message = "ProviderId must be a positive integer."
+                });
+            case DirectEnrichmentStatus.GameNotFound:
+                return NotFound(new { Message = $"Game with ID {id} not found." });
+            case DirectEnrichmentStatus.ProviderGameNotFound:
+                return NotFound(new
+                {
+                    Code = "metadata_provider_game_not_found",
+                    Message = $"No metadata result was found for provider ID {providerId}."
+                });
+            case DirectEnrichmentStatus.ProviderUnavailable:
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    Code = "metadata_provider_unavailable",
+                    Message = "The metadata provider is temporarily unavailable. Try again shortly."
+                });
+            case DirectEnrichmentStatus.Success:
+                break;
+            default:
+                throw new InvalidOperationException("Unknown direct enrichment result.");
+        }
 
         var updatedGame = await _db.UnifiedGames
             .Include(g => g.Tags)
             .AsNoTracking()
-            .FirstOrDefaultAsync(g => g.Id == id);
+            .FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
 
         return Ok(new
         {
