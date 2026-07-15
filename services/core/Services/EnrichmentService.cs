@@ -120,6 +120,126 @@ public class EnrichmentService
     }
 
     /// <summary>
+    /// Verifies an explicit provider ID before atomically replacing one tenant-owned game's
+    /// provider metadata. Failed lookups never alter the game's existing metadata or tags.
+    /// </summary>
+    public async Task<DirectEnrichmentResult> ApplyProviderMatchAsync(
+        int gameId,
+        int providerId,
+        CancellationToken ct = default)
+    {
+        if (providerId <= 0)
+        {
+            return new DirectEnrichmentResult(DirectEnrichmentStatus.InvalidProviderId);
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var game = await db.UnifiedGames
+            .Include(candidate => candidate.Tags)
+            .FirstOrDefaultAsync(candidate => candidate.Id == gameId, ct);
+        if (game is null)
+        {
+            return new DirectEnrichmentResult(DirectEnrichmentStatus.GameNotFound);
+        }
+
+        GameMetadata? metadata;
+        try
+        {
+            metadata = await _provider.GetByIdAsync(providerId, ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "Direct metadata lookup for game {GameId} through {Provider} is temporarily unavailable",
+                gameId,
+                _provider.ProviderName);
+            await RecordDirectMatchAuditAsync(
+                db,
+                game.Id,
+                providerId,
+                "Error",
+                "Metadata provider lookup failed.",
+                matchedTitle: null,
+                ct);
+            return new DirectEnrichmentResult(DirectEnrichmentStatus.ProviderUnavailable);
+        }
+
+        if (metadata is null)
+        {
+            await RecordDirectMatchAuditAsync(
+                db,
+                game.Id,
+                providerId,
+                "NotFound",
+                errorMessage: null,
+                matchedTitle: null,
+                ct);
+            return new DirectEnrichmentResult(DirectEnrichmentStatus.ProviderGameNotFound);
+        }
+
+        // A provider-specific ID is the user's linkage authority. A malformed response that
+        // identifies a different game must therefore fail closed instead of silently linking it.
+        if (metadata.ProviderId != providerId)
+        {
+            _logger.LogWarning(
+                "Direct metadata lookup for game {GameId} through {Provider} returned an unexpected identity",
+                gameId,
+                _provider.ProviderName);
+            await RecordDirectMatchAuditAsync(
+                db,
+                game.Id,
+                providerId,
+                "Error",
+                "Metadata provider returned an unexpected game identity.",
+                matchedTitle: null,
+                ct);
+            return new DirectEnrichmentResult(DirectEnrichmentStatus.ProviderUnavailable);
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await GameMetadataApplicator.ApplyAsync(db, game, metadata, _provider.ProviderName, ct);
+        db.EnrichmentAuditLogs.Add(new EnrichmentAuditLog
+        {
+            UnifiedGameId = game.Id,
+            ProviderName = _provider.ProviderName,
+            Status = "Success",
+            ProviderGameId = metadata.ProviderId,
+            MatchedTitle = metadata.MatchedTitle
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+
+        _logger.LogInformation(
+            "Applied direct {Provider} metadata match {ProviderId} to game {GameId}",
+            _provider.ProviderName,
+            providerId,
+            gameId);
+        return new DirectEnrichmentResult(DirectEnrichmentStatus.Success);
+    }
+
+    private async Task RecordDirectMatchAuditAsync(
+        CoreContext db,
+        int gameId,
+        int providerId,
+        string status,
+        string? errorMessage,
+        string? matchedTitle,
+        CancellationToken ct)
+    {
+        db.EnrichmentAuditLogs.Add(new EnrichmentAuditLog
+        {
+            UnifiedGameId = gameId,
+            ProviderName = _provider.ProviderName,
+            Status = status,
+            ErrorMessage = errorMessage,
+            ProviderGameId = providerId,
+            MatchedTitle = matchedTitle
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// Enriches a batch of games that have never been enriched (EnrichedAt is null).
     /// Returns the number of games processed in this batch.
     /// </summary>
@@ -228,3 +348,16 @@ public class EnrichmentService
     }
 
 }
+
+/// <summary>Outcomes from a verified direct metadata-provider match.</summary>
+public enum DirectEnrichmentStatus
+{
+    Success,
+    InvalidProviderId,
+    GameNotFound,
+    ProviderGameNotFound,
+    ProviderUnavailable
+}
+
+/// <summary>Result of applying an explicit provider ID to one tenant-owned game.</summary>
+public sealed record DirectEnrichmentResult(DirectEnrichmentStatus Status);

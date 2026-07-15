@@ -1,5 +1,39 @@
 # Session History
 
+## Current Session Summary (2026-07-15)
+
+### What Changed
+
+**Verified Direct Metadata Matching:**
+- Added an explicit positive-integer IGDB ID path to Fix Match while keeping title search visually
+  and behaviorally separate.
+- Replaced the write-before-lookup override with a verified-before-write Core workflow. Unknown or
+  mismatched provider identities and temporary provider failures preserve the game's existing
+  metadata and custom tags; provider-facing failures return sanitized responses.
+- Successful exact matches apply provider metadata, replace only automatic genre assignments,
+  preserve tenant-assigned custom tags, and persist the success audit in one transaction.
+- Kept tenant isolation fail-closed: another tenant's game is not visible and no provider request is
+  made for a foreign game ID.
+- Updated Roadmap item #15 to record direct enrichment, manual split, robust sorting, and the
+  already implemented pagination navigation accurately. Customizable page sizes remain pending.
+
+### Verification
+
+- Core builds in the devcontainer with zero warnings and errors.
+- The full .NET suite passes 398 tests, including exact-match success, failed lookup preservation,
+  safe provider failure auditing, controller status regression, custom-tag preservation, and
+  direct cross-tenant rejection.
+- The dedicated Fix Match frontend tests pass 2 tests; repository-wide frontend lint and the
+  Next.js production build pass.
+
+### Known State / Pending
+
+- Direct matching still depends on configured IGDB availability and does not make a live provider
+  call during CI verification.
+- No dependency, database migration, backup format, authentication flow, `.env`, or production
+  configuration change was introduced.
+- Customizable library page sizes remain the next unfinished Roadmap #15 slice.
+
 ## Current Session Summary (2026-07-14)
 
 ### What Changed

@@ -1,7 +1,9 @@
 using GameHub.Core.Data;
+using GameHub.Core.Controllers;
 using GameHub.Core.Services;
 using GameHub.Shared;
 using GameHub.Tests.Helpers;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -313,6 +315,223 @@ public class EnrichmentServiceTests : IDisposable
     }
 
     // =========================================================================
+    // Direct provider-ID matching
+    // =========================================================================
+
+    [Fact]
+    public async Task ApplyProviderMatch_ExactResult_AtomicallyReplacesMetadataAndPreservesCustomTags()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var service = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+
+        var game = new UnifiedGame
+        {
+            Title = "Incorrect title",
+            Slug = "incorrect-title",
+            Summary = "Old summary",
+            MetadataProviderId = 100,
+            MetadataSource = "MockProvider",
+            EnrichedAt = DateTime.UtcNow.AddDays(-1)
+        };
+        var oldGenre = new Tag { Name = "Old genre" };
+        var customTag = new Tag { Name = "Keep me", IsCustomDefinition = true };
+        db.AddRange(game, oldGenre, customTag);
+        await db.SaveChangesAsync();
+        db.Set<TagAssignment>().AddRange(
+            new TagAssignment
+            {
+                UnifiedGameId = game.Id,
+                TagId = oldGenre.Id,
+                IsCustom = false
+            },
+            new TagAssignment
+            {
+                UnifiedGameId = game.Id,
+                TagId = customTag.Id,
+                IsCustom = true
+            });
+        await db.SaveChangesAsync();
+
+        _mockProvider.GetByIdResult = new GameMetadata(
+            ProviderId: 4242,
+            CoverUrl: "https://example.test/direct-cover.jpg",
+            Summary: "Verified summary",
+            Genres: ["Action"],
+            FirstReleaseDate: new DateTime(2024, 2, 3, 0, 0, 0, DateTimeKind.Utc),
+            Rating: 88.5,
+            MatchedTitle: "Verified game");
+
+        var result = await service.ApplyProviderMatchAsync(game.Id, 4242);
+
+        Assert.Equal(DirectEnrichmentStatus.Success, result.Status);
+        Assert.Equal(1, _mockProvider.GetByIdCallCount);
+        db.ChangeTracker.Clear();
+        var updated = await db.UnifiedGames.SingleAsync(candidate => candidate.Id == game.Id);
+        Assert.Equal(4242, updated.MetadataProviderId);
+        Assert.Equal("MockProvider", updated.MetadataSource);
+        Assert.Equal("Verified summary", updated.Summary);
+        Assert.Equal("Action", updated.Genres);
+        Assert.NotNull(updated.EnrichedAt);
+
+        var assignments = await db.Set<TagAssignment>()
+            .Include(assignment => assignment.Tag)
+            .OrderBy(assignment => assignment.Tag!.Name)
+            .ToListAsync();
+        Assert.Collection(
+            assignments,
+            assignment =>
+            {
+                Assert.Equal("Action", assignment.Tag!.Name);
+                Assert.False(assignment.IsCustom);
+            },
+            assignment =>
+            {
+                Assert.Equal("Keep me", assignment.Tag!.Name);
+                Assert.True(assignment.IsCustom);
+            });
+
+        var audit = await db.EnrichmentAuditLogs.SingleAsync();
+        Assert.Equal("Success", audit.Status);
+        Assert.Equal(4242, audit.ProviderGameId);
+        Assert.Equal("Verified game", audit.MatchedTitle);
+    }
+
+    [Fact]
+    public async Task ApplyProviderMatch_MissingProviderGame_PreservesExistingMetadata()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var service = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+        var enrichedAt = DateTime.UtcNow.AddDays(-2);
+        var game = new UnifiedGame
+        {
+            Title = "Existing game",
+            Slug = "existing-game",
+            Summary = "Existing summary",
+            MetadataProviderId = 101,
+            MetadataSource = "MockProvider",
+            EnrichedAt = enrichedAt
+        };
+        db.UnifiedGames.Add(game);
+        await db.SaveChangesAsync();
+
+        var result = await service.ApplyProviderMatchAsync(game.Id, 9999);
+
+        Assert.Equal(DirectEnrichmentStatus.ProviderGameNotFound, result.Status);
+        db.ChangeTracker.Clear();
+        var unchanged = await db.UnifiedGames.SingleAsync(candidate => candidate.Id == game.Id);
+        Assert.Equal("Existing summary", unchanged.Summary);
+        Assert.Equal(101, unchanged.MetadataProviderId);
+        Assert.Equal(enrichedAt, unchanged.EnrichedAt);
+        var audit = await db.EnrichmentAuditLogs.SingleAsync();
+        Assert.Equal("NotFound", audit.Status);
+        Assert.Equal(9999, audit.ProviderGameId);
+    }
+
+    [Fact]
+    public async Task ApplyProviderMatch_ProviderFailure_PreservesGameAndStoresOnlySafeAuditMessage()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var service = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+        var game = new UnifiedGame
+        {
+            Title = "Existing game",
+            Slug = "provider-failure",
+            Summary = "Private existing summary",
+            MetadataProviderId = 202,
+            MetadataSource = "MockProvider"
+        };
+        db.UnifiedGames.Add(game);
+        await db.SaveChangesAsync();
+        _mockProvider.ThrowsException = true;
+
+        var result = await service.ApplyProviderMatchAsync(game.Id, 303);
+
+        Assert.Equal(DirectEnrichmentStatus.ProviderUnavailable, result.Status);
+        db.ChangeTracker.Clear();
+        var unchanged = await db.UnifiedGames.SingleAsync(candidate => candidate.Id == game.Id);
+        Assert.Equal("Private existing summary", unchanged.Summary);
+        Assert.Equal(202, unchanged.MetadataProviderId);
+        var audit = await db.EnrichmentAuditLogs.SingleAsync();
+        Assert.Equal("Error", audit.Status);
+        Assert.Equal("Metadata provider lookup failed.", audit.ErrorMessage);
+        Assert.DoesNotContain("Simulated provider error", audit.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ApplyProviderMatch_ForeignTenantGame_ReturnsNotFoundWithoutCallingProvider()
+    {
+        var tenantB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite(_connection)
+            .Options;
+        int foreignGameId;
+        await using (var foreignDb = new CoreContext(options, new FixedTenantContext(tenantB)))
+        {
+            foreignDb.Tenants.Add(new Tenant
+            {
+                Id = tenantB,
+                Name = "Tenant B",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            var foreignGame = new UnifiedGame { Title = "Tenant B game", Slug = "tenant-b-game" };
+            foreignDb.UnifiedGames.Add(foreignGame);
+            await foreignDb.SaveChangesAsync();
+            foreignGameId = foreignGame.Id;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+        var result = await service.ApplyProviderMatchAsync(foreignGameId, 404);
+
+        Assert.Equal(DirectEnrichmentStatus.GameNotFound, result.Status);
+        Assert.Equal(0, _mockProvider.GetByIdCallCount);
+        await using var verifyForeign = new CoreContext(options, new FixedTenantContext(tenantB));
+        Assert.Null((await verifyForeign.UnifiedGames.SingleAsync()).MetadataProviderId);
+        Assert.Empty(verifyForeign.EnrichmentAuditLogs);
+    }
+
+    [Fact]
+    public async Task OverrideEnrichment_MissingProviderGame_ReturnsNotFoundInsteadOfFalseSuccess()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
+        var service = scope.ServiceProvider.GetRequiredService<EnrichmentService>();
+        var game = new UnifiedGame
+        {
+            Title = "Existing game",
+            Slug = "controller-not-found",
+            Summary = "Existing summary",
+            MetadataProviderId = 505,
+            MetadataSource = "MockProvider"
+        };
+        db.UnifiedGames.Add(game);
+        await db.SaveChangesAsync();
+        var controller = new LibraryController(
+            null!,
+            null!,
+            service,
+            db,
+            NullLogger<LibraryController>.Instance,
+            new SyncSchedulerStatus(),
+            new DefaultTenantContext(),
+            new ActivityLogService(db),
+            _mockProvider);
+
+        var result = await controller.OverrideEnrichment(
+            game.Id,
+            new OverrideRequest { ProviderId = 606 });
+
+        Assert.IsType<NotFoundObjectResult>(result);
+        db.ChangeTracker.Clear();
+        var unchanged = await db.UnifiedGames.SingleAsync(candidate => candidate.Id == game.Id);
+        Assert.Equal("Existing summary", unchanged.Summary);
+        Assert.Equal(505, unchanged.MetadataProviderId);
+    }
+
+    // =========================================================================
     // Batch Enrichment
     // =========================================================================
 
@@ -382,5 +601,10 @@ public class EnrichmentServiceTests : IDisposable
             if (ThrowsException) throw new Exception("Simulated provider error");
             return Task.FromResult(SearchResult != null ? new List<GameMetadata> { SearchResult } : new List<GameMetadata>());
         }
+    }
+
+    private sealed class FixedTenantContext(Guid tenantId) : ITenantContext
+    {
+        public Guid TenantId { get; } = tenantId;
     }
 }
