@@ -27,8 +27,9 @@ test("retro overrides are scoped to explicit component contracts", async () => {
 });
 
 test("responsive visibility regressions remain fixed", async () => {
-    const [compactCard, stats, landing, library] = await Promise.all([
+    const [compactCard, command, stats, landing, library] = await Promise.all([
         readFrontendFile("components/GameCardCompact.tsx"),
+        readFrontendFile("components/ui/command.tsx"),
         readFrontendFile("app/stats/page.tsx"),
         readFrontendFile("app/page.tsx"),
         readFrontendFile("app/library/page.tsx"),
@@ -36,6 +37,7 @@ test("responsive visibility regressions remain fixed", async () => {
 
     assert.doesNotMatch(compactCard, /group-hover:opacity-100/);
     assert.match(compactCard, /focus-visible:ring-2/);
+    assert.match(command, /<InputGroup className="h-8! gap-1\.5 /);
     assert.match(stats, /<Card className="min-w-0 overflow-hidden">/);
     assert.match(landing, /md:text-\[0\.65rem\] lg:text-xs xl:text-sm/);
     assert.match(library, /md:sticky md:bottom-6/);
