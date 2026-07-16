@@ -270,9 +270,9 @@ export default function StatsPage() {
                 </Card>
 
                 {/* ---- Top Rated & Recently Added ---- */}
-                <div className="grid gap-8 lg:grid-cols-2">
+                <div className="grid min-w-0 gap-8 lg:grid-cols-2">
                     {/* Top Rated Games */}
-                    <Card>
+                    <Card className="min-w-0 overflow-hidden">
                         <CardHeader>
                             <CardTitle className="text-base">Top Rated Games</CardTitle>
                         </CardHeader>
@@ -285,7 +285,7 @@ export default function StatsPage() {
                                         <Link
                                             key={game.id}
                                             href={`/library/${game.id}`}
-                                            className="flex items-center gap-3 rounded-lg p-2 -mx-2 transition-colors hover:bg-muted/50 group"
+                                            className="group flex min-w-0 items-center gap-3 rounded-lg p-2 -mx-2 transition-colors hover:bg-muted/50"
                                         >
                                             {/* Rank */}
                                             <span className="text-lg font-bold text-muted-foreground w-6 text-right tabular-nums">
@@ -338,7 +338,7 @@ export default function StatsPage() {
                     </Card>
 
                     {/* Recently Added */}
-                    <Card>
+                    <Card className="min-w-0 overflow-hidden">
                         <CardHeader>
                             <CardTitle className="text-base">Recently Enriched</CardTitle>
                         </CardHeader>
@@ -351,7 +351,7 @@ export default function StatsPage() {
                                         <Link
                                             key={game.id}
                                             href={`/library/${game.id}`}
-                                            className="flex items-center gap-3 rounded-lg p-2 -mx-2 transition-colors hover:bg-muted/50 group"
+                                            className="group flex min-w-0 items-center gap-3 rounded-lg p-2 -mx-2 transition-colors hover:bg-muted/50"
                                         >
                                             {/* Cover */}
                                             {game.coverUrl ? (

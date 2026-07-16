@@ -145,7 +145,7 @@ export default async function Home() {
         <div className="border-4 border-[#33ff33] shadow-[0_0_20px_rgba(51,255,51,0.20)] bg-[#050705] p-6 md:p-10 relative overflow-hidden">
           
           {/* Epic ASCII Art GameHub Logo */}
-          <pre className="text-[0.4rem] xs:text-[0.55rem] sm:text-[0.65rem] md:text-sm leading-none font-bold text-[#33ff33] text-center my-6 overflow-x-auto select-none tracking-tight py-2 px-1">
+          <pre className="max-w-full text-[0.4rem] xs:text-[0.55rem] sm:text-[0.65rem] md:text-[0.65rem] lg:text-xs xl:text-sm leading-none font-bold text-[#33ff33] text-center my-6 overflow-x-auto select-none tracking-tight py-2 px-1">
 {`██████╗  █████╗ ███╗   ███╗███████╗██╗  ██╗██╗   ██╗██████╗ 
 ██╔════╝ ██╔══██╗████╗ ████║██╔════╝██║  ██║██║   ██║██╔══██╗
 ██║  ███╗███████║██╔████╔██║█████╗  ███████║██║   ██║██████╔╝
