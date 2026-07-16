@@ -14,7 +14,10 @@ export default function GameCardCompact({ game }: GameCardCompactProps) {
     const physicalPlatforms = Array.from(new Set(game.physicalCopies?.map(copy => copy.platform) ?? []));
 
     return (
-        <Link href={`/library/${game.id}`} className="block h-full group">
+        <Link
+            href={`/library/${game.id}`}
+            className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
             <div className="relative overflow-hidden rounded-md border border-border bg-card shadow-sm transition-all hover:scale-105 hover:z-10 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary h-full aspect-[3/4]">
                 {/* Cover Image */}
                 {game.coverUrl ? (
@@ -50,8 +53,8 @@ export default function GameCardCompact({ game }: GameCardCompactProps) {
                     </div>
                 )}
 
-                {/* Hover Overlay with Title and Platforms */}
-                <div className="absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                {/* Keep identity visible for touch and keyboard users as well as pointer users. */}
+                <div className="absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/45 to-transparent p-2.5 transition-colors duration-300 group-hover:from-black group-focus-visible:from-black">
                     <h3 className="line-clamp-2 text-sm font-semibold text-white drop-shadow-md leading-tight">
                         {game.title}
                     </h3>

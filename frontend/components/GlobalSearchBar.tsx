@@ -272,7 +272,7 @@ export default function GlobalSearchBar() {
     return (
         <div className="flex items-center justify-center flex-1 max-w-md mx-auto md:px-4">
             {/* Desktop View Search Bar */}
-            <div ref={containerRef} className="hidden md:block w-full relative">
+            <div ref={containerRef} data-retro-search className="hidden md:block w-full relative">
                 <div 
                     className={cn(
                         "flex items-center rounded-full bg-muted/40 hover:bg-muted/60 border border-border/40 px-3 h-10 transition-all",
@@ -317,7 +317,7 @@ export default function GlobalSearchBar() {
 
                 {/* Dropdown Results Overlay */}
                 {isOpen && (query.trim() || loading) && (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-popover/98 backdrop-blur supports-[backdrop-filter]:bg-popover/90 border border-border rounded-xl shadow-2xl p-1 z-50 animate-in fade-in-0 slide-in-from-top-2 duration-150 max-h-[420px] overflow-y-auto">
+                    <div data-retro-search-results className="absolute top-full left-0 right-0 mt-2 bg-popover/98 backdrop-blur supports-[backdrop-filter]:bg-popover/90 border border-border rounded-xl shadow-2xl p-1 z-50 animate-in fade-in-0 slide-in-from-top-2 duration-150 max-h-[420px] overflow-y-auto">
                         {renderResultsList(() => setIsOpen(false), selectedIndex)}
                     </div>
                 )}
@@ -335,7 +335,7 @@ export default function GlobalSearchBar() {
                             <Search className="h-4 w-4" />
                         </button>
                     </DialogTrigger>
-                    <DialogContent showCloseButton={false} className="max-h-[85vh] flex flex-col max-w-[calc(100%-2rem)] p-0 overflow-hidden bg-background/98 backdrop-blur-md border border-border rounded-xl">
+                    <DialogContent data-retro-search data-retro-search-results showCloseButton={false} className="max-h-[85vh] flex flex-col max-w-[calc(100%-2rem)] p-0 overflow-hidden bg-background/98 backdrop-blur-md border border-border rounded-xl">
                         <div className="flex items-center border-b border-border px-4 py-3 gap-3">
                             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                             <input

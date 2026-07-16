@@ -201,8 +201,8 @@ export default async function LibraryPage({
 
             {/* Server component handles total page calculation blindly for the client */}
             {totalPages > 1 && (
-                <div className="sticky bottom-6 z-40 flex justify-center pointer-events-none mt-8">
-                    <div className="pointer-events-auto rounded-full border border-border bg-background/95 backdrop-blur-md px-4 py-2 shadow-lg">
+                <div className="mt-8 flex justify-center md:sticky md:bottom-6 md:z-40 md:pointer-events-none">
+                    <div className="pointer-events-auto max-w-full overflow-x-auto rounded-md border border-border bg-background/95 px-2 py-2 shadow-lg backdrop-blur-md md:rounded-full md:px-4">
                         <LibraryPagination
                             currentPage={effectivePage}
                             totalPages={totalPages}
