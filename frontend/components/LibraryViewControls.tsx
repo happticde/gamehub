@@ -45,9 +45,10 @@ const getServerViewModeSnapshot = () => DEFAULT_VIEW_MODE;
 interface LibraryViewControlsProps {
     games: UnifiedGame[];
     filters: React.ReactNode;
+    pageSizeControl: React.ReactNode;
 }
 
-export default function LibraryViewControls({ games, filters }: LibraryViewControlsProps) {
+export default function LibraryViewControls({ games, filters, pageSizeControl }: LibraryViewControlsProps) {
     const viewMode = useSyncExternalStore(
         subscribeToViewMode,
         getStoredViewMode,
@@ -74,37 +75,41 @@ export default function LibraryViewControls({ games, filters }: LibraryViewContr
                     {filters}
                 </div>
 
-                <div className="inline-flex items-center justify-center rounded-md bg-muted p-1 text-muted-foreground shrink-0 self-start xl:self-auto h-10">
-                    <button
-                        onClick={() => updateViewMode("grid")}
-                        className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                            viewMode === "grid" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"
-                        }`}
-                        title="Grid View"
-                    >
-                        <LayoutGrid className="h-4 w-4 mr-2" />
-                        Grid
-                    </button>
-                    <button
-                        onClick={() => updateViewMode("compact")}
-                        className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                            viewMode === "compact" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"
-                        }`}
-                        title="Compact View"
-                    >
-                        <Grid3X3 className="h-4 w-4 mr-2" />
-                        Compact
-                    </button>
-                    <button
-                        onClick={() => updateViewMode("list")}
-                        className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                            viewMode === "list" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"
-                        }`}
-                        title="List View"
-                    >
-                        <List className="h-4 w-4 mr-2" />
-                        List
-                    </button>
+                <div className="flex flex-wrap items-center gap-3 self-start xl:self-auto">
+                    {pageSizeControl}
+
+                    <div className="inline-flex h-10 shrink-0 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
+                        <button
+                            onClick={() => updateViewMode("grid")}
+                            className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                                viewMode === "grid" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"
+                            }`}
+                            title="Grid View"
+                        >
+                            <LayoutGrid className="h-4 w-4 mr-2" />
+                            Grid
+                        </button>
+                        <button
+                            onClick={() => updateViewMode("compact")}
+                            className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                                viewMode === "compact" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"
+                            }`}
+                            title="Compact View"
+                        >
+                            <Grid3X3 className="h-4 w-4 mr-2" />
+                            Compact
+                        </button>
+                        <button
+                            onClick={() => updateViewMode("list")}
+                            className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                                viewMode === "list" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"
+                            }`}
+                            title="List View"
+                        >
+                            <List className="h-4 w-4 mr-2" />
+                            List
+                        </button>
+                    </div>
                 </div>
             </div>
 

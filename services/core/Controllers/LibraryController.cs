@@ -22,6 +22,8 @@ public class LibraryController : ControllerBase
 {
     private const int MaxCustomTagsPerGame = 50;
     private const int MaxCustomTagNameLength = 64;
+    private const int DefaultLibraryPageSize = 50;
+    private const int MaxLibraryPageSize = 500;
 
     private readonly UnificationService _unifier;
     private readonly ProviderSyncStatusService _providerSyncStatus;
@@ -151,7 +153,7 @@ public class LibraryController : ControllerBase
     }
 
     /// <summary>
-    /// GET: api/library?search=witcher&amp;tags=RPG&amp;sortBy=rating&amp;sortOrder=desc&amp;page=1
+    /// GET: api/library?search=witcher&amp;tags=RPG&amp;sortBy=rating&amp;sortOrder=desc&amp;page=1&amp;pageSize=50
     /// Returns a paginated list of unified games with digital and physical ownership data.
     /// Supports filtering by search text, tags, digital platforms, physical platforms, developer,
     /// and publisher.
@@ -172,8 +174,10 @@ public class LibraryController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
-        // Enforce safe bounds
-        if (pageSize > 500) pageSize = 500;
+        // Normalize caller-controlled pagination before it reaches Skip/Take. The frontend offers
+        // 25/50/100, while the broader API contract retains its existing maximum for MCP clients.
+        if (pageSize < 1) pageSize = DefaultLibraryPageSize;
+        if (pageSize > MaxLibraryPageSize) pageSize = MaxLibraryPageSize;
         if (page < 1) page = 1;
 
         var query = BuildLibraryQuery(
@@ -193,6 +197,8 @@ public class LibraryController : ControllerBase
 
         // Get total count for pagination metadata
         var totalCount = await query.CountAsync();
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        if (page > totalPages) page = totalPages;
 
         // Dynamic sorting — default to title ascending
         query = (sortBy?.ToLower(), sortOrder.ToLower()) switch
