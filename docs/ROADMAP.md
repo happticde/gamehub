@@ -2,20 +2,22 @@
 
 Current status and future direction for the project. Ideas are grouped from **high-impact / foundational** to **nice-to-have**.
 
+Last audited against `origin/main`: **2026-07-16**.
+
 ---
 
 ## Current Status
 
 | Area | Status |
 |------|--------|
-| Ingest service (Steam, GOG, PSN, Epic) | ✅ Complete |
+| Ingest service | ✅ Steam, GOG, and PSN complete; Epic stored-retrieval MVP |
 | Core unification (slug matching, manual merge/split) | ✅ Complete |
 | Go CLI (Cobra/Viper, config file) | ✅ Complete |
 | Docker Compose (SQLite dev, Postgres prod) | ✅ With health checks |
-| Tests | ✅ xUnit + in-memory SQLite |
+| Tests | ✅ .NET, frontend, SQLite, and PostgreSQL migration/isolation coverage |
 | EF Core Migrations | ✅ Auto-applied on startup |
 | Structured Logging | ✅ All components, debugging guide |
-| Auth | ✅ API key middleware (JWT-ready) |
+| Auth | ✅ API key, local/JWT/OIDC, encrypted credential vault, guarded multi-user mode |
 | CI/CD | ✅ GitHub Actions (build, test, Docker) |
 | Frontend | ✅ Mobile-First: Grid/List, Filters Dialog, Screenshot Carousel |
 | Enrichment / metadata | ✅ IGDB provider with caching, rate-limiting, smart search |
@@ -25,19 +27,24 @@ Current status and future direction for the project. Ideas are grouped from **hi
 | Provider refresh blockers | ✅ Tenant-scoped configuration/cooldown state at sync actions |
 | Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
 | Physical collection | ✅ Manual-first IGDB capture; barcode/catalogue UI deferred |
+| Activity feed | ✅ Tenant-scoped API and private Admin operations feed |
+| Power-user maintenance | 🟡 Direct matching, split, sorting, and navigation complete; page-size selector pending |
 
 ---
 
 ## 🏗️ Tier 1 — Foundational
 
 ### 1. Unit & Integration Tests ✅
-xUnit test suite with in-memory SQLite covering slug generation, unification, and controllers.
+xUnit coverage includes service/controller behavior, tenant isolation, SQLite migration upgrades,
+and PostgreSQL migration/integration paths. Focused frontend state tests cover critical interactive
+workflows.
 
 ### 2. EF Core Migrations ✅
 Replaced `EnsureCreated()` with proper migrations for schema stability.
 
-### 3. API Key / Basic Auth ✅
-Simple API key middleware protecting ingest and sync endpoints.
+### 3. API Key Authentication ✅
+API-key authentication protects compatibility and operator endpoints. Item #8 contains the later
+local/JWT/OIDC application-authentication and multi-tenant boundaries.
 
 ---
 
@@ -123,10 +130,17 @@ boundaries; platform connector credentials are stored separately in the Ingest v
   remains disabled after installation and upgrade until an operator deliberately satisfies the
   deployment/provider checklist, sets the guarded switch consistently, and restarts. This does not
   add public registration, unlimited SaaS readiness, tenant switching, or provider-derived
-  authorization. The later optional personal-tenant JIT scope is tracked separately in item #18.
+  authorization. The later optional personal-tenant JIT scope is tracked separately in item #19.
 
-### 9. Notifications & Activity Feed
-`ActivityLog` table + activity endpoint for social sharing/feed.
+### 9. Tenant-Scoped Activity Feed ✅
+- **Implemented (2026-03-24)**: `ActivityLog`, the centralized activity service, the latest-20
+  activity endpoint, and the Admin activity tab are implemented. The UI auto-refreshes every 30
+  seconds and covers sync, merge, split, restore, and account-provisioning operations.
+- **Tenant isolation (2026-06-21)**: Activity rows are tenant-owned and query-filtered. Direct
+  two-tenant read/write tests and scheduled-sync integration coverage verify that one tenant cannot
+  observe another tenant's activity.
+- **Boundary**: This is a private operational feed for the authenticated tenant. Social sharing is
+  not implemented and is not part of the current product scope.
 
 ### 10. Statistics & Analytics ✅
 Comprehensive dashboard with charts for platform distribution, genre breakdown, rating histograms, and play status tracking.
@@ -205,7 +219,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Implemented**: The Core random-library endpoint respects active filters, and the frontend
   provides a "Surprise Me" action that navigates to the selected game.
 
-### 15. Power-User Maintenance Tools — Direct Matching Complete
+### 15. Power-User Maintenance Tools 🟡 Customizable Page Sizes Pending
 - **Direct Enrichment ✅ (2026-07-15)**: Fix Match now keeps exact provider-ID entry separate from
   title search. Core verifies the positive provider ID before changing the tenant-owned game,
   rejects missing or mismatched provider results without altering existing metadata or custom tags,
@@ -272,7 +286,7 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Security boundary**: Provider session material must be treated like existing platform
   credentials: plaintext may flow only through the minimal capture/upsert path, must never be
   returned by status APIs, and must remain tenant-scoped in the Ingest credential vault. This must
-  preserve the future multi-tenant isolation rules from ADR-008 and the credential-vault boundaries
+  preserve the tenant-isolation rules from ADR-008 and the credential-vault boundaries
   introduced for item #8.
 - **Implemented helper status**: GOG local helper capture works through the installed
   `gamehub-helper://` protocol handler, the one-time loopback handoff URL, JSON payload fallback, and
@@ -310,7 +324,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Non-goal**: Guarded multi-user deployments remain closed and operator-provisioned by default;
   this item does not imply anonymous public signup.
 
-### 19. JIT Provisioning & External Identity Lifecycle — Personal-Tenant JIT Implemented
+### 19. JIT Provisioning & External Identity Lifecycle 🟡 Personal-Tenant JIT Implemented
 - **Implemented (2026-06-24)**: ADR-013 adds independent default-off
   `Disabled`/`PersonalTenantJit` modes. Active guarded mode can atomically create one server-owned,
   sync-disabled personal tenant, `ExternalOidc` owner, exact issuer/subject mapping, refresh
@@ -346,15 +360,14 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 
 ## Suggested Next Steps
 
-| Goal | Path |
-|------|------|
-| **Stability & confidence** | ~~#1 Tests → #2 Migrations → #3 Auth~~ ✅ Done |
-| **A demo-able product** | ~~#4 Metadata~~ ✅ Done → #5 Frontend → ~~#10 Stats~~ ✅ Done |
-| **Production readiness** | ~~#7 CI/CD~~ ✅ → ~~#6 Scheduler~~ ✅ Done |
-| **Multi-user readiness** | #8 technically complete; operator activation remains explicit and default-off ✅ |
-| **AI integration** | #11 MCP Server (High Value) |
-| **Data & Portability** | #12 Import/Export → #13 manual-first IGDB physical capture complete |
-| **Maintenance & UI** | #15 customizable page sizes remain → ~~#14 Random Pick~~ ✅ Done |
-| **Future platform integration** | #16 Epic authentication and stored retrieval → #17 guided GOG/PSN account connect |
-| **Controlled onboarding** | #18 Registration/invitations → #19 provider lifecycle follow-ups (personal JIT implemented) |
-| **General SaaS readiness** | #20 operations, administration, security review, and release gate |
+| Priority | Recommendation | Rationale and boundary |
+|----------|----------------|------------------------|
+| **1 — Finish the current product slice** | Complete #15 with customizable library page sizes | This is the only unfinished maintenance-tool slice. Keep the selection in the URL, reset invalid/out-of-range pages safely, preserve active filters and sorting, and offer a small bounded set such as 25/50/100. |
+| **2 — Provider resilience** | Continue fixture-led hardening for #16 and #17 | Epic, GOG, and PSN are usable, but their unofficial/provider-fragile boundaries remain. Add parser variants and controlled live-validation evidence before broadening behavior; do not add automatic credential replay. |
+| **3 — Controlled onboarding, if product direction requires it** | Implement #18 invitations | Choose this only when the deployment should onboard additional users without direct operator API calls. Preserve the existing default-off multi-user gate and exact identity-to-tenant mapping. |
+| **4 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT is complete. Back-channel logout, disabled-user events, subject replacement, and reconciliation are separate hardening milestones. |
+| **5 — SaaS release gate** | Treat #20 as an umbrella program, not the next feature | Threat modeling, external review, recovery exercises, monitoring, privacy obligations, quotas, and operational ownership are required before any general SaaS claim. |
+
+The physical barcode/catalogue experiments in #13 remain unscheduled until usage permission,
+provider access, and a representative verified dataset exist. They should not displace the bounded
+#15 completion work.
