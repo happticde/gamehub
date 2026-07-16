@@ -1,11 +1,22 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 import { PagedResult, UnifiedGame } from "@/types/game";
 import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
+import LibraryPageSizeSelect from "@/components/LibraryPageSizeSelect";
 import LibraryViewControls from "@/components/LibraryViewControls";
 import { fetchCoreApi } from "@/lib/core-api";
 import { getErrorMessage } from "@/lib/errors";
+import {
+    isLibraryPageParamValid,
+    isLibraryPageSizeParamValid,
+    LibraryPageSize,
+    parseLibraryPage,
+    parseLibraryPageSize,
+    toUrlSearchParams,
+    updateLibraryPaginationParams,
+} from "@/lib/library-pagination";
 
 /**
  * Library page — a React Server Component (RSC).
@@ -62,8 +73,11 @@ export default async function LibraryPage({
         publishers = Array.isArray(resolvedParams.publishers) ? resolvedParams.publishers : [resolvedParams.publishers];
     }
 
-    const pageParam = typeof resolvedParams.page === 'string' ? parseInt(resolvedParams.page, 10) : 1;
-    const currentPage = !isNaN(pageParam) && pageParam > 0 ? pageParam : 1;
+    const currentPage = parseLibraryPage(resolvedParams.page);
+    const requestedPageSize = parseLibraryPageSize(resolvedParams.pageSize);
+    const hasInvalidPaginationParams =
+        !isLibraryPageParamValid(resolvedParams.page) ||
+        !isLibraryPageSizeParamValid(resolvedParams.pageSize);
 
     const includeIgnored = resolvedParams.includeIgnored === 'true';
 
@@ -72,7 +86,8 @@ export default async function LibraryPage({
     let developersList: string[] = [];
     let publishersList: string[] = [];
     let totalCount = 0;
-    let pageSize = 50;
+    let pageSize: LibraryPageSize = requestedPageSize;
+    let effectivePage = currentPage;
     let error: string | null = null;
 
     try {
@@ -101,6 +116,7 @@ export default async function LibraryPage({
         publishers.forEach(p => query.append("publisher", p));
 
         query.append("page", currentPage.toString());
+        query.append("pageSize", requestedPageSize.toString());
         if (includeIgnored) query.append("includeIgnored", "true");
 
         // Fetch all data in parallel for performance using Promise.all
@@ -120,7 +136,8 @@ export default async function LibraryPage({
         const result: PagedResult<UnifiedGame> = await res.json();
         games = result.items || [];
         totalCount = result.totalCount || 0;
-        pageSize = result.pageSize || 50;
+        effectivePage = result.page > 0 ? result.page : 1;
+        pageSize = parseLibraryPageSize(result.pageSize?.toString());
 
         if (tagsRes.ok) tagsList = await tagsRes.json();
         if (devsRes.ok) developersList = await devsRes.json();
@@ -129,6 +146,19 @@ export default async function LibraryPage({
         error = getErrorMessage(caughtError, "An unexpected error occurred while fetching your library.");
         console.error("Fetch Library Error:", error);
     }
+
+    // Keep manually edited and stale pagination URLs canonical. Core clamps an out-of-range page
+    // after counting the filtered result, so redirect only after the request has succeeded.
+    if (!error && (hasInvalidPaginationParams || effectivePage !== currentPage)) {
+        const params = updateLibraryPaginationParams(
+            toUrlSearchParams(resolvedParams),
+            effectivePage,
+            pageSize,
+        );
+        redirect(`/library?${params.toString()}`);
+    }
+
+    const totalPages = Math.ceil(totalCount / pageSize);
 
     return (
         <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
@@ -158,6 +188,7 @@ export default async function LibraryPage({
             {!error && (
                 <LibraryViewControls 
                     games={games} 
+                    pageSizeControl={<LibraryPageSizeSelect pageSize={pageSize} />}
                     filters={
                         <LibraryFilters
                             availableTags={tagsList}
@@ -169,12 +200,12 @@ export default async function LibraryPage({
             )}
 
             {/* Server component handles total page calculation blindly for the client */}
-            {totalCount > 0 && (
+            {totalPages > 1 && (
                 <div className="sticky bottom-6 z-40 flex justify-center pointer-events-none mt-8">
                     <div className="pointer-events-auto rounded-full border border-border bg-background/95 backdrop-blur-md px-4 py-2 shadow-lg">
                         <LibraryPagination
-                            currentPage={currentPage}
-                            totalPages={Math.ceil(totalCount / pageSize)}
+                            currentPage={effectivePage}
+                            totalPages={totalPages}
                             className="m-0"
                         />
                     </div>

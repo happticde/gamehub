@@ -28,7 +28,7 @@ Last audited against `origin/main`: **2026-07-16**.
 | Custom tags | ✅ Tenant-scoped assignments and saved suggestions |
 | Physical collection | ✅ Manual-first IGDB capture; barcode/catalogue UI deferred |
 | Activity feed | ✅ Tenant-scoped API and private Admin operations feed |
-| Power-user maintenance | 🟡 Direct matching, split, sorting, and navigation complete; page-size selector pending |
+| Power-user maintenance | ✅ Direct matching, split, sorting, and customizable pagination |
 
 ---
 
@@ -219,14 +219,16 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
 - **Implemented**: The Core random-library endpoint respects active filters, and the frontend
   provides a "Surprise Me" action that navigates to the selected game.
 
-### 15. Power-User Maintenance Tools 🟡 Customizable Page Sizes Pending
+### 15. Power-User Maintenance Tools ✅
 - **Direct Enrichment ✅ (2026-07-15)**: Fix Match now keeps exact provider-ID entry separate from
   title search. Core verifies the positive provider ID before changing the tenant-owned game,
   rejects missing or mismatched provider results without altering existing metadata or custom tags,
   applies successful metadata and audit writes atomically, and returns sanitized temporary-provider
   failures. Direct cross-tenant game access fails before any provider call.
-- **Advanced Pagination — partial**: FIRST/LAST navigation and direct page jumping are implemented.
-  Customizable page sizes remain the outstanding slice.
+- **Advanced Pagination ✅ (2026-07-16)**: FIRST/LAST navigation, direct page jumping, and a
+  mobile-friendly 25/50/100 page-size selector are implemented. Page size is URL-backed, changing
+  it resets to page one without dropping filters or sorting, malformed values fall back safely, and
+  Core clamps out-of-range pages to the filtered result before executing pagination.
 - **Manual Split ✅**: Platform entries can be separated from a unified game into their own records.
 - **Robust Sorting ✅**: Missing years and ratings are coalesced to deterministic sort positions.
 
@@ -362,12 +364,11 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 
 | Priority | Recommendation | Rationale and boundary |
 |----------|----------------|------------------------|
-| **1 — Finish the current product slice** | Complete #15 with customizable library page sizes | This is the only unfinished maintenance-tool slice. Keep the selection in the URL, reset invalid/out-of-range pages safely, preserve active filters and sorting, and offer a small bounded set such as 25/50/100. |
-| **2 — Provider resilience** | Continue fixture-led hardening for #16 and #17 | Epic, GOG, and PSN are usable, but their unofficial/provider-fragile boundaries remain. Add parser variants and controlled live-validation evidence before broadening behavior; do not add automatic credential replay. |
-| **3 — Controlled onboarding, if product direction requires it** | Implement #18 invitations | Choose this only when the deployment should onboard additional users without direct operator API calls. Preserve the existing default-off multi-user gate and exact identity-to-tenant mapping. |
-| **4 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT is complete. Back-channel logout, disabled-user events, subject replacement, and reconciliation are separate hardening milestones. |
-| **5 — SaaS release gate** | Treat #20 as an umbrella program, not the next feature | Threat modeling, external review, recovery exercises, monitoring, privacy obligations, quotas, and operational ownership are required before any general SaaS claim. |
+| **1 — Provider resilience** | Continue fixture-led hardening for #16 and #17 | Epic, GOG, and PSN are usable, but their unofficial/provider-fragile boundaries remain. Add parser variants and controlled live-validation evidence before broadening behavior; do not add automatic credential replay. |
+| **2 — Controlled onboarding, if product direction requires it** | Implement #18 invitations | Choose this only when the deployment should onboard additional users without direct operator API calls. Preserve the existing default-off multi-user gate and exact identity-to-tenant mapping. |
+| **3 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT is complete. Back-channel logout, disabled-user events, subject replacement, and reconciliation are separate hardening milestones. |
+| **4 — SaaS release gate** | Treat #20 as an umbrella program, not the next feature | Threat modeling, external review, recovery exercises, monitoring, privacy obligations, quotas, and operational ownership are required before any general SaaS claim. |
 
 The physical barcode/catalogue experiments in #13 remain unscheduled until usage permission,
-provider access, and a representative verified dataset exist. They should not displace the bounded
-#15 completion work.
+provider access, and a representative verified dataset exist. They should remain evidence-gated
+rather than becoming the default next milestone.

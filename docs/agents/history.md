@@ -1,5 +1,34 @@
 # Session History
 
+## Current Session Summary (2026-07-16)
+
+### What Changed
+
+**Customizable Library Page Sizes:**
+- Completed Roadmap #15 with a mobile-friendly 25/50/100 selector beside the library view controls.
+  The selected size is URL-backed and sent through the authenticated server-side Core request.
+- Preserved active search, filters, physical/digital platform selections, and sorting when the size
+  changes while deliberately resetting pagination to page one.
+- Added strict URL parsing for malformed, repeated, non-canonical, and out-of-range pagination
+  values. Successful Core responses canonicalize stale URLs without redirecting failed requests.
+- Hardened the Core library endpoint so invalid sizes use the existing default, oversized sizes
+  retain the API maximum, and pages beyond the filtered result clamp before `Skip`/`Take` executes.
+- Updated the Roadmap to mark the full power-user maintenance milestone complete and promote
+  fixture-led provider resilience to the next suggested priority.
+
+### Verification
+
+- The focused frontend pagination suite passes 4 tests.
+- Core builds with zero warnings and errors, and the full .NET suite passes 400 tests.
+- Changed-file lint, repository-wide frontend lint, and the Next.js production build pass.
+
+### Known State / Pending
+
+- Page-size choices are intentionally limited to 25, 50, and 100 in the user interface. The Core
+  API retains its broader maximum for existing MCP and direct API clients.
+- No dependency, database migration, authentication flow, tenant boundary, `.env`, or production
+  configuration change was introduced.
+
 ## Current Session Summary (2026-07-15)
 
 ### What Changed
