@@ -344,40 +344,41 @@ public class PsnFetcher : IPsnFetcher
                     throw failure;
                 }
 
-                var rawJson = await resp.Content.ReadAsStringAsync();
-                JsonDocument doc;
+                JsonDocument document;
                 try
                 {
-                    doc = JsonDocument.Parse(rawJson);
+                    document = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
                 }
                 catch (JsonException ex)
                 {
-                    _logger.LogError(ex, "PSN: failed to parse JSON at offset {Offset}", offset);
-                    await WriteAuditLogAsync("PSN", "Error", 0, "JSON Parse Exception");
-                    throw;
+                    _logger.LogWarning("PSN returned malformed JSON at offset {Offset}", offset);
+                    var failure = new PsnProviderContractException(ex);
+                    await WriteAuditLogAsync("PSN", "MalformedResponse", 0, failure.Message);
+                    throw failure;
                 }
 
-                // Navigate: data -> purchasedTitlesRetrieve -> games
-                if (!doc.RootElement.TryGetProperty("data", out var data) ||
-                    !data.TryGetProperty("purchasedTitlesRetrieve", out var retrieve))
+                using (document)
                 {
-                    _logger.LogError("PSN: unexpected response structure at offset {Offset}", offset);
-                    await WriteAuditLogAsync("PSN", "Error", 0, "Unexpected Response Structure");
-                    throw new InvalidOperationException("PSN API returned an unexpected response structure");
+                    PsnLibraryPage page;
+                    try
+                    {
+                        page = PsnLibraryPageParser.Parse(document.RootElement);
+                    }
+                    catch (PsnProviderContractException ex)
+                    {
+                        _logger.LogWarning("PSN returned an unsupported response structure at offset {Offset}", offset);
+                        await WriteAuditLogAsync("PSN", "MalformedResponse", 0, ex.Message);
+                        throw;
+                    }
+
+                    allGames.AddRange(page.Games);
+
+                    _logger.LogDebug("PSN: offset {Offset}, games so far: {Count}, isLast: {IsLast}",
+                        offset, allGames.Count, page.IsLast);
+
+                    if (page.IsLast) break;
                 }
 
-                var games = retrieve.GetProperty("games");
-                foreach (var game in games.EnumerateArray())
-                {
-                    allGames.Add(game.Clone());
-                }
-
-                // Check if this is the last page
-                var isLast = retrieve.GetProperty("pageInfo").GetProperty("isLast").GetBoolean();
-                _logger.LogDebug("PSN: offset {Offset}, games so far: {Count}, isLast: {IsLast}",
-                    offset, allGames.Count, isLast);
-
-                if (isLast) break;
                 offset += pageSize;
             }
 
