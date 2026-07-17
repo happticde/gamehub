@@ -185,50 +185,41 @@ public class GogFetcher : IGogFetcher
                     throw failure;
                 }
 
-                var rawJson = await resp.Content.ReadAsStringAsync();
-                JsonDocument doc;
+                JsonDocument document;
                 try
                 {
-                    doc = JsonDocument.Parse(rawJson);
+                    document = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
                 }
                 catch (JsonException ex)
                 {
-                    _logger.LogError(ex, "GOG: failed to parse JSON response on page {Page}", page);
-                    await WriteAuditLogAsync("GOG", "Error", 0, "JSON Parse Exception");
-                    throw;
+                    _logger.LogWarning("GOG returned malformed JSON on page {Page}", page);
+                    var failure = new GogProviderContractException(ex);
+                    await WriteAuditLogAsync("GOG", "MalformedResponse", 0, failure.Message);
+                    throw failure;
                 }
 
-                var root = doc.RootElement;
-
-                // Extract game objects from _embedded.items[].game
-                if (root.TryGetProperty("_embedded", out var embedded) &&
-                    embedded.TryGetProperty("items", out var items))
+                using (document)
                 {
-                    foreach (var item in items.EnumerateArray())
+                    GogLibraryPage parsedPage;
+                    try
                     {
-                        if (item.TryGetProperty("game", out var game))
-                        {
-                            allGames.Add(game.Clone());
-                        }
+                        parsedPage = GogLibraryPageParser.Parse(document.RootElement, page);
                     }
-                }
-                else
-                {
-                    _logger.LogWarning("GOG: page {Page} response missing _embedded.items structure", page);
+                    catch (GogProviderContractException ex)
+                    {
+                        _logger.LogWarning("GOG returned an unsupported response structure on page {Page}", page);
+                        await WriteAuditLogAsync("GOG", "MalformedResponse", 0, ex.Message);
+                        throw;
+                    }
+
+                    allGames.AddRange(parsedPage.Games);
+
+                    _logger.LogDebug("GOG: page {Page}/{TotalPages}, games so far: {Count}",
+                        page, parsedPage.TotalPages, allGames.Count);
+
+                    if (page >= parsedPage.TotalPages) break;
                 }
 
-                // Check if we've reached the last page
-                if (!root.TryGetProperty("pages", out var pagesElement))
-                {
-                    _logger.LogWarning("GOG: response missing 'pages' property, stopping pagination");
-                    break;
-                }
-
-                var totalPages = pagesElement.GetInt32();
-                _logger.LogDebug("GOG: page {Page}/{TotalPages}, games so far: {Count}",
-                    page, totalPages, allGames.Count);
-
-                if (page >= totalPages) break;
                 page++;
             }
 
@@ -236,7 +227,7 @@ public class GogFetcher : IGogFetcher
             await WriteAuditLogAsync("GOG", "Success", allGames.Count);
             return allGames;
         }
-        catch (Exception ex) when (ex is not HttpRequestException)
+        catch (Exception ex) when (ex is not HttpRequestException and not GogProviderContractException)
         {
             await WriteAuditLogAsync("GOG", "Error", 0, ex.Message);
             throw;

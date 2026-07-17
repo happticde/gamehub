@@ -311,6 +311,11 @@ See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
   GraphQL errors, missing structures, and pagination states that could otherwise loop. Malformed
   JSON and unsupported shapes produce one sanitized audit result without provider payload details;
   no automatic retry or credential replay was added.
+- **GOG provider contract hardening (2026-07-17)**: Library statistics page parsing now uses
+  redacted contract fixtures for normal and empty pagination, numeric and numeric-string game IDs,
+  missing structures, invalid items, and stale or empty non-final pages. Unsupported shapes fail
+  closed with one sanitized audit result instead of silently returning partial or falsely empty
+  data; no automatic retry or credential replay was added.
 
 ---
 
@@ -369,7 +374,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 
 | Priority | Recommendation | Rationale and boundary |
 |----------|----------------|------------------------|
-| **1 — Provider resilience** | Continue fixture-led hardening for #16 and #17 | Epic and PSN now have redacted contract fixtures; GOG remains the next un-fixtured parser boundary. Add only captured parser variants and controlled live-validation evidence before broadening behavior; do not add automatic credential replay. |
+| **1 — Provider resilience** | Continue controlled validation for #16 and #17 | Epic, PSN, and GOG now have redacted contract-fixture baselines. Add only captured provider variants and controlled live-validation evidence before broadening behavior; do not add automatic credential replay. |
 | **2 — Controlled onboarding, if product direction requires it** | Implement #18 invitations | Choose this only when the deployment should onboard additional users without direct operator API calls. Preserve the existing default-off multi-user gate and exact identity-to-tenant mapping. |
 | **3 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT is complete. Back-channel logout, disabled-user events, subject replacement, and reconciliation are separate hardening milestones. |
 | **4 — SaaS release gate** | Treat #20 as an umbrella program, not the next feature | Threat modeling, external review, recovery exercises, monitoring, privacy obligations, quotas, and operational ownership are required before any general SaaS claim. |
