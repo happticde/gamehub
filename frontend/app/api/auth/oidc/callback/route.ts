@@ -9,6 +9,7 @@ import {
     isTokenResponse,
     setAuthCookies,
 } from "@/lib/auth-session";
+import { getExternalRequestUrl } from "@/lib/external-request-url";
 import { getOidcConfig, getOidcDiscovery } from "@/lib/oidc";
 import {
     OIDC_TRANSACTION_COOKIE,
@@ -30,17 +31,19 @@ export const runtime = "nodejs";
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
     let response: NextResponse;
+    let trustedRedirectBase: URL | undefined;
     try {
         // Step 1: configuration must still be valid at callback time. This catches deployments
         // changed or partially restarted between the authorization redirect and the callback.
         const config = getOidcConfig();
+        trustedRedirectBase = new URL(config.redirectUri);
         const sealedTransaction = request.cookies.get(OIDC_TRANSACTION_COOKIE)?.value;
         if (!sealedTransaction) throw new Error("missing_oidc_transaction");
 
         // Step 2: authenticated decryption recovers the server-generated state, nonce, PKCE
         // verifier, intent, redirect URI, and safe return path. Browser modifications fail here.
         const transaction = openOidcTransaction(sealedTransaction, config.cookieKey);
-        const callbackUrl = new URL(request.url);
+        const callbackUrl = getExternalRequestUrl(request);
         // Query parameters contain the provider's code/state and are not part of the registered
         // redirect URI. Removing the complete query gives an exact scheme/host/path comparison.
         callbackUrl.search = "";
@@ -129,7 +132,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             // Linking never upgrades the restricted local bootstrap token into a full session.
             // Clear every GameHub cookie and require a fresh provider login, preserving the
             // original local destination only as a sanitized returnTo value.
-            const destination = new URL("/login", request.url);
+            const destination = new URL("/login", trustedRedirectBase);
             destination.searchParams.set("oidcLinked", "true");
             destination.searchParams.set("returnTo", transaction.returnTo);
             response = NextResponse.redirect(destination);
@@ -153,11 +156,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 signal: AbortSignal.timeout(15_000),
             });
             if (!deletionResponse.ok) {
-                const destination = new URL("/login", request.url);
+                const destination = new URL("/login", trustedRedirectBase);
                 destination.searchParams.set("accountDeletionPending", "true");
                 response = NextResponse.redirect(destination);
             } else {
-                const destination = new URL("/login", request.url);
+                const destination = new URL("/login", trustedRedirectBase);
                 destination.searchParams.set("accountDeleted", "true");
                 response = NextResponse.redirect(destination);
             }
@@ -172,16 +175,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             if (!coreResponse.ok || !isTokenResponse(payload)) {
                 throw new Error("oidc_session_failed");
             }
-            response = NextResponse.redirect(new URL(transaction.returnTo, request.url));
+            response = NextResponse.redirect(new URL(transaction.returnTo, trustedRedirectBase));
             // `setAuthCookies` writes HttpOnly cookies; React never sees either token value.
             setAuthCookies(response, payload);
         }
     } catch {
         // All callback failures converge on one public result. This avoids revealing whether a
         // subject is linked, which protocol check failed, or whether provider/Core was unavailable.
-        const loginUrl = new URL("/login", request.url);
-        loginUrl.searchParams.set("oidcError", "authentication_failed");
-        response = NextResponse.redirect(loginUrl);
+        if (trustedRedirectBase) {
+            const loginUrl = new URL("/login", trustedRedirectBase);
+            loginUrl.searchParams.set("oidcError", "authentication_failed");
+            response = NextResponse.redirect(loginUrl);
+        } else {
+            // Without valid server-owned OIDC configuration there is no safe public authority for
+            // a redirect. Return a generic failure rather than reflecting an untrusted Host value.
+            response = NextResponse.json(
+                { code: "oidc_unavailable", message: "External authentication is unavailable." },
+                { status: 503 },
+            );
+        }
     }
 
     // A transaction is single-use regardless of success or failure. Expiring the correlation
