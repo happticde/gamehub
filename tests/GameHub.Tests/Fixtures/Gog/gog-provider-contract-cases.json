@@ -1,0 +1,146 @@
+{
+  "cases": [
+    {
+      "name": "standard non-final page with numeric and string identifiers",
+      "currentPage": 1,
+      "response": {
+        "pages": 2,
+        "_embedded": {
+          "items": [
+            { "game": { "id": 1495134320, "title": "Contract Game One" } },
+            { "game": { "id": "1207658924", "title": "Contract Game Two" } }
+          ]
+        }
+      },
+      "expected": {
+        "isValid": true,
+        "totalPages": 2,
+        "gameIds": ["1495134320", "1207658924"]
+      }
+    },
+    {
+      "name": "empty final page",
+      "currentPage": 1,
+      "response": {
+        "pages": 0,
+        "_embedded": {
+          "items": []
+        }
+      },
+      "expected": {
+        "isValid": true,
+        "totalPages": 0,
+        "gameIds": []
+      }
+    },
+    {
+      "name": "missing embedded collection",
+      "currentPage": 1,
+      "response": {
+        "pages": 1,
+        "message": "provider-secret should never enter the exception"
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "items is not an array",
+      "currentPage": 1,
+      "response": {
+        "pages": 1,
+        "_embedded": {
+          "items": "provider-secret"
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "item without game record",
+      "currentPage": 1,
+      "response": {
+        "pages": 1,
+        "_embedded": {
+          "items": [
+            { "product": { "id": 1495134320 } }
+          ]
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "game without stable identifier",
+      "currentPage": 1,
+      "response": {
+        "pages": 1,
+        "_embedded": {
+          "items": [
+            { "game": { "title": "Missing Identifier" } }
+          ]
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "non-numeric string identifier",
+      "currentPage": 1,
+      "response": {
+        "pages": 1,
+        "_embedded": {
+          "items": [
+            { "game": { "id": "provider-secret", "title": "Invalid Identifier" } }
+          ]
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "missing page count",
+      "currentPage": 1,
+      "response": {
+        "_embedded": {
+          "items": []
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "page count behind current page",
+      "currentPage": 2,
+      "response": {
+        "pages": 1,
+        "_embedded": {
+          "items": [
+            { "game": { "id": 1495134320, "title": "Stale Pagination" } }
+          ]
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "empty non-final page",
+      "currentPage": 1,
+      "response": {
+        "pages": 2,
+        "_embedded": {
+          "items": []
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    }
+  ]
+}

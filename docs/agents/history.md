@@ -4,6 +4,33 @@
 
 ### What Changed
 
+**GOG Provider Contract Resilience:**
+- Extracted GOG library-page parsing behind a strict, fixture-tested contract that accepts numeric
+  and numeric-string game identifiers while validating the embedded item collection and page count.
+- Missing or malformed structures, invalid identifiers, stale page counts, and empty non-final pages
+  now fail closed instead of silently returning a partial or falsely successful empty library.
+- Malformed JSON and unsupported provider shapes produce one sanitized `MalformedResponse` audit
+  entry without copying provider payload details, cookies, usernames, or upstream error text.
+- Added redacted contract fixtures for normal pagination, an empty final page, compatible identifier
+  variants, missing structures, invalid items, invalid identifiers, and unsafe pagination.
+
+### Verification
+
+- The Ingest service builds with zero warnings and errors.
+- The focused GOG provider-contract suite passes 2 tests, and the full .NET suite passes 404 tests.
+
+### Known State / Pending
+
+- No live GOG request was made. Future real provider variants should be redacted and added as contract
+  fixtures before parser behavior is broadened.
+- The GOG stats endpoint and cookie authentication remain unofficial provider-fragile boundaries.
+  No automatic retry, credential replay, dependency, configuration, schema, authentication, tenant,
+  or `.env` change was introduced.
+
+## Current Session Summary (2026-07-17)
+
+### What Changed
+
 **PSN Provider Contract Resilience:**
 - Extracted PSN purchased-library page parsing behind a strict, fixture-tested contract that accepts
   valid final/non-final pages and the existing alternate title identifier while rejecting GraphQL

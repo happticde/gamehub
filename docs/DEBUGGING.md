@@ -67,8 +67,8 @@ To see pagination details and request URLs, set `GameHub` to `Debug`.
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `401` / `403` | `gog-al` cookie expired | Re-extract the cookie from your browser |
-| JSON parse error | GOG returned HTML (login page) | Cookie invalid — you're getting redirected to login |
-| Missing `_embedded.items` | Empty library or wrong username | Verify the username in the URL |
+| `MalformedResponse` | GOG returned HTML or an unsupported library shape | Verify the cookie and username; capture a redacted fixture before extending parser support |
+| Missing `_embedded.items` or `pages` | Wrong username or provider contract drift | Verify the username; an empty library must still return the validated empty-page shape |
 
 **Preferred GOG capture path:**
 1. From a host terminal, run `cd services/cli && go run . connect gog`
