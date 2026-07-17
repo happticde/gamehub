@@ -1,0 +1,124 @@
+{
+  "cases": [
+    {
+      "name": "standard non-final page",
+      "response": {
+        "data": {
+          "purchasedTitlesRetrieve": {
+            "games": [
+              { "titleId": "CUSA00001", "name": "Contract Game One", "platform": "PS4" },
+              { "titleId": "PPSA00002", "name": "Contract Game Two", "platform": "PS5" }
+            ],
+            "pageInfo": { "isLast": false }
+          }
+        }
+      },
+      "expected": {
+        "isValid": true,
+        "isLast": false,
+        "gameIds": ["CUSA00001", "PPSA00002"]
+      }
+    },
+    {
+      "name": "compatible alternate title identifier",
+      "response": {
+        "data": {
+          "purchasedTitlesRetrieve": {
+            "games": [
+              { "npTitleId": "NPUB00003", "name": "Compatible Contract Game" }
+            ],
+            "pageInfo": { "isLast": true }
+          }
+        }
+      },
+      "expected": {
+        "isValid": true,
+        "isLast": true,
+        "gameIds": ["NPUB00003"]
+      }
+    },
+    {
+      "name": "empty final page",
+      "response": {
+        "data": {
+          "purchasedTitlesRetrieve": {
+            "games": [],
+            "pageInfo": { "isLast": true }
+          }
+        }
+      },
+      "expected": {
+        "isValid": true,
+        "isLast": true,
+        "gameIds": []
+      }
+    },
+    {
+      "name": "graphql error response",
+      "response": {
+        "errors": [
+          { "message": "provider-secret should never enter the exception" }
+        ],
+        "data": null
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "missing games collection",
+      "response": {
+        "data": {
+          "purchasedTitlesRetrieve": {
+            "pageInfo": { "isLast": true }
+          }
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "missing pagination marker",
+      "response": {
+        "data": {
+          "purchasedTitlesRetrieve": {
+            "games": [{ "titleId": "CUSA00004", "name": "Unsafe Pagination" }],
+            "pageInfo": {}
+          }
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "empty non-final page",
+      "response": {
+        "data": {
+          "purchasedTitlesRetrieve": {
+            "games": [],
+            "pageInfo": { "isLast": false }
+          }
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    },
+    {
+      "name": "non-object game record",
+      "response": {
+        "data": {
+          "purchasedTitlesRetrieve": {
+            "games": ["provider-secret"],
+            "pageInfo": { "isLast": true }
+          }
+        }
+      },
+      "expected": {
+        "isValid": false
+      }
+    }
+  ]
+}

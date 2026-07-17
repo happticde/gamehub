@@ -1,5 +1,30 @@
 # Session History
 
+## Current Session Summary (2026-07-17)
+
+### What Changed
+
+**PSN Provider Contract Resilience:**
+- Extracted PSN purchased-library page parsing behind a strict, fixture-tested contract that accepts
+  valid final/non-final pages and the existing alternate title identifier while rejecting GraphQL
+  errors, malformed structures, non-object records, and pagination states that could loop.
+- PSN malformed JSON and unsupported provider shapes now produce one sanitized `MalformedResponse`
+  audit entry without copying provider payload details, cookies, or upstream error text.
+- Added redacted contract fixtures for normal pagination, empty libraries, compatible identifiers,
+  provider errors, missing fields, and unsafe pagination without making a live PSN request.
+
+### Verification
+
+- The Ingest service builds with zero warnings and errors.
+- The focused PSN provider-contract suite passes 2 tests, and the full .NET suite passes 402 tests.
+
+### Known State / Pending
+
+- The fixtures document only captured/compatible shapes already supported by the implementation;
+  future real provider variants should be redacted and added before parser behavior is broadened.
+- The persisted PSN GraphQL query remains provider-fragile. No automatic retry, credential replay,
+  dependency, configuration, schema, authentication, tenant, or `.env` change was introduced.
+
 ## Current Session Summary (2026-07-16)
 
 ### What Changed
