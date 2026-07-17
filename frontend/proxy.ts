@@ -9,6 +9,7 @@ import {
     safeReturnPath,
     setAuthCookies,
 } from "@/lib/auth-session";
+import { getExternalRequestUrl } from "@/lib/external-request-url";
 
 /**
  * Protects rendered pages before React Server Components run. When the short-lived access JWT
@@ -17,13 +18,14 @@ import {
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
     const isLoginPage = request.nextUrl.pathname === "/login";
+    const externalRequestUrl = getExternalRequestUrl(request);
 
     // JWT remains opt-in across GameHub. In legacy mode Core accepts requests without an
     // authenticated principal, so the frontend must not redirect installations to a login
     // form whose token endpoint is intentionally disabled.
     if (!isFrontendAuthEnabled()) {
         return isLoginPage
-            ? NextResponse.redirect(new URL("/library", request.url))
+            ? NextResponse.redirect(new URL("/library", externalRequestUrl))
             : NextResponse.next();
     }
 
@@ -33,7 +35,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         return isLoginPage
             ? NextResponse.redirect(new URL(
                 safeReturnPath(request.nextUrl.searchParams.get("returnTo")),
-                request.url,
+                externalRequestUrl,
             ))
             : NextResponse.next();
     }
@@ -44,7 +46,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         if (isLoginPage) {
             const response = NextResponse.redirect(new URL(
                 safeReturnPath(request.nextUrl.searchParams.get("returnTo")),
-                request.url,
+                externalRequestUrl,
             ));
             setAuthCookies(response, rotatedTokens);
             return response;
@@ -74,7 +76,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         return response;
     }
 
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL("/login", externalRequestUrl);
     loginUrl.searchParams.set("returnTo", `${request.nextUrl.pathname}${request.nextUrl.search}`);
     const response = NextResponse.redirect(loginUrl);
     clearAuthCookies(response);
