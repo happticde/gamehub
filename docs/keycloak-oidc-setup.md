@@ -5,9 +5,9 @@ as GameHub's single OpenID Connect provider. It complements the provider-neutral
 [GameHub Authentication](authentication.md) and the activation procedure in
 [Guarded Multi-User Operations](guarded-multi-user-enablement.md).
 
-The examples were validated against Keycloak 26.6.3, the current stable patch release on
-2026-06-22. Review the official release and upgrade notes before every deployment rather than
-silently following an old image tag.
+The examples were validated against Keycloak 26.7.0, the current stable release on 2026-07-17.
+Keycloak published 26.7.0 on 2026-07-09. Review the official release and upgrade notes before every
+deployment rather than silently following an old image tag.
 
 ## Security and product boundary
 
@@ -70,7 +70,7 @@ so runtime startup does not repeat the augmentation step.
 An example deployment-owned `Containerfile` is:
 
 ```dockerfile
-FROM quay.io/keycloak/keycloak:26.6.3 AS builder
+FROM quay.io/keycloak/keycloak:26.7.0 AS builder
 
 ENV KC_DB=postgres
 ENV KC_HEALTH_ENABLED=true
@@ -79,7 +79,7 @@ ENV KC_METRICS_ENABLED=true
 WORKDIR /opt/keycloak
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.6.3
+FROM quay.io/keycloak/keycloak:26.7.0
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
@@ -210,6 +210,82 @@ https://auth.example.com/realms/gamehub
 
 Scheme, host, path, case, and trailing slash must agree exactly with GameHub configuration.
 
+### Roadmap #18 preparation: native Organizations and invitations
+
+Keycloak Organizations can be enabled for this realm under **Realm settings → Organizations**.
+This enables Keycloak's native organization membership and invitation lifecycle; it does not add
+an invitation mode, invitation endpoint, registration UI, or tenant membership model to GameHub.
+GameHub does not currently implement an `InvitationOnly` provisioning mode.
+
+For a future closed personal-tenant admission policy, keep global **User registration** disabled.
+Use native organization invitations instead of enabling the realm-wide public registration link:
+
+- an invitation for an existing realm user asks that user to confirm joining the organization;
+- an invitation for an unknown email enters Keycloak's registration flow and fixes the registration
+  email to the invited address;
+- the invitation-scoped new-user flow in Keycloak 26.7.0 was locally validated to complete while
+  the realm-wide **User registration** switch remained disabled; and
+- SMTP must be configured for real delivery. Do not enable global registration as an invitation
+  workaround if delivery or another external dependency is unavailable.
+
+Treat this as provider-side admission only. If Roadmap #18 later adds an explicit GameHub policy,
+validated membership in one configured Keycloak organization may decide only whether a previously
+unknown exact `(issuer, subject)` is admitted to `PersonalTenantJit`. It must never supply, select,
+name, reuse, or switch a GameHub tenant. Core must still generate a new personal tenant and owner,
+and every returning login must still resolve solely through the stored case-sensitive
+`(issuer, subject)` mapping. Email, organization alias/ID, organization attributes, roles, groups,
+domains, and all other provider claims remain non-authoritative for tenant selection.
+
+#### Invitation administration and lifecycle
+
+Keycloak 26.7.0 adds the dedicated `realm-management` client role
+`manage-organizations`. Grant it to a narrowly scoped administrator or service account that must
+create organizations, manage their membership, and send or manage invitations. The broader
+`manage-realm` role continues to imply organization management, but should not be granted merely
+for invitation automation. `view-organizations` and `query-organizations` provide narrower read
+and search capabilities. Operations that expose realm user records or enumerate member details
+also require suitable `view-users` access or equivalent Fine-Grained Admin Permissions.
+
+The relevant Admin REST operations are:
+
+```text
+POST   /admin/realms/{realm}/organizations/{organization-id}/members/invite-user
+POST   /admin/realms/{realm}/organizations/{organization-id}/members/invite-existing-user
+GET    /admin/realms/{realm}/organizations/{organization-id}/invitations
+GET    /admin/realms/{realm}/organizations/{organization-id}/invitations/{invitation-id}
+POST   /admin/realms/{realm}/organizations/{organization-id}/invitations/{invitation-id}/resend
+DELETE /admin/realms/{realm}/organizations/{organization-id}/invitations/{invitation-id}
+```
+
+The `invite-user` operation sends either a join link for an existing user or a registration link
+for an unknown email; `invite-existing-user` accepts an existing realm user ID. Invitation records
+are `PENDING` or `EXPIRED`. Resending a pending invitation sends a new action token with a fresh
+expiration time. Deleting the invitation is the revocation operation and permanently removes its
+record. A successfully accepted invitation is also removed automatically, so the accepted action
+link is not a reusable durable membership credential.
+
+Admin REST invitation representations can contain `inviteLink`. Treat that field like a short-lived
+bearer credential: do not log it, include it in metrics or traces, return it through GameHub APIs,
+store it in GameHub, paste it into tickets, or expose it to browser JavaScript. Restrict the Admin
+REST token and role, keep responses out of general-purpose logs, and let Keycloak deliver the link
+through its configured email path.
+
+#### Organization OIDC scope and claim boundary
+
+Keycloak supplies a built-in optional `organization` client scope with an `Organization Membership`
+mapper. It can be requested as `organization`, `organization:<alias>`, or `organization:*`.
+The resulting `organization` claim is keyed by organization alias; organization IDs and attributes
+are omitted by default unless enabled on the mapper. The unqualified scope selects the sole
+membership or prompts a member of multiple organizations to choose. An alias-qualified scope is
+rejected when the alias does not exist or the user is not a member; the wildcard maps every
+membership. Do not mix these scope formats in one request.
+
+Do not add an organization scope to the GameHub client merely by enabling Organizations. Current
+GameHub deliberately projects only the validated issuer, subject, optional display email, and
+fresh-authentication time; it does not consume organization claims. Any future Roadmap #18 change
+must introduce a separately reviewed admission check while preserving the exact `(issuer, subject)`
+identity authority and every ADR-011/012/013 tenant boundary.
+
 ## 3. Create the GameHub OIDC client
 
 In the `gamehub` realm, create a client with these settings:
@@ -229,15 +305,22 @@ In the `gamehub` realm, create a client with these settings:
 | Consent required | Off unless the deployment intentionally requires a consent screen |
 | Valid redirect URI | `https://games.example.com/api/auth/oidc/callback` exactly |
 | Web origins | No wildcard; normally unnecessary for the server-side BFF flow |
+| Requested scope baseline | `openid` |
+| Organization scope | Do not request until a GameHub admission policy is implemented and reviewed |
+| Backchannel logout URL | Leave empty; GameHub does not implement a receiver |
 
 Under **Credentials**, use **Client ID and Secret** and retain
 `client_secret_basic` as an allowed authentication method. GameHub's BFF authenticates the token
 exchange with the client ID and secret in the HTTP Basic authorization header. Copy the generated
 client secret directly into the deployment's secret manager.
 
-Keep `profile` and `email` client scopes only when their display metadata is useful. GameHub
-requires `openid`; it does not need `offline_access` because it issues and rotates its own refresh
-sessions after the one-time Keycloak login.
+Use `openid` as the minimum and sufficient GameHub scope baseline. Add `profile` and/or `email` only
+when their optional display metadata is useful. Core does not require either scope, does not use an
+email claim for lookup or authorization, and permits an external account without provider email.
+The current Compose/BFF fallback is `openid profile email` for compatibility, so set
+`GAMEHUB_OIDC_SCOPES=openid` explicitly when using the minimal baseline. GameHub does not need
+`offline_access` because it issues and rotates its own refresh sessions after the one-time Keycloak
+login.
 
 Do not configure wildcard redirect URIs. GameHub verifies the exact callback independently, and a
 broader Keycloak redirect pattern would weaken the provider boundary without adding functionality.
@@ -259,7 +342,7 @@ GAMEHUB_OIDC_METADATA_ADDRESS=https://auth.example.com/realms/gamehub/.well-know
 GAMEHUB_OIDC_CLIENT_ID=gamehub
 GAMEHUB_OIDC_CLIENT_SECRET=<Keycloak client secret>
 GAMEHUB_OIDC_REDIRECT_URI=https://games.example.com/api/auth/oidc/callback
-GAMEHUB_OIDC_SCOPES=openid profile email
+GAMEHUB_OIDC_SCOPES=openid
 GAMEHUB_OIDC_ALLOWED_ALGORITHMS=RS256
 
 GAMEHUB_OIDC_COOKIE_KEY=<independent Base64 encoding of 32 random bytes>
@@ -346,6 +429,13 @@ Keep Keycloak self-registration disabled unless the operator has made a separate
 policy decision. Restrict access through Keycloak realm membership, the GameHub client, browser
 authentication flows, MFA, and administrative policy. GameHub intentionally does not interpret
 email, verified-email, name, group, organization, role, or tenant claims as a JIT allowlist.
+
+Enabling a Keycloak Organization does not change this current behavior. Roadmap #18 may later add
+an explicit invitation-only admission check, but organization membership would be allowed to answer
+only whether a validated unknown subject may enter this personal-tenant JIT path. It would never
+select a GameHub tenant. Until that policy is implemented and tested, GameHub ignores organization
+claims and every valid subject admitted by the configured realm/client remains subject to the
+existing ADR-013 policy.
 
 A new Core database may contain zero accounts. With every technical prerequisite satisfied, the
 operator readiness response may still be satisfied in this mode. After the operator activates
@@ -448,11 +538,21 @@ identity mapping before enabling admission.
 
 For Keycloak upgrades:
 
-1. Read the release and migration notes for the target patch.
+1. Read the release and migration notes for the target release.
 2. Back up the Keycloak database and external secrets.
 3. Test the upgrade against a restored copy.
 4. Exercise discovery, JWKS, login, MFA, callback, and GameHub refresh behavior.
 5. Roll out using the deployment's availability procedure.
+
+Moving from 26.6.x to 26.7.0 is a minor-version upgrade, not a same-stream patch update. Keycloak's
+rolling-update support introduced in 26.6 applies to supported patch updates within one minor
+stream; plan a coordinated shutdown for this minor upgrade unless the official rolling-update
+guide explicitly validates the deployment topology. In addition to the general migration review,
+26.7.0 changes organization member queries to return brief user representations by default and
+makes the invitation `email`, `firstName`, and `lastName` filters case-insensitive exact matches
+(`search` retains substring matching). Re-test delegated organization roles, invitation automation,
+custom themes, database migration, and client-secret storage limits against a restored copy before
+production rollout.
 
 Keycloak signing-key rotation is expected to publish new JWKS. Core performs one bounded metadata
 refresh after an unknown signing key; test the rotation rather than assuming it. Coordinate
@@ -478,6 +578,14 @@ account-wide revocation or account deletion path.
 GameHub logout revokes the local refresh session and clears GameHub cookies; it does not terminate
 the Keycloak browser SSO session. A later login can therefore authenticate silently at Keycloak.
 Use Keycloak's administrative session controls when the provider session must also end.
+
+Keycloak supports OIDC Back-Channel Logout by sending a server-to-server HTTP POST containing a
+signed logout token to a configured client URL. GameHub has no such receiver and does not validate
+or consume Keycloak logout tokens, so leave the Keycloak client's **Backchannel logout URL** empty.
+Configuring an arbitrary GameHub URL would not revoke a GameHub session. Provider logout, account
+disablement, and organization removal therefore do not immediately revoke already-issued GameHub
+access or refresh sessions; use GameHub's account-scoped revocation or deletion controls when
+immediate local termination is required.
 
 Deleting an `ExternalOidc` GameHub account is different: the BFF starts a dedicated transaction
 with `prompt=login` and `max_age=0`. Core requires the exact linked subject and a recent signed
@@ -505,19 +613,46 @@ explicit revocation; the switch is not a global kill switch.
 | Readiness reports `ingest_credential_vault_not_ready` | No valid active vault encryption key | Restore/configure the external versioned vault key ring |
 | Readiness reports `ingest_unavailable_or_trust_mismatch` | Ingest outage or delegation-key mismatch | Restore Ingest and verify the same independent service key on both sides |
 | Existing GameHub session survives Keycloak logout/disable | Provider back-channel revocation is not implemented | Revoke all GameHub sessions for the account when immediate termination is required |
+| Invitation creation fails | SMTP, delegated role, organization state, or email policy is incomplete | Keep global registration disabled; verify Keycloak SMTP and least-privilege organization administration |
+| Invitation link appears in logs or diagnostics | Admin REST response bodies or email URLs are being captured | Treat `inviteLink` as a bearer credential and remove it from logs, traces, tickets, and GameHub storage |
 
 Never log or paste Keycloak client secrets, passwords, authorization codes, ID tokens, GameHub
 access/refresh tokens, BFF/cookie keys, vault keys, or decrypted platform credentials while
 troubleshooting.
 
+## Controlled Keycloak 26.7.0 invitation validation
+
+On 2026-07-17, a temporary local Keycloak 26.7.0 container was exercised with an ephemeral realm,
+Organizations enabled, global **User registration** disabled, a synthetic `.invalid` address, a
+local SMTP protocol sink, and a service account holding `manage-organizations`:
+
+- the delegated account created the organization and invitation and used the invitation lifecycle
+  endpoints without `manage-realm`;
+- a previously unknown synthetic user completed the invitation registration flow while global
+  **User registration** remained disabled and became an organization member;
+- successful acceptance removed the invitation and replaying its original action link did not
+  create another user or membership;
+- deleting a second invitation invalidated its action link; and
+- an invitation created with a deliberately shortened action-token lifespan became `EXPIRED` and
+  its link did not create a user.
+
+No real address, token, credential, or invitation link was printed or retained, and the temporary
+container and validation scripts were removed. The SMTP sink proved only that Keycloak completed
+the SMTP protocol exchange. External delivery, spam filtering, mailbox-client link handling,
+public TLS/hostname/proxy behavior, clustering, production database upgrades, and a GameHub
+end-to-end admission flow were not tested. No GameHub invitation-only behavior exists as a result
+of this validation.
+
 ## Official Keycloak references
 
-- [Keycloak 26.6.3 release](https://www.keycloak.org/2026/06/keycloak-2663-released)
+- [Keycloak 26.7.0 release](https://www.keycloak.org/2026/07/keycloak-2670-released)
+- [Keycloak downloads](https://www.keycloak.org/downloads)
 - [Running Keycloak in a container](https://www.keycloak.org/server/containers)
 - [Configuring Keycloak for production](https://www.keycloak.org/server/configuration-production)
 - [Configuring a PostgreSQL database](https://www.keycloak.org/server/db)
 - [Configuring the hostname](https://www.keycloak.org/server/hostname)
 - [Configuring a reverse proxy](https://www.keycloak.org/server/reverseproxy)
 - [Management, health, and metrics interface](https://www.keycloak.org/server/management-interface)
-- [Keycloak Server Administration Guide](https://www.keycloak.org/docs/latest/server_admin/)
-- [Keycloak upgrading guide](https://www.keycloak.org/docs/26.6.3/upgrading/)
+- [Keycloak 26.7.0 Server Administration Guide](https://www.keycloak.org/docs/26.7.0/server_admin/)
+- [Keycloak 26.7.0 Admin REST API](https://www.keycloak.org/docs-api/latest/rest-api/index.html)
+- [Keycloak 26.7.0 upgrading guide](https://www.keycloak.org/docs/latest/upgrading/)
