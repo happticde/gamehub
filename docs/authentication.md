@@ -118,11 +118,12 @@ claim as account ownership. Provider recovery restores access only to the alread
 issuer/subject identity; it cannot choose or change a GameHub tenant.
 
 The provider must offer HTTPS discovery/JWKS, nonce-bearing signed ID tokens, and the selected
-asymmetric algorithm. This release supports one issuer/client configuration and optional personal
-JIT, but no unlink/subject replacement or provider back-channel logout. Provider outages
-fail closed for new login/link attempts; already-issued GameHub sessions retain their normal local
-expiry and revocation behavior. A reverse proxy must preserve the external HTTPS scheme and host so
-the BFF can compare the callback to the registered redirect URI exactly. See ADR-011.
+asymmetric algorithm. This release supports one issuer/client configuration, optional personal
+JIT, and RP-Initiated browser logout, but no unlink/subject replacement or Keycloak-initiated
+Back-Channel Logout. Provider outages fail closed for new login/link attempts; already-issued
+GameHub sessions retain their normal local expiry and revocation behavior. A reverse proxy must
+preserve the external HTTPS scheme and host so the BFF can compare the callback to the registered
+redirect URI exactly. See ADR-011.
 
 ## Enable JWT
 
@@ -310,7 +311,14 @@ restart. Disabling it later preserves all data, blocks new provisioned-tenant lo
 background jobs to the default tenant, and leaves existing sessions to expire or be revoked under
 ADR-011.
 
-GameHub logout does not terminate the Keycloak SSO session. Disabling or deleting a Keycloak user
-does not immediately revoke GameHub sessions already issued for that subject. Use GameHub
-revoke-all or account deletion when immediate local termination is required. Back-channel logout
-and provider-event lifecycle synchronization remain future work.
+The navigation's native same-origin logout form first attempts to revoke the GameHub refresh
+session and clears every GameHub authentication cookie. If the request carried the refresh cookie,
+OIDC is enabled, and exact-issuer discovery supplies a valid HTTPS `end_session_endpoint`, the BFF
+returns a 303 top-level RP-Initiated Logout navigation with the configured `client_id` and `/login`
+on the exact configured callback origin. It accepts no browser redirect input and falls back to
+local `/login` when Core or provider logout is unavailable. Because GameHub stores no provider ID
+token, Keycloak may display a logout confirmation page.
+
+Keycloak-initiated Back-Channel Logout and provider-event lifecycle synchronization remain future
+work. Disabling or deleting a Keycloak user does not immediately revoke already-issued GameHub
+sessions; use GameHub revoke-all or account deletion when immediate local termination is required.

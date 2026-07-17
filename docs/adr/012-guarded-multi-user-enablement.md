@@ -198,9 +198,10 @@ minimum login/link presentation state needed for the current flow.
 
 - One issuer/client remains supported per deployment.
 - One owner account per tenant remains the current model.
-- There is no public registration, account invitation, unlink, subject replacement, provider
-  back-channel logout, or provider-event session revocation. Optional personal-tenant JIT is
-  governed separately by ADR-013.
+- There is no public registration, account invitation, unlink, subject replacement,
+  Keycloak-initiated Back-Channel Logout, or provider-event session revocation. RP-Initiated
+  browser logout is implemented separately and does not change guarded admission or tenant state.
+  Optional personal-tenant JIT is governed separately by ADR-013.
 - Switch deactivation does not immediately revoke already-issued GameHub sessions.
 - Operator API-key provisioning remains an administrative compatibility interface rather than a
   complete production admin console.

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
+import { OIDC_TRANSACTION_COOKIE } from "@/lib/oidc-security";
 export {
     isAccountDeletionTokenResponse,
     type CoreAccountDeletionTokenResponse,
@@ -75,10 +76,16 @@ export function setOidcLinkCookie(
     response.cookies.set(REFRESH_TOKEN_COOKIE, "", expiredCookieOptions());
 }
 
-/** Deletes both browser-side session cookies after logout or failed refresh. */
+/** Deletes every browser-side GameHub authentication cookie after logout or failed refresh. */
 export function clearAuthCookies(response: NextResponse): void {
     response.cookies.set(ACCESS_TOKEN_COOKIE, "", expiredCookieOptions());
     response.cookies.set(REFRESH_TOKEN_COOKIE, "", expiredCookieOptions());
+    response.cookies.set(OIDC_TRANSACTION_COOKIE, "", {
+        ...expiredCookieOptions(),
+        // OIDC transactions are issued only with this deliberately narrower cookie path.
+        path: "/api/auth/oidc",
+        secure: true,
+    });
 }
 
 /**

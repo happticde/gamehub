@@ -304,6 +304,7 @@ In the `gamehub` realm, create a client with these settings:
 | Authorization Services | Off unless independently required and reviewed |
 | Consent required | Off unless the deployment intentionally requires a consent screen |
 | Valid redirect URI | `https://games.example.com/api/auth/oidc/callback` exactly |
+| Valid Post Logout Redirect URIs | `https://<gamehub-host>/login` exactly |
 | Web origins | No wildcard; normally unnecessary for the server-side BFF flow |
 | Requested scope baseline | `openid` |
 | Organization scope | Do not request until a GameHub admission policy is implemented and reviewed |
@@ -575,15 +576,30 @@ revoke GameHub sessions already issued to that user. GameHub does not currently 
 back-channel logout or provider lifecycle events. For immediate termination, also call GameHub's
 account-wide revocation or account deletion path.
 
-GameHub logout revokes the local refresh session and clears GameHub cookies; it does not terminate
-the Keycloak browser SSO session. A later login can therefore authenticate silently at Keycloak.
-Use Keycloak's administrative session controls when the provider session must also end.
+GameHub implements OIDC RP-Initiated Logout for user-triggered browser sign-out. The browser submits
+a same-origin GameHub POST; GameHub first attempts to revoke the local refresh session and expires
+all GameHub authentication cookies. Only when that request carried a GameHub refresh-session cookie
+does GameHub discover the exact configured issuer's HTTPS `end_session_endpoint` and return a 303
+top-level navigation with the server-configured `client_id` and a server-derived
+`post_logout_redirect_uri`. OIDC disablement, provider outage, missing metadata, or invalid logout
+metadata falls back to local `/login` after the same local cleanup.
 
-Keycloak supports OIDC Back-Channel Logout by sending a server-to-server HTTP POST containing a
-signed logout token to a configured client URL. GameHub has no such receiver and does not validate
-or consume Keycloak logout tokens, so leave the Keycloak client's **Backchannel logout URL** empty.
-Configuring an arbitrary GameHub URL would not revoke a GameHub session. Provider logout, account
-disablement, and organization removal therefore do not immediately revoke already-issued GameHub
+Register this exact value under the client's **Valid Post Logout Redirect URIs**:
+
+```text
+https://<gamehub-host>/login
+```
+
+The scheme, host, optional port, and `/login` path must match the origin of the exact configured
+`GAMEHUB_OIDC_REDIRECT_URI`. GameHub does not retain a Keycloak ID token and therefore sends
+`client_id` rather than `id_token_hint`. Keycloak may show the user a logout confirmation page as a
+result; this is expected and avoids storing or exposing provider tokens solely to suppress it.
+
+RP-Initiated browser logout is distinct from Keycloak-initiated Back-Channel Logout. Keycloak can
+send a server-to-server HTTP POST containing a signed logout token to a configured client URL, but
+GameHub has no such receiver and does not validate or consume logout tokens. Keep the Keycloak
+client's **Backchannel logout URL** empty. Administrative Keycloak session termination, account
+disablement, and organization removal therefore do not propagate into already-issued GameHub
 access or refresh sessions; use GameHub's account-scoped revocation or deletion controls when
 immediate local termination is required.
 
@@ -612,7 +628,7 @@ explicit revocation; the switch is not a global kill switch.
 | Readiness reports `active_account_missing_oidc_link` | At least one live account lacks this realm issuer | Complete the first-link flow for every live account |
 | Readiness reports `ingest_credential_vault_not_ready` | No valid active vault encryption key | Restore/configure the external versioned vault key ring |
 | Readiness reports `ingest_unavailable_or_trust_mismatch` | Ingest outage or delegation-key mismatch | Restore Ingest and verify the same independent service key on both sides |
-| Existing GameHub session survives Keycloak logout/disable | Provider back-channel revocation is not implemented | Revoke all GameHub sessions for the account when immediate termination is required |
+| Existing GameHub session survives Keycloak-initiated or administrative logout/disable | Back-channel/provider-event revocation is not implemented | Revoke all GameHub sessions for the account when immediate termination is required |
 | Invitation creation fails | SMTP, delegated role, organization state, or email policy is incomplete | Keep global registration disabled; verify Keycloak SMTP and least-privilege organization administration |
 | Invitation link appears in logs or diagnostics | Admin REST response bodies or email URLs are being captured | Treat `inviteLink` as a bearer credential and remove it from logs, traces, tickets, and GameHub storage |
 
@@ -654,5 +670,6 @@ of this validation.
 - [Configuring a reverse proxy](https://www.keycloak.org/server/reverseproxy)
 - [Management, health, and metrics interface](https://www.keycloak.org/server/management-interface)
 - [Keycloak 26.7.0 Server Administration Guide](https://www.keycloak.org/docs/26.7.0/server_admin/)
+- [Keycloak OpenID Connect endpoints](https://www.keycloak.org/securing-apps/oidc-layers)
 - [Keycloak 26.7.0 Admin REST API](https://www.keycloak.org/docs-api/latest/rest-api/index.html)
 - [Keycloak 26.7.0 upgrading guide](https://www.keycloak.org/docs/latest/upgrading/)

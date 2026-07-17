@@ -38,6 +38,8 @@ export interface OidcDiscoveryDocument {
     issuer: string;
     authorization_endpoint: string;
     token_endpoint: string;
+    /** Optional RP-Initiated Logout endpoint; validated only by the logout flow. */
+    end_session_endpoint?: string;
 }
 
 export function isOidcEnabled(): boolean {
@@ -119,6 +121,11 @@ export async function getOidcDiscovery(config: OidcBffConfig): Promise<OidcDisco
         issuer: config.issuer,
         authorization_endpoint: authorizationEndpoint,
         token_endpoint: tokenEndpoint,
+        // Missing or malformed optional logout metadata must not make normal login unavailable.
+        // The logout route applies its own HTTPS validation before using this value.
+        end_session_endpoint: typeof value.end_session_endpoint === "string"
+            ? value.end_session_endpoint
+            : undefined,
     };
 }
 
