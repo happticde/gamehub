@@ -102,10 +102,10 @@ the server-configured client ID and `/login` on the configured callback origin. 
 cannot choose either redirect. Missing/invalid metadata, provider outages, or disabled OIDC fall
 back to local `/login` without preventing local cleanup or normal OIDC login.
 
-GameHub does not retain provider tokens for logout and sends no `id_token_hint`. Keycloak-initiated
-Back-Channel Logout, logout-token validation, provider event propagation, and administrative
-session synchronization remain unsupported; GameHub refresh-session revocation stays locally
-authoritative.
+GameHub does not retain provider tokens for browser logout and sends no `id_token_hint`. ADR-015
+later adds independently validated, account-wide Back-Channel Logout with immediate GameHub access
+epoch and refresh-session invalidation. Broader provider event propagation and administrative
+lifecycle synchronization remain unsupported.
 
 ## Consequences
 
@@ -127,9 +127,10 @@ authoritative.
   JIT only through an independent mode and active guarded gate.
 - Linking requires a current GameHub session. There is no unlink or subject-replacement endpoint;
   those operations need a separate reauthentication and recovery design.
-- RP-Initiated browser logout is implemented without provider-token storage. Keycloak-initiated
-  Back-Channel Logout, token revocation events, and administrative session synchronization are not
-  implemented. GameHub refresh-session revocation remains locally authoritative.
+- RP-Initiated browser logout is implemented without provider-token storage. ADR-015 later adds
+  account-wide Back-Channel Logout without changing this login trust model. Per-provider-session
+  logout, other token revocation events, and administrative lifecycle synchronization remain
+  unimplemented.
 - The provider must be reachable over HTTPS and supply conforming discovery metadata and signed
   ID tokens with nonce support.
 
@@ -137,6 +138,7 @@ authoritative.
 
 - [GameHub OIDC Authentication Architecture](../oidc-authentication-architecture.md)
 - [ADR-013: Opt-in Personal-Tenant OIDC JIT Provisioning](013-personal-tenant-oidc-jit-provisioning.md)
+- [ADR-015: OIDC Back-Channel Logout](015-oidc-back-channel-logout.md)
 - [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
 - [OAuth 2.0 Authorization Code Grant](https://www.rfc-editor.org/rfc/rfc6749#section-4.1)
 - [Proof Key for Code Exchange (RFC 7636)](https://www.rfc-editor.org/rfc/rfc7636)

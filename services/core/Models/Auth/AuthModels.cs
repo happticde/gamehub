@@ -38,6 +38,9 @@ public sealed record TokenRequest(string Email, string Password);
 /// </summary>
 public sealed record OidcTokenRequest(string IdToken, string Nonce);
 
+/// <summary>Internal BFF-to-Core envelope for one provider Back-Channel Logout Token.</summary>
+public sealed record OidcBackChannelLogoutRequest(string LogoutToken);
+
 /// <summary>
 /// Opaque secret used to rotate or revoke a login session. It contains no claims and must be
 /// protected like a password; the server persists only its SHA-256 digest.

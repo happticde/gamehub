@@ -92,6 +92,11 @@ There are three distinct proof transitions:
 3. **External identity to tenant:** the persisted composite mapping proves which local account and
    tenant the identity may access.
 
+Back-Channel Logout is a separate provider-to-BFF transition: the BFF accepts only the standard
+form field and authenticates to Core, while Core validates the signed Logout Token before the exact
+external identity may advance its GameHub session epoch. It never reuses browser callback state or
+accepts a tenant from the provider request.
+
 Skipping any one transition would create a different vulnerability. For example, a valid ID token
 does not prove that the browser callback belongs to the initiating session, and a correct callback
 does not prove which GameHub tenant the provider identity owns.
@@ -108,19 +113,24 @@ Read the implementation in this order:
    - Parses server-only BFF configuration.
    - Fetches discovery metadata and pins the configured issuer.
 3. [`frontend/lib/oidc-logout-security.ts`](../frontend/lib/oidc-logout-security.ts),
-   [`frontend/app/api/auth/logout/route.ts`](../frontend/app/api/auth/logout/route.ts), and
+   [`frontend/app/api/auth/logout/route.ts`](../frontend/app/api/auth/logout/route.ts),
+   [`frontend/app/api/auth/oidc/backchannel-logout/route.ts`](../frontend/app/api/auth/oidc/backchannel-logout/route.ts), and
    [`frontend/components/LogoutButton.tsx`](../frontend/components/LogoutButton.tsx)
    - Derive the exact post-logout URI from server configuration.
    - Revoke and clear locally before an optional 303 RP-Initiated Logout navigation.
    - Prevent browser redirect input and provider logout without a refresh-session cookie.
+   - Receive bodyless provider Back-Channel Logout requests and forward only the bounded token over
+     the server-only BFF trust channel.
 4. [`frontend/app/api/auth/oidc/start/route.ts`](../frontend/app/api/auth/oidc/start/route.ts)
    - Creates the transaction and redirects to the provider.
 5. [`frontend/app/api/auth/oidc/callback/route.ts`](../frontend/app/api/auth/oidc/callback/route.ts)
    - Opens the transaction, checks the callback, exchanges the code, and delegates to Core.
 6. [`services/core/Services/OidcTokenValidator.cs`](../services/core/Services/OidcTokenValidator.cs)
+   and [`services/core/Services/OidcLogoutTokenValidator.cs`](../services/core/Services/OidcLogoutTokenValidator.cs)
    - Parses fail-closed Core configuration.
    - Retrieves discovery/JWKS metadata.
    - Validates the provider ID token.
+   - Separately validates Back-Channel Logout signature, type, claims, freshness, and event shape.
 7. [`services/core/Services/ExternalIdentityService.cs`](../services/core/Services/ExternalIdentityService.cs)
    - Explicitly links and exactly resolves `(issuer, subject)` mappings.
 8. [`services/core/Controllers/AuthController.cs`](../services/core/Controllers/AuthController.cs)
@@ -143,6 +153,11 @@ Read the implementation in this order:
       one transaction only when both JIT and guarded mode are active.
 13. [`services/core/Data/DeletedExternalIdentity.cs`](../services/core/Data/DeletedExternalIdentity.cs)
     - Prevents a deleted external subject from silently provisioning a replacement tenant.
+14. [`services/core/Services/OidcBackChannelLogoutService.cs`](../services/core/Services/OidcBackChannelLogoutService.cs)
+    and [`services/core/Services/AccountSessionValidationService.cs`](../services/core/Services/AccountSessionValidationService.cs)
+    - Atomically advance the mapped account epoch, revoke refresh sessions, record tenant activity,
+      and persist a hashed replay marker.
+    - Reject earlier access-JWT epochs during every ordinary live-account validation.
 
 ## 5. Configuration flows through two servers
 
@@ -479,6 +494,8 @@ needs them for page and API requests.
 | Pending-deletion account | Core mapping/JWT validation | Generic 401 | Lifecycle state is immediately fail-closed |
 | Deleted account | DB cascade and mapping lookup | Generic 401 | Identity cannot recreate deleted ownership |
 | Wrong/missing BFF service key | AuthController | Generic 401 | Prevent direct bypass of BFF protocol checks |
+| Invalid Back-Channel Logout Token | Core logout validator | Bodyless 400 through BFF | Reject forged, stale, replay-shaped, or cross-JWT messages before identity lookup |
+| Back-channel discovery/JWKS unavailable | Core logout validator | Bodyless retryable 503 through BFF | Never accept unsigned claims during provider outage |
 
 The callback always expires the transaction cookie, whether authentication succeeds or fails.
 Public errors intentionally do not reveal which check failed or whether an identity is linked.
@@ -493,10 +510,12 @@ discovery or its optional HTTPS `end_session_endpoint` is unavailable.
 Already-issued GameHub sessions are independent of provider availability:
 
 - Existing access JWTs remain valid until their normal short expiry, subject to Core's live
-  account/pending-deletion database check.
+  account/pending-deletion/session-epoch database check.
 - Existing GameHub refresh sessions can rotate without contacting the provider.
-- Provider recovery/MFA changes do not retroactively revoke GameHub refresh sessions because
-  back-channel logout and provider event synchronization are not implemented.
+- A valid Back-Channel Logout immediately advances the exact account's epoch and revokes all of its
+  refresh sessions. Other provider recovery/MFA/disabled-user changes do not retroactively revoke
+  GameHub sessions unless Keycloak emits that logout; provider event synchronization is not
+  implemented.
 
 For provider signing-key rotation, `ConfigurationManager` caches discovery/JWKS data. A
 `SecurityTokenSignatureKeyNotFoundException` triggers one forced refresh and one revalidation.
@@ -640,6 +659,7 @@ Before enabling a provider:
 - Verify reverse-proxy forwarded host/protocol behavior.
 - Bootstrap the existing GameHub owner and explicitly link the provider identity.
 - Run login, logout, refresh, pending-deletion, provider-outage, and key-rotation exercises.
+- Register and exercise the exact public Back-Channel Logout URL, including cross-tenant checks.
 - Keep guarded multi-user enablement disabled until ADR-012 readiness and the operator rollout
   checklist are complete.
 
@@ -649,8 +669,9 @@ Before enabling a provider:
 - Personal-tenant JIT exists only through its explicit default-off provisioning mode and active
   guarded mode; it is not public registration.
 - There is no unlink or subject-replacement flow.
-- RP-Initiated browser logout is implemented without storing an ID token. There is no
-  Keycloak-initiated Back-Channel Logout or provider-event-driven GameHub session revocation.
+- RP-Initiated browser logout and account-wide Keycloak Back-Channel Logout are implemented without
+  storing provider tokens. Per-Keycloak-`sid` logout and provider disabled-user event reconciliation
+  are not implemented.
 - Provider access tokens are not retained or used for provider APIs.
 - Local account deletion still follows ADR-010's current-password confirmation path.
 - Guarded multi-user enablement is implemented, deliberately separate, and disabled by default.

@@ -31,6 +31,10 @@
 - External deletion uses sealed `delete`/`delete-retry` OIDC transactions. The BFF requests fresh
   provider login, obtains a restricted Core token, and immediately consumes it server-to-server;
   provider and deletion tokens never enter JavaScript, JSON responses, or `localStorage`.
+- The public OIDC Back-Channel Logout route is server-to-server only. It accepts exactly one bounded
+  form `logout_token`, forwards it to Core with the BFF service key, returns only bodyless
+  200/400/503 outcomes, and never reads or clears browser cookies. Core owns all token validation,
+  identity resolution, replay protection, and durable session invalidation.
 - Operator readiness is intentionally not exposed to Client Components. The secret-free status API
   is an operator API-key endpoint, not a tenant-facing admin dashboard.
 - The active physical-capture UI is manual-first via the existing IGDB enrichment search. It must

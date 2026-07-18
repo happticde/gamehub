@@ -29,6 +29,8 @@ public sealed class AuthController : ControllerBase
     private readonly JwtTokenService _tokens;
     private readonly RefreshTokenService _refreshTokens;
     private readonly OidcTokenValidator _oidcTokens;
+    private readonly OidcLogoutTokenValidator _oidcLogoutTokens;
+    private readonly OidcBackChannelLogoutService _oidcBackChannelLogout;
     private readonly ExternalIdentityService _externalIdentities;
     private readonly OidcJitProvisioningService _jitProvisioning;
     private readonly OidcSettings _oidcSettings;
@@ -44,6 +46,8 @@ public sealed class AuthController : ControllerBase
         JwtTokenService tokens,
         RefreshTokenService refreshTokens,
         OidcTokenValidator oidcTokens,
+        OidcLogoutTokenValidator oidcLogoutTokens,
+        OidcBackChannelLogoutService oidcBackChannelLogout,
         ExternalIdentityService externalIdentities,
         OidcJitProvisioningService jitProvisioning,
         OidcSettings oidcSettings,
@@ -57,6 +61,8 @@ public sealed class AuthController : ControllerBase
         _tokens = tokens;
         _refreshTokens = refreshTokens;
         _oidcTokens = oidcTokens;
+        _oidcLogoutTokens = oidcLogoutTokens;
+        _oidcBackChannelLogout = oidcBackChannelLogout;
         _externalIdentities = externalIdentities;
         _jitProvisioning = jitProvisioning;
         _oidcSettings = oidcSettings;
@@ -388,6 +394,50 @@ public sealed class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// POST: api/auth/oidc/backchannel-logout
+    /// Validates and applies one provider-initiated account-wide logout. The public provider
+    /// reaches the BFF route; only the independently authenticated BFF may forward here.
+    /// </summary>
+    [HttpPost("oidc/backchannel-logout")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> OidcBackChannelLogout(
+        [FromBody] OidcBackChannelLogoutRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsTrustedOidcBff())
+        {
+            return BadRequest(new AuthErrorResponse(
+                "oidc_logout_failed",
+                "Back-channel logout failed."));
+        }
+
+        var validation = await _oidcLogoutTokens.ValidateAsync(
+            request.LogoutToken,
+            cancellationToken);
+        if (validation.Status is OidcLogoutTokenValidationStatus.ProviderUnavailable
+            or OidcLogoutTokenValidationStatus.ConfigurationUnavailable)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new AuthErrorResponse(
+                    "oidc_logout_unavailable",
+                    "Back-channel logout is unavailable."));
+        }
+        if (validation.Status != OidcLogoutTokenValidationStatus.Succeeded)
+        {
+            return BadRequest(new AuthErrorResponse(
+                "oidc_logout_failed",
+                "Back-channel logout failed."));
+        }
+
+        await _oidcBackChannelLogout.ProcessAsync(validation.Token!, cancellationToken);
+        return Ok();
+    }
+
+    /// <summary>
     /// POST: api/auth/oidc/link
     /// Links a validated provider identity to the currently signed GameHub account. This is the
     /// sole linking path: email similarity never creates or changes a mapping.
@@ -595,8 +645,8 @@ public sealed class AuthController : ControllerBase
 
     /// <summary>
     /// PUT: api/auth/password
-    /// Changes the signed account's password after checking the current password and revokes
-    /// every refresh session for that account.
+    /// Changes the signed account's password after checking the current password and invalidates
+    /// every access and refresh session for that account.
     /// </summary>
     [HttpPut("password")]
     [Authorize]
@@ -629,13 +679,13 @@ public sealed class AuthController : ControllerBase
                 : BadRequest(error);
         }
 
-        _logger.LogInformation("Changed a local password and revoked its refresh sessions");
+        _logger.LogInformation("Changed a local password and invalidated its account sessions");
         return NoContent();
     }
 
     /// <summary>
     /// POST: api/auth/revoke-all
-    /// Explicitly revokes every refresh session for the signed account.
+    /// Explicitly invalidates every access and refresh session for the signed account.
     /// </summary>
     [HttpPost("revoke-all")]
     [Authorize]

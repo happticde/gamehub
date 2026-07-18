@@ -19,6 +19,64 @@ public sealed class PostgresTagRelationshipMigrationTests
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
     [Fact]
+    public async Task OidcBackChannelMigration_PostgresUpgradePreservesAccountAndRefreshEpoch()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            var migrator = db.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260714175859_AddNormalizedGtinToPhysicalCopiesPostgres");
+            var accountId = Guid.NewGuid();
+            var refreshId = Guid.NewGuid();
+            var nowUtc = new DateTime(2026, 7, 18, 12, 0, 0, DateTimeKind.Utc);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "UserAccounts"
+                    ("Id", "TenantId", "AccountType", "Email", "NormalizedEmail", "DisplayName",
+                     "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
+                VALUES
+                    ({accountId}, {TenantA}, {0}, {"legacy@example.com"},
+                     {"LEGACY@EXAMPLE.COM"}, {"Legacy"}, {"preserved-hash"}, {nowUtc}, NULL);
+                INSERT INTO "RefreshTokenSessions"
+                    ("Id", "UserAccountId", "TokenHash", "CreatedAtUtc", "ExpiresAtUtc",
+                     "ConsumedAtUtc", "RevokedAtUtc")
+                VALUES
+                    ({refreshId}, {accountId}, {new string('A', 64)}, {nowUtc},
+                     {nowUtc.AddDays(30)}, NULL, NULL);
+                """);
+
+            await migrator.MigrateAsync();
+            db.ChangeTracker.Clear();
+
+            Assert.Equal(0, (await db.UserAccounts.SingleAsync()).SessionVersion);
+            Assert.Equal(0, (await db.RefreshTokenSessions.SingleAsync()).SessionVersion);
+            db.ProcessedOidcLogoutTokens.Add(new ProcessedOidcLogoutToken
+            {
+                Id = Guid.NewGuid(),
+                TokenHash = new string('B', 64),
+                ProcessedAtUtc = nowUtc,
+                ExpiresAtUtc = nowUtc.AddMinutes(10)
+            });
+            await db.SaveChangesAsync();
+            Assert.Single(await db.ProcessedOidcLogoutTokens.ToListAsync());
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
     public async Task PhysicalCopyMigration_PostgresUpgradePreservesGamesAndEnforcesBoundaries()
     {
         var connectionString = Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");

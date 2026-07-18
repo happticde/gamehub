@@ -204,6 +204,21 @@ public sealed class AuthControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task OidcBackChannelLogout_DirectCallerWithoutBffKey_IsRejected()
+    {
+        var controller = CreateController(apiKey: "configured", jwtEnabled: true, oidcEnabled: true);
+
+        var result = await controller.OidcBackChannelLogout(
+            new OidcBackChannelLogoutRequest("header.payload.signature"),
+            CancellationToken.None);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(
+            "oidc_logout_failed",
+            Assert.IsType<AuthErrorResponse>(badRequest.Value).Code);
+    }
+
+    [Fact]
     public async Task Refresh_ValidToken_RotatesPairAndRejectsReplay()
     {
         await _accounts.BootstrapAsync(
@@ -392,10 +407,15 @@ public sealed class AuthControllerTests : IDisposable
                 [Microsoft.IdentityModel.Tokens.SecurityAlgorithms.RsaSha256],
                 new string('B', 32))
             : new OidcSettings(false, "", "", "", [], "");
+        var oidcMetadata = new OidcMetadataProvider(oidcSettings);
         var oidcValidator = new OidcTokenValidator(
             oidcSettings,
-            new OidcMetadataProvider(oidcSettings),
+            oidcMetadata,
             NullLogger<OidcTokenValidator>.Instance);
+        var oidcLogoutValidator = new OidcLogoutTokenValidator(
+            oidcSettings,
+            oidcMetadata,
+            NullLogger<OidcLogoutTokenValidator>.Instance);
 
         var multiUserSettings = new MultiUserEnablementSettings(
             new MultiUserMode(multiUserEnabled),
@@ -406,6 +426,12 @@ public sealed class AuthControllerTests : IDisposable
             new JwtTokenService(jwtSettings, new AccountServiceTests.FixedTimeProvider(FixedNow)),
             _refreshTokens,
             oidcValidator,
+            oidcLogoutValidator,
+            new OidcBackChannelLogoutService(
+                _db,
+                tenantExecution,
+                new AccountServiceTests.FixedTimeProvider(FixedNow),
+                NullLogger<OidcBackChannelLogoutService>.Instance),
             new ExternalIdentityService(
                 _db,
                 new AccountServiceTests.FixedTimeProvider(FixedNow)),

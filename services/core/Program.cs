@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using GameHub.Core.Data;
@@ -131,6 +132,7 @@ builder.Services.AddSingleton<ITenantJobRunner, TenantJobRunner>();
 // owns a request-scoped CoreContext.
 builder.Services.AddSingleton<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
 builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<AccountSessionValidationService>();
 builder.Services.AddScoped<ExternalIdentityService>();
 builder.Services.AddScoped<OidcJitProvisioningService>();
 
@@ -148,6 +150,8 @@ var oidcSettings = OidcSettings.FromConfiguration(builder.Configuration, jwtSett
 builder.Services.AddSingleton(oidcSettings);
 builder.Services.AddSingleton<IOidcMetadataProvider, OidcMetadataProvider>();
 builder.Services.AddSingleton<OidcTokenValidator>();
+builder.Services.AddSingleton<OidcLogoutTokenValidator>();
+builder.Services.AddScoped<OidcBackChannelLogoutService>();
 // The guarded switch is independent from OIDC. It is parsed once and validates the mirrored BFF
 // state plus every Core trust secret before any request can run. OIDC configuration by itself
 // therefore never changes the active authorization policy.
@@ -324,16 +328,32 @@ if (jwtSettings.IsEnabled)
                         return;
                     }
 
-                    var db = context.HttpContext.RequestServices.GetRequiredService<CoreContext>();
-                    var isActive = await db.UserAccounts.AsNoTracking().AnyAsync(
-                        account => account.Id == accountId
-                            && account.TenantId == tenantId
-                            && account.Tenant != null
-                            && account.Tenant.DeletionRequestedAtUtc == null,
-                        context.HttpContext.RequestAborted);
-                    if (!isActive)
+                    var sessionValidation = context.HttpContext.RequestServices
+                        .GetRequiredService<AccountSessionValidationService>();
+                    // Tokens issued before the session-epoch migration have no version claim.
+                    // They remain upgrade-compatible only while the durable version is still zero;
+                    // the first account-wide logout permanently invalidates them.
+                    var versionClaim = principal?.FindFirstValue(GameHubClaimTypes.SessionVersion);
+                    var tokenSessionVersion = 0L;
+                    if (versionClaim is not null
+                        && (!long.TryParse(
+                                versionClaim,
+                                NumberStyles.None,
+                                CultureInfo.InvariantCulture,
+                                out tokenSessionVersion)
+                            || tokenSessionVersion < 0))
                     {
-                        context.Fail("The account is unavailable or pending deletion.");
+                        context.Fail("The access token has an invalid session version.");
+                        return;
+                    }
+
+                    if (!await sessionValidation.IsActiveAsync(
+                            accountId,
+                            tenantId,
+                            tokenSessionVersion,
+                            context.HttpContext.RequestAborted))
+                    {
+                        context.Fail("The account session is unavailable or has been invalidated.");
                     }
                 }
             };

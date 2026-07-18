@@ -258,7 +258,7 @@ public sealed class AccountService
 
     /// <summary>
     /// Replaces an authenticated account password only after verifying the current password.
-    /// Every refresh session is revoked in the same database transaction as the new hash.
+    /// Every access and refresh session is invalidated in the same transaction as the new hash.
     /// </summary>
     public async Task<PasswordChangeResult> ChangePasswordAsync(
         Guid accountId,
@@ -309,6 +309,7 @@ public sealed class AccountService
         var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         account.PasswordHash = _passwordHasher.HashPassword(account, newPassword);
+        account.SessionVersion = checked(account.SessionVersion + 1);
         await RevokeAllSessionsForAccountAsync(account.Id, nowUtc, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -316,7 +317,7 @@ public sealed class AccountService
     }
 
     /// <summary>
-    /// Revokes every refresh session belonging to the exact signed account/tenant pair.
+    /// Invalidates every access and refresh session for the exact signed account/tenant pair.
     /// The account lookup prevents a valid Tenant A principal from selecting Tenant B.
     /// </summary>
     public async Task<bool> RevokeAllSessionsAsync(
@@ -324,17 +325,22 @@ public sealed class AccountService
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {
-        if (!await _db.UserAccounts.AnyAsync(
-                account => account.Id == accountId && account.TenantId == tenantId,
-                cancellationToken))
+        var account = await _db.UserAccounts.SingleOrDefaultAsync(
+            candidate => candidate.Id == accountId && candidate.TenantId == tenantId,
+            cancellationToken);
+        if (account is null)
         {
             return false;
         }
 
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        account.SessionVersion = checked(account.SessionVersion + 1);
         await RevokeAllSessionsForAccountAsync(
             accountId,
             _timeProvider.GetUtcNow().UtcDateTime,
             cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
@@ -387,6 +393,7 @@ public sealed class AccountService
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         account.Tenant.PlatformSyncEnabled = false;
         account.Tenant.DeletionRequestedAtUtc ??= nowUtc;
+        account.SessionVersion = checked(account.SessionVersion + 1);
         await RevokeAllSessionsForAccountAsync(account.Id, nowUtc, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

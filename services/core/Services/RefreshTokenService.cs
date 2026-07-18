@@ -7,9 +7,9 @@ using Microsoft.EntityFrameworkCore;
 namespace GameHub.Core.Services;
 
 /// <summary>
-/// Issues, rotates, and revokes opaque refresh tokens. Access JWTs prove authorization without
-/// a database lookup until they expire; refresh tokens deliberately take the opposite tradeoff:
-/// every use checks durable server state so a session can be consumed or revoked immediately.
+/// Issues, rotates, and revokes opaque refresh tokens. Access JWTs keep their signed authorization
+/// claims but Core also checks the live account/session epoch; refresh tokens additionally use a
+/// durable per-secret row so a session can be consumed, rotated, or revoked immediately.
 /// </summary>
 public sealed class RefreshTokenService
 {
@@ -51,7 +51,7 @@ public sealed class RefreshTokenService
     {
         ArgumentNullException.ThrowIfNull(account);
 
-        var issued = CreateSession(account.Id);
+        var issued = CreateSession(account.Id, account.SessionVersion);
         _db.RefreshTokenSessions.Add(issued.Session);
         return issued.Token;
     }
@@ -81,6 +81,7 @@ public sealed class RefreshTokenService
                 cancellationToken);
         if (existing?.UserAccount is null
             || existing.UserAccount.Tenant?.DeletionRequestedAtUtc is not null
+            || existing.SessionVersion != existing.UserAccount.SessionVersion
             || existing.ExpiresAtUtc <= nowUtc)
         {
             // Unknown and naturally expired tokens get the same result. This avoids turning
@@ -115,7 +116,9 @@ public sealed class RefreshTokenService
             return RefreshTokenRotationResult.Invalid;
         }
 
-        var replacement = CreateSession(existing.UserAccountId);
+        var replacement = CreateSession(
+            existing.UserAccountId,
+            existing.UserAccount.SessionVersion);
         _db.RefreshTokenSessions.Add(replacement.Session);
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -167,7 +170,9 @@ public sealed class RefreshTokenService
                 cancellationToken);
     }
 
-    private (RefreshTokenSession Session, IssuedRefreshToken Token) CreateSession(Guid accountId)
+    private (RefreshTokenSession Session, IssuedRefreshToken Token) CreateSession(
+        Guid accountId,
+        long sessionVersion)
     {
         // RandomNumberGenerator uses the operating system's cryptographic random source.
         // Base64Url is safe in JSON and HTTP without '+' '/' or padding characters.
@@ -178,6 +183,7 @@ public sealed class RefreshTokenService
         {
             Id = Guid.NewGuid(),
             UserAccountId = accountId,
+            SessionVersion = sessionVersion,
             TokenHash = HashToken(plaintext),
             CreatedAtUtc = createdAt.UtcDateTime,
             ExpiresAtUtc = expiresAt.UtcDateTime

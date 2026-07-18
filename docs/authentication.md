@@ -119,9 +119,11 @@ issuer/subject identity; it cannot choose or change a GameHub tenant.
 
 The provider must offer HTTPS discovery/JWKS, nonce-bearing signed ID tokens, and the selected
 asymmetric algorithm. This release supports one issuer/client configuration, optional personal
-JIT, and RP-Initiated browser logout, but no unlink/subject replacement or Keycloak-initiated
-Back-Channel Logout. Provider outages fail closed for new login/link attempts; already-issued
-GameHub sessions retain their normal local expiry and revocation behavior. A reverse proxy must
+JIT, RP-Initiated browser logout, and account-wide Back-Channel Logout, but no unlink/subject
+replacement or general provider lifecycle synchronization. Provider outages fail closed for new
+login/link attempts; already-issued GameHub sessions retain their normal local expiry and
+revocation behavior unless a valid Back-Channel Logout advances their account epoch. A reverse
+proxy must
 preserve the external HTTPS scheme and host so the BFF can compare the callback to the registered
 redirect URI exactly. See ADR-011.
 
@@ -246,14 +248,16 @@ should always discard their local access and refresh tokens after this request.
 
 `PUT /api/auth/password` requires a bearer token and both the current and replacement password.
 The current password must verify, the new password must be 12–128 characters and different, and
-Core revokes every refresh session in the same transaction as the password hash change.
+Core advances the account session epoch and revokes every refresh session in the same transaction
+as the password hash change.
 
 ## Revoke Every Session
 
-`POST /api/auth/revoke-all` requires a bearer token and revokes every refresh session for the
-signed account/tenant pair. Password changes and global revocation invalidate refresh tokens
-immediately. Existing stateless access JWTs cannot be recalled and remain valid until their short
-expiry; clients must discard them. The GameHub BFF clears both HttpOnly cookies after success.
+`POST /api/auth/revoke-all` requires a bearer token and invalidates every access and refresh session
+for the signed account/tenant pair. Password changes and global revocation advance the durable
+session epoch and revoke refresh rows in one transaction, so earlier access JWTs fail their next
+live validation instead of waiting for expiry. The GameHub BFF clears both HttpOnly cookies after
+success.
 
 ## Delete the Account and Tenant
 
@@ -319,6 +323,7 @@ on the exact configured callback origin. It accepts no browser redirect input an
 local `/login` when Core or provider logout is unavailable. Because GameHub stores no provider ID
 token, Keycloak may display a logout confirmation page.
 
-Keycloak-initiated Back-Channel Logout and provider-event lifecycle synchronization remain future
-work. Disabling or deleting a Keycloak user does not immediately revoke already-issued GameHub
-sessions; use GameHub revoke-all or account deletion when immediate local termination is required.
+Register the exact public Back-Channel Logout URL described in the Keycloak guide. A valid signed
+message immediately invalidates every access and refresh session for the exact linked account.
+Disabled-user events and other provider lifecycle synchronization remain future work; when
+Keycloak does not emit a normal logout, use GameHub revoke-all or account deletion.

@@ -17,7 +17,7 @@ Last audited against `origin/main`: **2026-07-16**.
 | Tests | ✅ .NET, frontend, SQLite, and PostgreSQL migration/isolation coverage |
 | EF Core Migrations | ✅ Auto-applied on startup |
 | Structured Logging | ✅ All components, debugging guide |
-| Auth | ✅ API key, local/JWT/OIDC, encrypted credential vault, guarded multi-user mode |
+| Auth | ✅ API key, local/JWT/OIDC, JIT, Back-Channel Logout, encrypted vault, guarded multi-user mode |
 | CI/CD | ✅ GitHub Actions (build, test, Docker) |
 | Frontend | ✅ Mobile-First: Grid/List, Filters Dialog, Screenshot Carousel |
 | Enrichment / metadata | ✅ IGDB provider with caching, rate-limiting, smart search |
@@ -336,7 +336,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Non-goal**: Guarded multi-user deployments remain closed and operator-provisioned by default;
   this item does not imply anonymous public signup.
 
-### 19. JIT Provisioning & External Identity Lifecycle 🟡 Personal-Tenant JIT Implemented
+### 19. JIT Provisioning & External Identity Lifecycle 🟡 JIT + Back-Channel Logout Implemented
 - **Implemented (2026-06-24)**: ADR-013 adds independent default-off
   `Disabled`/`PersonalTenantJit` modes. Active guarded mode can atomically create one server-owned,
   sync-disabled personal tenant, `ExternalOidc` owner, exact issuer/subject mapping, refresh
@@ -346,9 +346,15 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Access boundary**: Every authenticated subject of the exact configured issuer is eligible only
   when JIT is selected; Keycloak realm/client/authentication policy limits admission. Email, name,
   groups, roles, organizations, and tenant claims never select or link a GameHub tenant.
+- **Back-Channel Logout (2026-07-18)**: ADR-015 adds a public form-only BFF receiver and independent
+  Core validation for signed provider Logout Tokens. Exact issuer/subject resolution atomically
+  advances an account session epoch, revokes every refresh session, records secret-free tenant
+  activity, and persists only a short-lived hashed replay marker. Existing pre-upgrade JWTs remain
+  valid at epoch zero until the first account-wide invalidation. Duplicate, unknown, and deleted
+  identities are externally indistinguishable; cross-tenant revocation is directly tested.
 - **Remaining scope**: Automated provider lifecycle integration, disabled-user events, subject
   replacement recovery, SCIM/provider-event evaluation, missed-event reconciliation, and
-  back-channel logout remain future work.
+  per-provider-session `sid` mapping remain future work.
 - **Security boundary**: Provider email, groups, roles, organizations, and tenant-like claims remain
   untrusted unless a future ADR defines their exact authority. Provisioning must be idempotent,
   auditable, revocable, and covered by cross-tenant isolation and lifecycle tests.
@@ -359,7 +365,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Goal**: Define and satisfy the additional security, reliability, privacy, and operational bar
   required before claiming general SaaS readiness.
 - **Scope**: Tenant administration and roles, support-access controls, global incident/session
-  response, provider event and back-channel logout handling, audit retention, privacy and data
+  response, provider disabled-user events and reconciliation, audit retention, privacy and data
   deletion obligations, quotas and abuse prevention, availability targets, disaster recovery,
   key rotation, monitoring, capacity planning, and staged rollout controls.
 - **Release gate**: Complete threat modeling, external security review, restore and regional-failure
@@ -376,7 +382,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 |----------|----------------|------------------------|
 | **1 — Provider resilience** | Continue controlled validation for #16 and #17 | Epic, PSN, and GOG now have redacted contract-fixture baselines. Add only captured provider variants and controlled live-validation evidence before broadening behavior; do not add automatic credential replay. |
 | **2 — Controlled onboarding, if product direction requires it** | Implement #18 invitations | Choose this only when the deployment should onboard additional users without direct operator API calls. Preserve the existing default-off multi-user gate and exact identity-to-tenant mapping. |
-| **3 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT is complete. Back-channel logout, disabled-user events, subject replacement, and reconciliation are separate hardening milestones. |
+| **3 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT and account-wide Back-Channel Logout are complete. Disabled-user events, subject replacement, per-session `sid`, and reconciliation are separate hardening milestones. |
 | **4 — SaaS release gate** | Treat #20 as an umbrella program, not the next feature | Threat modeling, external review, recovery exercises, monitoring, privacy obligations, quotas, and operational ownership are required before any general SaaS claim. |
 
 The physical barcode/catalogue experiments in #13 remain unscheduled until usage permission,

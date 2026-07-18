@@ -19,6 +19,13 @@ public static class GameHubClaimTypes
     /// </summary>
     public const string SessionPurpose = "gamehub:session_purpose";
 
+    /// <summary>
+    /// Monotonic account session epoch. Core compares this signed value with durable account
+    /// state on every ordinary bearer request so an account-wide logout invalidates access JWTs
+    /// immediately instead of waiting for their normal expiry.
+    /// </summary>
+    public const string SessionVersion = "gamehub:session_version";
+
     /// <summary>Value permitting only the Core OIDC linking callback.</summary>
     public const string OidcLinkOnlySessionPurpose = "oidc_link_only";
 

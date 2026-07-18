@@ -260,6 +260,33 @@ namespace GameHub.Core.Migrations.sqlite
                         });
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.ProcessedOidcLogoutToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ProcessedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("ProcessedOidcLogoutTokens");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.RefreshTokenSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -277,6 +304,9 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.Property<DateTime?>("RevokedAtUtc")
                         .HasColumnType("TEXT");
+
+                    b.Property<long>("SessionVersion")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
@@ -555,6 +585,9 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<string>("PasswordHash")
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
+
+                    b.Property<long>("SessionVersion")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("TEXT");

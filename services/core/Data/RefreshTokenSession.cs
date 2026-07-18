@@ -13,6 +13,12 @@ public sealed class RefreshTokenSession
     /// <summary>Account whose trusted tenant claim may be copied into a new access token.</summary>
     public Guid UserAccountId { get; set; }
 
+    /// <summary>
+    /// Account session epoch captured at issuance. Rotation fails when an account-wide logout
+    /// advanced the owner epoch, including for a session inserted by an already in-flight login.
+    /// </summary>
+    public long SessionVersion { get; set; }
+
     /// <summary>Account navigation loaded only after the opaque secret has matched.</summary>
     public UserAccount? UserAccount { get; set; }
 

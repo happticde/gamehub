@@ -165,7 +165,7 @@ public sealed class AccountServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ChangePassword_CurrentPasswordVerified_RevokesOnlyAccountRefreshSessions()
+    public async Task ChangePassword_CurrentPasswordVerified_InvalidatesOnlyAccountSessions()
     {
         var accountA = (await _accounts.BootstrapAsync(
             TenantDefaults.DefaultTenantId,
@@ -192,6 +192,11 @@ public sealed class AccountServiceTests : IDisposable
         Assert.NotNull(await _accounts.AuthenticateAsync(accountA.Email, NewPassword));
         Assert.False((await refresh.RotateAsync(tokenA.RefreshToken)).Rotated);
         Assert.True((await refresh.RotateAsync(tokenB.RefreshToken)).Rotated);
+        _db.ChangeTracker.Clear();
+        Assert.Equal(1, (await _db.UserAccounts.SingleAsync(
+            account => account.Id == accountA.Id)).SessionVersion);
+        Assert.Equal(0, (await _db.UserAccounts.SingleAsync(
+            account => account.Id == tenantB.Account!.Id)).SessionVersion);
     }
 
     [Fact]
@@ -221,7 +226,7 @@ public sealed class AccountServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RevokeAllSessions_SignedAccountPair_InvalidatesOnlyItsRefreshTokens()
+    public async Task RevokeAllSessions_SignedAccountPair_InvalidatesOnlyItsSessions()
     {
         var accountA = (await _accounts.BootstrapAsync(
             TenantDefaults.DefaultTenantId,
@@ -242,6 +247,11 @@ public sealed class AccountServiceTests : IDisposable
         Assert.False((await refresh.RotateAsync(tokenA.RefreshToken)).Rotated);
         Assert.True((await refresh.RotateAsync(tokenB.RefreshToken)).Rotated);
         Assert.False(await _accounts.RevokeAllSessionsAsync(tenantB.Account!.Id, accountA.TenantId));
+        _db.ChangeTracker.Clear();
+        Assert.Equal(1, (await _db.UserAccounts.SingleAsync(
+            account => account.Id == accountA.Id)).SessionVersion);
+        Assert.Equal(0, (await _db.UserAccounts.SingleAsync(
+            account => account.Id == tenantB.Account.Id)).SessionVersion);
     }
 
     [Fact]

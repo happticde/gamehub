@@ -54,6 +54,12 @@ public sealed class UserAccount
     public DateTime? LastLoginAtUtc { get; set; }
 
     /// <summary>
+    /// Monotonic epoch copied into GameHub access tokens. Account-wide session invalidation
+    /// increments it, making every token issued under an earlier value fail live validation.
+    /// </summary>
+    public long SessionVersion { get; set; }
+
+    /// <summary>
     /// Independent device/login sessions. They are identity records rather than tenant-
     /// filtered library rows because refresh begins before an authenticated tenant exists.
     /// </summary>
