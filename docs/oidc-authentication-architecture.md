@@ -107,35 +107,41 @@ Read the implementation in this order:
 2. [`frontend/lib/oidc.ts`](../frontend/lib/oidc.ts)
    - Parses server-only BFF configuration.
    - Fetches discovery metadata and pins the configured issuer.
-3. [`frontend/app/api/auth/oidc/start/route.ts`](../frontend/app/api/auth/oidc/start/route.ts)
+3. [`frontend/lib/oidc-logout-security.ts`](../frontend/lib/oidc-logout-security.ts),
+   [`frontend/app/api/auth/logout/route.ts`](../frontend/app/api/auth/logout/route.ts), and
+   [`frontend/components/LogoutButton.tsx`](../frontend/components/LogoutButton.tsx)
+   - Derive the exact post-logout URI from server configuration.
+   - Revoke and clear locally before an optional 303 RP-Initiated Logout navigation.
+   - Prevent browser redirect input and provider logout without a refresh-session cookie.
+4. [`frontend/app/api/auth/oidc/start/route.ts`](../frontend/app/api/auth/oidc/start/route.ts)
    - Creates the transaction and redirects to the provider.
-4. [`frontend/app/api/auth/oidc/callback/route.ts`](../frontend/app/api/auth/oidc/callback/route.ts)
+5. [`frontend/app/api/auth/oidc/callback/route.ts`](../frontend/app/api/auth/oidc/callback/route.ts)
    - Opens the transaction, checks the callback, exchanges the code, and delegates to Core.
-5. [`services/core/Services/OidcTokenValidator.cs`](../services/core/Services/OidcTokenValidator.cs)
+6. [`services/core/Services/OidcTokenValidator.cs`](../services/core/Services/OidcTokenValidator.cs)
    - Parses fail-closed Core configuration.
    - Retrieves discovery/JWKS metadata.
    - Validates the provider ID token.
-6. [`services/core/Services/ExternalIdentityService.cs`](../services/core/Services/ExternalIdentityService.cs)
+7. [`services/core/Services/ExternalIdentityService.cs`](../services/core/Services/ExternalIdentityService.cs)
    - Explicitly links and exactly resolves `(issuer, subject)` mappings.
-7. [`services/core/Controllers/AuthController.cs`](../services/core/Controllers/AuthController.cs)
+8. [`services/core/Controllers/AuthController.cs`](../services/core/Controllers/AuthController.cs)
    - Enforces the BFF-only boundary.
    - Orchestrates link/login and issues GameHub sessions.
-8. [`services/core/Data/ExternalIdentity.cs`](../services/core/Data/ExternalIdentity.cs) and
+9. [`services/core/Data/ExternalIdentity.cs`](../services/core/Data/ExternalIdentity.cs) and
    [`services/core/Data/CoreContext.cs`](../services/core/Data/CoreContext.cs)
    - Define database ownership and uniqueness constraints.
-9. [`frontend/lib/auth-session.ts`](../frontend/lib/auth-session.ts) and
+10. [`frontend/lib/auth-session.ts`](../frontend/lib/auth-session.ts) and
    [`frontend/app/api/core/[...path]/route.ts`](../frontend/app/api/core/[...path]/route.ts)
    - Store, refresh, and forward the resulting GameHub session.
-10. [`services/core/Services/MultiUserEnablementService.cs`](../services/core/Services/MultiUserEnablementService.cs),
+11. [`services/core/Services/MultiUserEnablementService.cs`](../services/core/Services/MultiUserEnablementService.cs),
     [`services/shared/Authentication/MultiUserMode.cs`](../services/shared/Authentication/MultiUserMode.cs),
     and [`frontend/lib/multi-user.ts`](../frontend/lib/multi-user.ts)
     - Keep OIDC readiness separate from immutable operator enablement.
     - Fail startup/routes closed on missing or contradictory prerequisites.
     - Restrict provisioned-tenant login, local linking, API-key compatibility, and background jobs.
-11. [`services/core/Services/OidcJitProvisioningService.cs`](../services/core/Services/OidcJitProvisioningService.cs)
+12. [`services/core/Services/OidcJitProvisioningService.cs`](../services/core/Services/OidcJitProvisioningService.cs)
     - Creates a personal tenant, external account, mapping, refresh session, and activity row in
       one transaction only when both JIT and guarded mode are active.
-12. [`services/core/Data/DeletedExternalIdentity.cs`](../services/core/Data/DeletedExternalIdentity.cs)
+13. [`services/core/Data/DeletedExternalIdentity.cs`](../services/core/Data/DeletedExternalIdentity.cs)
     - Prevents a deleted external subject from silently provisioning a replacement tenant.
 
 ## 5. Configuration flows through two servers
@@ -481,6 +487,8 @@ Public errors intentionally do not reveal which check failed or whether an ident
 
 The BFF applies a ten-second timeout to discovery and token calls. Core's metadata HTTP client also
 uses a ten-second timeout. New login/link attempts fail closed when the provider is unavailable.
+Logout independently completes local revocation/cookie cleanup and falls back to `/login` when
+discovery or its optional HTTPS `end_session_endpoint` is unavailable.
 
 Already-issued GameHub sessions are independent of provider availability:
 
@@ -641,7 +649,8 @@ Before enabling a provider:
 - Personal-tenant JIT exists only through its explicit default-off provisioning mode and active
   guarded mode; it is not public registration.
 - There is no unlink or subject-replacement flow.
-- There is no provider back-channel logout or provider-event-driven GameHub session revocation.
+- RP-Initiated browser logout is implemented without storing an ID token. There is no
+  Keycloak-initiated Back-Channel Logout or provider-event-driven GameHub session revocation.
 - Provider access tokens are not retained or used for provider APIs.
 - Local account deletion still follows ADR-010's current-password confirmation path.
 - Guarded multi-user enablement is implemented, deliberately separate, and disabled by default.

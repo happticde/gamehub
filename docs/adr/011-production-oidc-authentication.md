@@ -92,6 +92,21 @@ ADR-012 subsequently adds the separate default-off guarded multi-user mechanism 
 OIDC still never activates the mode by itself; an operator must satisfy readiness and explicitly
 enable it.
 
+### Logout boundary
+
+User-triggered sign-out implements standards-based OIDC RP-Initiated Logout as a top-level browser
+navigation. The BFF first attempts to revoke the GameHub refresh session and expires every GameHub
+authentication cookie. When the request carried a refresh-session cookie, the BFF may then use the
+exact configured issuer's discovery document and its validated HTTPS `end_session_endpoint`, with
+the server-configured client ID and `/login` on the configured callback origin. Browser input
+cannot choose either redirect. Missing/invalid metadata, provider outages, or disabled OIDC fall
+back to local `/login` without preventing local cleanup or normal OIDC login.
+
+GameHub does not retain provider tokens for logout and sends no `id_token_hint`. Keycloak-initiated
+Back-Channel Logout, logout-token validation, provider event propagation, and administrative
+session synchronization remain unsupported; GameHub refresh-session revocation stays locally
+authoritative.
+
 ## Consequences
 
 ### Positive
@@ -112,8 +127,9 @@ enable it.
   JIT only through an independent mode and active guarded gate.
 - Linking requires a current GameHub session. There is no unlink or subject-replacement endpoint;
   those operations need a separate reauthentication and recovery design.
-- Provider logout, back-channel logout, token revocation events, and session synchronization are
-  not implemented. GameHub refresh-session revocation remains locally authoritative.
+- RP-Initiated browser logout is implemented without provider-token storage. Keycloak-initiated
+  Back-Channel Logout, token revocation events, and administrative session synchronization are not
+  implemented. GameHub refresh-session revocation remains locally authoritative.
 - The provider must be reachable over HTTPS and supply conforming discovery metadata and signed
   ID tokens with nonce support.
 

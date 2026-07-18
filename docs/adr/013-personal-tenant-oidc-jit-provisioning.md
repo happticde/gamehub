@@ -125,9 +125,12 @@ raw record, or library row. Provider discovery, JWKS, token, or authentication o
 for new login, JIT, reauthentication, and retry. Existing GameHub sessions keep their local expiry
 and revocation behavior.
 
-GameHub logout does not terminate the Keycloak browser SSO session. Disabling or deleting a
-Keycloak user does not immediately revoke already issued GameHub sessions. Immediate GameHub
-termination still requires account-scoped revoke-all or account deletion.
+User-triggered GameHub logout uses RP-Initiated Logout to terminate the current Keycloak browser
+SSO session after local refresh-session revocation and cookie cleanup. Keycloak-initiated or
+administrative logout, disabling, or deleting a Keycloak user does not immediately revoke already
+issued GameHub sessions because Back-Channel Logout and provider-event propagation remain
+unsupported. Immediate GameHub termination outside the GameHub sign-out flow still requires
+account-scoped revoke-all or account deletion.
 
 ## Consequences
 
@@ -148,7 +151,8 @@ termination still requires account-scoped revoke-all or account deletion.
 - Realm/client/authentication policy is the access-control boundary for who may reach JIT. GameHub
   does not consume provider groups or roles as authorization.
 - There is no SCIM or provider-event synchronization, subject replacement, provider lifecycle
-  reconciliation, or back-channel logout.
+  reconciliation, or Keycloak-initiated Back-Channel Logout. RP-Initiated browser logout is
+  implemented without changing JIT or tenant selection.
 - Provider disable/delete is not an immediate GameHub session-revocation signal.
 - This is opt-in personal-tenant provisioning for guarded self-hosted operation. It is not public
   registration and does not establish general SaaS readiness.

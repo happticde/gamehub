@@ -116,8 +116,9 @@ constraints.
 
 External deletion requires a fresh exact OIDC proof and produces only a deletion-purpose token
 accepted on one method and route. Completed deletion persists an issuer/subject tombstone before
-the live mapping cascades, so JIT cannot undo deletion. GameHub logout and Keycloak lifecycle remain
-separate; provider events and back-channel logout are not implemented.
+the live mapping cascades, so JIT cannot undo deletion. User-triggered RP-Initiated browser logout
+is implemented; Keycloak-initiated Back-Channel Logout and provider lifecycle events remain
+separate and unsupported.
 
 ## Physical collection follow-up verification (2026-07-13)
 
