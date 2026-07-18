@@ -14,7 +14,7 @@ paths, and a guided reading order, see
 [OIDC Authentication Architecture](oidc-authentication-architecture.md).
 
 For a provider-specific production baseline, realm/client configuration, first-link walkthrough,
-backup/restore guidance, and failure matrix, see
+Google Workspace and Microsoft Entra brokering, backup/restore guidance, and failure matrix, see
 [Self-Hosted Keycloak OIDC Setup](keycloak-oidc-setup.md).
 
 ## Guarded Multi-User Enablement

@@ -3,7 +3,8 @@
 This guide describes a production-oriented way to run a self-hosted Keycloak instance and use it
 as GameHub's single OpenID Connect provider. It complements the provider-neutral configuration in
 [GameHub Authentication](authentication.md) and the activation procedure in
-[Guarded Multi-User Operations](guarded-multi-user-enablement.md).
+[Guarded Multi-User Operations](guarded-multi-user-enablement.md). It also provides complete
+broker setup procedures for internal Google Workspace and Microsoft Entra ID login.
 
 The examples were validated against Keycloak 26.7.0, the current stable release on 2026-07-17.
 Keycloak published 26.7.0 on 2026-07-09. Review the official release and upgrade notes before every
@@ -326,6 +327,200 @@ login.
 Do not configure wildcard redirect URIs. GameHub verifies the exact callback independently, and a
 broader Keycloak redirect pattern would weaken the provider boundary without adding functionality.
 
+## Optional upstream login with Google Workspace and Microsoft Entra ID
+
+GameHub continues to trust exactly one issuer when Keycloak brokers an upstream provider:
+
+```text
+GameHub -> exact Keycloak realm issuer -> Google Workspace or Microsoft Entra ID
+```
+
+Register Keycloak's broker callback with Google or Microsoft, not GameHub's
+`/api/auth/oidc/callback`. GameHub receives only a Keycloak ID token and continues to identify the
+person by the exact Keycloak `(issuer, subject)`. Do not store upstream provider tokens merely to
+support login or logout: leave **Store tokens** and **Stored tokens readable** disabled on both
+Keycloak identity providers.
+
+### Private Keycloak connectivity
+
+Google and Microsoft do not need direct inbound network access to Keycloak for the authorization
+callback. They redirect the top-level browser to Keycloak. A Keycloak deployment that is not
+internet-reachable can therefore broker both providers when all of the following are true:
+
+- Keycloak has a stable HTTPS hostname under a public DNS suffix, such as `auth.example.com`, and
+  presents a certificate trusted by every participating browser;
+- internal or split-horizon DNS resolves that hostname to the private Keycloak proxy;
+- the browser remains on the LAN or VPN when the provider returns it to Keycloak; and
+- Keycloak has outbound HTTPS access to the provider's authorization, token, JWKS, UserInfo, and
+  Microsoft Graph endpoints.
+
+Do not replace the configured Keycloak issuer with a temporary public hostname. Changing the realm
+issuer changes GameHub's exact external-identity key. Raw private IP addresses, plaintext callback
+URLs, and private-only suffixes such as `.lan` are also unsuitable provider redirect URIs.
+
+### Choose the upstream admission policy first
+
+Keycloak's realm-wide **User registration** switch and its identity-broker first-login behavior are
+separate controls. The default First Broker Login flow can create a Keycloak user for a previously
+unknown upstream identity even while realm self-registration is disabled.
+
+Choose one admission model before enabling the provider:
+
+1. **Existing users only:** have each existing Keycloak user sign in to
+   `https://auth.example.com/realms/gamehub/account/` and link the upstream provider from the
+   account-security or linked-accounts page. Alternatively, duplicate the built-in
+   `first broker login` flow, disable **Create User If Unique** and
+   **Confirm Link Existing Account**, retain verified reauthentication of an existing account,
+   and select that copy as the provider's **First Login Flow**.
+2. **New personal GameHub tenants:** keep Keycloak's normal first-broker user creation only when
+   every upstream identity admitted by the provider policy may receive its own GameHub tenant.
+   GameHub still requires active guarded multi-user mode and the explicit
+   `PersonalTenantJit` provisioning mode described in Option 2 below.
+
+Do not automatically link accounts merely because upstream and Keycloak email addresses match.
+Pre-link through the authenticated Keycloak account console or require reauthentication of the
+existing account. Email similarity never changes GameHub's issuer/subject mapping.
+
+### Google Workspace setup
+
+Use a Google Cloud project owned by the same Google Workspace or Cloud Identity organization as
+the intended users:
+
+1. In the GameHub realm, select **Identity Providers -> Add provider -> Google** and copy the exact
+   **Redirect URI** displayed by Keycloak. It normally resembles:
+
+   ```text
+   https://auth.example.com/realms/gamehub/broker/google/endpoint
+   ```
+
+2. In Google Cloud, configure **Google Auth Platform -> Audience** as **Internal** for an
+   organization-only deployment. Confirm under **IAM & Admin -> Settings** that the Cloud project
+   belongs to that organization. If an external app is deliberately kept in **Testing**, add every
+   intended account as a test user instead.
+3. Configure the OAuth consent screen with the GameHub name, support contact, and only the basic
+   `openid`, `profile`, and `email` scopes.
+4. Under **Google Auth Platform -> Clients**, create a **Web application** OAuth client and add the
+   exact Keycloak broker callback as an **Authorized redirect URI**. Scheme, host, port, path,
+   case, and trailing slash must match exactly.
+5. Copy that client's ID and secret into the Keycloak Google provider. Configure:
+
+   ```text
+   Default scopes: openid profile email
+   Prompt: select_account
+   Sync mode: Import
+   Show in account console: Always
+   Store tokens: Off
+   Stored tokens readable: Off
+   ```
+
+6. Leave **Trust email** disabled unless the deployment has separately reviewed Google's verified
+   email assertion and the Keycloak profile policy. **Hosted Domain** is optional; when used, enter
+   the primary Workspace domain. Audience and Workspace policy remain the actual admission
+   controls. A mismatched alias or secondary domain can make account selection confusing, so clear
+   this field while diagnosing domain-selection problems.
+7. If Workspace API access is restricted, open **Google Admin Console -> Security -> Access and
+   data control -> API controls -> Manage App Access**, configure the exact OAuth client ID as
+   **Trusted**, and apply it to the top-level organization or every intended organizational unit.
+   A child organizational-unit policy can override the parent setting.
+8. Save and enable the Keycloak provider, then test one pre-linked user before widening admission.
+
+`prompt=select_account` retains the Google browser session but shows the account chooser on every
+new Keycloak login. It is preferable to `prompt=consent`, which repeatedly asks for authorization
+without solving account selection.
+
+When one Google project owner can sign in but another directory user cannot, check the failing
+Google error code before changing Keycloak:
+
+- `org_internal`: the user is outside the Cloud project's owning organization;
+- `access_denied`: the app is in testing without that test user, the account type is ineligible,
+  or a Workspace policy denied access;
+- `admin_policy_enforced`: the user's organizational-unit policy blocks the OAuth client; and
+- `redirect_uri_mismatch`: the actual request callback differs from the URI registered on the
+  exact OAuth client used by Keycloak.
+
+Also verify that the account can sign in directly at `https://accounts.google.com/`, that it is an
+active managed user rather than an alias or directory contact, and that the trusted OAuth client ID
+exactly matches Keycloak. Google Workspace **User log events** and **OAuth log events** provide the
+provider-side failure reason.
+
+### Microsoft Entra ID setup
+
+For a private organization deployment, prefer a single-tenant Entra application:
+
+1. In the GameHub realm, select **Identity Providers -> Add provider -> Microsoft** and copy the
+   exact **Redirect URI** displayed by Keycloak. It normally resembles:
+
+   ```text
+   https://auth.example.com/realms/gamehub/broker/microsoft/endpoint
+   ```
+
+2. In **Microsoft Entra ID -> App registrations**, create an application such as
+   `GameHub Keycloak Broker`. Select **Accounts in this organizational directory only** unless the
+   deployment deliberately admits other organizations or personal Microsoft accounts.
+3. Under **Authentication**, add the Keycloak broker callback as a **Web** redirect URI. Do not use
+   the SPA platform and do not enable implicit or hybrid grants.
+4. Under **Certificates & secrets**, create a client secret with a controlled lifetime. Copy the
+   secret **Value**, not its secret ID, and record its rotation date.
+5. Copy the **Application (client) ID**, **Directory (tenant) ID**, and secret value into the
+   Keycloak Microsoft provider. Set the provider tenant to the exact directory tenant ID for a
+   single-tenant deployment.
+6. Under **API permissions**, add only the Microsoft Graph **Delegated** permission `User.Read` and
+   grant tenant-wide admin consent when the organization's consent policy requires it. Do not use
+   the substantially broader `User.Read.All` application permission.
+7. Configure the built-in Keycloak Microsoft provider as follows:
+
+   ```text
+   Default scopes: User.Read
+   Prompt: select_account
+   Sync mode: Import
+   Show in account console: Always
+   Store tokens: Off
+   Stored tokens readable: Off
+   ```
+
+   Additional `openid profile email` scopes are optional, but they do not replace `User.Read` for
+   this provider. Keycloak's built-in Microsoft provider uses the delegated access token to call
+   `https://graph.microsoft.com/v1.0/me/` and extract the user profile.
+8. Leave **Trust email** disabled unless it has been separately reviewed, select the intended
+   **First Login Flow**, save the provider, and test a pre-linked account.
+
+`prompt=select_account` displays Microsoft's account chooser while preserving the broader
+Microsoft 365 browser session. Use `prompt=login` only when forced credential reauthentication is
+required; it is more disruptive and is not necessary for ordinary account switching.
+
+If Keycloak reports `Could not obtain user profile from Microsoft Graph`, inspect the Keycloak
+server log and the Entra sign-in record. The error
+`Authorization_RequestDenied: Insufficient privileges to complete the operation` means the access
+token lacks usable delegated `User.Read`: verify both the Entra API permission/admin consent and
+Keycloak's requested default scope. Other common codes include `AADSTS7000215` for a wrong client
+secret, `AADSTS7000222` for an expired secret, `AADSTS50011` for a redirect mismatch, and
+`AADSTS50020` for an account outside the selected tenant or supported account types.
+
+Use **Entra ID -> Monitoring & health -> Sign-in logs** to capture the error code, failure reason,
+conditional-access result, and correlation ID. A successful Entra sign-in followed by a Keycloak
+error normally points to Keycloak's token exchange, Graph profile request, or First Broker Login
+rather than the user's primary Microsoft authentication.
+
+### Test the complete broker flow
+
+Introduce Google and Microsoft one at a time. For each provider:
+
+1. Link or admit one controlled identity according to the chosen First Login Flow.
+2. Confirm that the browser can return to the private Keycloak hostname over LAN or VPN.
+3. Confirm that the same upstream identity resolves to the same Keycloak user and GameHub tenant
+   on repeated login.
+4. Confirm that an unapproved account is rejected at the provider or Keycloak admission boundary.
+5. If `PersonalTenantJit` is active, confirm that one newly admitted identity receives exactly one
+   tenant and that a repeated or concurrent login creates no duplicate.
+6. Sign out through GameHub and verify local GameHub session revocation plus Keycloak browser
+   logout.
+7. Sign in again and verify that `select_account` offers account switching.
+
+GameHub logout terminates the current GameHub and Keycloak browser sessions, not the global Google
+or Microsoft browser session. Logging out of those upstream sessions would also affect unrelated
+services such as Gmail or Microsoft 365. The provider-specific `select_account` prompt supplies
+explicit account choice without broad upstream logout.
+
 ## 4. Configure GameHub while the gate is disabled
 
 Inject the following values through the deployment configuration and secret system. Do not commit
@@ -629,6 +824,13 @@ explicit revocation; the switch is not a global kill switch.
 | Readiness reports `ingest_credential_vault_not_ready` | No valid active vault encryption key | Restore/configure the external versioned vault key ring |
 | Readiness reports `ingest_unavailable_or_trust_mismatch` | Ingest outage or delegation-key mismatch | Restore Ingest and verify the same independent service key on both sides |
 | Existing GameHub session survives Keycloak-initiated or administrative logout/disable | Back-channel/provider-event revocation is not implemented | Revoke all GameHub sessions for the account when immediate termination is required |
+| Google returns `org_internal` | The selected account is outside the Cloud project's owning organization | Verify the project's organization and the user's managed primary account |
+| Only the Google project owner can sign in | External testing, wrong trusted client ID, or an organizational-unit override blocks other users | Verify Internal audience, exact OAuth client ID, and access for the user's OU |
+| Google returns `redirect_uri_mismatch` | Keycloak's broker callback differs from the URI registered on the OAuth web client | Compare the actual request and Keycloak-displayed callback exactly |
+| Google or Microsoft silently reuses the previous account | The upstream browser session remains active and no account chooser was requested | Set the provider's **Prompt** to `select_account`; do not broaden logout token storage |
+| Keycloak cannot obtain a Microsoft Graph user profile | The delegated access token lacks usable `User.Read` | Add delegated Graph `User.Read`, grant required consent, and request `User.Read` in Keycloak |
+| Entra returns `AADSTS7000215` or `AADSTS7000222` | Client secret value is wrong or expired | Store the secret **Value**, rotate it, and update Keycloak without logging it |
+| Entra returns `AADSTS50020` | Selected account is not admitted by the configured tenant/account type | Verify the provider tenant ID, app account type, and selected account |
 | Invitation creation fails | SMTP, delegated role, organization state, or email policy is incomplete | Keep global registration disabled; verify Keycloak SMTP and least-privilege organization administration |
 | Invitation link appears in logs or diagnostics | Admin REST response bodies or email URLs are being captured | Treat `inviteLink` as a bearer credential and remove it from logs, traces, tickets, and GameHub storage |
 
@@ -673,3 +875,11 @@ of this validation.
 - [Keycloak OpenID Connect endpoints](https://www.keycloak.org/securing-apps/oidc-layers)
 - [Keycloak 26.7.0 Admin REST API](https://www.keycloak.org/docs-api/latest/rest-api/index.html)
 - [Keycloak 26.7.0 upgrading guide](https://www.keycloak.org/docs/latest/upgrading/)
+- [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect)
+- [Google OAuth 2.0 for web server applications](https://developers.google.com/identity/protocols/oauth2/web-server)
+- [Google OAuth app audience](https://support.google.com/cloud/answer/15549945)
+- [Google Workspace app access control](https://support.google.com/a/answer/7281227)
+- [Microsoft Entra application registration](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
+- [Microsoft identity platform authorization code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow)
+- [Microsoft Graph authentication basics](https://learn.microsoft.com/en-us/graph/auth/auth-concepts)
+- [Microsoft Entra sign-in troubleshooting](https://learn.microsoft.com/en-us/entra/identity/monitoring-health/howto-troubleshoot-sign-in-errors)
