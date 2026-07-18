@@ -273,7 +273,7 @@ See the following guides before deployment:
 - [`docs/guarded-multi-user-enablement.md`](docs/guarded-multi-user-enablement.md) — readiness,
   activation, disable, rollback, and incident procedures
 - [`docs/keycloak-oidc-setup.md`](docs/keycloak-oidc-setup.md) — self-hosted Keycloak production
-  baseline and GameHub integration
+  baseline, GameHub integration, and Google Workspace/Microsoft Entra brokering
 - [`docs/oidc-authentication-architecture.md`](docs/oidc-authentication-architecture.md) — protocol
   flow and trust boundaries
 
