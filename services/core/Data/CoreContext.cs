@@ -26,6 +26,9 @@ public class CoreContext : DbContext
     /// <summary>Deleted external identities that JIT must never silently recreate.</summary>
     public DbSet<DeletedExternalIdentity> DeletedExternalIdentities => Set<DeletedExternalIdentity>();
 
+    /// <summary>Durable, short-lived replay markers for accepted OIDC logout tokens.</summary>
+    public DbSet<ProcessedOidcLogoutToken> ProcessedOidcLogoutTokens => Set<ProcessedOidcLogoutToken>();
+
     // --- Unified Tables (Owned by Core) ---
     public DbSet<UnifiedGame> UnifiedGames => Set<UnifiedGame>();
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
@@ -137,6 +140,16 @@ public class CoreContext : DbContext
             entity.Property(identity => identity.Issuer).HasMaxLength(2048);
             entity.Property(identity => identity.Subject).HasMaxLength(255);
             entity.HasIndex(identity => new { identity.Issuer, identity.Subject }).IsUnique();
+        });
+
+        modelBuilder.Entity<ProcessedOidcLogoutToken>(entity =>
+        {
+            // Logout starts before a tenant is known, so replay markers are deliberately global.
+            // Only a hash of the provider JWT ID is retained, and the unique index is the final
+            // idempotency authority when duplicate provider deliveries race.
+            entity.Property(token => token.TokenHash).HasMaxLength(64);
+            entity.HasIndex(token => token.TokenHash).IsUnique();
+            entity.HasIndex(token => token.ExpiresAtUtc);
         });
 
         ConfigureTenantOwned(modelBuilder.Entity<UnifiedGame>());

@@ -309,7 +309,9 @@ In the `gamehub` realm, create a client with these settings:
 | Web origins | No wildcard; normally unnecessary for the server-side BFF flow |
 | Requested scope baseline | `openid` |
 | Organization scope | Do not request until a GameHub admission policy is implemented and reviewed |
-| Backchannel logout URL | Leave empty; GameHub does not implement a receiver |
+| Front channel logout | Off |
+| Backchannel logout URL | `https://games.example.com/api/auth/oidc/backchannel-logout` exactly |
+| Backchannel logout session required | Off; GameHub deliberately performs account-wide `sub` logout |
 
 Under **Credentials**, use **Client ID and Secret** and retain
 `client_secret_basic` as an allowed authentication method. GameHub's BFF authenticates the token
@@ -324,8 +326,35 @@ The current Compose/BFF fallback is `openid profile email` for compatibility, so
 `offline_access` because it issues and rotates its own refresh sessions after the one-time Keycloak
 login.
 
+The Backchannel Logout URL is a provider-to-BFF endpoint, not a browser callback and not a Core
+container URL. Keycloak posts a signed Logout Token there when a relevant user, Account Console,
+or administrator logout is propagated. GameHub validates that token independently in Core, revokes
+every GameHub refresh session for the exact linked `(issuer, subject)`, and advances the account's
+session epoch so already issued GameHub access JWTs fail on their next request. Repeated messages,
+unknown identities, and identities that are already logged out return the same successful provider
+response and reveal no account state.
+
+GameHub does not map Keycloak `sid` values to individual browsers. Keep **Backchannel logout session
+required** off to make the account-wide behavior explicit; even if a `sid` is present, it is never
+used as an account or tenant selector. Logout Tokens must be signed compact JWTs. Encrypted Logout
+Tokens and `sid`-only messages are unsupported. See
+[ADR-015](adr/015-oidc-back-channel-logout.md) for the complete validation and replay boundary.
+
 Do not configure wildcard redirect URIs. GameHub verifies the exact callback independently, and a
 broader Keycloak redirect pattern would weaken the provider boundary without adding functionality.
+
+After saving the client, validate Back-Channel Logout in staging:
+
+1. Sign in to GameHub from two browser sessions with the same Keycloak account.
+2. Trigger a Keycloak Account Console or administrator logout that terminates the user session.
+3. Verify that both browser sessions lose GameHub API access without waiting for the normal access
+   JWT lifetime and cannot rotate their refresh sessions.
+4. Verify a secret-free `OidcBackChannelLogout` entry exists only in that tenant's activity feed.
+5. Verify a different tenant remains signed in and operational.
+
+If Keycloak reports a non-success response, check HTTPS reachability from Keycloak to the public
+GameHub BFF, exact issuer/client configuration, system clock skew, discovery/JWKS availability, and
+the configured asymmetric signing algorithm. Never log or paste the Logout Token while diagnosing.
 
 ## Optional upstream login with Google Workspace and Microsoft Entra ID
 
@@ -762,14 +791,15 @@ During a Keycloak discovery, JWKS, token, or database outage:
 - new GameHub login and linking fail closed;
 - no email, password, or claim fallback activates a provisioned tenant;
 - already-issued GameHub access and refresh sessions continue under their local expiry,
-  live-account, replay, and revocation checks;
+  live-account, session-epoch, replay, and revocation checks unless a valid Back-Channel Logout is
+  delivered;
 - readiness can remain satisfied because it validates local configuration/data invariants rather
   than live provider availability.
 
-Disabling or deleting a Keycloak user prevents future provider login but does not immediately
-revoke GameHub sessions already issued to that user. GameHub does not currently consume Keycloak
-back-channel logout or provider lifecycle events. For immediate termination, also call GameHub's
-account-wide revocation or account deletion path.
+Disabling or deleting a Keycloak user prevents future provider login. It terminates existing
+GameHub authorization immediately only when Keycloak also delivers the configured Back-Channel
+Logout request. GameHub does not consume separate disabled-user or deletion events, so operators
+must still verify session termination or use GameHub's account-wide revocation/deletion path.
 
 GameHub implements OIDC RP-Initiated Logout for user-triggered browser sign-out. The browser submits
 a same-origin GameHub POST; GameHub first attempts to revoke the local refresh session and expires
@@ -790,13 +820,12 @@ The scheme, host, optional port, and `/login` path must match the origin of the 
 `client_id` rather than `id_token_hint`. Keycloak may show the user a logout confirmation page as a
 result; this is expected and avoids storing or exposing provider tokens solely to suppress it.
 
-RP-Initiated browser logout is distinct from Keycloak-initiated Back-Channel Logout. Keycloak can
-send a server-to-server HTTP POST containing a signed logout token to a configured client URL, but
-GameHub has no such receiver and does not validate or consume logout tokens. Keep the Keycloak
-client's **Backchannel logout URL** empty. Administrative Keycloak session termination, account
-disablement, and organization removal therefore do not propagate into already-issued GameHub
-access or refresh sessions; use GameHub's account-scoped revocation or deletion controls when
-immediate local termination is required.
+RP-Initiated browser logout is distinct from Keycloak-initiated Back-Channel Logout. The former
+clears the current browser and navigates through Keycloak; the latter is a signed server-to-server
+POST to the configured GameHub BFF URL. GameHub processes Back-Channel Logout account-wide and
+invalidates both access and refresh paths. Account disablement, deletion, organization removal, or
+other provider lifecycle changes still require a normal Keycloak logout delivery or separate
+GameHub revocation because no general provider-event synchronization exists.
 
 Deleting an `ExternalOidc` GameHub account is different: the BFF starts a dedicated transaction
 with `prompt=login` and `max_age=0`. Core requires the exact linked subject and a recent signed
@@ -808,7 +837,7 @@ so the same identity cannot silently create a replacement tenant through JIT.
 To stop new provisioned-tenant admission, set `GAMEHUB_MULTI_USER_ENABLED=false` consistently and
 restart all GameHub components. This preserves tenants, links, sessions, Keycloak state,
 credentials, raw records, and libraries. Existing GameHub sessions continue until normal expiry or
-explicit revocation; the switch is not a global kill switch.
+explicit local/provider revocation; the switch is not a global kill switch.
 
 ## Troubleshooting matrix
 

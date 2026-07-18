@@ -4,7 +4,8 @@ This guide describes how to prepare, enable, verify, disable, roll back, and rec
 guarded production multi-user mode. The normative decision is
 [ADR-012](adr/012-guarded-multi-user-enablement.md). OIDC protocol details remain in
 [OIDC Authentication Architecture](oidc-authentication-architecture.md). The independent JIT
-decision is [ADR-013](adr/013-personal-tenant-oidc-jit-provisioning.md).
+decision is [ADR-013](adr/013-personal-tenant-oidc-jit-provisioning.md). Provider-initiated session
+termination is defined in [ADR-015](adr/015-oidc-back-channel-logout.md).
 
 ## State model
 
@@ -132,6 +133,19 @@ account can still obtain the restricted link-purpose token so rollout preparatio
 Local password hashes remain stored for rollback compatibility and current-password confirmation
 on existing lifecycle operations. They are not production login credentials.
 
+## Provider-initiated account logout
+
+Configure the provider's Back-Channel Logout URL as the public BFF route
+`https://<gamehub-host>/api/auth/oidc/backchannel-logout`. A valid signed Logout Token resolves only
+the exact persisted `(issuer, subject)`, advances that account's GameHub session epoch, revokes all
+of its refresh sessions, and writes a secret-free tenant activity entry. Existing access JWTs then
+fail their next live database check instead of remaining usable until expiry.
+
+The current implementation is deliberately account-wide. It requires `sub` and does not use an
+optional Keycloak `sid` as a tenant or account selector. Duplicate and unknown identities return
+the same successful provider response. Invalid messages return 400; temporary discovery/JWKS/Core
+failures return 503 so the provider can retry.
+
 ## Disable and rollback
 
 To stop admitting provisioned tenants, set `GAMEHUB_MULTI_USER_ENABLED=false` consistently and
@@ -161,12 +175,15 @@ deletion controls. The enablement switch is intentionally not a destructive glob
 | Provider discovery/JWKS/token outage | New login/link fails; no claim/email fallback |
 | Provider signing-key rotation | One bounded metadata refresh, then normal validation |
 | Provider recovery | Restores only the same issuer/subject; never remaps tenant |
+| Invalid Back-Channel Logout Token | Rejected with 400; no session or tenant state changes |
+| Back-channel discovery/JWKS/Core outage | Retryable 503; no unsigned or claim-based fallback |
 | Core→Ingest trust mismatch/outage | Delegated credential/sync/deletion operations fail closed |
 | Pending deletion | Ordinary JWT, refresh, OIDC login, and linking remain blocked |
 
 Successful provider login does not prove provider availability forever. Existing GameHub sessions
 are locally issued and follow their configured expiry, database live-account check, rotation,
-replay detection, and revocation behavior.
+replay detection, and revocation behavior. A later accepted Back-Channel Logout advances the live
+session epoch and revokes the account's refresh sessions independently of browser state.
 
 ## Readiness response
 
@@ -222,13 +239,18 @@ The guarded rollout reviewed and directly tested:
 - tenant-scoped backup/restore and upgrade preservation;
 - SQLite and real PostgreSQL migrations preserving the default tenant, local account hash,
   explicit external identity, refresh session, unified game, and library item.
+- Back-Channel Logout form handling, BFF-only forwarding, signature/protocol validation, hashed
+  replay detection, account session epochs, refresh revocation, tenant-owned activity, and
+  cross-tenant negative behavior.
 
-No database migration or new dependency is required for guarded enablement.
+Guarded enablement itself adds no dependency. ADR-015 adds an automatically applied additive
+SQLite/PostgreSQL migration for account session epochs and short-lived hashed logout replay markers.
 
 ## Deployment checklist
 
 - [ ] Switch is false during upgrade and preparation.
 - [ ] Provider issuer/client/callback and asymmetric algorithms are exact.
+- [ ] The exact public Back-Channel Logout URL is registered and account-wide logout is exercised.
 - [ ] Provider MFA, recovery, verification, abuse, and administrator policies are reviewed.
 - [ ] Frontend auth and Secure cookies are enabled behind correctly configured HTTPS proxying.
 - [ ] Operator, BFF, JWT, delegation, cookie, provider, and vault keys are independent.
@@ -245,6 +267,6 @@ No database migration or new dependency is required for guarded enablement.
 
 Guarded enablement plus optional ADR-013 JIT does not add public registration, invitations,
 multiple owners/roles per tenant, provider-derived authorization, account switching, tenant
-switching, unlink, subject replacement, back-channel logout, provider-event revocation, or a
+switching, unlink, subject replacement, provider disabled-user event reconciliation, or a
 production admin console. It does not claim unrestricted SaaS readiness. These remain separate
 design and security decisions.

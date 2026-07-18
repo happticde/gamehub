@@ -32,12 +32,11 @@ multi-user operation.
 - `PUT /api/auth/password` accepts no account or tenant ID. It uses the signed JWT subject and
   tenant claims, verifies the current password, applies the normal 12–128 character rule to the
   new password, and rejects reuse of the current password.
-- The password hash change and revocation of every refresh session commit in one Core database
-  transaction.
-- `POST /api/auth/revoke-all` explicitly revokes every refresh session belonging to the signed
-  account/tenant pair.
-- Refresh tokens stop working immediately. Access JWTs remain valid until their configured short
-  expiry because they are stateless; clients must discard both tokens. The Next.js BFF clears its
+- The password hash change, account session-epoch advance, and revocation of every refresh session
+  commit in one Core database transaction.
+- `POST /api/auth/revoke-all` explicitly advances the signed account's epoch and revokes every
+  refresh session belonging to that exact account/tenant pair.
+- Access and refresh tokens stop working on their next server use. The Next.js BFF clears its
   HttpOnly cookies after successful password change, global revocation, or account deletion.
 
 ### Recovery boundary
@@ -97,8 +96,9 @@ single-user installation can bootstrap a new owner. Provisioned tenant rows are 
 
 ### Limitations
 
-- Access JWTs are not individually revocable and retain validity until expiry after password
-  change or global refresh-session revocation.
+- Access JWTs are not individually revocable. ADR-015 later adds an account session epoch, so
+  password change, revoke-all, deletion preparation, and provider Back-Channel Logout invalidate
+  every earlier account token on its next live check; refresh sessions stop in the same boundary.
 - There is no supported self-service account recovery yet.
 - Provisioning still relies on the deployment API key and one owner per tenant.
 - Provider authentication/recovery and guarded rollout are implemented by ADR-011/ADR-012. Public

@@ -75,6 +75,13 @@ Two ASP.NET Core microservices:
   Next.js BFF and independent ID-token validation in Core. Core pins exact issuer, audience,
   asymmetric algorithms, nonce, lifetime, and JWKS, then resolves only a persisted issuer/subject
   mapping. Email and provider tenant/role claims never select an account. See ADR-011.
+- OIDC Back-Channel Logout: the public BFF accepts only one form-encoded `logout_token` and forwards
+  it over the independent BFF service-key boundary. Core independently validates signature,
+  issuer, audience, algorithm, freshness, `jti`, event shape, optional exact type, and absent nonce,
+  then resolves only `(issuer, subject)`. Account-wide logout atomically advances the account
+  session epoch, revokes every refresh session, writes tenant-owned activity, and stores only a
+  short-lived hashed replay marker. Optional provider `sid` never selects or narrows ownership.
+  See ADR-015.
 - OIDC provisioning: `Authentication:Oidc:ProvisioningMode` accepts only `Disabled` (default) or
   `PersonalTenantJit`. JIT requires active guarded mode and atomically creates a server-identified,
   sync-disabled tenant, `ExternalOidc` owner, exact mapping, refresh session, and secret-free

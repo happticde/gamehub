@@ -265,7 +265,9 @@ configuration alone never activates tenants or creates accounts. Choose either o
 provisioning plus explicit first-link (`GAMEHUB_OIDC_PROVISIONING_MODE=Disabled`) or the separate
 opt-in personal-tenant JIT mode. Confirm the secret-free readiness response, back up Core and
 Ingest, and only then set `GAMEHUB_MULTI_USER_ENABLED=true` consistently across all components.
-Personal JIT is not public registration, shared tenancy, or general SaaS readiness.
+Register the exact public Keycloak Back-Channel Logout URL so provider logout invalidates GameHub
+access and refresh sessions account-wide. Personal JIT is not public registration, shared tenancy,
+or general SaaS readiness.
 
 See the following guides before deployment:
 

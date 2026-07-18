@@ -126,11 +126,10 @@ for new login, JIT, reauthentication, and retry. Existing GameHub sessions keep 
 and revocation behavior.
 
 User-triggered GameHub logout uses RP-Initiated Logout to terminate the current Keycloak browser
-SSO session after local refresh-session revocation and cookie cleanup. Keycloak-initiated or
-administrative logout, disabling, or deleting a Keycloak user does not immediately revoke already
-issued GameHub sessions because Back-Channel Logout and provider-event propagation remain
-unsupported. Immediate GameHub termination outside the GameHub sign-out flow still requires
-account-scoped revoke-all or account deletion.
+SSO session after local refresh-session revocation and cookie cleanup. ADR-015 additionally accepts
+signed Keycloak Back-Channel Logout as an account-wide signal that advances the GameHub session
+epoch and revokes refresh sessions. Disabling or deleting a Keycloak user still has no separate
+provider-event reconciliation path unless Keycloak emits that normal logout signal.
 
 ## Consequences
 
@@ -151,9 +150,10 @@ account-scoped revoke-all or account deletion.
 - Realm/client/authentication policy is the access-control boundary for who may reach JIT. GameHub
   does not consume provider groups or roles as authorization.
 - There is no SCIM or provider-event synchronization, subject replacement, provider lifecycle
-  reconciliation, or Keycloak-initiated Back-Channel Logout. RP-Initiated browser logout is
-  implemented without changing JIT or tenant selection.
-- Provider disable/delete is not an immediate GameHub session-revocation signal.
+  reconciliation, or per-Keycloak-session `sid` mapping. RP-Initiated browser logout and
+  account-wide Back-Channel Logout are implemented without changing JIT or tenant selection.
+- Provider disable/delete is not a separate immediate GameHub signal unless Keycloak emits the
+  normal Back-Channel Logout handled by ADR-015.
 - This is opt-in personal-tenant provisioning for guarded self-hosted operation. It is not public
   registration and does not establish general SaaS readiness.
 

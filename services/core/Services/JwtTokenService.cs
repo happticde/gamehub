@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -61,7 +62,8 @@ public sealed record JwtSettings(
         }
 
         // Extremely short lifetimes create clock-related login failures; extremely long
-        // lifetimes increase exposure because issued access JWTs themselves are not revocable.
+        // lifetimes increase exposure because individual access JWTs cannot be recalled without
+        // advancing the account epoch and invalidating every session for that account.
         if (lifetimeMinutes is < 5 or > 1440)
         {
             throw new InvalidOperationException(
@@ -176,7 +178,11 @@ public sealed class JwtTokenService
             new Claim(ClaimTypes.NameIdentifier, account.Id.ToString("D")),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
             new Claim(ClaimTypes.Name, account.DisplayName),
-            new Claim(GameHubClaimTypes.TenantId, account.TenantId.ToString("D"))
+            new Claim(GameHubClaimTypes.TenantId, account.TenantId.ToString("D")),
+            new Claim(
+                GameHubClaimTypes.SessionVersion,
+                account.SessionVersion.ToString(CultureInfo.InvariantCulture),
+                ClaimValueTypes.Integer64)
         };
         if (!string.IsNullOrWhiteSpace(account.Email))
         {

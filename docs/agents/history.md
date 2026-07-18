@@ -1,5 +1,32 @@
 # Session History
 
+## Current Session Summary (2026-07-18)
+
+### What Changed
+
+**OIDC Back-Channel Logout:**
+- Added a public form-only Next.js receiver that forwards bounded provider Logout Tokens to Core
+  through the existing independent BFF service-key boundary without using browser cookies.
+- Added independent Core validation for signature, pinned issuer/audience, configured asymmetric
+  algorithm, freshness, JWT ID, logout event shape, optional exact logout type, and prohibited
+  nonce before exact issuer/subject resolution.
+- Added account session epochs so provider logout immediately invalidates existing GameHub access
+  JWTs, captured the epoch on refresh rows to close in-flight issuance races, and added atomic
+  all-refresh revocation, tenant-owned secret-free activity, and short-lived hashed replay markers
+  with idempotent duplicate handling.
+- Added additive SQLite/PostgreSQL migrations, protocol and cross-tenant tests, ADR-015, Keycloak
+  client setup, architecture/runbook updates, and Roadmap lifecycle status.
+
+### Known State / Pending
+
+- Logout is account-wide. Per-Keycloak-session `sid` mapping, disabled-user/provider events,
+  subject replacement, SCIM, and missed-event reconciliation remain separate future work.
+- Browser cookies cannot be physically deleted by a provider server-to-server call; their access
+  and refresh credentials are unusable immediately and normal BFF failure handling clears them on
+  the next request.
+- Encrypted and `sid`-only Logout Tokens are unsupported. The Keycloak client should use the signed
+  Back-Channel Logout profile and include the stable subject.
+
 ## Current Session Summary (2026-07-17)
 
 ### What Changed
