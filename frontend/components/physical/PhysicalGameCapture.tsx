@@ -80,7 +80,7 @@ export function PhysicalGameCapture() {
     return (
         <div className="space-y-6">
             {step === "search" && (
-                <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+                <section className={`rounded-xl border bg-card p-4 shadow-sm sm:p-6 ${selectedResult ? "pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6" : ""}`}>
                     <StepHeading icon={<Search className="h-5 w-5" />} title="1. Search IGDB">
                         Search by title, then explicitly select the correct result.
                     </StepHeading>
@@ -134,12 +134,30 @@ export function PhysicalGameCapture() {
                         </div>
                     )}
 
-                    <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                    <div className="mt-5 hidden md:flex md:justify-between">
                         <Button type="button" variant="ghost" onClick={() => router.push("/library")}>Cancel</Button>
                         <Button type="button" disabled={!selectedResult} onClick={() => setStep("platform")}>
                             Continue with selected game
                         </Button>
                     </div>
+
+                    {selectedResult && (
+                        <div
+                            className="fixed inset-x-0 bottom-0 z-40 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-lg md:hidden"
+                            role="region"
+                            aria-label="Selected IGDB game"
+                        >
+                            <div className="mx-auto flex max-w-3xl items-center gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs text-muted-foreground">Selected game</p>
+                                    <p className="truncate text-sm font-semibold">{selectedTitle}</p>
+                                </div>
+                                <Button type="button" onClick={() => setStep("platform")}>
+                                    Continue
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </section>
             )}
 

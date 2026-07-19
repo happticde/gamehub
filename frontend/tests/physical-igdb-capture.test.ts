@@ -58,6 +58,21 @@ test("shared IGDB result cards keep their action inside narrow mobile layouts", 
     assert.match(resultCard, /w-full sm:w-auto/);
 });
 
+test("a selected search result exposes a safe-area-aware mobile continuation bar", async () => {
+    const component = await readFile(
+        new URL("../components/physical/PhysicalGameCapture.tsx", import.meta.url),
+        "utf8",
+    );
+
+    assert.match(component, /selectedResult && \(/);
+    assert.match(component, /fixed inset-x-0 bottom-0[^\"]*md:hidden/);
+    assert.match(component, /aria-label="Selected IGDB game"/);
+    assert.match(component, /safe-area-inset-bottom/);
+    assert.match(component, /truncate text-sm font-semibold[^>]*>\{selectedTitle\}/);
+    assert.match(component, /hidden md:flex md:justify-between/);
+    assert.match(component, />\s*Continue\s*</);
+});
+
 test("selection, platform choice, and final confirmation are all explicit", async () => {
     const component = await readFile(
         new URL("../components/physical/PhysicalGameCapture.tsx", import.meta.url),
