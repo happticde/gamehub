@@ -29,7 +29,7 @@ export function MetadataSearchResultCard({
         : null;
 
     return (
-        <article className={`flex gap-3 rounded-lg border p-3 transition-colors ${selected ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}>
+        <article className={`grid w-full min-w-0 max-w-full grid-cols-[4rem_minmax(0,1fr)] gap-3 rounded-lg border p-3 transition-colors sm:grid-cols-[4rem_minmax(0,1fr)_auto] ${selected ? "border-primary bg-primary/10" : "hover:bg-muted/50"}`}>
             <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded bg-muted">
                 {result.coverUrl ? (
                     <Image src={result.coverUrl} alt={`${title} cover`} fill className="object-cover" unoptimized />
@@ -53,8 +53,8 @@ export function MetadataSearchResultCard({
                     {result.summary || "No description available."}
                 </p>
             </div>
-            <div className="flex shrink-0 items-center">
-                <Button type="button" size="sm" onClick={onAction} disabled={disabled || pending}>
+            <div className="col-span-2 flex min-w-0 items-center sm:col-span-1">
+                <Button className="w-full sm:w-auto" type="button" size="sm" onClick={onAction} disabled={disabled || pending}>
                     {pending ? <Loader2 className="animate-spin" /> : selected ? <Check /> : null}
                     {pending ? "Applying…" : selected ? "Selected" : actionLabel}
                 </Button>

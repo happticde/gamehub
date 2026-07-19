@@ -46,6 +46,18 @@ test("physical capture uses the shared debounced IGDB search with safe result st
     assert.match(resultCard, /getFullYear/);
 });
 
+test("shared IGDB result cards keep their action inside narrow mobile layouts", async () => {
+    const resultCard = await readFile(
+        new URL("../components/library/MetadataSearchResultCard.tsx", import.meta.url),
+        "utf8",
+    );
+
+    assert.match(resultCard, /grid-cols-\[4rem_minmax\(0,1fr\)\]/);
+    assert.match(resultCard, /sm:grid-cols-\[4rem_minmax\(0,1fr\)_auto\]/);
+    assert.match(resultCard, /col-span-2[^"]*sm:col-span-1/);
+    assert.match(resultCard, /w-full sm:w-auto/);
+});
+
 test("selection, platform choice, and final confirmation are all explicit", async () => {
     const component = await readFile(
         new URL("../components/physical/PhysicalGameCapture.tsx", import.meta.url),
