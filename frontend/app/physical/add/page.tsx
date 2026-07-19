@@ -4,7 +4,7 @@ import { PhysicalGameCapture } from "@/components/physical/PhysicalGameCapture";
 
 export default function AddPhysicalGamePage() {
     return (
-        <div className="container mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-10">
+        <div className="container mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-10">
             <Link href="/library" className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="h-4 w-4" /> Back to library
             </Link>
