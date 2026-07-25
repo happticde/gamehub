@@ -1,6 +1,8 @@
 using GameHub.Core.Data;
 using GameHub.Core.Services;
+using GameHub.Shared.Authentication;
 using GameHub.Tests.Helpers;
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -48,6 +50,17 @@ public sealed class RefreshTokenServiceTests : IDisposable
         Assert.Equal(64, stored.TokenHash.Length);
         Assert.NotEqual(issued.RefreshToken, stored.TokenHash);
         Assert.DoesNotContain(issued.RefreshToken, stored.TokenHash, StringComparison.Ordinal);
+        var family = await _db.AccountSessions.SingleAsync();
+        Assert.Equal(family.Id, issued.AccountSessionId);
+        Assert.Equal(family.Id, stored.AccountSessionId);
+        var accessToken = new JwtSecurityTokenHandler().ReadJwtToken(
+            new JwtTokenService(
+                AccountServiceTests.CreateJwtSettings(),
+                _timeProvider).CreateToken(account, family.Id).AccessToken);
+        Assert.Equal(
+            family.Id.ToString("D"),
+            accessToken.Claims.Single(
+                claim => claim.Type == GameHubClaimTypes.AccountSessionId).Value);
     }
 
     [Fact]
@@ -67,8 +80,17 @@ public sealed class RefreshTokenServiceTests : IDisposable
             .ThenBy(session => session.Id)
             .ToListAsync();
         Assert.Equal(2, sessions.Count);
+        Assert.All(
+            sessions,
+            session => Assert.Equal(original.AccountSessionId, session.AccountSessionId));
         Assert.Single(sessions, session => session.ConsumedAtUtc == FixedNow.UtcDateTime);
         Assert.Single(sessions, session => session.ConsumedAtUtc is null && session.RevokedAtUtc is null);
+        Assert.Equal(original.AccountSessionId, rotation.RefreshToken!.AccountSessionId);
+        Assert.True(await new AccountSessionValidationService(_db).IsActiveAsync(
+            account.Id,
+            account.TenantId,
+            account.SessionVersion,
+            original.AccountSessionId));
     }
 
     [Fact]
@@ -133,6 +155,14 @@ public sealed class RefreshTokenServiceTests : IDisposable
         Assert.Equal(
             FixedNow.UtcDateTime,
             (await _db.RefreshTokenSessions.AsNoTracking().SingleAsync()).RevokedAtUtc);
+        Assert.Equal(
+            FixedNow.UtcDateTime,
+            (await _db.AccountSessions.AsNoTracking().SingleAsync()).RevokedAtUtc);
+        Assert.False(await new AccountSessionValidationService(_db).IsActiveAsync(
+            account.Id,
+            account.TenantId,
+            account.SessionVersion,
+            issued.AccountSessionId));
     }
 
     private async Task<UserAccount> CreateAccountAsync()

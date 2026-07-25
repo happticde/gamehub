@@ -94,8 +94,9 @@ There are three distinct proof transitions:
 
 Back-Channel Logout is a separate provider-to-BFF transition: the BFF accepts only the standard
 form field and authenticates to Core, while Core validates the signed Logout Token before the exact
-external identity may advance its GameHub session epoch. It never reuses browser callback state or
-accepts a tenant from the provider request.
+external identity or previously persisted hashed provider session may affect local state. `sid`
+revokes one tenant-bound local family; `sub` without `sid` advances the account epoch. It never
+reuses browser callback state or accepts a tenant from the provider request.
 
 Skipping any one transition would create a different vulnerability. For example, a valid ID token
 does not prove that the browser callback belongs to the initiating session, and a correct callback
@@ -136,9 +137,12 @@ Read the implementation in this order:
 8. [`services/core/Controllers/AuthController.cs`](../services/core/Controllers/AuthController.cs)
    - Enforces the BFF-only boundary.
    - Orchestrates link/login and issues GameHub sessions.
-9. [`services/core/Data/ExternalIdentity.cs`](../services/core/Data/ExternalIdentity.cs) and
+9. [`services/core/Data/ExternalIdentity.cs`](../services/core/Data/ExternalIdentity.cs),
+   [`services/core/Data/AccountSession.cs`](../services/core/Data/AccountSession.cs),
+   [`services/core/Data/OidcProviderSession.cs`](../services/core/Data/OidcProviderSession.cs), and
    [`services/core/Data/CoreContext.cs`](../services/core/Data/CoreContext.cs)
-   - Define database ownership and uniqueness constraints.
+   - Define database ownership, durable local families, issuer-bound hashed `sid` mappings, and
+     uniqueness constraints.
 10. [`frontend/lib/auth-session.ts`](../frontend/lib/auth-session.ts) and
    [`frontend/app/api/core/[...path]/route.ts`](../frontend/app/api/core/[...path]/route.ts)
    - Store, refresh, and forward the resulting GameHub session.
@@ -155,9 +159,9 @@ Read the implementation in this order:
     - Prevents a deleted external subject from silently provisioning a replacement tenant.
 14. [`services/core/Services/OidcBackChannelLogoutService.cs`](../services/core/Services/OidcBackChannelLogoutService.cs)
     and [`services/core/Services/AccountSessionValidationService.cs`](../services/core/Services/AccountSessionValidationService.cs)
-    - Atomically advance the mapped account epoch, revoke refresh sessions, record tenant activity,
-      and persist a hashed replay marker.
-    - Reject earlier access-JWT epochs during every ordinary live-account validation.
+    - Revoke one mapped local family for `sid`, or advance the mapped account epoch for `sub` only.
+    - Enforce subject/session consistency, hashed race tombstones, and hashed replay markers.
+    - Reject revoked local families and earlier access-JWT epochs during ordinary bearer validation.
 
 ## 5. Configuration flows through two servers
 
@@ -307,7 +311,8 @@ sequenceDiagram
    C->>C: Validate signature, issuer, audience, time, algorithm, nonce, azp
    C->>D: Find exact ExternalIdentity issuer/subject
    D-->>C: Live UserAccount and Tenant
-   C->>D: Create rotating refresh session, update login timestamps
+   C->>D: Create/reuse durable AccountSession + hashed issuer/sid mapping
+   C->>D: Create rotating refresh row, update login timestamps
    C-->>B: GameHub access JWT + opaque refresh token
    B-->>U: HttpOnly session cookies + redirect, delete transaction cookie
 ```
@@ -327,7 +332,9 @@ sequenceDiagram
 9. `exp` is required; lifetime and clock skew are enforced.
 10. `sub` must be present and bounded.
 11. Signed token `nonce` must exactly match the BFF transaction nonce.
-12. The validator projects only issuer, subject, and optional display email.
+12. A supplied `sid` must be a bounded string.
+13. The validator projects only issuer, subject, optional display email, fresh-authentication time,
+    and the opaque session ID needed for immediate one-way hashing.
 
 If the token references a signing key not present in the current cache, Core requests exactly one
 metadata refresh. This supports normal provider key rotation without creating unbounded network
@@ -378,7 +385,10 @@ verifier, even if the attacker knows the public challenge.
 erDiagram
     Tenant ||--o| UserAccount : "has one owner in current model"
     UserAccount ||--o{ ExternalIdentity : "explicitly links"
-    UserAccount ||--o{ RefreshTokenSession : "owns"
+    UserAccount ||--o{ AccountSession : "owns"
+    AccountSession ||--o{ RefreshTokenSession : "rotates within"
+    AccountSession ||--o| OidcProviderSession : "optionally mapped by hash"
+    ExternalIdentity ||--o{ OidcProviderSession : "validated identity"
 
     Tenant {
         uuid Id PK
@@ -400,12 +410,27 @@ erDiagram
         datetime CreatedAtUtc
         datetime LastLoginAtUtc
     }
+    AccountSession {
+        uuid Id PK
+        uuid TenantId FK
+        uuid UserAccountId FK
+        datetime CreatedAtUtc
+        datetime RevokedAtUtc
+    }
     RefreshTokenSession {
         uuid Id PK
         uuid UserAccountId FK
+        uuid AccountSessionId FK
         string TokenHash UK
         datetime ExpiresAtUtc
         datetime ConsumedAtUtc
+        datetime RevokedAtUtc
+    }
+    OidcProviderSession {
+        uuid Id PK
+        string SessionKeyHash UK
+        uuid ExternalIdentityId FK "nullable tombstone"
+        uuid AccountSessionId FK "nullable tombstone"
         datetime RevokedAtUtc
     }
 ```
@@ -416,7 +441,12 @@ Relevant database invariants:
 - Unique `(UserAccountId, Issuer)` prevents implicit subject replacement at a provider.
 - Composite FK `(TenantId, UserAccountId) -> UserAccount(TenantId, Id)` prevents constructing a row
   with Account A and Tenant B.
-- Cascade delete removes external mappings and refresh sessions when the account is deleted.
+- Normal access JWTs and rotating refresh rows share one stable `AccountSession`; rotation never
+  replaces the stable family.
+- Unique issuer-bound `SessionKeyHash` orders concurrent login/logout first writers without storing
+  raw provider session IDs.
+- OIDC provider-session mappings use composite identity/session ownership keys; `sid` never directly
+  chooses an account or tenant.
 - No email or provider profile data participates in the relationship.
 - Local accounts require non-empty email, normalized email, and password hash. External accounts
   require null normalized email and password hash; the normalized-email unique index is filtered
@@ -495,6 +525,7 @@ needs them for page and API requests.
 | Deleted account | DB cascade and mapping lookup | Generic 401 | Identity cannot recreate deleted ownership |
 | Wrong/missing BFF service key | AuthController | Generic 401 | Prevent direct bypass of BFF protocol checks |
 | Invalid Back-Channel Logout Token | Core logout validator | Bodyless 400 through BFF | Reject forged, stale, replay-shaped, or cross-JWT messages before identity lookup |
+| Valid token with disagreeing `sub` and mapped `sid` | Core logout service | Bodyless 400 through BFF | Change neither tenant; reject inconsistent provider session ownership |
 | Back-channel discovery/JWKS unavailable | Core logout validator | Bodyless retryable 503 through BFF | Never accept unsigned claims during provider outage |
 
 The callback always expires the transaction cookie, whether authentication succeeds or fails.
@@ -510,12 +541,12 @@ discovery or its optional HTTPS `end_session_endpoint` is unavailable.
 Already-issued GameHub sessions are independent of provider availability:
 
 - Existing access JWTs remain valid until their normal short expiry, subject to Core's live
-  account/pending-deletion/session-epoch database check.
-- Existing GameHub refresh sessions can rotate without contacting the provider.
-- A valid Back-Channel Logout immediately advances the exact account's epoch and revokes all of its
-  refresh sessions. Other provider recovery/MFA/disabled-user changes do not retroactively revoke
-  GameHub sessions unless Keycloak emits that logout; provider event synchronization is not
-  implemented.
+  account/pending-deletion/session-epoch/local-family database check.
+- Existing GameHub refresh rows rotate within the same local family without contacting the provider.
+- A valid Back-Channel Logout revokes the exact `sid` family, or advances the exact account epoch
+  and revokes all families when only `sub` is present. Other provider recovery/MFA/disabled-user
+  changes do not retroactively revoke GameHub sessions unless the provider emits that logout;
+  general provider event synchronization is not implemented.
 
 For provider signing-key rotation, `ConfigurationManager` caches discovery/JWKS data. A
 `SecurityTokenSignatureKeyNotFoundException` triggers one forced refresh and one revalidation.
@@ -660,6 +691,8 @@ Before enabling a provider:
 - Bootstrap the existing GameHub owner and explicitly link the provider identity.
 - Run login, logout, refresh, pending-deletion, provider-outage, and key-rotation exercises.
 - Register and exercise the exact public Back-Channel Logout URL, including cross-tenant checks.
+- Require session-bearing Back-Channel Logout at the provider, save the client, and sign in again
+  before testing so a new hashed `sid` mapping exists.
 - Keep guarded multi-user enablement disabled until ADR-012 readiness and the operator rollout
   checklist are complete.
 
@@ -669,9 +702,9 @@ Before enabling a provider:
 - Personal-tenant JIT exists only through its explicit default-off provisioning mode and active
   guarded mode; it is not public registration.
 - There is no unlink or subject-replacement flow.
-- RP-Initiated browser logout and account-wide Keycloak Back-Channel Logout are implemented without
-  storing provider tokens. Per-Keycloak-`sid` logout and provider disabled-user event reconciliation
-  are not implemented.
+- RP-Initiated browser logout and provider-neutral `sid`/`sub` Back-Channel Logout are implemented
+  without storing provider tokens or raw provider session IDs. Provider disabled-user event
+  reconciliation is not implemented.
 - Provider access tokens are not retained or used for provider APIs.
 - Local account deletion still follows ADR-010's current-password confirmation path.
 - Guarded multi-user enablement is implemented, deliberately separate, and disabled by default.

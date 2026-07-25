@@ -116,13 +116,25 @@ public sealed class JwtTokenService
     public bool IsEnabled => _settings.IsEnabled;
 
     /// <summary>
-    /// Creates a signed token containing account and trusted tenant claims.
-    /// A JWT has three Base64Url-encoded sections: header, payload, and signature. The
-    /// payload is readable by clients, so it must contain identity data only—never secrets.
-    /// The signature makes payload modification detectable; it does not encrypt the payload.
+    /// Creates a normal access JWT bound to one durable local session family. The payload is
+    /// signed but readable, so it contains only trusted identity and revocation references.
     /// </summary>
-    public IssuedJwtToken CreateToken(UserAccount account) =>
-        CreateToken(account, _settings.LifetimeMinutes, sessionPurpose: null, deletionAuthorization: null);
+    public IssuedJwtToken CreateToken(UserAccount account, Guid accountSessionId)
+    {
+        if (accountSessionId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "A normal access token requires a stable local session.",
+                nameof(accountSessionId));
+        }
+
+        return CreateToken(
+            account,
+            _settings.LifetimeMinutes,
+            accountSessionId,
+            sessionPurpose: null,
+            deletionAuthorization: null);
+    }
 
     /// <summary>
     /// Creates a short-lived, non-refreshable token whose authorization is restricted by the
@@ -133,7 +145,8 @@ public sealed class JwtTokenService
         CreateToken(
             account,
             lifetimeMinutes: 10,
-            GameHubClaimTypes.OidcLinkOnlySessionPurpose,
+            accountSessionId: null,
+            sessionPurpose: GameHubClaimTypes.OidcLinkOnlySessionPurpose,
             deletionAuthorization: null);
 
     /// <summary>
@@ -146,14 +159,16 @@ public sealed class JwtTokenService
         CreateToken(
             account,
             lifetimeMinutes: 10,
-            GameHubClaimTypes.AccountDeletionOnlySessionPurpose,
-            externalOidcReauthentication
+            accountSessionId: null,
+            sessionPurpose: GameHubClaimTypes.AccountDeletionOnlySessionPurpose,
+            deletionAuthorization: externalOidcReauthentication
                 ? GameHubClaimTypes.ExternalOidcDeletionAuthorization
                 : null);
 
     private IssuedJwtToken CreateToken(
         UserAccount account,
         int lifetimeMinutes,
+        Guid? accountSessionId,
         string? sessionPurpose,
         string? deletionAuthorization)
     {
@@ -189,6 +204,12 @@ public sealed class JwtTokenService
             // External email is optional profile data only. Its presence in a signed display claim
             // never changes the account/tenant mapping selected from the database.
             claims.Add(new Claim(JwtRegisteredClaimNames.Email, account.Email));
+        }
+        if (accountSessionId is not null)
+        {
+            claims.Add(new Claim(
+                GameHubClaimTypes.AccountSessionId,
+                accountSessionId.Value.ToString("D")));
         }
         if (sessionPurpose is not null)
         {

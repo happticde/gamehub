@@ -71,13 +71,20 @@ public sealed class OidcAuthenticationTests : IDisposable
         var validator = CreateValidator(key);
 
         var result = await validator.ValidateAsync(
-            CreateToken(key, Issuer, Audience, Nonce, "subject-a"),
+            CreateToken(
+                key,
+                Issuer,
+                Audience,
+                Nonce,
+                "subject-a",
+                providerSessionId: "provider-session-a"),
             Nonce);
 
         Assert.Equal(OidcTokenValidationStatus.Succeeded, result.Status);
         Assert.Equal(Issuer, result.Identity!.Issuer);
         Assert.Equal("subject-a", result.Identity.Subject);
         Assert.Equal("shared@example.com", result.Identity.Email);
+        Assert.Equal("provider-session-a", result.Identity.ProviderSessionId);
     }
 
     [Fact]
@@ -340,7 +347,8 @@ public sealed class OidcAuthenticationTests : IDisposable
         string subject,
         string algorithm = SecurityAlgorithms.RsaSha256,
         DateTime? now = null,
-        DateTimeOffset? authenticationTime = null)
+        DateTimeOffset? authenticationTime = null,
+        string? providerSessionId = null)
     {
         var issuedAt = now ?? DateTime.UtcNow;
         var claims = new List<Claim>
@@ -360,6 +368,10 @@ public sealed class OidcAuthenticationTests : IDisposable
                 authenticationTime.Value.ToUnixTimeSeconds().ToString(
                     System.Globalization.CultureInfo.InvariantCulture),
                 ClaimValueTypes.Integer64));
+        }
+        if (providerSessionId is not null)
+        {
+            claims.Add(new Claim("sid", providerSessionId));
         }
         var token = new JwtSecurityToken(
             issuer,

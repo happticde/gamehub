@@ -26,6 +26,12 @@ public static class GameHubClaimTypes
     /// </summary>
     public const string SessionVersion = "gamehub:session_version";
 
+    /// <summary>
+    /// Stable server-generated local session family. Core checks this signed reference against
+    /// live tenant-bound state on every ordinary bearer request.
+    /// </summary>
+    public const string AccountSessionId = "gamehub:account_session_id";
+
     /// <summary>Value permitting only the Core OIDC linking callback.</summary>
     public const string OidcLinkOnlySessionPurpose = "oidc_link_only";
 

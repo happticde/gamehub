@@ -100,7 +100,12 @@ public sealed class AccountServiceTests : IDisposable
         // receives the server-generated tenant ID from that verified database row.
         var authenticated = await _accounts.AuthenticateAsync("FAMILY@EXAMPLE.COM", Password);
         var tokens = new JwtTokenService(CreateJwtSettings(), new FixedTimeProvider(FixedNow));
-        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(tokens.CreateToken(authenticated!).AccessToken);
+        var session = await new RefreshTokenService(
+            _db,
+            CreateJwtSettings(),
+            new FixedTimeProvider(FixedNow)).IssueAsync(authenticated!);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(
+            tokens.CreateToken(authenticated!, session.AccountSessionId).AccessToken);
         Assert.Equal(
             result.Tenant.Id.ToString("D"),
             jwt.Claims.Single(claim => claim.Type == GameHubClaimTypes.TenantId).Value);
@@ -264,8 +269,12 @@ public sealed class AccountServiceTests : IDisposable
             "Owner");
         var settings = CreateJwtSettings();
         var tokens = new JwtTokenService(settings, new FixedTimeProvider(FixedNow));
+        var session = await new RefreshTokenService(
+            _db,
+            settings,
+            new FixedTimeProvider(FixedNow)).IssueAsync(creation.Account!);
 
-        var issued = tokens.CreateToken(creation.Account!);
+        var issued = tokens.CreateToken(creation.Account!, session.AccountSessionId);
         var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
         var principal = handler.ValidateToken(
             issued.AccessToken,

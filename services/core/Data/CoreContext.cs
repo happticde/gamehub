@@ -20,8 +20,14 @@ public class CoreContext : DbContext
     /// <summary>Hashed, revocable refresh-token sessions for local accounts.</summary>
     public DbSet<RefreshTokenSession> RefreshTokenSessions => Set<RefreshTokenSession>();
 
+    /// <summary>Durable local session families shared by access and rotating refresh tokens.</summary>
+    public DbSet<AccountSession> AccountSessions => Set<AccountSession>();
+
     /// <summary>Stable OIDC issuer/subject mappings to existing account and tenant pairs.</summary>
     public DbSet<ExternalIdentity> ExternalIdentities => Set<ExternalIdentity>();
+
+    /// <summary>Issuer-bound hashed OIDC session mappings and revocation tombstones.</summary>
+    public DbSet<OidcProviderSession> OidcProviderSessions => Set<OidcProviderSession>();
 
     /// <summary>Deleted external identities that JIT must never silently recreate.</summary>
     public DbSet<DeletedExternalIdentity> DeletedExternalIdentities => Set<DeletedExternalIdentity>();
@@ -98,6 +104,25 @@ public class CoreContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<AccountSession>(entity =>
+        {
+            // Session lookup occurs during bearer validation before a tenant query filter can be
+            // trusted. The composite FK makes the account/tenant pair authoritative in the DB.
+            entity.HasIndex(session => session.UserAccountId);
+            entity.HasIndex(session => new { session.TenantId, session.UserAccountId });
+            entity.HasAlternateKey(session => new
+            {
+                session.Id,
+                session.TenantId,
+                session.UserAccountId
+            });
+            entity.HasOne(session => session.UserAccount)
+                .WithMany(account => account.AccountSessions)
+                .HasForeignKey(session => new { session.TenantId, session.UserAccountId })
+                .HasPrincipalKey(account => new { account.TenantId, account.Id })
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<RefreshTokenSession>(entity =>
         {
             // Refresh lookup happens before authentication, so this table cannot use the
@@ -110,6 +135,13 @@ public class CoreContext : DbContext
                 .WithMany(account => account.RefreshTokenSessions)
                 .HasForeignKey(session => session.UserAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Nullable only for revoked pre-migration rows. New issuance always sets the stable
+            // family and service validation rejects a missing relationship.
+            entity.HasIndex(session => session.AccountSessionId);
+            entity.HasOne(session => session.AccountSession)
+                .WithMany(accountSession => accountSession.RefreshTokenSessions)
+                .HasForeignKey(session => session.AccountSessionId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<ExternalIdentity>(entity =>
@@ -124,6 +156,12 @@ public class CoreContext : DbContext
             // A GameHub account may link only one subject from a given issuer. Replacing it
             // requires an explicit unlink/relink design rather than an implicit email match.
             entity.HasIndex(identity => new { identity.UserAccountId, identity.Issuer }).IsUnique();
+            entity.HasAlternateKey(identity => new
+            {
+                identity.Id,
+                identity.TenantId,
+                identity.UserAccountId
+            });
             // TenantId participates in the FK even though UserAccount.Id is globally unique. The
             // database therefore rejects a manipulated row that combines Tenant B with Account A.
             entity.HasOne(identity => identity.UserAccount)
@@ -131,6 +169,48 @@ public class CoreContext : DbContext
                 .HasForeignKey(identity => new { identity.TenantId, identity.UserAccountId })
                 .HasPrincipalKey(account => new { account.TenantId, account.Id })
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OidcProviderSession>(entity =>
+        {
+            // The hash includes the exact issuer, so the raw provider sid is neither stored nor
+            // logged and a sid from another issuer cannot collide as an authorization selector.
+            entity.Property(session => session.SessionKeyHash).HasMaxLength(64);
+            entity.HasIndex(session => session.SessionKeyHash).IsUnique();
+            entity.HasIndex(session => session.AccountSessionId).IsUnique();
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_OidcProviderSessions_Mapping",
+                "(\"ExternalIdentityId\" IS NULL AND \"AccountSessionId\" IS NULL AND \"UserAccountId\" IS NULL AND \"TenantId\" IS NULL AND \"RevokedAtUtc\" IS NOT NULL) OR (\"ExternalIdentityId\" IS NOT NULL AND \"AccountSessionId\" IS NOT NULL AND \"UserAccountId\" IS NOT NULL AND \"TenantId\" IS NOT NULL)"));
+            entity.HasOne(session => session.ExternalIdentity)
+                .WithMany(identity => identity.OidcProviderSessions)
+                .HasForeignKey(session => new
+                {
+                    session.ExternalIdentityId,
+                    session.TenantId,
+                    session.UserAccountId
+                })
+                .HasPrincipalKey(identity => new
+                {
+                    identity.Id,
+                    identity.TenantId,
+                    identity.UserAccountId
+                })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(session => session.AccountSession)
+                .WithOne(accountSession => accountSession.OidcProviderSession)
+                .HasForeignKey<OidcProviderSession>(session => new
+                {
+                    session.AccountSessionId,
+                    session.TenantId,
+                    session.UserAccountId
+                })
+                .HasPrincipalKey<AccountSession>(accountSession => new
+                {
+                    accountSession.Id,
+                    accountSession.TenantId,
+                    accountSession.UserAccountId
+                })
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<DeletedExternalIdentity>(entity =>

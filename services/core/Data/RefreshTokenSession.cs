@@ -14,6 +14,16 @@ public sealed class RefreshTokenSession
     public Guid UserAccountId { get; set; }
 
     /// <summary>
+    /// Stable local session family shared with access JWTs. This is nullable only for additive
+    /// upgrade compatibility; the migration revokes every legacy row and new issuance always sets
+    /// it.
+    /// </summary>
+    public Guid? AccountSessionId { get; set; }
+
+    /// <summary>Navigation to the durable local session family.</summary>
+    public AccountSession? AccountSession { get; set; }
+
+    /// <summary>
     /// Account session epoch captured at issuance. Rotation fails when an account-wide logout
     /// advanced the owner epoch, including for a session inserted by an already in-flight login.
     /// </summary>

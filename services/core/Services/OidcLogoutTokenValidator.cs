@@ -39,9 +39,9 @@ public sealed class OidcLogoutTokenValidator
     }
 
     /// <summary>
-    /// Validates one signed provider logout message. GameHub's current account-wide logout
-    /// boundary requires <c>sub</c>; an optional provider <c>sid</c> never selects a tenant or
-    /// narrows revocation until durable per-provider-session mapping is introduced.
+    /// Validates one signed provider logout message. The standard permits <c>sub</c>,
+    /// <c>sid</c>, or both; neither value leaves this boundary until every cryptographic,
+    /// metadata, time, event, type, and replay prerequisite has passed.
     /// </summary>
     public async Task<OidcLogoutTokenValidationResult> ValidateAsync(
         string? logoutToken,
@@ -137,7 +137,6 @@ public sealed class OidcLogoutTokenValidator
             }
 
             var issuer = principal.FindFirstValue(JwtRegisteredClaimNames.Iss);
-            var subject = principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
             var jwtId = principal.FindFirstValue(JwtRegisteredClaimNames.Jti);
             var issuedAtValue = principal.FindFirstValue(JwtRegisteredClaimNames.Iat);
             var audiences = principal.FindAll(JwtRegisteredClaimNames.Aud)
@@ -149,8 +148,6 @@ public sealed class OidcLogoutTokenValidator
                     || string.Equals(authorizedParty, _settings.Audience, StringComparison.Ordinal)
                 : string.Equals(authorizedParty, _settings.Audience, StringComparison.Ordinal);
             if (!string.Equals(issuer, _settings.Issuer, StringComparison.Ordinal)
-                || string.IsNullOrWhiteSpace(subject)
-                || subject.Length > 255
                 || string.IsNullOrWhiteSpace(jwtId)
                 || jwtId.Length > 512
                 || !authorizedPartyIsValid
@@ -181,16 +178,27 @@ public sealed class OidcLogoutTokenValidator
             var payloadBytes = Base64UrlEncoder.DecodeBytes(jwt.RawPayload);
             using var payload = JsonDocument.Parse(payloadBytes);
             var root = payload.RootElement;
+            var subject = ReadBoundedString(root, JwtRegisteredClaimNames.Sub, 255);
+            var providerSessionId = ReadBoundedString(root, "sid", 512);
             if (root.TryGetProperty("nonce", out _)
+                || (root.TryGetProperty(JwtRegisteredClaimNames.Sub, out _) && subject is null)
+                || (root.TryGetProperty("sid", out _) && providerSessionId is null)
+                || (subject is null && providerSessionId is null)
                 || !root.TryGetProperty("events", out var events)
                 || events.ValueKind != JsonValueKind.Object
-                || !events.TryGetProperty(BackChannelLogoutEvent, out _))
+                || !events.TryGetProperty(BackChannelLogoutEvent, out var logoutEvent)
+                || logoutEvent.ValueKind != JsonValueKind.Object)
             {
                 return OidcLogoutTokenValidationResult.Invalid;
             }
 
             return OidcLogoutTokenValidationResult.Succeeded(
-                new ValidatedOidcLogoutToken(_settings.Issuer, subject, jwtId, issuedAt));
+                new ValidatedOidcLogoutToken(
+                    _settings.Issuer,
+                    subject,
+                    jwtId,
+                    issuedAt,
+                    providerSessionId));
         }
         catch (SecurityTokenSignatureKeyNotFoundException)
         {
@@ -204,14 +212,36 @@ public sealed class OidcLogoutTokenValidator
             return OidcLogoutTokenValidationResult.Invalid;
         }
     }
+
+    private static string? ReadBoundedString(
+        JsonElement root,
+        string propertyName,
+        int maximumLength)
+    {
+        if (!root.TryGetProperty(propertyName, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var text = value.GetString();
+        return string.IsNullOrWhiteSpace(text) || text.Length > maximumLength
+            ? null
+            : text;
+    }
 }
 
 /// <summary>Minimal trusted logout identity projected after complete protocol validation.</summary>
 public sealed record ValidatedOidcLogoutToken(
     string Issuer,
-    string Subject,
+    string? Subject,
     string JwtId,
-    DateTimeOffset IssuedAtUtc);
+    DateTimeOffset IssuedAtUtc,
+    string? ProviderSessionId = null);
 
 /// <summary>Internal outcome category for provider logout-token validation.</summary>
 public enum OidcLogoutTokenValidationStatus

@@ -101,6 +101,15 @@ public sealed class ExternalIdentityService
     /// </summary>
     public async Task<UserAccount?> AuthenticateAsync(
         ValidatedOidcIdentity identity,
+        CancellationToken cancellationToken = default) =>
+        (await AuthenticateForSessionAsync(identity, cancellationToken))?.Account;
+
+    /// <summary>
+    /// Resolves the exact identity together with its account so a validated OIDC <c>sid</c> can
+    /// be mapped to a local session without performing another subject or tenant lookup.
+    /// </summary>
+    public async Task<OidcAuthenticatedAccount?> AuthenticateForSessionAsync(
+        ValidatedOidcIdentity identity,
         CancellationToken cancellationToken = default)
     {
         // Login begins without a trusted tenant, so this is a global identity lookup. Trust is
@@ -129,7 +138,7 @@ public sealed class ExternalIdentityService
         mapping.LastLoginAtUtc = nowUtc;
         account.LastLoginAtUtc = nowUtc;
         await _db.SaveChangesAsync(cancellationToken);
-        return account;
+        return new OidcAuthenticatedAccount(account, mapping);
     }
 
     /// <summary>
@@ -171,6 +180,13 @@ public sealed class ExternalIdentityService
                 : null;
     }
 }
+
+/// <summary>
+/// Exact database-owned account and external mapping resolved after validated OIDC authentication.
+/// </summary>
+public sealed record OidcAuthenticatedAccount(
+    UserAccount Account,
+    ExternalIdentity ExternalIdentity);
 
 /// <summary>Stable outcomes for explicit external-identity linking.</summary>
 public enum ExternalIdentityLinkResult

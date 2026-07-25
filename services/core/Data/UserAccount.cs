@@ -60,8 +60,13 @@ public sealed class UserAccount
     public long SessionVersion { get; set; }
 
     /// <summary>
-    /// Independent device/login sessions. They are identity records rather than tenant-
-    /// filtered library rows because refresh begins before an authenticated tenant exists.
+    /// Independent durable device/login session families.
+    /// </summary>
+    public ICollection<AccountSession> AccountSessions { get; set; } = [];
+
+    /// <summary>
+    /// Rotating refresh-token rows retained as a direct navigation for account-wide lifecycle
+    /// cleanup. New rows also belong to one durable <see cref="AccountSession"/>.
     /// </summary>
     public ICollection<RefreshTokenSession> RefreshTokenSessions { get; set; } = [];
 

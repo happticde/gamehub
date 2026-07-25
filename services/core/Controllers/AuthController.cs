@@ -267,8 +267,8 @@ public sealed class AuthController : ControllerBase
         {
             // The default tenant keeps the historical local-session behavior while guarded
             // multi-user mode is off. This is the upgrade-safe single-user compatibility path.
-            var token = _tokens.CreateToken(account);
             var refreshToken = await _refreshTokens.IssueAsync(account, cancellationToken);
+            var token = _tokens.CreateToken(account, refreshToken.AccountSessionId);
             _logger.LogInformation("Issued a local compatibility session for the default tenant");
             return Ok(CreateTokenResponse(token, refreshToken));
         }
@@ -350,9 +350,10 @@ public sealed class AuthController : ControllerBase
 
         // Layer 3: resolve only the durable issuer/subject mapping. The request has no tenant or
         // account field, and provider email/role/organization claims are not consulted.
-        var account = await _externalIdentities.AuthenticateAsync(
+        var authentication = await _externalIdentities.AuthenticateForSessionAsync(
             validation.Identity!,
             cancellationToken);
+        var account = authentication?.Account;
         IssuedRefreshToken? preissuedRefreshToken = null;
         if (account is null)
         {
@@ -386,16 +387,40 @@ public sealed class AuthController : ControllerBase
 
         // Layer 4: issue GameHub's own tenant-scoped access token and revocable refresh session.
         // Provider tokens do not authorize library APIs directly.
-        var accessToken = _tokens.CreateToken(account);
-        var refreshToken = preissuedRefreshToken
-            ?? await _refreshTokens.IssueAsync(account, cancellationToken);
+        var refreshToken = preissuedRefreshToken;
+        if (refreshToken is null)
+        {
+            if (authentication is null
+                || string.IsNullOrWhiteSpace(validation.Identity!.ProviderSessionId))
+            {
+                return Unauthorized(new AuthErrorResponse(
+                    "oidc_authentication_failed",
+                    "External authentication failed."));
+            }
+
+            var oidcIssue = await _refreshTokens.IssueOidcAsync(
+                authentication,
+                validation.Identity.ProviderSessionId,
+                cancellationToken);
+            if (!oidcIssue.Issued)
+            {
+                return Unauthorized(new AuthErrorResponse(
+                    "oidc_authentication_failed",
+                    "External authentication failed."));
+            }
+
+            refreshToken = oidcIssue.RefreshToken;
+        }
+
+        var accessToken = _tokens.CreateToken(account, refreshToken!.AccountSessionId);
         _logger.LogInformation("Issued a GameHub session for a validated external identity");
         return Ok(CreateTokenResponse(accessToken, refreshToken));
     }
 
     /// <summary>
     /// POST: api/auth/oidc/backchannel-logout
-    /// Validates and applies one provider-initiated account-wide logout. The public provider
+    /// Validates and applies one provider-initiated logout. A standard <c>sid</c> targets one
+    /// mapped local family; <c>sub</c> without <c>sid</c> remains account-wide. The public provider
     /// reaches the BFF route; only the independently authenticated BFF may forward here.
     /// </summary>
     [HttpPost("oidc/backchannel-logout")]
@@ -433,7 +458,15 @@ public sealed class AuthController : ControllerBase
                 "Back-channel logout failed."));
         }
 
-        await _oidcBackChannelLogout.ProcessAsync(validation.Token!, cancellationToken);
+        var result = await _oidcBackChannelLogout.ProcessAsync(
+            validation.Token!,
+            cancellationToken);
+        if (result == OidcBackChannelLogoutResult.SubjectSessionMismatch)
+        {
+            return BadRequest(new AuthErrorResponse(
+                "oidc_logout_failed",
+                "Back-channel logout failed."));
+        }
         return Ok();
     }
 
@@ -611,7 +644,9 @@ public sealed class AuthController : ControllerBase
                 "Refresh token is invalid or expired."));
         }
 
-        var accessToken = _tokens.CreateToken(rotation.Account!);
+        var accessToken = _tokens.CreateToken(
+            rotation.Account!,
+            rotation.RefreshToken!.AccountSessionId);
         _logger.LogInformation("Rotated a refresh session");
         return Ok(CreateTokenResponse(accessToken, rotation.RefreshToken!));
     }
@@ -701,7 +736,7 @@ public sealed class AuthController : ControllerBase
                 "A current tenant account access token is required."));
         }
 
-        _logger.LogInformation("Revoked all refresh sessions for an account");
+        _logger.LogInformation("Revoked all local sessions for an account");
         return NoContent();
     }
 

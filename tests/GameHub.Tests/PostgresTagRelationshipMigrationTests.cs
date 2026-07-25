@@ -3,6 +3,7 @@ using GameHub.Core.Data;
 using GameHub.Core.Services;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -59,7 +60,10 @@ public sealed class PostgresTagRelationshipMigrationTests
             db.ChangeTracker.Clear();
 
             Assert.Equal(0, (await db.UserAccounts.SingleAsync()).SessionVersion);
-            Assert.Equal(0, (await db.RefreshTokenSessions.SingleAsync()).SessionVersion);
+            var legacyRefresh = await db.RefreshTokenSessions.SingleAsync();
+            Assert.Equal(0, legacyRefresh.SessionVersion);
+            Assert.Null(legacyRefresh.AccountSessionId);
+            Assert.NotNull(legacyRefresh.RevokedAtUtc);
             db.ProcessedOidcLogoutTokens.Add(new ProcessedOidcLogoutToken
             {
                 Id = Guid.NewGuid(),
@@ -69,6 +73,71 @@ public sealed class PostgresTagRelationshipMigrationTests
             });
             await db.SaveChangesAsync();
             Assert.Single(await db.ProcessedOidcLogoutTokens.ToListAsync());
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
+    public async Task OidcSessionFamilyMigration_PostgresFreshInstallSupportsMappedSession()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(
+            "GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings =>
+                warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            await db.Database.MigrateAsync();
+            var time = new AccountServiceTests.FixedTimeProvider(
+                new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero));
+            var account = (await new AccountService(
+                db,
+                new PasswordHasher<UserAccount>(),
+                time).BootstrapAsync(
+                TenantA,
+                "postgres-oidc@example.com",
+                "correct horse battery staple",
+                "Postgres OIDC")).Account!;
+            var identities = new ExternalIdentityService(db, time);
+            Assert.Equal(
+                ExternalIdentityLinkResult.Linked,
+                await identities.LinkAsync(
+                    account.Id,
+                    account.TenantId,
+                    new ValidatedOidcIdentity(
+                        "https://identity.example.test",
+                        "postgres-subject",
+                        null)));
+            var authentication = await identities.AuthenticateForSessionAsync(
+                new ValidatedOidcIdentity(
+                    "https://identity.example.test",
+                    "postgres-subject",
+                    null,
+                    ProviderSessionId: "postgres-provider-session"));
+            var issue = await new RefreshTokenService(
+                db,
+                AccountServiceTests.CreateJwtSettings(),
+                time).IssueOidcAsync(
+                authentication!,
+                "postgres-provider-session");
+
+            Assert.True(issue.Issued);
+            Assert.Single(await db.AccountSessions.ToListAsync());
+            var providerSession = await db.OidcProviderSessions.SingleAsync();
+            Assert.Equal(issue.RefreshToken!.AccountSessionId, providerSession.AccountSessionId);
+            Assert.Equal(64, providerSession.SessionKeyHash.Length);
         }
         finally
         {

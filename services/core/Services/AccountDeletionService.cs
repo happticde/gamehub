@@ -142,8 +142,26 @@ public sealed class AccountDeletionService(
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        // Keep only the issuer-bound one-way sid tombstone. Removing every account, tenant, and
+        // external-identity reference prevents stale provider-session state from retaining
+        // ownership data while still blocking a replayed ID token from reopening that session.
+        await db.OidcProviderSessions
+            .Where(row => row.UserAccountId == accountId && row.TenantId == tenantId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(row => row.ExternalIdentityId, (Guid?)null)
+                    .SetProperty(row => row.AccountSessionId, (Guid?)null)
+                    .SetProperty(row => row.UserAccountId, (Guid?)null)
+                    .SetProperty(row => row.TenantId, (Guid?)null)
+                    .SetProperty(
+                        row => row.RevokedAtUtc,
+                        row => row.RevokedAtUtc ?? deletedAtUtc),
+                cancellationToken);
         await db.RefreshTokenSessions
             .Where(row => row.UserAccountId == accountId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.AccountSessions
+            .Where(row => row.UserAccountId == accountId && row.TenantId == tenantId)
             .ExecuteDeleteAsync(cancellationToken);
         await db.UserAccounts
             .Where(row => row.Id == accountId && row.TenantId == tenantId)

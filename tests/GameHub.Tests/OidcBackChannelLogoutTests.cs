@@ -69,8 +69,27 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
         Assert.Equal(OidcLogoutTokenValidationStatus.Succeeded, result.Status);
         Assert.Equal(Issuer, result.Token!.Issuer);
         Assert.Equal("subject-a", result.Token.Subject);
+        Assert.Null(result.Token.ProviderSessionId);
         Assert.Equal("logout-event-a", result.Token.JwtId);
         Assert.Equal(FixedNow, result.Token.IssuedAtUtc);
+    }
+
+    [Theory]
+    [InlineData("sid_only")]
+    [InlineData("subject_and_sid")]
+    public async Task ValidateAsync_StandardSessionClaimShapes_AreAccepted(string variant)
+    {
+        using var rsa = RSA.Create(2048);
+        var key = new RsaSecurityKey(rsa) { KeyId = "logout-key" };
+
+        var result = await CreateValidator(key).ValidateAsync(
+            CreateLogoutToken(key, variant));
+
+        Assert.Equal(OidcLogoutTokenValidationStatus.Succeeded, result.Status);
+        Assert.Equal("provider-session-a", result.Token!.ProviderSessionId);
+        Assert.Equal(
+            variant == "sid_only" ? null : "subject-a",
+            result.Token.Subject);
     }
 
     [Theory]
@@ -97,11 +116,11 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
     public async Task ProcessAsync_MappedTenant_InvalidatesAccessAndRefreshSessionsOnlyForOwner()
     {
         var (accountA, accountB) = await CreateLinkedAccountsAsync();
-        await _refreshTokens.IssueAsync(accountA);
+        var accountASession = await _refreshTokens.IssueAsync(accountA);
         await _refreshTokens.IssueAsync(accountB);
         var jwtService = new JwtTokenService(AccountServiceTests.CreateJwtSettings(), _time);
         var oldAccessToken = new JwtSecurityTokenHandler().ReadJwtToken(
-            jwtService.CreateToken(accountA).AccessToken);
+            jwtService.CreateToken(accountA, accountASession.AccountSessionId).AccessToken);
         Assert.Equal(
             "0",
             oldAccessToken.Claims.Single(
@@ -183,6 +202,347 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessAsync_TwoProviderSessions_RevokesOnlyNamedFamilyThenSubjectRevokesAll()
+    {
+        var (accountA, accountB) = await CreateLinkedAccountsAsync();
+        var sessionA = await CreateOidcSessionAsync(
+            accountA,
+            "subject-a",
+            "provider-session-a");
+        var sessionB = await CreateOidcSessionAsync(
+            accountA,
+            "subject-a",
+            "provider-session-b");
+        var tenantBSession = await CreateOidcSessionAsync(
+            accountB,
+            "subject-b",
+            "provider-session-tenant-b");
+        var localSession = await _refreshTokens.IssueAsync(accountA);
+        var sessionValidation = new AccountSessionValidationService(_db);
+
+        var scopedResult = await CreateLogoutService().ProcessAsync(
+            new ValidatedOidcLogoutToken(
+                Issuer,
+                Subject: null,
+                "sid-only-event",
+                FixedNow,
+                "provider-session-a"));
+
+        Assert.Equal(OidcBackChannelLogoutResult.SessionInvalidated, scopedResult);
+        Assert.False((await _refreshTokens.RotateAsync(sessionA.RefreshToken)).Rotated);
+        var sessionBRotation = await _refreshTokens.RotateAsync(sessionB.RefreshToken);
+        var localRotation = await _refreshTokens.RotateAsync(localSession.RefreshToken);
+        var tenantBRotation = await _refreshTokens.RotateAsync(tenantBSession.RefreshToken);
+        Assert.True(sessionBRotation.Rotated);
+        Assert.True(localRotation.Rotated);
+        Assert.True(tenantBRotation.Rotated);
+        Assert.False(await sessionValidation.IsActiveAsync(
+            accountA.Id,
+            accountA.TenantId,
+            accountA.SessionVersion,
+            sessionA.AccountSessionId));
+        Assert.True(await sessionValidation.IsActiveAsync(
+            accountA.Id,
+            accountA.TenantId,
+            accountA.SessionVersion,
+            sessionB.AccountSessionId));
+
+        var accountWideResult = await CreateLogoutService().ProcessAsync(
+            new ValidatedOidcLogoutToken(
+                Issuer,
+                "subject-a",
+                "subject-only-event",
+                FixedNow));
+
+        Assert.Equal(OidcBackChannelLogoutResult.AccountInvalidated, accountWideResult);
+        Assert.False((await _refreshTokens.RotateAsync(
+            sessionBRotation.RefreshToken!.RefreshToken)).Rotated);
+        Assert.False((await _refreshTokens.RotateAsync(
+            localRotation.RefreshToken!.RefreshToken)).Rotated);
+        Assert.True((await _refreshTokens.RotateAsync(
+            tenantBRotation.RefreshToken!.RefreshToken)).Rotated);
+        Assert.Equal(
+            1,
+            (await _db.UserAccounts.AsNoTracking().SingleAsync(
+                account => account.Id == accountA.Id)).SessionVersion);
+        Assert.Equal(
+            0,
+            (await _db.UserAccounts.AsNoTracking().SingleAsync(
+                account => account.Id == accountB.Id)).SessionVersion);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SubjectAndSessionFromDifferentTenants_IsRejectedWithoutRevocation()
+    {
+        var (accountA, accountB) = await CreateLinkedAccountsAsync();
+        var sessionA = await CreateOidcSessionAsync(
+            accountA,
+            "subject-a",
+            "provider-session-a");
+        var sessionB = await CreateOidcSessionAsync(
+            accountB,
+            "subject-b",
+            "provider-session-b");
+
+        var result = await CreateLogoutService().ProcessAsync(
+            new ValidatedOidcLogoutToken(
+                Issuer,
+                "subject-b",
+                "contradictory-event",
+                FixedNow,
+                "provider-session-a"));
+
+        Assert.Equal(OidcBackChannelLogoutResult.SubjectSessionMismatch, result);
+        Assert.True((await _refreshTokens.RotateAsync(sessionA.RefreshToken)).Rotated);
+        Assert.True((await _refreshTokens.RotateAsync(sessionB.RefreshToken)).Rotated);
+        Assert.Empty(await _db.ProcessedOidcLogoutTokens.ToListAsync());
+        Assert.Empty(await _db.ActivityLogs.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UnknownSid_IsHashedIdempotentTombstone()
+    {
+        var service = CreateLogoutService();
+        var token = new ValidatedOidcLogoutToken(
+            Issuer,
+            Subject: null,
+            "unknown-sid-event",
+            FixedNow,
+            "unknown-provider-session");
+
+        Assert.Equal(
+            OidcBackChannelLogoutResult.NoLiveMapping,
+            await service.ProcessAsync(token));
+        Assert.Equal(
+            OidcBackChannelLogoutResult.AlreadyProcessed,
+            await service.ProcessAsync(token));
+
+        var tombstone = await _db.OidcProviderSessions.SingleAsync();
+        Assert.Null(tombstone.AccountSessionId);
+        Assert.NotNull(tombstone.RevokedAtUtc);
+        Assert.Equal(64, tombstone.SessionKeyHash.Length);
+        Assert.DoesNotContain(
+            "unknown-provider-session",
+            tombstone.SessionKeyHash,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LoginAndSidLogout_ParallelFirstWriters_CannotLeaveSessionActive()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"gamehub-oidc-logout-race-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath};Default Timeout=30";
+        try
+        {
+            await using (var setup = CreateFileContext(connectionString, out _))
+            {
+                await setup.Database.MigrateAsync();
+                var accounts = new AccountService(
+                    setup,
+                    new PasswordHasher<UserAccount>(),
+                    _time);
+                var account = (await accounts.BootstrapAsync(
+                    TenantDefaults.DefaultTenantId,
+                    "race@example.com",
+                    Password,
+                    "Race")).Account!;
+                Assert.Equal(
+                    ExternalIdentityLinkResult.Linked,
+                    await new ExternalIdentityService(setup, _time).LinkAsync(
+                        account.Id,
+                        account.TenantId,
+                        new ValidatedOidcIdentity(Issuer, "race-subject", null)));
+            }
+
+            var start = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            async Task<OidcRefreshTokenIssueResult> LoginAsync()
+            {
+                await using var loginDb = CreateFileContext(connectionString, out _);
+                var mapping = await loginDb.ExternalIdentities
+                    .Include(identity => identity.UserAccount)
+                    .SingleAsync();
+                await start.Task;
+                return await new RefreshTokenService(
+                    loginDb,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).IssueOidcAsync(
+                    new OidcAuthenticatedAccount(mapping.UserAccount!, mapping),
+                    "race-provider-session");
+            }
+
+            async Task<OidcBackChannelLogoutResult> LogoutAsync()
+            {
+                await using var logoutDb = CreateFileContext(
+                    connectionString,
+                    out var execution);
+                await start.Task;
+                return await new OidcBackChannelLogoutService(
+                    logoutDb,
+                    execution,
+                    _time,
+                    NullLogger<OidcBackChannelLogoutService>.Instance).ProcessAsync(
+                    new ValidatedOidcLogoutToken(
+                        Issuer,
+                        Subject: null,
+                        "race-logout-event",
+                        FixedNow,
+                        "race-provider-session"));
+            }
+
+            var loginTask = LoginAsync();
+            var logoutTask = LogoutAsync();
+            start.SetResult();
+            await Task.WhenAll(loginTask, logoutTask);
+            var loginResult = await loginTask;
+            Assert.NotEqual(
+                OidcBackChannelLogoutResult.SubjectSessionMismatch,
+                await logoutTask);
+
+            await using var verification = CreateFileContext(connectionString, out _);
+            var providerState = await verification.OidcProviderSessions.SingleAsync();
+            Assert.NotNull(providerState.RevokedAtUtc);
+            Assert.All(
+                await verification.AccountSessions.ToListAsync(),
+                session => Assert.NotNull(session.RevokedAtUtc));
+            Assert.All(
+                await verification.RefreshTokenSessions.ToListAsync(),
+                session => Assert.NotNull(session.RevokedAtUtc));
+            if (loginResult.RefreshToken is { } refreshToken)
+            {
+                Assert.False((await new RefreshTokenService(
+                    verification,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).RotateAsync(refreshToken.RefreshToken)).Rotated);
+            }
+        }
+        finally
+        {
+            if (File.Exists(databasePath))
+            {
+                File.Delete(databasePath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RefreshAndSidLogout_ParallelWriters_CannotLeaveReplacementActive()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"gamehub-oidc-refresh-logout-race-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath};Default Timeout=30";
+        try
+        {
+            string refreshToken;
+            await using (var setup = CreateFileContext(connectionString, out _))
+            {
+                await setup.Database.MigrateAsync();
+                var accounts = new AccountService(
+                    setup,
+                    new PasswordHasher<UserAccount>(),
+                    _time);
+                var account = (await accounts.BootstrapAsync(
+                    TenantDefaults.DefaultTenantId,
+                    "refresh-race@example.com",
+                    Password,
+                    "Refresh Race")).Account!;
+                var identities = new ExternalIdentityService(setup, _time);
+                Assert.Equal(
+                    ExternalIdentityLinkResult.Linked,
+                    await identities.LinkAsync(
+                        account.Id,
+                        account.TenantId,
+                        new ValidatedOidcIdentity(
+                            Issuer,
+                            "refresh-race-subject",
+                            null)));
+                var authentication = await identities.AuthenticateForSessionAsync(
+                    new ValidatedOidcIdentity(
+                        Issuer,
+                        "refresh-race-subject",
+                        null,
+                        ProviderSessionId: "refresh-race-provider-session"));
+                Assert.NotNull(authentication);
+                var issued = await new RefreshTokenService(
+                    setup,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).IssueOidcAsync(
+                    authentication!,
+                    "refresh-race-provider-session");
+                Assert.True(issued.Issued);
+                refreshToken = issued.RefreshToken!.RefreshToken;
+            }
+
+            var start = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            async Task<RefreshTokenRotationResult> RefreshAsync()
+            {
+                await using var refreshDb = CreateFileContext(connectionString, out _);
+                await start.Task;
+                return await new RefreshTokenService(
+                    refreshDb,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).RotateAsync(refreshToken);
+            }
+
+            async Task<OidcBackChannelLogoutResult> LogoutAsync()
+            {
+                await using var logoutDb = CreateFileContext(
+                    connectionString,
+                    out var execution);
+                await start.Task;
+                return await new OidcBackChannelLogoutService(
+                    logoutDb,
+                    execution,
+                    _time,
+                    NullLogger<OidcBackChannelLogoutService>.Instance).ProcessAsync(
+                    new ValidatedOidcLogoutToken(
+                        Issuer,
+                        Subject: null,
+                        "refresh-race-logout-event",
+                        FixedNow,
+                        "refresh-race-provider-session"));
+            }
+
+            var refreshTask = RefreshAsync();
+            var logoutTask = LogoutAsync();
+            start.SetResult();
+            await Task.WhenAll(refreshTask, logoutTask);
+            var refreshResult = await refreshTask;
+            Assert.Equal(
+                OidcBackChannelLogoutResult.SessionInvalidated,
+                await logoutTask);
+
+            await using var verification = CreateFileContext(connectionString, out _);
+            var providerState = await verification.OidcProviderSessions.SingleAsync();
+            Assert.NotNull(providerState.RevokedAtUtc);
+            Assert.All(
+                await verification.AccountSessions.ToListAsync(),
+                session => Assert.NotNull(session.RevokedAtUtc));
+            Assert.All(
+                await verification.RefreshTokenSessions.ToListAsync(),
+                session => Assert.NotNull(session.RevokedAtUtc));
+            if (refreshResult.RefreshToken is { } replacement)
+            {
+                Assert.False((await new RefreshTokenService(
+                    verification,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).RotateAsync(replacement.RefreshToken)).Rotated);
+            }
+        }
+        finally
+        {
+            if (File.Exists(databasePath))
+            {
+                File.Delete(databasePath);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Migration_SqliteUpgradePreservesAccountAndAddsReplayBoundary()
     {
         await using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
@@ -204,6 +564,12 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
                 ({accountId}, {TenantDefaults.DefaultTenantId}, {0}, {"legacy@example.com"},
                  {"LEGACY@EXAMPLE.COM"}, {"Legacy"}, {"preserved-hash"},
                  {FixedNow.UtcDateTime}, NULL);
+            INSERT INTO "RefreshTokenSessions"
+                ("Id", "UserAccountId", "TokenHash", "CreatedAtUtc", "ExpiresAtUtc",
+                 "ConsumedAtUtc", "RevokedAtUtc")
+            VALUES
+                ({Guid.NewGuid()}, {accountId}, {new string('C', 64)}, {FixedNow.UtcDateTime},
+                 {FixedNow.AddDays(30).UtcDateTime}, NULL, NULL);
             """);
 
         await migrator.MigrateAsync();
@@ -211,6 +577,9 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
 
         var account = await db.UserAccounts.SingleAsync(candidate => candidate.Id == accountId);
         Assert.Equal(0, account.SessionVersion);
+        var legacyRefresh = await db.RefreshTokenSessions.SingleAsync();
+        Assert.Null(legacyRefresh.AccountSessionId);
+        Assert.NotNull(legacyRefresh.RevokedAtUtc);
         db.ProcessedOidcLogoutTokens.Add(new ProcessedOidcLogoutToken
         {
             Id = Guid.NewGuid(),
@@ -234,6 +603,22 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
         _tenantExecution,
         _time,
         NullLogger<OidcBackChannelLogoutService>.Instance);
+
+    private static CoreContext CreateFileContext(
+        string connectionString,
+        out TenantExecutionContext tenantExecution)
+    {
+        tenantExecution = new TenantExecutionContext();
+        var tenantContext = new AuthenticatedTenantContext(
+            new HttpContextAccessor(),
+            tenantExecution);
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite(connectionString)
+            .ConfigureWarnings(warnings =>
+                warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        return new CoreContext(options, tenantContext);
+    }
 
     private async Task<(UserAccount AccountA, UserAccount AccountB)> CreateLinkedAccountsAsync()
     {
@@ -261,6 +646,26 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
                 accountB.TenantId,
                 new ValidatedOidcIdentity(Issuer, "subject-b", null)));
         return (accountA, accountB);
+    }
+
+    private async Task<IssuedRefreshToken> CreateOidcSessionAsync(
+        UserAccount account,
+        string subject,
+        string providerSessionId)
+    {
+        var identities = new ExternalIdentityService(_db, _time);
+        var authentication = await identities.AuthenticateForSessionAsync(
+            new ValidatedOidcIdentity(
+                Issuer,
+                subject,
+                null,
+                ProviderSessionId: providerSessionId));
+        Assert.NotNull(authentication);
+        var issued = await _refreshTokens.IssueOidcAsync(
+            authentication!,
+            providerSessionId);
+        Assert.True(issued.Issued);
+        return issued.RefreshToken!;
     }
 
     private OidcLogoutTokenValidator CreateValidator(SecurityKey key)
@@ -315,9 +720,13 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
                         new Dictionary<string, object>()
                 }
         };
-        if (variant != "missing_subject")
+        if (variant is not ("missing_subject" or "sid_only"))
         {
             payload[JwtRegisteredClaimNames.Sub] = "subject-a";
+        }
+        if (variant is "sid_only" or "subject_and_sid")
+        {
+            payload["sid"] = "provider-session-a";
         }
         if (variant == "nonce")
         {

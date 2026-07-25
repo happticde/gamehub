@@ -17,6 +17,33 @@ namespace GameHub.Core.Migrations.sqlite
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.2");
 
+            modelBuilder.Entity("GameHub.Core.Data.AccountSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserAccountId");
+
+                    b.HasIndex("TenantId", "UserAccountId");
+
+                    b.ToTable("AccountSessions");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.ActivityLog", b =>
                 {
                     b.Property<int>("Id")
@@ -227,6 +254,54 @@ namespace GameHub.Core.Migrations.sqlite
                     b.ToTable("ManualLinks");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.OidcProviderSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AccountSessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ExternalIdentityId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SessionKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UserAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountSessionId")
+                        .IsUnique();
+
+                    b.HasIndex("SessionKeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("AccountSessionId", "TenantId", "UserAccountId")
+                        .IsUnique();
+
+                    b.HasIndex("ExternalIdentityId", "TenantId", "UserAccountId");
+
+                    b.ToTable("OidcProviderSessions", t =>
+                        {
+                            t.HasCheckConstraint("CK_OidcProviderSessions_Mapping", "(\"ExternalIdentityId\" IS NULL AND \"AccountSessionId\" IS NULL AND \"UserAccountId\" IS NULL AND \"TenantId\" IS NULL AND \"RevokedAtUtc\" IS NOT NULL) OR (\"ExternalIdentityId\" IS NOT NULL AND \"AccountSessionId\" IS NOT NULL AND \"UserAccountId\" IS NOT NULL AND \"TenantId\" IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.PhysicalGameCopy", b =>
                 {
                     b.Property<int>("Id")
@@ -293,6 +368,9 @@ namespace GameHub.Core.Migrations.sqlite
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("AccountSessionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("ConsumedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -317,6 +395,8 @@ namespace GameHub.Core.Migrations.sqlite
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AccountSessionId");
 
                     b.HasIndex("TokenHash")
                         .IsUnique();
@@ -607,6 +687,18 @@ namespace GameHub.Core.Migrations.sqlite
                         });
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.AccountSession", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.UserAccount", "UserAccount")
+                        .WithMany("AccountSessions")
+                        .HasForeignKey("TenantId", "UserAccountId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("UserAccount");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.ActivityLog", b =>
                 {
                     b.HasOne("GameHub.Core.Data.Tenant", null)
@@ -682,6 +774,25 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Navigation("UnifiedGame");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.OidcProviderSession", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.AccountSession", "AccountSession")
+                        .WithOne("OidcProviderSession")
+                        .HasForeignKey("GameHub.Core.Data.OidcProviderSession", "AccountSessionId", "TenantId", "UserAccountId")
+                        .HasPrincipalKey("GameHub.Core.Data.AccountSession", "Id", "TenantId", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("GameHub.Core.Data.ExternalIdentity", "ExternalIdentity")
+                        .WithMany("OidcProviderSessions")
+                        .HasForeignKey("ExternalIdentityId", "TenantId", "UserAccountId")
+                        .HasPrincipalKey("Id", "TenantId", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AccountSession");
+
+                    b.Navigation("ExternalIdentity");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.PhysicalGameCopy", b =>
                 {
                     b.HasOne("GameHub.Core.Data.Tenant", null)
@@ -702,11 +813,18 @@ namespace GameHub.Core.Migrations.sqlite
 
             modelBuilder.Entity("GameHub.Core.Data.RefreshTokenSession", b =>
                 {
+                    b.HasOne("GameHub.Core.Data.AccountSession", "AccountSession")
+                        .WithMany("RefreshTokenSessions")
+                        .HasForeignKey("AccountSessionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("GameHub.Core.Data.UserAccount", "UserAccount")
                         .WithMany("RefreshTokenSessions")
                         .HasForeignKey("UserAccountId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("AccountSession");
 
                     b.Navigation("UserAccount");
                 });
@@ -785,6 +903,18 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.AccountSession", b =>
+                {
+                    b.Navigation("OidcProviderSession");
+
+                    b.Navigation("RefreshTokenSessions");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.ExternalIdentity", b =>
+                {
+                    b.Navigation("OidcProviderSessions");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>
                 {
                     b.Navigation("Items");
@@ -794,6 +924,8 @@ namespace GameHub.Core.Migrations.sqlite
 
             modelBuilder.Entity("GameHub.Core.Data.UserAccount", b =>
                 {
+                    b.Navigation("AccountSessions");
+
                     b.Navigation("ExternalIdentities");
 
                     b.Navigation("RefreshTokenSessions");
