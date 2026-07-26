@@ -125,11 +125,12 @@ raw record, or library row. Provider discovery, JWKS, token, or authentication o
 for new login, JIT, reauthentication, and retry. Existing GameHub sessions keep their local expiry
 and revocation behavior.
 
-User-triggered GameHub logout uses RP-Initiated Logout to terminate the current Keycloak browser
-SSO session after local refresh-session revocation and cookie cleanup. ADR-015 additionally accepts
-signed Keycloak Back-Channel Logout as an account-wide signal that advances the GameHub session
-epoch and revokes refresh sessions. Disabling or deleting a Keycloak user still has no separate
-provider-event reconciliation path unless Keycloak emits that normal logout signal.
+User-triggered GameHub logout uses RP-Initiated Logout to terminate the current provider browser
+SSO session after local session-family revocation and cookie cleanup. ADR-015 additionally accepts
+signed standard Back-Channel Logout: `sid` revokes one mapped local family and `sub` without `sid`
+advances the GameHub account epoch and revokes every family. Disabling or deleting a provider user
+still has no separate event-reconciliation path unless the provider emits that normal logout
+signal.
 
 ## Consequences
 
@@ -149,9 +150,9 @@ provider-event reconciliation path unless Keycloak emits that normal logout sign
   tenant switching are not implemented.
 - Realm/client/authentication policy is the access-control boundary for who may reach JIT. GameHub
   does not consume provider groups or roles as authorization.
-- There is no SCIM or provider-event synchronization, subject replacement, provider lifecycle
-  reconciliation, or per-Keycloak-session `sid` mapping. RP-Initiated browser logout and
-  account-wide Back-Channel Logout are implemented without changing JIT or tenant selection.
+- There is no SCIM or provider-event synchronization, subject replacement, or general provider
+  lifecycle reconciliation. RP-Initiated browser logout plus standard `sid`/`sub` Back-Channel
+  Logout are implemented without changing JIT or tenant selection.
 - Provider disable/delete is not a separate immediate GameHub signal unless Keycloak emits the
   normal Back-Channel Logout handled by ADR-015.
 - This is opt-in personal-tenant provisioning for guarded self-hosted operation. It is not public

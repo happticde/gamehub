@@ -414,15 +414,23 @@ public sealed class AccountService
             != PasswordVerificationResult.Failed;
     }
 
-    private Task<int> RevokeAllSessionsForAccountAsync(
+    private async Task RevokeAllSessionsForAccountAsync(
         Guid accountId,
         DateTime revokedAtUtc,
-        CancellationToken cancellationToken) =>
-        _db.RefreshTokenSessions
+        CancellationToken cancellationToken)
+    {
+        await _db.AccountSessions
+            .Where(session => session.UserAccountId == accountId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
+                cancellationToken);
+        await _db.RefreshTokenSessions
             .Where(session => session.UserAccountId == accountId && session.RevokedAtUtc == null)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
                 cancellationToken);
+    }
 
     /// <summary>
     /// Validates a plain mailbox address and produces its case-insensitive lookup form.

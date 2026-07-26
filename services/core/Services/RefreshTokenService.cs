@@ -7,9 +7,10 @@ using Microsoft.EntityFrameworkCore;
 namespace GameHub.Core.Services;
 
 /// <summary>
-/// Issues, rotates, and revokes opaque refresh tokens. Access JWTs keep their signed authorization
-/// claims but Core also checks the live account/session epoch; refresh tokens additionally use a
-/// durable per-secret row so a session can be consumed, rotated, or revoked immediately.
+/// Issues, rotates, and revokes opaque refresh tokens within durable local session families.
+/// Every normal access JWT and every rotating refresh row references the same
+/// <see cref="AccountSession"/>, so either credential path can be invalidated immediately without
+/// treating a rotating refresh-row ID as a stable session identity.
 /// </summary>
 public sealed class RefreshTokenService
 {
@@ -30,10 +31,7 @@ public sealed class RefreshTokenService
         _timeProvider = timeProvider;
     }
 
-    /// <summary>
-    /// Creates a new refresh session after password authentication. Only the hash is persisted;
-    /// the plaintext secret exists just long enough to be returned once to the client.
-    /// </summary>
+    /// <summary>Creates and persists one new non-OIDC local session family.</summary>
     public async Task<IssuedRefreshToken> IssueAsync(
         UserAccount account,
         CancellationToken cancellationToken = default)
@@ -44,23 +42,76 @@ public sealed class RefreshTokenService
     }
 
     /// <summary>
-    /// Stages a new refresh session without saving it. Transactional workflows use this method so
-    /// account, mapping, activity, and session rows can commit in one atomic SaveChanges call.
+    /// Stages one new non-OIDC local session family. Transactional callers can commit it together
+    /// with account and tenant lifecycle rows.
     /// </summary>
     public IssuedRefreshToken StageIssue(UserAccount account)
     {
         ArgumentNullException.ThrowIfNull(account);
-
-        var issued = CreateSession(account.Id, account.SessionVersion);
-        _db.RefreshTokenSessions.Add(issued.Session);
-        return issued.Token;
+        var accountSession = CreateAccountSession(account);
+        _db.AccountSessions.Add(accountSession);
+        return StageRefreshToken(account, accountSession.Id);
     }
 
     /// <summary>
-    /// Exchanges an active refresh token exactly once. The conditional database update is the
-    /// concurrency gate: if two requests race with the same secret, only one can mark it used.
-    /// Reusing an already consumed secret is treated as possible theft and revokes every still-
-    /// active session for that account.
+    /// Creates or reuses the one local family mapped to a fully validated OIDC issuer/session
+    /// pair. A durable logout tombstone or a mapping to another identity fails closed.
+    /// </summary>
+    public async Task<OidcRefreshTokenIssueResult> IssueOidcAsync(
+        OidcAuthenticatedAccount authentication,
+        string providerSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(authentication);
+        if (string.IsNullOrWhiteSpace(providerSessionId) || providerSessionId.Length > 512)
+        {
+            return OidcRefreshTokenIssueResult.Denied;
+        }
+
+        var sessionKeyHash = OidcProviderSessionKey.Hash(
+            authentication.ExternalIdentity.Issuer,
+            providerSessionId);
+        return await IssueOidcCoreAsync(
+            authentication,
+            sessionKeyHash,
+            retryAfterUniqueRace: true,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Stages a new OIDC-mapped local family for JIT provisioning. The caller's transaction and
+    /// the unique issuer-bound hash are the concurrency authority.
+    /// </summary>
+    public IssuedRefreshToken StageOidcIssue(
+        UserAccount account,
+        ExternalIdentity externalIdentity,
+        string providerSessionId)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        ArgumentNullException.ThrowIfNull(externalIdentity);
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerSessionId);
+
+        var accountSession = CreateAccountSession(account);
+        _db.AccountSessions.Add(accountSession);
+        _db.OidcProviderSessions.Add(new OidcProviderSession
+        {
+            Id = Guid.NewGuid(),
+            SessionKeyHash = OidcProviderSessionKey.Hash(
+                externalIdentity.Issuer,
+                providerSessionId),
+            ExternalIdentityId = externalIdentity.Id,
+            AccountSessionId = accountSession.Id,
+            UserAccountId = account.Id,
+            TenantId = account.TenantId,
+            CreatedAtUtc = accountSession.CreatedAtUtc
+        });
+        return StageRefreshToken(account, accountSession.Id);
+    }
+
+    /// <summary>
+    /// Exchanges an active refresh token exactly once while retaining the same durable local
+    /// session family. Normal rotation therefore does not invalidate access JWTs already issued
+    /// for that family.
     /// </summary>
     public async Task<RefreshTokenRotationResult> RotateAsync(
         string? plaintextToken,
@@ -74,35 +125,46 @@ public sealed class RefreshTokenService
         var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
         var existing = await _db.RefreshTokenSessions
             .AsNoTracking()
+            .Include(session => session.AccountSession)
             .Include(session => session.UserAccount)
                 .ThenInclude(account => account!.Tenant)
             .SingleOrDefaultAsync(
                 session => session.TokenHash == tokenHash,
                 cancellationToken);
         if (existing?.UserAccount is null
+            || existing.AccountSession is null
+            || existing.AccountSessionId is null
+            || existing.AccountSession.Id != existing.AccountSessionId
+            || existing.AccountSession.UserAccountId != existing.UserAccountId
+            || existing.AccountSession.TenantId != existing.UserAccount.TenantId
+            || existing.AccountSession.RevokedAtUtc is not null
             || existing.UserAccount.Tenant?.DeletionRequestedAtUtc is not null
             || existing.SessionVersion != existing.UserAccount.SessionVersion
             || existing.ExpiresAtUtc <= nowUtc)
         {
-            // Unknown and naturally expired tokens get the same result. This avoids turning
-            // the endpoint into an oracle that reveals which session secrets once existed.
+            // Legacy rows without a stable family are deliberately unusable after the additive
+            // migration. Unknown, expired, and upgrade-invalidated tokens remain indistinguishable.
             return RefreshTokenRotationResult.Invalid;
         }
 
         if (existing.ConsumedAtUtc is not null || existing.RevokedAtUtc is not null)
         {
-            await RevokeActiveSessionsAsync(existing.UserAccountId, nowUtc, cancellationToken);
+            await RevokeAllAccountSessionsAsync(
+                existing.UserAccountId,
+                nowUtc,
+                cancellationToken);
             return RefreshTokenRotationResult.Invalid;
         }
 
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
-
-        // ExecuteUpdate produces one SQL UPDATE with all validity conditions in its WHERE
-        // clause. This is stronger than changing the previously read entity: another request
-        // may have consumed it between SELECT and UPDATE.
         var consumedRows = await _db.RefreshTokenSessions
             .Where(session =>
                 session.Id == existing.Id
+                && session.AccountSessionId == existing.AccountSessionId
+                && _db.AccountSessions.Any(accountSession =>
+                    accountSession.Id == existing.AccountSessionId
+                    && accountSession.UserAccountId == existing.UserAccountId
+                    && accountSession.RevokedAtUtc == null)
                 && session.ConsumedAtUtc == null
                 && session.RevokedAtUtc == null
                 && session.ExpiresAtUtc > nowUtc)
@@ -111,24 +173,39 @@ public sealed class RefreshTokenService
                 cancellationToken);
         if (consumedRows != 1)
         {
-            await RevokeActiveSessionsAsync(existing.UserAccountId, nowUtc, cancellationToken);
+            await RevokeAllAccountSessionsAsync(
+                existing.UserAccountId,
+                nowUtc,
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return RefreshTokenRotationResult.Invalid;
         }
 
-        var replacement = CreateSession(
+        var replacement = CreateRefreshToken(
             existing.UserAccountId,
-            existing.UserAccount.SessionVersion);
+            existing.UserAccount.SessionVersion,
+            existing.AccountSessionId.Value);
         _db.RefreshTokenSessions.Add(replacement.Session);
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return RefreshTokenRotationResult.Succeeded(existing.UserAccount, replacement.Token);
+        if (!await IsAccountSessionActiveAsync(
+                existing.AccountSessionId.Value,
+                existing.UserAccountId,
+                cancellationToken))
+        {
+            return RefreshTokenRotationResult.Invalid;
+        }
+
+        return RefreshTokenRotationResult.Succeeded(
+            existing.UserAccount,
+            replacement.Token);
     }
 
     /// <summary>
-    /// Revokes a refresh session for logout. The operation intentionally does not reveal
-    /// whether the submitted secret existed, so callers always receive the same HTTP result.
+    /// Revokes the durable family selected by one active opaque token. Access and every refresh
+    /// token in that family stop together. A replayed consumed token keeps the stronger historical
+    /// behavior and invalidates all local families for the account.
     /// </summary>
     public async Task RevokeAsync(
         string? plaintextToken,
@@ -145,69 +222,211 @@ public sealed class RefreshTokenService
             .Where(session => session.TokenHash == tokenHash)
             .Select(session => new
             {
-                session.Id,
                 session.UserAccountId,
+                session.AccountSessionId,
                 session.ConsumedAtUtc
             })
             .SingleOrDefaultAsync(cancellationToken);
-        if (existing is null)
+        if (existing is null || existing.AccountSessionId is null)
         {
             return;
         }
 
         if (existing.ConsumedAtUtc is not null)
         {
-            // A consumed token should no longer be available to a legitimate client. Seeing
-            // it again is a replay signal, so invalidate any replacement/session still active.
-            await RevokeActiveSessionsAsync(existing.UserAccountId, nowUtc, cancellationToken);
+            await RevokeAllAccountSessionsAsync(
+                existing.UserAccountId,
+                nowUtc,
+                cancellationToken);
             return;
         }
 
-        await _db.RefreshTokenSessions
-            .Where(session => session.Id == existing.Id && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
-                cancellationToken);
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await RevokeAccountSessionAsync(
+            existing.AccountSessionId.Value,
+            existing.UserAccountId,
+            nowUtc,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
-    private (RefreshTokenSession Session, IssuedRefreshToken Token) CreateSession(
-        Guid accountId,
-        long sessionVersion)
+    private async Task<OidcRefreshTokenIssueResult> IssueOidcCoreAsync(
+        OidcAuthenticatedAccount authentication,
+        string sessionKeyHash,
+        bool retryAfterUniqueRace,
+        CancellationToken cancellationToken)
     {
-        // RandomNumberGenerator uses the operating system's cryptographic random source.
-        // Base64Url is safe in JSON and HTTP without '+' '/' or padding characters.
-        var plaintext = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(SecretByteCount));
+        var account = authentication.Account;
+        var identity = authentication.ExternalIdentity;
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var providerSession = await _db.OidcProviderSessions
+                .AsNoTracking()
+                .Include(candidate => candidate.AccountSession)
+                .SingleOrDefaultAsync(
+                    candidate => candidate.SessionKeyHash == sessionKeyHash,
+                    cancellationToken);
+
+            Guid accountSessionId;
+            if (providerSession is null)
+            {
+                var accountSession = CreateAccountSession(account);
+                accountSessionId = accountSession.Id;
+                _db.AccountSessions.Add(accountSession);
+                _db.OidcProviderSessions.Add(new OidcProviderSession
+                {
+                    Id = Guid.NewGuid(),
+                    SessionKeyHash = sessionKeyHash,
+                    ExternalIdentityId = identity.Id,
+                    AccountSessionId = accountSession.Id,
+                    UserAccountId = account.Id,
+                    TenantId = account.TenantId,
+                    CreatedAtUtc = accountSession.CreatedAtUtc
+                });
+            }
+            else if (providerSession.RevokedAtUtc is not null
+                || providerSession.AccountSession is null
+                || providerSession.AccountSessionId is null
+                || providerSession.ExternalIdentityId != identity.Id
+                || providerSession.UserAccountId != account.Id
+                || providerSession.TenantId != account.TenantId
+                || providerSession.AccountSession.UserAccountId != account.Id
+                || providerSession.AccountSession.TenantId != account.TenantId
+                || providerSession.AccountSession.RevokedAtUtc is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return OidcRefreshTokenIssueResult.Denied;
+            }
+            else
+            {
+                accountSessionId = providerSession.AccountSessionId.Value;
+            }
+
+            var refreshToken = StageRefreshToken(account, accountSessionId);
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            if (!await IsAccountSessionActiveAsync(
+                    accountSessionId,
+                    account.Id,
+                    cancellationToken))
+            {
+                return OidcRefreshTokenIssueResult.Denied;
+            }
+
+            return OidcRefreshTokenIssueResult.Succeeded(refreshToken);
+        }
+        catch (DbUpdateException) when (retryAfterUniqueRace)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            _db.ChangeTracker.Clear();
+            return await IssueOidcCoreAsync(
+                authentication,
+                sessionKeyHash,
+                retryAfterUniqueRace: false,
+                cancellationToken);
+        }
+    }
+
+    private AccountSession CreateAccountSession(UserAccount account) => new()
+    {
+        Id = Guid.NewGuid(),
+        UserAccountId = account.Id,
+        TenantId = account.TenantId,
+        CreatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime
+    };
+
+    private IssuedRefreshToken StageRefreshToken(
+        UserAccount account,
+        Guid accountSessionId)
+    {
+        var issued = CreateRefreshToken(
+            account.Id,
+            account.SessionVersion,
+            accountSessionId);
+        _db.RefreshTokenSessions.Add(issued.Session);
+        return issued.Token;
+    }
+
+    private (RefreshTokenSession Session, IssuedRefreshToken Token) CreateRefreshToken(
+        Guid accountId,
+        long sessionVersion,
+        Guid accountSessionId)
+    {
+        var plaintext = WebEncoders.Base64UrlEncode(
+            RandomNumberGenerator.GetBytes(SecretByteCount));
         var createdAt = _timeProvider.GetUtcNow();
         var expiresAt = createdAt.AddDays(_settings.RefreshTokenLifetimeDays);
         var session = new RefreshTokenSession
         {
             Id = Guid.NewGuid(),
             UserAccountId = accountId,
+            AccountSessionId = accountSessionId,
             SessionVersion = sessionVersion,
             TokenHash = HashToken(plaintext),
             CreatedAtUtc = createdAt.UtcDateTime,
             ExpiresAtUtc = expiresAt.UtcDateTime
         };
-        return (session, new IssuedRefreshToken(plaintext, expiresAt));
+        return (
+            session,
+            new IssuedRefreshToken(plaintext, expiresAt, accountSessionId));
     }
 
-    private async Task RevokeActiveSessionsAsync(
+    private async Task RevokeAccountSessionAsync(
+        Guid accountSessionId,
         Guid accountId,
         DateTime revokedAtUtc,
         CancellationToken cancellationToken)
     {
+        await _db.AccountSessions
+            .Where(session => session.Id == accountSessionId
+                && session.UserAccountId == accountId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
+                cancellationToken);
         await _db.RefreshTokenSessions
-            .Where(session =>
-                session.UserAccountId == accountId
-                && session.ConsumedAtUtc == null
-                && session.RevokedAtUtc == null
-                && session.ExpiresAtUtc > revokedAtUtc)
+            .Where(session => session.AccountSessionId == accountSessionId
+                && session.UserAccountId == accountId
+                && session.RevokedAtUtc == null)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
                 cancellationToken);
     }
 
-    private static bool TryHashSubmittedToken(string? plaintextToken, out string tokenHash)
+    private Task<bool> IsAccountSessionActiveAsync(
+        Guid accountSessionId,
+        Guid accountId,
+        CancellationToken cancellationToken) =>
+        _db.AccountSessions.AsNoTracking().AnyAsync(
+            session => session.Id == accountSessionId
+                && session.UserAccountId == accountId
+                && session.RevokedAtUtc == null,
+            cancellationToken);
+
+    private async Task RevokeAllAccountSessionsAsync(
+        Guid accountId,
+        DateTime revokedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await _db.AccountSessions
+            .Where(session => session.UserAccountId == accountId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
+                cancellationToken);
+        await _db.RefreshTokenSessions
+            .Where(session => session.UserAccountId == accountId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
+                cancellationToken);
+    }
+
+    private static bool TryHashSubmittedToken(
+        string? plaintextToken,
+        out string tokenHash)
     {
         tokenHash = "";
         if (string.IsNullOrWhiteSpace(plaintextToken)
@@ -224,10 +443,25 @@ public sealed class RefreshTokenService
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(plaintextToken)));
 }
 
-/// <summary>Plaintext refresh secret returned once together with its absolute expiry.</summary>
-public sealed record IssuedRefreshToken(string RefreshToken, DateTimeOffset ExpiresAtUtc);
+/// <summary>Plaintext refresh secret returned once together with its stable local family.</summary>
+public sealed record IssuedRefreshToken(
+    string RefreshToken,
+    DateTimeOffset ExpiresAtUtc,
+    Guid AccountSessionId);
 
-/// <summary>Internal result containing a verified account only after successful rotation.</summary>
+/// <summary>Result of establishing or reusing a validated OIDC session family.</summary>
+public sealed record OidcRefreshTokenIssueResult(IssuedRefreshToken? RefreshToken)
+{
+    public bool Issued => RefreshToken is not null;
+
+    public static OidcRefreshTokenIssueResult Denied { get; } =
+        new((IssuedRefreshToken?)null);
+
+    public static OidcRefreshTokenIssueResult Succeeded(IssuedRefreshToken refreshToken) =>
+        new(refreshToken);
+}
+
+/// <summary>Internal result containing verified account and stable family after rotation.</summary>
 public sealed record RefreshTokenRotationResult(
     UserAccount? Account,
     IssuedRefreshToken? RefreshToken)

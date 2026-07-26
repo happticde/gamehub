@@ -330,9 +330,9 @@ if (jwtSettings.IsEnabled)
 
                     var sessionValidation = context.HttpContext.RequestServices
                         .GetRequiredService<AccountSessionValidationService>();
-                    // Tokens issued before the session-epoch migration have no version claim.
-                    // They remain upgrade-compatible only while the durable version is still zero;
-                    // the first account-wide logout permanently invalidates them.
+                    // Restricted compatibility tokens issued before the session-epoch migration
+                    // map to epoch zero. Normal tokens additionally require the durable family
+                    // claim below and therefore fail closed across the session-family upgrade.
                     var versionClaim = principal?.FindFirstValue(GameHubClaimTypes.SessionVersion);
                     var tokenSessionVersion = 0L;
                     if (versionClaim is not null
@@ -347,10 +347,33 @@ if (jwtSettings.IsEnabled)
                         return;
                     }
 
+                    var accountSessionClaim = principal?.FindFirstValue(
+                        GameHubClaimTypes.AccountSessionId);
+                    Guid? accountSessionId = null;
+                    if (accountSessionClaim is not null)
+                    {
+                        if (!Guid.TryParse(accountSessionClaim, out var parsedSessionId)
+                            || parsedSessionId == Guid.Empty)
+                        {
+                            context.Fail("The access token has an invalid local session.");
+                            return;
+                        }
+
+                        accountSessionId = parsedSessionId;
+                    }
+                    else if (sessionPurpose is null)
+                    {
+                        // Deployment of the session-family migration intentionally invalidates
+                        // legacy normal JWTs that cannot be tied to a revocable local session.
+                        context.Fail("The access token has no durable local session.");
+                        return;
+                    }
+
                     if (!await sessionValidation.IsActiveAsync(
                             accountId,
                             tenantId,
                             tokenSessionVersion,
+                            accountSessionId,
                             context.HttpContext.RequestAborted))
                     {
                         context.Fail("The account session is unavailable or has been invalidated.");

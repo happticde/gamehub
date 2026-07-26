@@ -374,6 +374,7 @@ public sealed class OidcTokenValidator
             var issuer = principal.FindFirstValue(JwtRegisteredClaimNames.Iss);
             var subject = principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
             var nonce = principal.FindFirstValue("nonce");
+            var providerSessionId = principal.FindFirstValue("sid");
             // OIDC requires `azp` when more than one audience exists. If supplied for a single
             // audience, it must still identify this configured GameHub client.
             var audiences = principal.FindAll(JwtRegisteredClaimNames.Aud).Select(claim => claim.Value).ToArray();
@@ -384,6 +385,9 @@ public sealed class OidcTokenValidator
             if (!string.Equals(issuer, _settings.Issuer, StringComparison.Ordinal)
                 || string.IsNullOrWhiteSpace(subject)
                 || subject.Length > 255
+                || (providerSessionId is not null
+                    && (string.IsNullOrWhiteSpace(providerSessionId)
+                        || providerSessionId.Length > 512))
                 || !string.Equals(nonce, expectedNonce, StringComparison.Ordinal)
                 || !authorizedPartyIsValid)
             {
@@ -425,7 +429,8 @@ public sealed class OidcTokenValidator
                 _settings.Issuer,
                 subject,
                 principal.FindFirstValue(JwtRegisteredClaimNames.Email),
-                authenticatedAtUtc));
+                authenticatedAtUtc,
+                providerSessionId));
         }
         catch (SecurityTokenSignatureKeyNotFoundException)
         {
@@ -447,11 +452,15 @@ public sealed class OidcTokenValidator
 /// <param name="Issuer">Exact validated OIDC issuer.</param>
 /// <param name="Subject">Provider-stable subject scoped to that issuer.</param>
 /// <param name="Email">Optional untrusted-for-linking display claim.</param>
+/// <param name="ProviderSessionId">
+/// Optional opaque OIDC <c>sid</c> used only after validation to create a hashed local mapping.
+/// </param>
 public sealed record ValidatedOidcIdentity(
     string Issuer,
     string Subject,
     string? Email,
-    DateTimeOffset? AuthenticatedAtUtc = null);
+    DateTimeOffset? AuthenticatedAtUtc = null,
+    string? ProviderSessionId = null);
 
 /// <summary>Outcome category used to distinguish invalid input from provider availability.</summary>
 public enum OidcTokenValidationStatus

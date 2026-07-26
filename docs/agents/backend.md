@@ -77,11 +77,12 @@ Two ASP.NET Core microservices:
   mapping. Email and provider tenant/role claims never select an account. See ADR-011.
 - OIDC Back-Channel Logout: the public BFF accepts only one form-encoded `logout_token` and forwards
   it over the independent BFF service-key boundary. Core independently validates signature,
-  issuer, audience, algorithm, freshness, `jti`, event shape, optional exact type, and absent nonce,
-  then resolves only `(issuer, subject)`. Account-wide logout atomically advances the account
-  session epoch, revokes every refresh session, writes tenant-owned activity, and stores only a
-  short-lived hashed replay marker. Optional provider `sid` never selects or narrows ownership.
-  See ADR-015.
+  issuer, audience, algorithm, freshness, `jti`, event shape, optional exact type, absent nonce,
+  and standard `sub`/`sid` shape before using either identifier. Normal access JWTs and rotating
+  refresh rows share a durable `AccountSession`. An issuer-bound SHA-256 `sid` mapping revokes one
+  previously validated tenant-bound family; `sub` without `sid` advances the account epoch and
+  revokes all families. Both claims must map consistently. Hash-only tombstones order login/logout
+  races without allowing `sid` to select an account or tenant directly. See ADR-015.
 - OIDC provisioning: `Authentication:Oidc:ProvisioningMode` accepts only `Disabled` (default) or
   `PersonalTenantJit`. JIT requires active guarded mode and atomically creates a server-identified,
   sync-disabled tenant, `ExternalOidc` owner, exact mapping, refresh session, and secret-free

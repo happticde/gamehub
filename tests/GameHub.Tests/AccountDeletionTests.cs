@@ -195,7 +195,11 @@ public sealed class AccountDeletionTests : IDisposable
             new AccountServiceTests.FixedTimeProvider(FixedNow),
             NullLogger<OidcJitProvisioningService>.Instance);
         var reprovision = await jit.ProvisionAsync(
-            new ValidatedOidcIdentity(oidc.Issuer, "deleted-subject", null));
+            new ValidatedOidcIdentity(
+                oidc.Issuer,
+                "deleted-subject",
+                null,
+                ProviderSessionId: "deleted-provider-session"));
 
         Assert.False(reprovision.Succeeded);
         Assert.False(await _db.UserAccounts.AnyAsync(candidate => candidate.Id == accountId));

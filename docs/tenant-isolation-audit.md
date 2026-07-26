@@ -118,9 +118,11 @@ constraints.
 External deletion requires a fresh exact OIDC proof and produces only a deletion-purpose token
 accepted on one method and route. Completed deletion persists an issuer/subject tombstone before
 the live mapping cascades, so JIT cannot undo deletion. User-triggered RP-Initiated browser logout
-and account-wide Keycloak Back-Channel Logout are implemented. The latter resolves only the exact
-issuer/subject mapping, updates only its account epoch and refresh rows, and writes activity under
-that tenant scope. Per-provider-session `sid` and other provider lifecycle events remain separate.
+and provider-neutral Back-Channel Logout are implemented. A validated issuer-bound hashed `sid`
+reaches only its previously persisted tenant/account session mapping; `sub` without `sid` resolves
+the exact external identity and revokes every local family for that account. Inconsistent
+subject/session mappings are rejected and direct cross-tenant tests cover both paths. Other
+provider lifecycle events remain separate.
 
 ## Physical collection follow-up verification (2026-07-13)
 

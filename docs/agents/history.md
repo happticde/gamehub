@@ -1,5 +1,43 @@
 # Session History
 
+## Current Session Summary (2026-07-25)
+
+### What Changed
+
+**Provider-Neutral Session-Scoped OIDC Back-Channel Logout:**
+- Added durable tenant-bound `AccountSession` families shared by normal access JWTs and every
+  rotating refresh row. Refresh rotation stays inside the family; local revoke, password change,
+  revoke-all, account deletion, and subject-wide provider logout invalidate the appropriate family
+  or all families immediately.
+- Extended independent ID-token validation to project standard `sid` only after all existing OIDC
+  checks. Core stores only an issuer-bound SHA-256 session hash mapped through the exact validated
+  external identity; raw provider session IDs and subjects are not stored in session state or logs.
+- Extended Logout Token validation to standard `sub`, `sid`, or both. `sid` revokes one previously
+  mapped family, `sub` without `sid` remains account-wide, and inconsistent subject/session
+  mappings are rejected without cross-tenant effects.
+- Added hash-only provider-session tombstones and a unique first-writer boundary so parallel login
+  and logout cannot reopen a revoked session. Unknown, repeated, deleted, and already revoked
+  targets remain non-enumerating.
+- Added additive SQLite/PostgreSQL migrations. Upgrade revokes legacy refresh rows and bearer
+  validation rejects legacy normal access JWTs without a stable family claim, requiring fresh
+  login. Fresh and upgraded SQLite and real PostgreSQL schemas are covered.
+- Updated ADR-015, authentication architecture, authentication and Keycloak operations guides,
+  Roadmap, and agent context. Keycloak remains only a setup example; no provider API, plugin,
+  service account, provider-specific model, dependency, or credential was added.
+
+### Verification
+
+- Core builds with zero warnings and errors; the full .NET suite passes 426 tests.
+- Focused real PostgreSQL migration coverage passes all 9 tests, including fresh mapped-session
+  issuance and fail-closed upgrade behavior.
+- EF reports no pending model changes for the canonical migration snapshot.
+
+### Required Deployment Follow-up
+
+- Verify the deployed provider version, enable session-bearing Back-Channel Logout, save the
+  client, and sign in again before testing session-specific logout. GameHub never changes provider
+  configuration itself.
+
 ## Current Session Summary (2026-07-18)
 
 ### What Changed
@@ -17,15 +55,16 @@
 - Added additive SQLite/PostgreSQL migrations, protocol and cross-tenant tests, ADR-015, Keycloak
   client setup, architecture/runbook updates, and Roadmap lifecycle status.
 
-### Known State / Pending
+### Known State / Pending at This Historical Milestone
 
-- Logout is account-wide. Per-Keycloak-session `sid` mapping, disabled-user/provider events,
-  subject replacement, SCIM, and missed-event reconciliation remain separate future work.
+- On 2026-07-18 logout was account-wide. The 2026-07-25 session-family milestone above supersedes
+  that limitation with provider-neutral `sid` mapping. Disabled-user/provider events, subject
+  replacement, SCIM, and missed-event reconciliation remain separate future work.
 - Browser cookies cannot be physically deleted by a provider server-to-server call; their access
   and refresh credentials are unusable immediately and normal BFF failure handling clears them on
   the next request.
-- Encrypted and `sid`-only Logout Tokens are unsupported. The Keycloak client should use the signed
-  Back-Channel Logout profile and include the stable subject.
+- Encrypted Logout Tokens remain unsupported. The 2026-07-25 milestone above adds signed `sid`-only
+  Logout Token support.
 
 ## Current Session Summary (2026-07-17)
 

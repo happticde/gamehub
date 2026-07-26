@@ -1,127 +1,149 @@
-# ADR-015: OIDC Back-Channel Logout and Immediate Session Invalidation
+# ADR-015: OIDC Back-Channel Logout and Session-Family Invalidation
 
 **Date:** 2026-07-18
+**Updated:** 2026-07-25
 **Status:** Accepted
 **Deciders:** @jankahnt
 
 ## Context
 
-ADR-011 through ADR-013 authenticate one exact external `(issuer, subject)`, issue GameHub access
-JWTs, and persist rotating GameHub refresh sessions. RP-Initiated Logout revokes the browser's
-current refresh session and ends its provider SSO session, but it cannot receive a provider- or
-administrator-initiated logout.
+ADR-011 through ADR-013 authenticate one exact external `(issuer, subject)`, issue short-lived
+GameHub access JWTs, and persist rotating opaque refresh tokens. The first Back-Channel Logout
+implementation accepted only `sub` and invalidated every GameHub session for the account. That was
+safe, but it did not implement the final OpenID Connect Back-Channel Logout 1.0 session semantics.
 
-GameHub access JWTs were valid until expiry after signature validation and a live-account check.
-Revoking refresh sessions therefore prevented future rotation but did not immediately stop an
-already issued access JWT. A Keycloak administrator logout or Account Console logout could end the
-Keycloak session while leaving the independent GameHub session usable.
+The final specification permits `sub`, `sid`, or both. A `sid` represents one provider session and
+is unique only within its issuer. If `sid` is absent, `iss` plus `sub` means all RP sessions for
+that subject. GameHub therefore needs a durable local session family that survives refresh-token
+rotation and a provider-neutral mapping from a validated OIDC session to that local family.
 
 ## Decision
 
-### Public and internal request boundaries
+### Protocol and trust boundary
 
-The public Back-Channel Logout URI is:
+The public provider endpoint remains:
 
 ```text
 https://<gamehub-host>/api/auth/oidc/backchannel-logout
 ```
 
-Keycloak sends one `application/x-www-form-urlencoded` POST containing `logout_token`. The Next.js
-BFF accepts exactly one bounded string value, returns no response body, uses no browser cookies,
-and forwards the token to Core over the existing independent BFF service-key channel. Core remains
-the only component that validates provider proof, resolves identity ownership, or changes sessions.
+The Next.js BFF accepts exactly one bounded form-encoded `logout_token`, returns no response body,
+uses no browser cookies, and forwards the token through the independent BFF service-key boundary.
+Core is the only component that validates provider proof or changes session state.
 
-Core accepts only a signed compact Logout Token that satisfies the Back-Channel Logout profile:
+Core accepts only a signed compact Logout Token after checking:
 
 - exact configured issuer and GameHub client audience;
-- configured asymmetric signing algorithm and discovery/JWKS key;
-- a valid `iat` no older than five minutes, with at most one minute of future clock skew;
-- bounded `jti` and `sub` claims;
-- the `http://schemas.openid.net/event/backchannel-logout` event;
-- no `nonce` claim;
-- valid `azp` when present or required by multiple audiences; and
-- an absent `typ` or exact `typ=logout+jwt`; any other supplied type is rejected.
+- configured asymmetric signing algorithm and discovery/JWKS signing key;
+- `iat` no older than five minutes and no more than one minute in the future;
+- bounded `jti`, and bounded string values for any `sub` and `sid`;
+- `sub`, `sid`, or both, as required by the final specification;
+- the `http://schemas.openid.net/event/backchannel-logout` event with an object value;
+- no `nonce`;
+- valid `azp` when supplied or required by multiple audiences; and
+- absent `typ` or exact `typ=logout+jwt`.
 
-Invalid protocol messages return `400`; discovery/JWKS or Core availability failures return a
-retryable `503`; an accepted message returns `200`. Unknown, deleted, already logged-out, and
-repeated identities deliberately share the successful external response.
+No `sub` or `sid` is used until all checks above complete. Invalid protocol messages return `400`;
+discovery/JWKS or Core availability failures return retryable `503`; accepted unknown, already
+revoked, deleted, and repeated targets return the same bodyless `200`.
 
-Encrypted Logout Tokens are not supported. The configured provider must sign a compact JWS using
-the same asymmetric trust policy as GameHub ID tokens.
+Encrypted Logout Tokens remain unsupported. The provider must send a compact signed JWS under the
+same asymmetric discovery/JWKS trust policy as ID tokens.
 
-### Account-wide identity boundary
+### Durable local session family
 
-GameHub currently has one owner account per tenant and does not persist a Keycloak `sid` mapping to
-individual GameHub refresh sessions. This milestone therefore requires a validated `sub` and treats
-an optional `sid` as non-authoritative. A valid exact `(issuer, subject)` logout invalidates every
-GameHub session for that account across browsers and devices. It never accepts a tenant, account,
-email, group, role, organization, or subject from an unsigned request field.
+`AccountSession` is the stable, server-generated identity for one GameHub browser/device login.
+Every normal GameHub access JWT contains its signed `gamehub:account_session_id`. Every rotating
+`RefreshTokenSession` row references the same family. Refresh rotation consumes and replaces only
+the opaque refresh row; it does not replace or revoke the family and therefore does not
+accidentally invalidate existing access tokens.
 
-Session-specific `sid` logout would require a separately designed durable provider-session mapping.
-It must not be approximated by accepting `sid` as an account or tenant selector.
+Bearer validation checks the signed account, tenant, account epoch, and local session family
+against live database state. Revoking one family immediately invalidates both its access and
+refresh credentials. Account-wide password change, revoke-all, `sub`-only provider logout, and
+account deletion still advance the account epoch and revoke every family.
 
-### Immediate GameHub access invalidation
+### Provider-neutral `sid` mapping
 
-`UserAccount.SessionVersion` is a monotonic account session epoch. Every newly issued GameHub
-access JWT carries the signed `gamehub:session_version` claim. Normal bearer validation compares
-the signed account, tenant, and epoch with live database state.
+After Core fully validates an OIDC ID token, normal OIDC session issuance requires its `sid`.
+GameHub hashes the exact issuer and opaque `sid` with SHA-256 and stores only that issuer-bound
+hash. The row maps the exact validated `ExternalIdentity` and its tenant/account pair to one
+`AccountSession`. Raw provider session IDs, subjects, Logout Tokens, JWT IDs, account IDs, and
+tenant IDs are not logged.
 
-Each refresh-session row also captures the account epoch at issuance. Rotation requires an exact
-match with the current account epoch. This closes the race where a login loaded an account before
-logout but attempted to persist or use its refresh session after the logout transaction committed.
+The `sid` is never an account or tenant selector by itself. It can reach a local family only
+through this previously persisted, database-constrained mapping created during validated login.
+Local non-OIDC sessions have no provider-session mapping and remain valid when a different mapped
+OIDC family is logged out.
 
-Back-channel logout atomically:
+No provider SDK, administrator API, plugin, service account, provider-specific model, or long-lived
+provider credential is introduced. Keycloak is only one operator setup example.
 
-1. resolves the exact persisted external identity;
-2. increments the account session epoch;
-3. revokes all of the account's refresh sessions while the epoch prevents any stale in-flight
-   issuance from rotating later;
-4. writes a secret-free tenant-owned activity entry; and
-5. stores a short-lived replay marker.
+### Logout targeting
 
-This makes existing access JWTs unusable on their next Core request and prevents every refresh
-rotation. Browser cookies cannot be deleted through a server-to-server provider call, but they no
-longer authorize anything and the normal BFF refresh failure path clears them on the next request.
+- With `sid` (with or without `sub`), GameHub revokes only the mapped `AccountSession` and all of
+  its refresh rows.
+- With `sub` and no `sid`, GameHub resolves only the exact `(issuer, subject)` mapping, advances
+  that account's epoch, and revokes all local families and refresh rows.
+- With both claims, a known session mapping must reference the same exact external identity,
+  account, and tenant as `sub`. A disagreement returns `400` and changes neither side.
+- Unknown or already revoked targets are accepted no-ops and do not reveal whether a mapping,
+  account, tenant, or session exists.
 
-Upgrade compatibility is explicit: existing accounts start at epoch zero. Access JWTs issued by an
-older version have no epoch claim and are accepted only while the durable epoch is still zero. The
-first account-wide logout increments it and permanently invalidates those legacy tokens.
+### Replay, login/logout races, and deletion
 
-### Replay and audit behavior
+Core stores the SHA-256 hash of exact validated issuer plus `jti` as the existing short-lived replay
+marker. The provider-session table has a unique issuer-bound session hash. A valid logout for an
+unknown `sid` creates a revoked hash-only tombstone.
 
-Core hashes the exact validated issuer and `jti` with SHA-256 and stores only that hash. The unique
-database index makes concurrent duplicate delivery idempotent. Markers expire after ten minutes;
-the validator's five-minute `iat` window makes the original token unusable before cleanup. Raw
-Logout Tokens, subjects, JWT IDs, account IDs, tenant IDs, and provider claims are never logged.
+That unique row orders parallel first login and logout writers:
 
-The account epoch update, refresh revocation, tenant activity, and replay marker commit in one
-database transaction. SQLite and PostgreSQL enforce the same model.
+- if login commits first, logout retries against the committed mapping and revokes it;
+- if logout commits first, login observes the tombstone and cannot reopen the provider session;
+- repeated login for the same still-active provider session reuses the same local family; and
+- refresh rotation remains inside that family.
+
+Account deletion removes tenant/account/external-identity references from provider-session rows but
+retains their hash-only revoked tombstones. The separate deleted-subject tombstone continues to
+block JIT recreation.
+
+### Upgrade behavior
+
+The SQLite and PostgreSQL migrations are additive. Existing refresh rows have no trustworthy
+stable family reference, so the migration marks them revoked. Existing normal access JWTs have no
+`gamehub:account_session_id`, so bearer validation rejects them after deployment. This deliberately
+fails closed and requires a fresh login.
+
+Restricted link/deletion-purpose JWTs retain their exact route boundary and do not become normal
+library sessions. A new OIDC login succeeds only after the deployed provider supplies `sid`; the
+operator must enable session-bearing Back-Channel Logout and then sign in again to create the
+persisted mapping.
 
 ## Consequences
 
 ### Positive
 
-- Keycloak-initiated and administrative logout can terminate GameHub authorization without a
-  browser round trip.
-- Both access and refresh paths close together instead of relying on the access-token lifetime.
-- Exact identity mapping and tenant isolation remain unchanged.
-- Duplicate delivery is durable, safe, and non-enumerating.
-- No provider token or session material reaches browser JavaScript or `localStorage`.
+- One provider session can be terminated without signing the same account out on other devices.
+- `sub`-only logout retains the standard account-wide behavior.
+- Access and refresh credentials share one immediate local revocation boundary.
+- Refresh rotation does not invalidate access tokens in the same family.
+- Issuer/subject tenant authority and cross-tenant isolation remain unchanged.
+- Unknown, deleted, repeated, and already revoked targets stay non-enumerating.
+- The implementation is provider-neutral and trusts only standard claims plus discovery/JWKS.
 
 ### Costs and limitations
 
-- Logout is account-wide; one Keycloak session logout signs the account out on every GameHub
-  browser/device.
-- A valid `sub` is required even though the generic standard also permits `sid`-only messages.
-- Disabling/deleting a provider user is not treated as a logout unless Keycloak emits the normal
-  Back-Channel Logout request. Provider-event reconciliation remains future work.
-- Browser cookies remain physically present until the next request, though their server-side
-  authorization is immediately invalid.
+- Deployments must configure a provider that supports session-bearing Back-Channel Logout and must
+  create fresh GameHub sessions after upgrade.
+- Browser cookies cannot be physically deleted through a server-to-server call; their credentials
+  are unusable immediately and normal BFF failure handling clears them on the next request.
+- Disabling/deleting a provider user is not a logout unless the provider sends the standard Logout
+  Token. General provider lifecycle reconciliation remains separate work.
 - This does not add SCIM, subject replacement, unlinking, invitations, or general SaaS readiness.
 
 ## References
 
-- [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html)
+- [Final OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0-final.html)
 - [ADR-011: Production OIDC Authentication](011-production-oidc-authentication.md)
 - [ADR-012: Guarded Multi-User Enablement](012-guarded-multi-user-enablement.md)
 - [ADR-013: Personal-Tenant OIDC JIT Provisioning](013-personal-tenant-oidc-jit-provisioning.md)

@@ -201,7 +201,8 @@ minimum login/link presentation state needed for the current flow.
 - There is no public registration, account invitation, unlink, subject replacement,
   or general provider-event session revocation. RP-Initiated browser logout is implemented
   separately and does not change guarded admission or tenant state. ADR-015 later adds
-  account-wide Back-Channel Logout; optional personal-tenant JIT is governed by ADR-013.
+  session-specific `sid` and subject-wide `sub` Back-Channel Logout; optional personal-tenant JIT
+  is governed by ADR-013.
 - Switch deactivation does not immediately revoke already-issued GameHub sessions.
 - Operator API-key provisioning remains an administrative compatibility interface rather than a
   complete production admin console.

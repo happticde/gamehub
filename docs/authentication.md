@@ -117,13 +117,14 @@ authentication abuse controls. GameHub does not duplicate those flows and does n
 claim as account ownership. Provider recovery restores access only to the already linked stable
 issuer/subject identity; it cannot choose or change a GameHub tenant.
 
-The provider must offer HTTPS discovery/JWKS, nonce-bearing signed ID tokens, and the selected
-asymmetric algorithm. This release supports one issuer/client configuration, optional personal
-JIT, RP-Initiated browser logout, and account-wide Back-Channel Logout, but no unlink/subject
-replacement or general provider lifecycle synchronization. Provider outages fail closed for new
-login/link attempts; already-issued GameHub sessions retain their normal local expiry and
-revocation behavior unless a valid Back-Channel Logout advances their account epoch. A reverse
-proxy must
+The provider must offer HTTPS discovery/JWKS, nonce-bearing signed ID tokens with `sid` for normal
+session issuance, and the selected asymmetric algorithm. This release supports one issuer/client
+configuration, optional personal JIT, RP-Initiated browser logout, session-specific `sid`
+Back-Channel Logout, and account-wide `sub` Back-Channel Logout, but no unlink/subject replacement
+or general provider lifecycle synchronization. Provider outages fail closed for new login/link
+attempts; already-issued GameHub sessions retain their local expiry and revocation behavior unless
+a valid Back-Channel Logout revokes their family or advances their account epoch. A reverse proxy
+must
 preserve the external HTTPS scheme and host so the BFF can compare the callback to the registered
 redirect URI exactly. See ADR-011.
 
@@ -209,8 +210,9 @@ GameHub sessions issued before an enable/disable change retain ADR-011's normal 
 database live-account check, rotation, replay detection, and revocation behavior.
 
 The response also contains an opaque `refreshToken` and `refreshTokenExpiresAtUtc`. The access
-token is a readable, signed JWT carrying the trusted tenant claim; the refresh token contains
-only random bytes and is stored server-side as a SHA-256 hash.
+token is a readable, signed JWT carrying the trusted tenant claim and a server-generated local
+session-family reference; the refresh token contains only random bytes and is stored server-side
+as a SHA-256 hash. Neither identifier is an OIDC `sid`.
 
 ## Refresh a Session
 
@@ -225,7 +227,8 @@ Content-Type: application/json
 
 Every successful refresh returns a new access token and a new refresh token. The submitted
 refresh token is consumed and cannot be used again. Reusing it is treated as possible token
-theft and revokes the account's remaining active refresh sessions.
+theft and revokes the account's remaining active local sessions. Normal rotation keeps the same
+durable local session family, so access tokens already issued for that family remain valid.
 
 Refresh sessions expire after 30 days by default. Configure a value from 1–90 days with
 `GAMEHUB_JWT_REFRESH_TOKEN_DAYS`.
@@ -242,22 +245,24 @@ Content-Type: application/json
 ```
 
 Revocation returns `204 No Content` whether the token was active, expired, or unknown. Clients
-should always discard their local access and refresh tokens after this request.
+should always discard their local access and refresh tokens after this request. An active token
+revokes its complete durable family, so already-issued access JWTs and every refresh row in that
+same browser/device session stop together.
 
 ## Change the Password
 
 `PUT /api/auth/password` requires a bearer token and both the current and replacement password.
 The current password must verify, the new password must be 12–128 characters and different, and
-Core advances the account session epoch and revokes every refresh session in the same transaction
-as the password hash change.
+Core advances the account session epoch and revokes every local family and refresh row in the same
+transaction as the password hash change.
 
 ## Revoke Every Session
 
 `POST /api/auth/revoke-all` requires a bearer token and invalidates every access and refresh session
 for the signed account/tenant pair. Password changes and global revocation advance the durable
-session epoch and revoke refresh rows in one transaction, so earlier access JWTs fail their next
-live validation instead of waiting for expiry. The GameHub BFF clears both HttpOnly cookies after
-success.
+session epoch and revoke local families plus refresh rows in one transaction, so earlier access
+JWTs fail their next live validation instead of waiting for expiry. The GameHub BFF clears both
+HttpOnly cookies after success.
 
 ## Delete the Account and Tenant
 
@@ -323,7 +328,31 @@ on the exact configured callback origin. It accepts no browser redirect input an
 local `/login` when Core or provider logout is unavailable. Because GameHub stores no provider ID
 token, Keycloak may display a logout confirmation page.
 
-Register the exact public Back-Channel Logout URL described in the Keycloak guide. A valid signed
-message immediately invalidates every access and refresh session for the exact linked account.
-Disabled-user events and other provider lifecycle synchronization remain future work; when
-Keycloak does not emit a normal logout, use GameHub revoke-all or account deletion.
+### OIDC Back-Channel Logout
+
+Register the exact public Back-Channel Logout URL described in the provider guide. Core accepts
+standard signed Logout Tokens containing `sid`, `sub`, or both. A validated `sid` reaches only its
+previously persisted issuer-bound hash mapping and revokes one tenant-bound local family. `sub`
+without `sid` revokes every family for the exact linked account. If both claims are present, the
+subject and session mappings must agree.
+
+Deployment of the session-family migration intentionally revokes legacy refresh rows and rejects
+normal access JWTs that lack the new stable family claim. Users must sign in again. OIDC login also
+fails closed until the provider supplies `sid`; no provider claim, email, raw session ID, or request
+field can select a GameHub tenant.
+
+## REQUIRED MANUAL ACTION AFTER DEPLOYMENT
+
+GameHub does not and must not change provider configuration. For Keycloak, verify the exact controls
+against the deployed version, then complete all of these steps manually:
+
+1. Set **Front channel logout** to **Off**.
+2. Set **Backchannel logout URL** exactly, with no trailing slash, to
+   `https://<gamehub-host>/api/auth/oidc/backchannel-logout`.
+3. Set **Backchannel logout session required** to **On**.
+4. Save the client.
+5. Sign in to GameHub again so the new local session receives a persisted hashed `sid` mapping.
+6. Only then test session-specific logout.
+
+Disabled-user events and other provider lifecycle synchronization remain future work; when the
+provider does not emit a normal Logout Token, use GameHub revoke-all or account deletion.

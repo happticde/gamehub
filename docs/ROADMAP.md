@@ -346,15 +346,17 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 - **Access boundary**: Every authenticated subject of the exact configured issuer is eligible only
   when JIT is selected; Keycloak realm/client/authentication policy limits admission. Email, name,
   groups, roles, organizations, and tenant claims never select or link a GameHub tenant.
-- **Back-Channel Logout (2026-07-18)**: ADR-015 adds a public form-only BFF receiver and independent
-  Core validation for signed provider Logout Tokens. Exact issuer/subject resolution atomically
-  advances an account session epoch, revokes every refresh session, records secret-free tenant
-  activity, and persists only a short-lived hashed replay marker. Existing pre-upgrade JWTs remain
-  valid at epoch zero until the first account-wide invalidation. Duplicate, unknown, and deleted
-  identities are externally indistinguishable; cross-tenant revocation is directly tested.
+- **Back-Channel Logout (2026-07-18, session scope 2026-07-25)**: ADR-015 adds a public form-only
+  BFF receiver and independent Core validation for signed standard Logout Tokens. Durable local
+  session families bind access JWTs and rotating refresh rows. An issuer-bound hashed `sid`
+  mapping revokes only one previously validated family; `sub` without `sid` advances the exact
+  account epoch and revokes every family. Both claims must resolve consistently. Hashed tombstones
+  order login/logout races, while duplicate, unknown, deleted, and already revoked targets remain
+  externally indistinguishable. SQLite/PostgreSQL upgrades fail closed by revoking legacy sessions
+  without a stable family reference.
 - **Remaining scope**: Automated provider lifecycle integration, disabled-user events, subject
-  replacement recovery, SCIM/provider-event evaluation, missed-event reconciliation, and
-  per-provider-session `sid` mapping remain future work.
+  replacement recovery, SCIM/provider-event evaluation, and missed-event reconciliation remain
+  future work.
 - **Security boundary**: Provider email, groups, roles, organizations, and tenant-like claims remain
   untrusted unless a future ADR defines their exact authority. Provisioning must be idempotent,
   auditable, revocable, and covered by cross-tenant isolation and lifecycle tests.
@@ -382,7 +384,7 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
 |----------|----------------|------------------------|
 | **1 — Provider resilience** | Continue controlled validation for #16 and #17 | Epic, PSN, and GOG now have redacted contract-fixture baselines. Add only captured provider variants and controlled live-validation evidence before broadening behavior; do not add automatic credential replay. |
 | **2 — Controlled onboarding, if product direction requires it** | Implement #18 invitations | Choose this only when the deployment should onboard additional users without direct operator API calls. Preserve the existing default-off multi-user gate and exact identity-to-tenant mapping. |
-| **3 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT and account-wide Back-Channel Logout are complete. Disabled-user events, subject replacement, per-session `sid`, and reconciliation are separate hardening milestones. |
+| **3 — External identity lifecycle** | Continue the remaining #19 provider lifecycle work | Personal-tenant JIT plus provider-session and subject-wide Back-Channel Logout are complete. Disabled-user events, subject replacement, and reconciliation are separate hardening milestones. |
 | **4 — SaaS release gate** | Treat #20 as an umbrella program, not the next feature | Threat modeling, external review, recovery exercises, monitoring, privacy obligations, quotas, and operational ownership are required before any general SaaS claim. |
 
 The physical barcode/catalogue experiments in #13 remain unscheduled until usage permission,

@@ -27,7 +27,8 @@ public sealed class OidcJitProvisioningService(
         if (!oidcSettings.IsEnabled
             || oidcSettings.ProvisioningMode != OidcProvisioningMode.PersonalTenantJit
             || !multiUser.Mode.IsEnabled
-            || !string.Equals(identity.Issuer, oidcSettings.Issuer, StringComparison.Ordinal))
+            || !string.Equals(identity.Issuer, oidcSettings.Issuer, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(identity.ProviderSessionId))
         {
             return OidcJitProvisioningResult.Denied;
         }
@@ -85,7 +86,10 @@ public sealed class OidcJitProvisioningService(
             Message = "Personal tenant created through OIDC JIT provisioning.",
             Details = null
         });
-        var refreshToken = refreshTokens.StageIssue(account);
+        var refreshToken = refreshTokens.StageOidcIssue(
+            account,
+            mapping,
+            identity.ProviderSessionId!);
 
         try
         {
@@ -113,13 +117,18 @@ public sealed class OidcJitProvisioningService(
                 && winner.TenantId == winner.UserAccount.TenantId
                 && winner.UserAccount.Tenant.DeletionRequestedAtUtc is null)
             {
-                var winnerRefreshToken = await refreshTokens.IssueAsync(
-                    winner.UserAccount,
+                var winnerRefreshToken = await refreshTokens.IssueOidcAsync(
+                    new OidcAuthenticatedAccount(winner.UserAccount, winner),
+                    identity.ProviderSessionId!,
                     cancellationToken);
+                if (!winnerRefreshToken.Issued)
+                {
+                    return OidcJitProvisioningResult.Denied;
+                }
                 logger.LogInformation("OIDC JIT provisioning resolved a concurrent winner");
                 return OidcJitProvisioningResult.CreateSucceeded(
                     winner.UserAccount,
-                    winnerRefreshToken);
+                    winnerRefreshToken.RefreshToken!);
             }
 
             logger.LogWarning("OIDC JIT provisioning failed without committing partial data");

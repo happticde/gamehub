@@ -6,9 +6,8 @@ using Microsoft.EntityFrameworkCore;
 namespace GameHub.Core.Services;
 
 /// <summary>
-/// Applies one validated provider logout to the exact external identity mapping. The operation
-/// atomically advances the account session epoch, revokes every refresh session, records a
-/// tenant-owned activity entry, and stores a hashed replay marker.
+/// Applies a completely validated OIDC logout to either one previously mapped local session
+/// (<c>sid</c>) or every local session for an exact external identity (<c>sub</c> only).
 /// </summary>
 public sealed class OidcBackChannelLogoutService(
     CoreContext db,
@@ -19,116 +18,291 @@ public sealed class OidcBackChannelLogoutService(
     private static readonly TimeSpan ReplayMarkerLifetime = TimeSpan.FromMinutes(10);
 
     /// <summary>
-    /// Invalidates the account selected only by the validated issuer/subject pair. Unknown or
-    /// already deleted identities are successful no-ops so the endpoint cannot enumerate users.
+    /// Processes one provider message without exposing whether its identity or session exists.
+    /// When both standard claims are present, a known session must belong to the exact subject
+    /// mapping or the message is rejected without changing either account.
     /// </summary>
-    public async Task<OidcBackChannelLogoutResult> ProcessAsync(
+    public Task<OidcBackChannelLogoutResult> ProcessAsync(
         ValidatedOidcLogoutToken token,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(token);
-        var tokenHash = HashReplayIdentity(token.Issuer, token.JwtId);
+        return ProcessCoreAsync(token, retryAfterUniqueRace: true, cancellationToken);
+    }
+
+    private async Task<OidcBackChannelLogoutResult> ProcessCoreAsync(
+        ValidatedOidcLogoutToken token,
+        bool retryAfterUniqueRace,
+        CancellationToken cancellationToken)
+    {
+        var replayHash = HashReplayIdentity(token.Issuer, token.JwtId);
         if (await db.ProcessedOidcLogoutTokens.AsNoTracking().AnyAsync(
-                candidate => candidate.TokenHash == tokenHash,
+                candidate => candidate.TokenHash == replayHash,
                 cancellationToken))
         {
             return OidcBackChannelLogoutResult.AlreadyProcessed;
         }
 
+        var providerSessionHash = token.ProviderSessionId is null
+            ? null
+            : OidcProviderSessionKey.Hash(token.Issuer, token.ProviderSessionId);
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            // Expired markers can no longer be replayed through the validator's much shorter iat
-            // window. Opportunistic cleanup keeps storage bounded without another background job.
             await db.ProcessedOidcLogoutTokens
                 .Where(candidate => candidate.ExpiresAtUtc <= nowUtc)
                 .ExecuteDeleteAsync(cancellationToken);
 
+            var subjectMapping = token.Subject is null
+                ? null
+                : await db.ExternalIdentities.AsNoTracking()
+                    .Where(candidate => candidate.Issuer == token.Issuer
+                        && candidate.Subject == token.Subject
+                        && candidate.UserAccount != null
+                        && candidate.TenantId == candidate.UserAccount.TenantId)
+                    .Select(candidate => new LogoutIdentityMapping(
+                        candidate.Id,
+                        candidate.UserAccountId,
+                        candidate.TenantId))
+                    .SingleOrDefaultAsync(cancellationToken);
+
+            var providerSession = providerSessionHash is null
+                ? null
+                : await db.OidcProviderSessions.AsNoTracking()
+                    .Where(candidate => candidate.SessionKeyHash == providerSessionHash)
+                    .Select(candidate => new LogoutProviderSessionMapping(
+                        candidate.Id,
+                        candidate.ExternalIdentityId,
+                        candidate.AccountSessionId,
+                        candidate.UserAccountId,
+                        candidate.TenantId,
+                        candidate.RevokedAtUtc))
+                    .SingleOrDefaultAsync(cancellationToken);
+
+            if (token.Subject is not null
+                && providerSession is
+                {
+                    ExternalIdentityId: not null,
+                    AccountSessionId: not null,
+                    UserAccountId: not null,
+                    TenantId: not null
+                }
+                && (subjectMapping is null
+                    || providerSession.ExternalIdentityId != subjectMapping.ExternalIdentityId
+                    || providerSession.UserAccountId != subjectMapping.UserAccountId
+                    || providerSession.TenantId != subjectMapping.TenantId))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                logger.LogWarning(
+                    "Rejected OIDC Back-Channel Logout because subject and session mappings disagree");
+                return OidcBackChannelLogoutResult.SubjectSessionMismatch;
+            }
+
             db.ProcessedOidcLogoutTokens.Add(new ProcessedOidcLogoutToken
             {
                 Id = Guid.NewGuid(),
-                TokenHash = tokenHash,
+                TokenHash = replayHash,
                 ProcessedAtUtc = nowUtc,
                 ExpiresAtUtc = nowUtc.Add(ReplayMarkerLifetime)
             });
 
-            var mapping = await db.ExternalIdentities.AsNoTracking()
-                .Where(candidate => candidate.Issuer == token.Issuer
-                    && candidate.Subject == token.Subject
-                    && candidate.UserAccount != null
-                    && candidate.TenantId == candidate.UserAccount.TenantId)
-                .Select(candidate => new
-                {
-                    candidate.UserAccountId,
-                    candidate.TenantId
-                })
-                .SingleOrDefaultAsync(cancellationToken);
-
-            if (mapping is not null)
+            OidcBackChannelLogoutResult result;
+            if (providerSessionHash is not null)
             {
-                // The account epoch is checked during every ordinary bearer authentication.
-                // Incrementing it and revoking refresh rows in this transaction closes both the
-                // current access path and every future rotation path together.
-                var updatedAccounts = await db.UserAccounts
-                    .Where(account => account.Id == mapping.UserAccountId
-                        && account.TenantId == mapping.TenantId)
-                    .ExecuteUpdateAsync(
-                        setters => setters.SetProperty(
-                            account => account.SessionVersion,
-                            account => account.SessionVersion + 1),
-                        cancellationToken);
-                if (updatedAccounts == 1)
-                {
-                    await db.RefreshTokenSessions
-                        .Where(session => session.UserAccountId == mapping.UserAccountId
-                            && session.RevokedAtUtc == null)
-                        .ExecuteUpdateAsync(
-                            setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
-                            cancellationToken);
-
-                    using var tenantScope = tenantExecution.BeginScope(mapping.TenantId);
-                    db.ActivityLogs.Add(new ActivityLog
-                    {
-                        Timestamp = nowUtc,
-                        EventType = "OidcBackChannelLogout",
-                        Message = "All GameHub sessions were invalidated by the identity provider.",
-                        Details = null
-                    });
-                    await db.SaveChangesAsync(cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
-                    logger.LogInformation("Processed OIDC Back-Channel Logout for a mapped account");
-                    return OidcBackChannelLogoutResult.Invalidated;
-                }
+                result = await RevokeProviderSessionAsync(
+                    providerSessionHash,
+                    providerSession,
+                    nowUtc,
+                    cancellationToken);
+            }
+            else
+            {
+                result = await RevokeSubjectSessionsAsync(
+                    subjectMapping,
+                    nowUtc,
+                    cancellationToken);
             }
 
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            logger.LogInformation("Processed OIDC Back-Channel Logout without a live mapping");
-            return OidcBackChannelLogoutResult.NoLiveMapping;
+            logger.LogInformation("Processed OIDC Back-Channel Logout");
+            return result;
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException) when (retryAfterUniqueRace)
         {
             await transaction.RollbackAsync(CancellationToken.None);
             db.ChangeTracker.Clear();
             if (await db.ProcessedOidcLogoutTokens.AsNoTracking().AnyAsync(
-                    candidate => candidate.TokenHash == tokenHash,
+                    candidate => candidate.TokenHash == replayHash,
                     cancellationToken))
             {
                 return OidcBackChannelLogoutResult.AlreadyProcessed;
             }
-            throw;
+
+            // A validated login and logout can both be the first writer for one provider sid.
+            // The issuer-bound unique hash is their shared ordering authority: retry after the
+            // winner commits, then either revoke its mapping or observe its tombstone.
+            return await ProcessCoreAsync(
+                token,
+                retryAfterUniqueRace: false,
+                cancellationToken);
         }
+    }
+
+    private async Task<OidcBackChannelLogoutResult> RevokeProviderSessionAsync(
+        string providerSessionHash,
+        LogoutProviderSessionMapping? providerSession,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (providerSession is null)
+        {
+            // A valid unknown sid remains a successful non-enumerating no-op, but its tombstone
+            // closes a concurrent or later replayed ID-token login for the same provider session.
+            db.OidcProviderSessions.Add(new OidcProviderSession
+            {
+                Id = Guid.NewGuid(),
+                SessionKeyHash = providerSessionHash,
+                CreatedAtUtc = nowUtc,
+                RevokedAtUtc = nowUtc
+            });
+            return OidcBackChannelLogoutResult.NoLiveMapping;
+        }
+
+        if (providerSession.RevokedAtUtc is not null
+            || providerSession.AccountSessionId is null
+            || providerSession.UserAccountId is null
+            || providerSession.TenantId is null)
+        {
+            return OidcBackChannelLogoutResult.NoLiveMapping;
+        }
+
+        await db.OidcProviderSessions
+            .Where(candidate => candidate.Id == providerSession.Id
+                && candidate.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(candidate => candidate.RevokedAtUtc, nowUtc),
+                cancellationToken);
+        var revokedSessions = await db.AccountSessions
+            .Where(session => session.Id == providerSession.AccountSessionId
+                && session.UserAccountId == providerSession.UserAccountId
+                && session.TenantId == providerSession.TenantId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
+                cancellationToken);
+        await db.RefreshTokenSessions
+            .Where(session => session.AccountSessionId == providerSession.AccountSessionId
+                && session.UserAccountId == providerSession.UserAccountId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
+                cancellationToken);
+
+        if (revokedSessions != 1)
+        {
+            return OidcBackChannelLogoutResult.NoLiveMapping;
+        }
+
+        await AddActivityAsync(
+            providerSession.TenantId.Value,
+            nowUtc,
+            "One GameHub session was invalidated by the identity provider.",
+            cancellationToken);
+        return OidcBackChannelLogoutResult.SessionInvalidated;
+    }
+
+    private async Task<OidcBackChannelLogoutResult> RevokeSubjectSessionsAsync(
+        LogoutIdentityMapping? mapping,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (mapping is null)
+        {
+            return OidcBackChannelLogoutResult.NoLiveMapping;
+        }
+
+        var updatedAccounts = await db.UserAccounts
+            .Where(account => account.Id == mapping.UserAccountId
+                && account.TenantId == mapping.TenantId)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(
+                    account => account.SessionVersion,
+                    account => account.SessionVersion + 1),
+                cancellationToken);
+        if (updatedAccounts != 1)
+        {
+            return OidcBackChannelLogoutResult.NoLiveMapping;
+        }
+
+        await db.AccountSessions
+            .Where(session => session.UserAccountId == mapping.UserAccountId
+                && session.TenantId == mapping.TenantId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
+                cancellationToken);
+        await db.RefreshTokenSessions
+            .Where(session => session.UserAccountId == mapping.UserAccountId
+                && session.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
+                cancellationToken);
+
+        await AddActivityAsync(
+            mapping.TenantId,
+            nowUtc,
+            "All GameHub sessions were invalidated by the identity provider.",
+            cancellationToken);
+        return OidcBackChannelLogoutResult.AccountInvalidated;
+    }
+
+    private async Task AddActivityAsync(
+        Guid tenantId,
+        DateTime timestamp,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        using var tenantScope = tenantExecution.BeginScope(tenantId);
+        db.ActivityLogs.Add(new ActivityLog
+        {
+            Timestamp = timestamp,
+            EventType = "OidcBackChannelLogout",
+            Message = message,
+            Details = null
+        });
+        // Save while the trusted tenant execution scope is active. The surrounding DB
+        // transaction still commits or rolls back this row together with revocation state.
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private static string HashReplayIdentity(string issuer, string jwtId) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{issuer}\n{jwtId}")));
+
+    private sealed record LogoutIdentityMapping(
+        Guid ExternalIdentityId,
+        Guid UserAccountId,
+        Guid TenantId);
+
+    private sealed record LogoutProviderSessionMapping(
+        Guid Id,
+        Guid? ExternalIdentityId,
+        Guid? AccountSessionId,
+        Guid? UserAccountId,
+        Guid? TenantId,
+        DateTime? RevokedAtUtc);
 }
 
 /// <summary>Secret-free durable outcome categories for one accepted provider logout.</summary>
 public enum OidcBackChannelLogoutResult
 {
-    Invalidated,
+    SessionInvalidated,
+    AccountInvalidated,
+    // Compatibility name retained for callers/tests that described the original account-wide
+    // implementation before session-specific outcomes existed.
+    Invalidated = AccountInvalidated,
     AlreadyProcessed,
-    NoLiveMapping
+    NoLiveMapping,
+    SubjectSessionMismatch
 }

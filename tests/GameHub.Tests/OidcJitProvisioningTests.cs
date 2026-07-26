@@ -21,7 +21,11 @@ public sealed class OidcJitProvisioningTests
     public async Task ProvisionAsync_OidcOrProvisioningWithoutActiveGate_CreatesNothing()
     {
         await using var fixture = await TestFixture.CreateAsync();
-        var identity = new ValidatedOidcIdentity(Issuer, "subject-a", "shared@example.com");
+        var identity = new ValidatedOidcIdentity(
+            Issuer,
+            "subject-a",
+            "shared@example.com",
+            ProviderSessionId: "provider-session-a");
 
         var gateDisabled = await fixture.CreateService(multiUserEnabled: false).ProvisionAsync(identity);
         var provisioningDisabled = await fixture.CreateService(
@@ -43,7 +47,11 @@ public sealed class OidcJitProvisioningTests
         await using var fixture = await TestFixture.CreateAsync();
 
         var result = await fixture.CreateService().ProvisionAsync(
-            new ValidatedOidcIdentity(Issuer, "subject-a", null));
+            new ValidatedOidcIdentity(
+                Issuer,
+                "subject-a",
+                null,
+                ProviderSessionId: "provider-session-a"));
 
         Assert.True(result.Succeeded);
         var account = await fixture.Db.UserAccounts.Include(candidate => candidate.Tenant).SingleAsync();
@@ -69,9 +77,17 @@ public sealed class OidcJitProvisioningTests
         var service = fixture.CreateService();
 
         var first = await service.ProvisionAsync(
-            new ValidatedOidcIdentity(Issuer, "subject-a", "shared@example.com"));
+            new ValidatedOidcIdentity(
+                Issuer,
+                "subject-a",
+                "shared@example.com",
+                ProviderSessionId: "provider-session-a"));
         var second = await service.ProvisionAsync(
-            new ValidatedOidcIdentity(Issuer, "subject-b", "shared@example.com"));
+            new ValidatedOidcIdentity(
+                Issuer,
+                "subject-b",
+                "shared@example.com",
+                ProviderSessionId: "provider-session-b"));
 
         Assert.True(first.Succeeded);
         Assert.True(second.Succeeded);
@@ -95,7 +111,11 @@ public sealed class OidcJitProvisioningTests
         await fixture.Db.SaveChangesAsync();
 
         var result = await fixture.CreateService().ProvisionAsync(
-            new ValidatedOidcIdentity(Issuer, "deleted-subject", null));
+            new ValidatedOidcIdentity(
+                Issuer,
+                "deleted-subject",
+                null,
+                ProviderSessionId: "provider-session-deleted"));
 
         Assert.False(result.Succeeded);
         Assert.Empty(fixture.Db.UserAccounts);
@@ -107,7 +127,11 @@ public sealed class OidcJitProvisioningTests
     {
         await using var fixture = await TestFixture.CreateAsync();
         var provisioned = await fixture.CreateService().ProvisionAsync(
-            new ValidatedOidcIdentity(Issuer, "subject-a", "shared@example.com"));
+            new ValidatedOidcIdentity(
+                Issuer,
+                "subject-a",
+                "shared@example.com",
+                ProviderSessionId: "provider-session-a"));
         var accounts = new AccountService(
             fixture.Db,
             new PasswordHasher<UserAccount>(),
@@ -219,7 +243,8 @@ public sealed class OidcJitProvisioningTests
                         new ValidatedOidcIdentity(
                             Issuer,
                             "parallel-subject",
-                            "shared@example.com"));
+                            "shared@example.com",
+                            ProviderSessionId: "parallel-provider-session"));
                 }
             }
 

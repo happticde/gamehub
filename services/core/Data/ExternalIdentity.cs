@@ -42,4 +42,7 @@ public sealed class ExternalIdentity
 
     /// <summary>UTC timestamp of the latest successful OIDC login through this mapping.</summary>
     public DateTime? LastLoginAtUtc { get; set; }
+
+    /// <summary>Hashed provider sessions validated for this exact external identity.</summary>
+    public ICollection<OidcProviderSession> OidcProviderSessions { get; set; } = [];
 }

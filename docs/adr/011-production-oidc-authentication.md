@@ -103,9 +103,9 @@ cannot choose either redirect. Missing/invalid metadata, provider outages, or di
 back to local `/login` without preventing local cleanup or normal OIDC login.
 
 GameHub does not retain provider tokens for browser logout and sends no `id_token_hint`. ADR-015
-later adds independently validated, account-wide Back-Channel Logout with immediate GameHub access
-epoch and refresh-session invalidation. Broader provider event propagation and administrative
-lifecycle synchronization remain unsupported.
+later adds independently validated Back-Channel Logout: standard `sid` targets one durable local
+session family, while `sub` without `sid` advances the account epoch and invalidates every family.
+Broader provider event propagation and administrative lifecycle synchronization remain unsupported.
 
 ## Consequences
 
@@ -116,8 +116,9 @@ lifecycle synchronization remain unsupported.
 - Compromised or misleading email, role, organization, and tenant-like claims cannot redirect an
   identity to another library.
 - Provider outages and partial configuration have a defined fail-closed result.
-- Existing accounts, refresh sessions, default-tenant data, and libraries survive SQLite and
-  PostgreSQL upgrades.
+- Existing accounts, default-tenant data, and libraries survive SQLite and PostgreSQL upgrades.
+  ADR-015's later session-family upgrade deliberately revokes legacy sessions that lack a stable
+  family reference.
 
 ### Limitations
 
@@ -128,9 +129,8 @@ lifecycle synchronization remain unsupported.
 - Linking requires a current GameHub session. There is no unlink or subject-replacement endpoint;
   those operations need a separate reauthentication and recovery design.
 - RP-Initiated browser logout is implemented without provider-token storage. ADR-015 later adds
-  account-wide Back-Channel Logout without changing this login trust model. Per-provider-session
-  logout, other token revocation events, and administrative lifecycle synchronization remain
-  unimplemented.
+  provider-session and subject-wide Back-Channel Logout without changing this login trust model.
+  Other token revocation events and administrative lifecycle synchronization remain unimplemented.
 - The provider must be reachable over HTTPS and supply conforming discovery metadata and signed
   ID tokens with nonce support.
 
