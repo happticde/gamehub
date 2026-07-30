@@ -112,6 +112,24 @@ This management surface is completely provider- and Keycloak-independent. It doe
 provider name, `sid`, or other OIDC claims, does not call a provider, and neither stores nor returns
 raw provider session IDs, user agents, IP addresses, or inferred device data.
 
+### Browser convergence after remote revocation
+
+Back-Channel Logout and targeted session management cannot directly delete cookies in another
+browser. On each protected page navigation, the Next.js server therefore asks Core to authorize
+the current family through an existing authenticated endpoint. An exact `401` receives the one
+existing refresh attempt. Only refresh rejection, or another `401` after successful rotation,
+confirms that the browser's local GameHub session has ended.
+
+Confirmed server-rendered and browser-side failures converge on one fixed same-origin cleanup
+route. It expires all GameHub authentication cookies and returns a `303` to a fixed login notice.
+It accepts no redirect input, invokes neither Core nor a provider, and cannot start RP-Initiated
+Logout. Client Components receive only a BFF-owned one-bit response marker, never tokens or
+session claims, and use one guarded top-level navigation for parallel failures.
+
+Network errors and `403`, `404`, `429`, or `5xx` outcomes remain inconclusive and preserve cookies.
+Restricted OIDC-link and account-deletion tokens gain no route authorization. The family that
+revoked another family remains valid because Core continues to decide each family independently.
+
 ### Replay, login/logout races, and deletion
 
 Core stores the SHA-256 hash of exact validated issuer plus `jti` as the existing short-lived replay
@@ -160,7 +178,8 @@ persisted mapping.
 - Deployments must configure a provider that supports session-bearing Back-Channel Logout and must
   create fresh GameHub sessions after upgrade.
 - Browser cookies cannot be physically deleted through a server-to-server call; their credentials
-  are unusable immediately and normal BFF failure handling clears them on the next request.
+  are unusable immediately and the centralized BFF convergence clears them on the next protected
+  navigation or browser-side Core interaction.
 - Disabling/deleting a provider user is not a logout unless the provider sends the standard Logout
   Token. General provider lifecycle reconciliation remains separate work.
 - This does not add SCIM, subject replacement, unlinking, invitations, or general SaaS readiness.

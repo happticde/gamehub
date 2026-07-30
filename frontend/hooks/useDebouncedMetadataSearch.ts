@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createLatestRequestGate } from "@/lib/latest-request-gate";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type { ApiMessageResponse } from "@/types/api";
 import type { MetadataSearchResult } from "@/types/game";
 
@@ -40,7 +41,7 @@ export function useDebouncedMetadataSearch(query: string, enabled = true): Metad
             setPending(true);
 
             try {
-                const response = await fetch(
+                const response = await fetchAuthenticated(
                     `/api/core/library/enrichment/search?title=${encodeURIComponent(normalizedQuery)}&limit=10`,
                     { signal: controller.signal },
                 );

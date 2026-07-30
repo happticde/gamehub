@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type {
     CustomTagUpdateResponse,
     DeleteCustomTagResponse,
@@ -57,7 +58,7 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
         setHasError(false);
 
         try {
-            const response = await fetch(`/api/core/library/${gameId}/tags`, {
+            const response = await fetchAuthenticated(`/api/core/library/${gameId}/tags`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ tags: nextTags })
@@ -128,7 +129,7 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
         setHasError(false);
 
         try {
-            const response = await fetch(`/api/core/library/tags/${suggestion.id}`, {
+            const response = await fetchAuthenticated(`/api/core/library/tags/${suggestion.id}`, {
                 method: "DELETE"
             });
             const payload = await response.json().catch(() => null) as

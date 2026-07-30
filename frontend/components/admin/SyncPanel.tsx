@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Clock, Activity, CalendarClock, CheckCircle2, XCircle, Timer } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type { RetroactiveIgnoreResponse } from "@/types/api";
 import type { SyncAuditLog } from "@/types/game";
 
@@ -81,7 +82,7 @@ export function SyncPanel() {
         setError(null);
         try {
             // Client-side fetch goes through the Next.js proxy defined in next.config.ts
-            const res = await fetch("/api/core/library/sync-history?limit=100", {
+            const res = await fetchAuthenticated("/api/core/library/sync-history?limit=100", {
                 cache: "no-store",
             });
             if (!res.ok) {
@@ -99,7 +100,7 @@ export function SyncPanel() {
 
     const fetchStatus = useCallback(async () => {
         try {
-            const res = await fetch("/api/core/library/sync/status");
+            const res = await fetchAuthenticated("/api/core/library/sync/status");
             if (res.ok) {
                 const schedulerStatus: SyncSchedulerStatus = await res.json();
                 setStatus(schedulerStatus);
@@ -262,7 +263,7 @@ export function SyncPanel() {
                 <button 
                     onClick={async () => {
                         try {
-                            const res = await fetch("/api/core/library/retroactive-ignore", { method: "POST" });
+                            const res = await fetchAuthenticated("/api/core/library/retroactive-ignore", { method: "POST" });
                             if (res.ok) {
                                 const data: RetroactiveIgnoreResponse = await res.json();
                                 alert(`Success: Found and hid ${data.newlyIgnoredCount} games.`);

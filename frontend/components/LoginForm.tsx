@@ -13,6 +13,7 @@ interface LoginFormProps {
     oidcLinked: boolean;
     accountDeleted: boolean;
     accountDeletionPending: boolean;
+    sessionEnded: boolean;
     multiUserEnabled: boolean;
 }
 
@@ -28,6 +29,7 @@ export function LoginForm({
     oidcLinked,
     accountDeleted,
     accountDeletionPending,
+    sessionEnded,
     multiUserEnabled,
 }: LoginFormProps) {
     const router = useRouter();
@@ -101,6 +103,14 @@ export function LoginForm({
             {oidcLinked && (
                 <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground">
                     Identity linked. Provider sign-in is available when the operator admits this tenant.
+                </div>
+            )}
+            {sessionEnded && (
+                <div
+                    role="status"
+                    className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground"
+                >
+                    Diese GameHub-Sitzung wurde beendet. Bitte melde dich erneut an.
                 </div>
             )}
             {accountDeleted && (

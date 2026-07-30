@@ -11,7 +11,7 @@ import CustomTagEditor from "@/components/library/CustomTagEditor";
 import SplitPlatformItemDialog from "@/components/library/SplitPlatformItemDialog";
 import MergeGameDialog from "@/components/library/MergeGameDialog";
 import PhysicalCollection from "@/components/library/PhysicalCollection";
-import { fetchCoreApi } from "@/lib/core-api";
+import { fetchCoreApi, rethrowCoreApiNavigation } from "@/lib/core-api";
 import { getErrorMessage } from "@/lib/errors";
 
 // Extended payload type for the game detail view
@@ -82,6 +82,7 @@ export default async function GameDetailPage({
             availableTags = await tagsRes.json();
         }
     } catch (caughtError: unknown) {
+        rethrowCoreApiNavigation(caughtError);
         error = getErrorMessage(caughtError, "An unexpected error occurred.");
         console.error("Fetch Game Detail Error:", error);
     }

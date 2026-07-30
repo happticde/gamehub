@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/errors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type { ApiMessageResponse } from "@/types/api";
 import type { Platform } from "@/types/game";
 
@@ -52,7 +53,7 @@ export default function SplitPlatformItemDialog({
         setError(null);
 
         try {
-            const response = await fetch("/api/core/library/split", {
+            const response = await fetchAuthenticated("/api/core/library/split", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ libraryItemId }),

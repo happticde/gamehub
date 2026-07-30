@@ -4,6 +4,28 @@
 
 ### What Changed
 
+**Browser Convergence for Remotely Revoked Sessions:**
+- Added a live Core family check for protected page navigation while preserving exactly one refresh
+  attempt. A final `401` now reaches one fixed same-origin cleanup route before Server Components
+  can render ordinary Core/Docker error cards.
+- Added one shared browser fetch boundary for Core-backed Client Components, Admin tabs,
+  background refreshes, and user actions. Only a BFF-owned final-`401` marker starts a guarded
+  top-level navigation; parallel responses converge on the same destination.
+- The cleanup route only expires GameHub HttpOnly authentication cookies and returns a `303` to a
+  neutral login notice. It accepts no redirect input and performs no Core revocation, provider API,
+  Keycloak, or RP-Initiated Logout operation.
+- Refresh/network failures and `403`, `404`, `429`, and `5xx` responses retain their existing safe
+  error handling and never become false ended-session signals. Restricted-purpose token boundaries,
+  tenant selection, and the still-active family that revoked another family remain unchanged.
+
+### Verification
+
+- Frontend security passes 70 tests. Repository-wide lint and the Next.js production build pass.
+
+## Current Session Summary (2026-07-30)
+
+### What Changed
+
 **Provider-Neutral Active Session Management:**
 - Added authenticated list, targeted revoke, and revoke-other Core routes for durable local
   `AccountSession` families. Responses contain only the stable local session ID, creation time, and

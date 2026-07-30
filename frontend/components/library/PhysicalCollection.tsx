@@ -31,6 +31,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/errors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type { ApiMessageResponse } from "@/types/api";
 import type { PhysicalGameCopy, PhysicalGamePlatform } from "@/types/game";
 
@@ -66,7 +67,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
         setPendingAction("add");
         setAddError(null);
         try {
-            const response = await fetch(`/api/core/library/${gameId}/physical-copies`, {
+            const response = await fetchAuthenticated(`/api/core/library/${gameId}/physical-copies`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -107,7 +108,7 @@ export default function PhysicalCollection({ gameId, initialCopies }: PhysicalCo
         setPendingAction("remove");
         setRemoveError(null);
         try {
-            const response = await fetch(
+            const response = await fetchAuthenticated(
                 `/api/core/library/${gameId}/physical-copies/${copyToRemove.id}`,
                 { method: "DELETE" },
             );

@@ -20,6 +20,7 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 
 interface LibraryFiltersProps {
     availableTags: string[];
@@ -203,7 +204,7 @@ export default function LibraryFilters({ availableTags, availableDevelopers, ava
             params.delete("sortOrder");
             params.delete("page");
             
-            const res = await fetch(`/api/core/library/random?${params.toString()}`);
+            const res = await fetchAuthenticated(`/api/core/library/random?${params.toString()}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.id) {

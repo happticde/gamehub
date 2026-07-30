@@ -169,6 +169,13 @@ Read the implementation in this order:
     - Apply one shared transactional revocation boundary to the family, refresh rows, and optional
       local OIDC mapping.
     - Keep all browser requests on the same-origin BFF without exposing tokens or provider state.
+16. [`frontend/proxy.ts`](../frontend/proxy.ts),
+    [`frontend/lib/authenticated-fetch.ts`](../frontend/lib/authenticated-fetch.ts), and
+    [`frontend/app/api/auth/session-ended/route.ts`](../frontend/app/api/auth/session-ended/route.ts)
+    - Live-check protected navigation and preserve the existing one-refresh boundary.
+    - Convert only a final BFF-confirmed `401` into one top-level browser navigation.
+    - Expire GameHub cookies at one idempotent same-origin route with a fixed login destination and
+      no provider call, redirect input, browser token, or non-401 classification.
 
 ## 5. Configuration flows through two servers
 

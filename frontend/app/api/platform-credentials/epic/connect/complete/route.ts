@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import {
     ACCESS_TOKEN_COOKIE,
     REFRESH_TOKEN_COOKIE,
-    clearAuthCookies,
+    createAuthenticationUnavailableResponse,
+    createSessionEndedApiResponse,
     getCoreApiUrl,
     isFrontendAuthEnabled,
     rotateRefreshToken,
@@ -65,36 +66,59 @@ async function storeEpicCredential(
     let accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
     const refreshToken = request.cookies.get(REFRESH_TOKEN_COOKIE)?.value;
     let rotatedTokens: CoreTokenResponse | null = null;
+    let refreshAttempted = false;
 
     if (isFrontendAuthEnabled()) {
         if (!accessToken && refreshToken) {
-            rotatedTokens = await rotateRefreshToken(refreshToken);
-            accessToken = rotatedTokens?.accessToken;
+            refreshAttempted = true;
+            const rotation = await rotateRefreshToken(refreshToken);
+            if (rotation.kind === "rotated") {
+                rotatedTokens = rotation.tokens;
+                accessToken = rotation.tokens.accessToken;
+            } else if (rotation.kind === "unavailable") {
+                return createAuthenticationUnavailableResponse(rotation.status);
+            } else {
+                return createSessionEndedApiResponse();
+            }
         }
         if (!accessToken) {
-            const response = NextResponse.json(
-                { code: "authentication_required", message: "Sign in is required." },
-                { status: 401 },
-            );
-            clearAuthCookies(response);
-            return response;
+            return createSessionEndedApiResponse();
         }
     }
 
-    let upstream = await sendCredentialToCore(accessToken, authorizationCode);
-    if (upstream.status === 401 && refreshToken && !rotatedTokens) {
-        rotatedTokens = await rotateRefreshToken(refreshToken);
-        if (rotatedTokens) {
-            accessToken = rotatedTokens.accessToken;
-            upstream = await sendCredentialToCore(accessToken, authorizationCode);
+    let upstream: Response;
+    try {
+        upstream = await sendCredentialToCore(accessToken, authorizationCode);
+    } catch {
+        const response = createAuthenticationUnavailableResponse(503);
+        if (rotatedTokens) setAuthCookies(response, rotatedTokens);
+        return response;
+    }
+
+    if (upstream.status === 401 && refreshToken && !refreshAttempted) {
+        const rotation = await rotateRefreshToken(refreshToken);
+        if (rotation.kind === "rotated") {
+            rotatedTokens = rotation.tokens;
+            accessToken = rotation.tokens.accessToken;
+            try {
+                upstream = await sendCredentialToCore(accessToken, authorizationCode);
+            } catch {
+                const response = createAuthenticationUnavailableResponse(503);
+                setAuthCookies(response, rotatedTokens);
+                return response;
+            }
+        } else if (rotation.kind === "unavailable") {
+            return createAuthenticationUnavailableResponse(rotation.status);
+        } else {
+            return createSessionEndedApiResponse();
         }
     }
+
+    if (upstream.status === 401) return createSessionEndedApiResponse();
 
     const response = await copyCoreJsonResponse(upstream);
     if (rotatedTokens) {
         setAuthCookies(response, rotatedTokens);
-    } else if (upstream.status === 401) {
-        clearAuthCookies(response);
     }
     return response;
 }

@@ -336,6 +336,27 @@ rotates the refresh token without exposing either secret to React or `localStora
 Opening a protected page without a valid session redirects to `/login`. The navigation's sign-
 out action revokes the current refresh session and deletes both cookies.
 
+Protected navigation does not infer validity from the access-cookie expiry alone. The Next.js
+server performs a live Core check using the existing authenticated session endpoint. If Core
+returns `401`, the BFF performs the same one allowed refresh rotation before treating the local
+browser session as ended. A successful refresh is forwarded into the current Server Component
+request and persisted as rotated HttpOnly cookies.
+
+When access plus refresh still produce `401`, every server-rendered and browser-side Core path
+converges on `GET /api/auth/session-ended`. That idempotent same-origin route accepts no redirect
+or provider input, calls neither Core nor the identity provider, expires all GameHub authentication
+cookies, and returns a `303` to the fixed `/login?sessionEnded=true` destination. Client Components
+react only to an internal BFF response marker on that final `401` and use one guarded top-level
+navigation, so parallel background requests cannot create competing redirects or render ordinary
+Core/Docker error UI first.
+
+Network failures, refresh-service failures, and Core `403`, `404`, `429`, or `5xx` responses do not
+carry the marker and do not clear cookies. Their existing safe infrastructure or action-specific
+error states remain visible. The login page and all `/api/auth/*` routes are outside browser Core
+response interception. This convergence performs local GameHub cleanup only and never initiates
+RP-Initiated Logout, contacts a provider, exposes tokens to JavaScript, or changes the still-active
+session that revoked another family.
+
 The default Compose deployment uses plain HTTP and therefore sets
 `GAMEHUB_AUTH_COOKIE_SECURE=false`. Set it to `true` whenever a reverse proxy serves the frontend
 to browsers over HTTPS; browsers intentionally reject Secure cookies over plain HTTP.

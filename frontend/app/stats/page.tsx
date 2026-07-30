@@ -27,6 +27,7 @@ import {
     PlayCircle,
 } from "lucide-react";
 import type { LibraryStats } from "@/types/game";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import { getErrorMessage } from "@/lib/errors";
 
 /** Maps a platform name to a distinct hex color for chart bars */
@@ -48,7 +49,7 @@ export default function StatsPage() {
     useEffect(() => {
         async function fetchStats() {
             try {
-                const res = await fetch("/api/core/library/stats");
+                const res = await fetchAuthenticated("/api/core/library/stats");
                 if (!res.ok) {
                     setError(`Failed to load stats (Status ${res.status})`);
                     return;

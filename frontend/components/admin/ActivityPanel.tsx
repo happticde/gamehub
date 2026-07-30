@@ -24,6 +24,7 @@ import {
     Activity,
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 
 /** Shape of a single activity log entry from the API. */
 interface ActivityEntry {
@@ -110,7 +111,7 @@ export function ActivityPanel() {
 
     const fetchActivity = useCallback(async () => {
         try {
-            const res = await fetch("/api/core/activity");
+            const res = await fetchAuthenticated("/api/core/activity");
             if (!res.ok) {
                 setError(`Failed to fetch activity (Status ${res.status})`);
                 return;
