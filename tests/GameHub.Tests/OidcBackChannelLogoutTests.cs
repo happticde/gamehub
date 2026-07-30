@@ -320,11 +320,50 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
         var tombstone = await _db.OidcProviderSessions.SingleAsync();
         Assert.Null(tombstone.AccountSessionId);
         Assert.NotNull(tombstone.RevokedAtUtc);
+        Assert.NotNull(tombstone.ReissueBlockedAtUtc);
         Assert.Equal(64, tombstone.SessionKeyHash.Length);
         Assert.DoesNotContain(
             "unknown-provider-session",
             tombstone.SessionKeyHash,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_LocallyRevokedSid_BecomesPermanentProviderTombstone()
+    {
+        var (accountA, _) = await CreateLinkedAccountsAsync();
+        var original = await CreateOidcSessionAsync(
+            accountA,
+            "subject-a",
+            "provider-session-a");
+        await new AccountSessionManagementService(_db, _time).RevokeAsync(
+            accountA.Id,
+            accountA.TenantId,
+            original.AccountSessionId);
+
+        var result = await CreateLogoutService().ProcessAsync(
+            new ValidatedOidcLogoutToken(
+                Issuer,
+                Subject: null,
+                "provider-after-local-event",
+                FixedNow,
+                "provider-session-a"));
+
+        Assert.Equal(OidcBackChannelLogoutResult.NoLiveMapping, result);
+        var providerState = await _db.OidcProviderSessions.AsNoTracking().SingleAsync();
+        Assert.NotNull(providerState.RevokedAtUtc);
+        Assert.NotNull(providerState.ReissueBlockedAtUtc);
+
+        var authentication = await new ExternalIdentityService(_db, _time)
+            .AuthenticateForSessionAsync(new ValidatedOidcIdentity(
+                Issuer,
+                "subject-a",
+                null,
+                ProviderSessionId: "provider-session-a"));
+        Assert.NotNull(authentication);
+        Assert.False((await _refreshTokens.IssueOidcAsync(
+            authentication!,
+            "provider-session-a")).Issued);
     }
 
     [Fact]
@@ -416,6 +455,126 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
                     verification,
                     AccountServiceTests.CreateJwtSettings(),
                     _time).RotateAsync(refreshToken.RefreshToken)).Rotated);
+            }
+        }
+        finally
+        {
+            if (File.Exists(databasePath))
+            {
+                File.Delete(databasePath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ReloginAndSidLogout_ParallelWriters_CannotReopenLocallyRevokedSession()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"gamehub-oidc-relogin-logout-race-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath};Default Timeout=30";
+        try
+        {
+            await using (var setup = CreateFileContext(connectionString, out _))
+            {
+                await setup.Database.MigrateAsync();
+                var accounts = new AccountService(
+                    setup,
+                    new PasswordHasher<UserAccount>(),
+                    _time);
+                var account = (await accounts.BootstrapAsync(
+                    TenantDefaults.DefaultTenantId,
+                    "relogin-race@example.com",
+                    Password,
+                    "Relogin Race")).Account!;
+                var identities = new ExternalIdentityService(setup, _time);
+                Assert.Equal(
+                    ExternalIdentityLinkResult.Linked,
+                    await identities.LinkAsync(
+                        account.Id,
+                        account.TenantId,
+                        new ValidatedOidcIdentity(Issuer, "relogin-race-subject", null)));
+                var authentication = await identities.AuthenticateForSessionAsync(
+                    new ValidatedOidcIdentity(
+                        Issuer,
+                        "relogin-race-subject",
+                        null,
+                        ProviderSessionId: "relogin-race-provider-session"));
+                Assert.NotNull(authentication);
+                var original = await new RefreshTokenService(
+                    setup,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).IssueOidcAsync(
+                    authentication!,
+                    "relogin-race-provider-session");
+                Assert.True(original.Issued);
+                await new AccountSessionManagementService(setup, _time).RevokeAsync(
+                    account.Id,
+                    account.TenantId,
+                    original.RefreshToken!.AccountSessionId);
+            }
+
+            var start = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            async Task<OidcRefreshTokenIssueResult> ReloginAsync()
+            {
+                await using var loginDb = CreateFileContext(connectionString, out _);
+                var mapping = await loginDb.ExternalIdentities
+                    .Include(identity => identity.UserAccount)
+                    .SingleAsync();
+                await start.Task;
+                return await new RefreshTokenService(
+                    loginDb,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).IssueOidcAsync(
+                    new OidcAuthenticatedAccount(mapping.UserAccount!, mapping),
+                    "relogin-race-provider-session");
+            }
+
+            async Task<OidcBackChannelLogoutResult> LogoutAsync()
+            {
+                await using var logoutDb = CreateFileContext(
+                    connectionString,
+                    out var execution);
+                await start.Task;
+                return await new OidcBackChannelLogoutService(
+                    logoutDb,
+                    execution,
+                    _time,
+                    NullLogger<OidcBackChannelLogoutService>.Instance).ProcessAsync(
+                    new ValidatedOidcLogoutToken(
+                        Issuer,
+                        Subject: null,
+                        "relogin-race-logout-event",
+                        FixedNow,
+                        "relogin-race-provider-session"));
+            }
+
+            var loginTask = ReloginAsync();
+            var logoutTask = LogoutAsync();
+            start.SetResult();
+            await Task.WhenAll(loginTask, logoutTask);
+            var loginResult = await loginTask;
+            Assert.NotEqual(
+                OidcBackChannelLogoutResult.SubjectSessionMismatch,
+                await logoutTask);
+
+            await using var verification = CreateFileContext(connectionString, out _);
+            var providerState = await verification.OidcProviderSessions.SingleAsync();
+            Assert.NotNull(providerState.RevokedAtUtc);
+            Assert.NotNull(providerState.ReissueBlockedAtUtc);
+            Assert.All(
+                await verification.AccountSessions.ToListAsync(),
+                session => Assert.NotNull(session.RevokedAtUtc));
+            Assert.All(
+                await verification.RefreshTokenSessions.ToListAsync(),
+                session => Assert.NotNull(session.RevokedAtUtc));
+            if (loginResult.RefreshToken is { } replacement)
+            {
+                Assert.False((await new RefreshTokenService(
+                    verification,
+                    AccountServiceTests.CreateJwtSettings(),
+                    _time).RotateAsync(replacement.RefreshToken)).Rotated);
             }
         }
         finally
@@ -596,6 +755,62 @@ public sealed class OidcBackChannelLogoutTests : IDisposable
             ExpiresAtUtc = FixedNow.AddMinutes(10).UtcDateTime
         });
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Migration_SqliteHistoricalRevocation_RemainsProviderBlocked()
+    {
+        await using var connection =
+            new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseSqlite(connection)
+            .ConfigureWarnings(warnings =>
+                warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new DefaultTenantContext());
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260725084924_AddOidcSessionFamiliesPostgres");
+
+        var accountId = Guid.NewGuid();
+        var identityId = Guid.NewGuid();
+        var accountSessionId = Guid.NewGuid();
+        var providerSessionId = Guid.NewGuid();
+        var revokedAtUtc = FixedNow.UtcDateTime;
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "UserAccounts"
+                ("Id", "TenantId", "AccountType", "Email", "NormalizedEmail", "DisplayName",
+                 "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
+            VALUES
+                ({accountId}, {TenantDefaults.DefaultTenantId}, {0}, {"legacy-oidc@example.com"},
+                 {"LEGACY-OIDC@EXAMPLE.COM"}, {"Legacy OIDC"}, {"preserved-hash"},
+                 {FixedNow.UtcDateTime}, NULL);
+            INSERT INTO "ExternalIdentities"
+                ("Id", "Issuer", "Subject", "UserAccountId", "TenantId", "CreatedAtUtc",
+                 "LastLoginAtUtc")
+            VALUES
+                ({identityId}, {Issuer}, {"legacy-subject"}, {accountId},
+                 {TenantDefaults.DefaultTenantId}, {FixedNow.UtcDateTime}, NULL);
+            INSERT INTO "AccountSessions"
+                ("Id", "UserAccountId", "TenantId", "CreatedAtUtc", "RevokedAtUtc")
+            VALUES
+                ({accountSessionId}, {accountId}, {TenantDefaults.DefaultTenantId},
+                 {FixedNow.UtcDateTime}, {revokedAtUtc});
+            INSERT INTO "OidcProviderSessions"
+                ("Id", "SessionKeyHash", "ExternalIdentityId", "AccountSessionId",
+                 "UserAccountId", "TenantId", "CreatedAtUtc", "RevokedAtUtc")
+            VALUES
+                ({providerSessionId}, {new string('D', 64)}, {identityId}, {accountSessionId},
+                 {accountId}, {TenantDefaults.DefaultTenantId}, {FixedNow.UtcDateTime},
+                 {revokedAtUtc});
+            """);
+
+        await migrator.MigrateAsync();
+        db.ChangeTracker.Clear();
+
+        var providerSession = await db.OidcProviderSessions.SingleAsync();
+        Assert.Equal(revokedAtUtc, providerSession.RevokedAtUtc);
+        Assert.Equal(revokedAtUtc, providerSession.ReissueBlockedAtUtc);
     }
 
     private OidcBackChannelLogoutService CreateLogoutService() => new(

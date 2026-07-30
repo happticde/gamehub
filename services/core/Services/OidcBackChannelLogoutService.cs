@@ -77,7 +77,7 @@ public sealed class OidcBackChannelLogoutService(
                         candidate.AccountSessionId,
                         candidate.UserAccountId,
                         candidate.TenantId,
-                        candidate.RevokedAtUtc))
+                        candidate.ReissueBlockedAtUtc))
                     .SingleOrDefaultAsync(cancellationToken);
 
             if (token.Subject is not null
@@ -165,12 +165,13 @@ public sealed class OidcBackChannelLogoutService(
                 Id = Guid.NewGuid(),
                 SessionKeyHash = providerSessionHash,
                 CreatedAtUtc = nowUtc,
-                RevokedAtUtc = nowUtc
+                RevokedAtUtc = nowUtc,
+                ReissueBlockedAtUtc = nowUtc
             });
             return OidcBackChannelLogoutResult.NoLiveMapping;
         }
 
-        if (providerSession.RevokedAtUtc is not null
+        if (providerSession.ReissueBlockedAtUtc is not null
             || providerSession.AccountSessionId is null
             || providerSession.UserAccountId is null
             || providerSession.TenantId is null)
@@ -178,11 +179,47 @@ public sealed class OidcBackChannelLogoutService(
             return OidcBackChannelLogoutResult.NoLiveMapping;
         }
 
+        // Claim the provider-session row before reading its current local family. This serializes
+        // against a fresh OIDC login that may be replacing a locally revoked family with the same
+        // sid: whichever operation wins, no replacement can survive a validated provider logout.
+        var claimedProviderSessions = await db.OidcProviderSessions
+            .Where(candidate => candidate.Id == providerSession.Id
+                && candidate.SessionKeyHash == providerSessionHash
+                && candidate.ReissueBlockedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(
+                        candidate => candidate.RevokedAtUtc,
+                        candidate => candidate.RevokedAtUtc ?? nowUtc)
+                    .SetProperty(candidate => candidate.ReissueBlockedAtUtc, nowUtc),
+                cancellationToken);
+        if (claimedProviderSessions != 1)
+        {
+            return OidcBackChannelLogoutResult.NoLiveMapping;
+        }
+
+        var claimedMapping = await db.OidcProviderSessions
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == providerSession.Id)
+            .Select(candidate => new
+            {
+                candidate.AccountSessionId,
+                candidate.UserAccountId,
+                candidate.TenantId
+            })
+            .SingleAsync(cancellationToken);
+        if (claimedMapping.AccountSessionId is null
+            || claimedMapping.UserAccountId is null
+            || claimedMapping.TenantId is null)
+        {
+            return OidcBackChannelLogoutResult.NoLiveMapping;
+        }
+
         if (!await AccountSessionRevocation.RevokeFamilyAsync(
                 db,
-                providerSession.AccountSessionId.Value,
-                providerSession.UserAccountId.Value,
-                providerSession.TenantId.Value,
+                claimedMapping.AccountSessionId.Value,
+                claimedMapping.UserAccountId.Value,
+                claimedMapping.TenantId.Value,
                 nowUtc,
                 cancellationToken))
         {
@@ -190,7 +227,7 @@ public sealed class OidcBackChannelLogoutService(
         }
 
         await AddActivityAsync(
-            providerSession.TenantId.Value,
+            claimedMapping.TenantId.Value,
             nowUtc,
             "One GameHub session was invalidated by the identity provider.",
             cancellationToken);
@@ -206,6 +243,21 @@ public sealed class OidcBackChannelLogoutService(
         {
             return OidcBackChannelLogoutResult.NoLiveMapping;
         }
+
+        // Permanently close every known provider sid before revoking local families. A concurrent
+        // OIDC callback can then either commit first and be included below, or observe the claimed
+        // provider tombstone and fail without reopening the account.
+        await db.OidcProviderSessions
+            .Where(session => session.UserAccountId == mapping.UserAccountId
+                && session.TenantId == mapping.TenantId
+                && session.ReissueBlockedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(
+                        session => session.RevokedAtUtc,
+                        session => session.RevokedAtUtc ?? nowUtc)
+                    .SetProperty(session => session.ReissueBlockedAtUtc, nowUtc),
+                cancellationToken);
 
         var updatedAccounts = await db.UserAccounts
             .Where(account => account.Id == mapping.UserAccountId
@@ -268,7 +320,7 @@ public sealed class OidcBackChannelLogoutService(
         Guid? AccountSessionId,
         Guid? UserAccountId,
         Guid? TenantId,
-        DateTime? RevokedAtUtc);
+        DateTime? ReissueBlockedAtUtc);
 }
 
 /// <summary>Secret-free durable outcome categories for one accepted provider logout.</summary>

@@ -4,6 +4,29 @@
 
 ### What Changed
 
+**OIDC Re-Login After Local Session Revocation:**
+- Distinguished a locally ended GameHub family from a provider-authoritative OIDC `sid` tombstone.
+  A fresh state/nonce/PKCE-bound login can now create a distinct GameHub family when Keycloak keeps
+  the same SSO session active after another device revokes the local family.
+- Preserved fail-closed Back-Channel Logout ordering. Provider logout claims the issuer-bound hash
+  before resolving the current family, so a concurrent replacement is either blocked or revoked.
+- Added additive SQLite/PostgreSQL state and migration coverage. Historical revoked rows remain
+  provider-blocked because their original revocation source cannot be recovered safely.
+- Added local re-login, provider-after-local-revoke, repeated race, historical upgrade, and real
+  PostgreSQL regression coverage without exposing raw provider session IDs or changing tenant
+  selection.
+
+### Verification
+
+- Core builds with zero warnings and errors; the full .NET suite passes 444 tests with no skips.
+- Focused session/logout/deletion coverage passes 32 tests, the re-login/logout race passes across
+  repeated runs, and 3 real PostgreSQL 17 fresh/upgrade OIDC migration tests pass.
+- EF reports no pending model changes.
+
+## Current Session Summary (2026-07-30)
+
+### What Changed
+
 **Browser Convergence for Remotely Revoked Sessions:**
 - Added a live Core family check for protected page navigation while preserving exactly one refresh
   attempt. A final `401` now reaches one fixed same-origin cleanup route before Server Components

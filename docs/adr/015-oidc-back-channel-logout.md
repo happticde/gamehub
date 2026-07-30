@@ -112,6 +112,12 @@ This management surface is completely provider- and Keycloak-independent. It doe
 provider name, `sid`, or other OIDC claims, does not call a provider, and neither stores nor returns
 raw provider session IDs, user agents, IP addresses, or inferred device data.
 
+A local family revocation records that the mapped GameHub family ended but does not claim that the
+provider SSO session ended. A later state/nonce/PKCE-bound OIDC login may therefore replace that
+family even if the provider returns the same `sid`. A separately persisted
+`ReissueBlockedAtUtc` marker is set by validated Back-Channel Logout or terminal account deletion
+and permanently blocks reissue for that issuer-bound `sid`.
+
 ### Browser convergence after remote revocation
 
 Back-Channel Logout and targeted session management cannot directly delete cookies in another
@@ -140,6 +146,8 @@ That unique row orders parallel first login and logout writers:
 
 - if login commits first, logout retries against the committed mapping and revokes it;
 - if logout commits first, login observes the tombstone and cannot reopen the provider session;
+- if a login replaces a locally revoked family, provider logout first claims the same row and
+  either blocks the replacement or revokes the newly committed family;
 - repeated login for the same still-active provider session reuses the same local family; and
 - refresh rotation remains inside that family.
 
@@ -158,6 +166,11 @@ Restricted link/deletion-purpose JWTs retain their exact route boundary and do n
 library sessions. A new OIDC login succeeds only after the deployed provider supplies `sid`; the
 operator must enable session-bearing Back-Channel Logout and then sign in again to create the
 persisted mapping.
+
+The follow-up SQLite/PostgreSQL migration adds the explicit provider-revocation marker. Existing
+revoked provider-session rows cannot reveal their historical revocation source, so the upgrade
+backfills them as provider-authoritative and remains fail-closed. New local revocations leave that
+marker empty and can be replaced by a fresh OIDC transaction without ending provider SSO first.
 
 ## Consequences
 

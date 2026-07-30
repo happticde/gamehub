@@ -151,7 +151,7 @@ public sealed class AccountDeletionTests : IDisposable
             DisplayName = "OIDC Account",
             CreatedAtUtc = FixedNow.UtcDateTime
         };
-        _db.ExternalIdentities.Add(new ExternalIdentity
+        var externalIdentity = new ExternalIdentity
         {
             Id = Guid.NewGuid(),
             Issuer = "https://identity.example.test",
@@ -160,9 +160,14 @@ public sealed class AccountDeletionTests : IDisposable
             TenantId = tenantId,
             UserAccount = account,
             CreatedAtUtc = FixedNow.UtcDateTime
-        });
+        };
+        _db.ExternalIdentities.Add(externalIdentity);
         _tenantContext.TenantId = tenantId;
         await _db.SaveChangesAsync();
+        var issuedSession = await _refresh.IssueOidcAsync(
+            new OidcAuthenticatedAccount(account, externalIdentity),
+            "deleted-provider-session");
+        Assert.True(issuedSession.Issued);
         var deletion = CreateDeletionService(
             new SequenceHandler(new HttpResponseMessage(HttpStatusCode.NoContent)));
 
@@ -177,6 +182,15 @@ public sealed class AccountDeletionTests : IDisposable
         Assert.Equal("https://identity.example.test", tombstone.Issuer);
         Assert.Equal("deleted-subject", tombstone.Subject);
         Assert.Empty(_db.ExternalIdentities);
+        var providerTombstone = await _db.OidcProviderSessions
+            .IgnoreQueryFilters()
+            .SingleAsync();
+        Assert.Null(providerTombstone.ExternalIdentityId);
+        Assert.Null(providerTombstone.AccountSessionId);
+        Assert.Null(providerTombstone.UserAccountId);
+        Assert.Null(providerTombstone.TenantId);
+        Assert.NotNull(providerTombstone.RevokedAtUtc);
+        Assert.NotNull(providerTombstone.ReissueBlockedAtUtc);
 
         var oidc = new OidcSettings(
             true,

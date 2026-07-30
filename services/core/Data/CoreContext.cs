@@ -180,7 +180,7 @@ public class CoreContext : DbContext
             entity.HasIndex(session => session.AccountSessionId).IsUnique();
             entity.ToTable(table => table.HasCheckConstraint(
                 "CK_OidcProviderSessions_Mapping",
-                "(\"ExternalIdentityId\" IS NULL AND \"AccountSessionId\" IS NULL AND \"UserAccountId\" IS NULL AND \"TenantId\" IS NULL AND \"RevokedAtUtc\" IS NOT NULL) OR (\"ExternalIdentityId\" IS NOT NULL AND \"AccountSessionId\" IS NOT NULL AND \"UserAccountId\" IS NOT NULL AND \"TenantId\" IS NOT NULL)"));
+                "((\"ExternalIdentityId\" IS NULL AND \"AccountSessionId\" IS NULL AND \"UserAccountId\" IS NULL AND \"TenantId\" IS NULL AND \"RevokedAtUtc\" IS NOT NULL AND \"ReissueBlockedAtUtc\" IS NOT NULL) OR (\"ExternalIdentityId\" IS NOT NULL AND \"AccountSessionId\" IS NOT NULL AND \"UserAccountId\" IS NOT NULL AND \"TenantId\" IS NOT NULL)) AND (\"ReissueBlockedAtUtc\" IS NULL OR \"RevokedAtUtc\" IS NOT NULL)"));
             entity.HasOne(session => session.ExternalIdentity)
                 .WithMany(identity => identity.OidcProviderSessions)
                 .HasForeignKey(session => new
