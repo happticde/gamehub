@@ -4,8 +4,9 @@ namespace GameHub.Core.Data;
 /// Issuer-bound, one-way mapping from an OIDC <c>sid</c> to one tenant-bound local session.
 ///
 /// A row with no local mapping is a durable revocation tombstone created when a valid logout wins
-/// a login race or names an unknown session. Raw provider session IDs and subjects are never
-/// stored here.
+/// a login race or names an unknown session. A mapped row can outlive a locally revoked GameHub
+/// family so a later, fully validated OIDC transaction can bind the same provider SSO session to a
+/// new local family. Raw provider session IDs and subjects are never stored here.
 /// </summary>
 public sealed class OidcProviderSession
 {
@@ -37,8 +38,15 @@ public sealed class OidcProviderSession
     public DateTime CreatedAtUtc { get; set; }
 
     /// <summary>
-    /// UTC time at which the provider session was revoked. A non-null value permanently prevents
-    /// a later replayed ID token with the same issuer-bound session hash from reopening access.
+    /// UTC time at which the mapped local GameHub family ended. This alone does not prove that the
+    /// provider SSO session ended; a fresh OIDC transaction may replace that local family.
     /// </summary>
     public DateTime? RevokedAtUtc { get; set; }
+
+    /// <summary>
+    /// UTC time at which provider logout or terminal account deletion permanently blocked this
+    /// issuer-bound session from issuing another local family. Unlike a local family revocation,
+    /// this is a durable replay and login-race tombstone.
+    /// </summary>
+    public DateTime? ReissueBlockedAtUtc { get; set; }
 }

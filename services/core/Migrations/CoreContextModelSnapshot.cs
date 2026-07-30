@@ -269,6 +269,9 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Property<Guid?>("ExternalIdentityId")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("ReissueBlockedAtUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("RevokedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -298,7 +301,7 @@ namespace GameHub.Core.Migrations.sqlite
 
                     b.ToTable("OidcProviderSessions", t =>
                         {
-                            t.HasCheckConstraint("CK_OidcProviderSessions_Mapping", "(\"ExternalIdentityId\" IS NULL AND \"AccountSessionId\" IS NULL AND \"UserAccountId\" IS NULL AND \"TenantId\" IS NULL AND \"RevokedAtUtc\" IS NOT NULL) OR (\"ExternalIdentityId\" IS NOT NULL AND \"AccountSessionId\" IS NOT NULL AND \"UserAccountId\" IS NOT NULL AND \"TenantId\" IS NOT NULL)");
+                            t.HasCheckConstraint("CK_OidcProviderSessions_Mapping", "((\"ExternalIdentityId\" IS NULL AND \"AccountSessionId\" IS NULL AND \"UserAccountId\" IS NULL AND \"TenantId\" IS NULL AND \"RevokedAtUtc\" IS NOT NULL AND \"ReissueBlockedAtUtc\" IS NOT NULL) OR (\"ExternalIdentityId\" IS NOT NULL AND \"AccountSessionId\" IS NOT NULL AND \"UserAccountId\" IS NOT NULL AND \"TenantId\" IS NOT NULL)) AND (\"ReissueBlockedAtUtc\" IS NULL OR \"RevokedAtUtc\" IS NOT NULL)");
                         });
                 });
 

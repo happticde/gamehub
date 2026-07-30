@@ -113,10 +113,39 @@ public sealed class AccountSessionManagementTests : IDisposable
         var providerState = await _db.OidcProviderSessions.AsNoTracking().SingleAsync();
         Assert.Equal(oidcTarget.AccountSessionId, providerState.AccountSessionId);
         Assert.NotNull(providerState.RevokedAtUtc);
+        Assert.Null(providerState.ReissueBlockedAtUtc);
         Assert.Single(
             await _db.AccountSessions
                 .Where(session => session.RevokedAtUtc == null)
                 .ToListAsync());
+    }
+
+    [Fact]
+    public async Task Revoke_OidcFamily_FreshLoginWithSameProviderSidCreatesNewFamily()
+    {
+        var account = await CreateAccountAsync();
+        var revoked = await IssueOidcSessionAsync(account);
+
+        await _sessions.RevokeAsync(
+            account.Id,
+            account.TenantId,
+            revoked.AccountSessionId);
+        _time.UtcNow = FixedNow.AddMinutes(1);
+
+        var replacement = await IssueOidcSessionAsync(account);
+
+        Assert.NotEqual(revoked.AccountSessionId, replacement.AccountSessionId);
+        Assert.False((await _refreshTokens.RotateAsync(revoked.RefreshToken)).Rotated);
+        Assert.True((await _refreshTokens.RotateAsync(replacement.RefreshToken)).Rotated);
+
+        var providerState = await _db.OidcProviderSessions.AsNoTracking().SingleAsync();
+        Assert.Equal(replacement.AccountSessionId, providerState.AccountSessionId);
+        Assert.Null(providerState.RevokedAtUtc);
+        Assert.Null(providerState.ReissueBlockedAtUtc);
+        Assert.NotNull((await _db.AccountSessions.AsNoTracking().SingleAsync(
+            session => session.Id == revoked.AccountSessionId)).RevokedAtUtc);
+        Assert.Null((await _db.AccountSessions.AsNoTracking().SingleAsync(
+            session => session.Id == replacement.AccountSessionId)).RevokedAtUtc);
     }
 
     [Fact]
@@ -147,6 +176,8 @@ public sealed class AccountSessionManagementTests : IDisposable
         Assert.False((await _refreshTokens.RotateAsync(oidcOther.RefreshToken)).Rotated);
         Assert.NotNull(
             (await _db.OidcProviderSessions.AsNoTracking().SingleAsync()).RevokedAtUtc);
+        Assert.Null(
+            (await _db.OidcProviderSessions.AsNoTracking().SingleAsync()).ReissueBlockedAtUtc);
     }
 
     [Fact]

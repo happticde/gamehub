@@ -54,8 +54,9 @@ public sealed class RefreshTokenService
     }
 
     /// <summary>
-    /// Creates or reuses the one local family mapped to a fully validated OIDC issuer/session
-    /// pair. A durable logout tombstone or a mapping to another identity fails closed.
+    /// Creates, reuses, or replaces the one local family mapped to a fully validated OIDC
+    /// issuer/session pair. A local GameHub revocation permits replacement after a fresh OIDC
+    /// transaction; a provider logout tombstone or mapping to another identity fails closed.
     /// </summary>
     public async Task<OidcRefreshTokenIssueResult> IssueOidcAsync(
         OidcAuthenticatedAccount authentication,
@@ -315,7 +316,7 @@ public sealed class RefreshTokenService
                     CreatedAtUtc = accountSession.CreatedAtUtc
                 });
             }
-            else if (providerSession.RevokedAtUtc is not null
+            else if (providerSession.ReissueBlockedAtUtc is not null
                 || providerSession.AccountSession is null
                 || providerSession.AccountSessionId is null
                 || providerSession.ExternalIdentityId != identity.Id
@@ -323,10 +324,58 @@ public sealed class RefreshTokenService
                 || providerSession.TenantId != account.TenantId
                 || providerSession.AccountSession.UserAccountId != account.Id
                 || providerSession.AccountSession.TenantId != account.TenantId
-                || providerSession.AccountSession.RevokedAtUtc is not null)
+                || (providerSession.RevokedAtUtc is null)
+                    != (providerSession.AccountSession.RevokedAtUtc is null))
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return OidcRefreshTokenIssueResult.Denied;
+            }
+            else if (providerSession.RevokedAtUtc is not null)
+            {
+                // A GameHub-only revocation must not permanently blacklist the still-valid
+                // provider SSO session. The caller reached this point only through a new
+                // state/nonce/PKCE-bound OIDC transaction, so create a distinct local family and
+                // atomically move the mapping. Provider logout first claims the same row through
+                // ReissueBlockedAtUtc; the conditional update then fails closed.
+                var replacementSession = CreateAccountSession(account);
+                _db.AccountSessions.Add(replacementSession);
+                await _db.SaveChangesAsync(cancellationToken);
+
+                var reboundMappings = await _db.OidcProviderSessions
+                    .Where(candidate => candidate.Id == providerSession.Id
+                        && candidate.SessionKeyHash == sessionKeyHash
+                        && candidate.ExternalIdentityId == identity.Id
+                        && candidate.AccountSessionId == providerSession.AccountSessionId
+                        && candidate.UserAccountId == account.Id
+                        && candidate.TenantId == account.TenantId
+                        && candidate.RevokedAtUtc != null
+                        && candidate.ReissueBlockedAtUtc == null
+                        && _db.AccountSessions.Any(accountSession =>
+                            accountSession.Id == providerSession.AccountSessionId
+                            && accountSession.UserAccountId == account.Id
+                            && accountSession.TenantId == account.TenantId
+                            && accountSession.RevokedAtUtc != null))
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(
+                                candidate => candidate.AccountSessionId,
+                                replacementSession.Id)
+                            .SetProperty(candidate => candidate.RevokedAtUtc, (DateTime?)null),
+                        cancellationToken);
+                if (reboundMappings != 1)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    _db.ChangeTracker.Clear();
+                    return retryAfterUniqueRace
+                        ? await IssueOidcCoreAsync(
+                            authentication,
+                            sessionKeyHash,
+                            retryAfterUniqueRace: false,
+                            cancellationToken)
+                        : OidcRefreshTokenIssueResult.Denied;
+                }
+
+                accountSessionId = replacementSession.Id;
             }
             else
             {

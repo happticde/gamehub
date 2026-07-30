@@ -138,6 +138,75 @@ public sealed class PostgresTagRelationshipMigrationTests
             var providerSession = await db.OidcProviderSessions.SingleAsync();
             Assert.Equal(issue.RefreshToken!.AccountSessionId, providerSession.AccountSessionId);
             Assert.Equal(64, providerSession.SessionKeyHash.Length);
+            Assert.Null(providerSession.RevokedAtUtc);
+            Assert.Null(providerSession.ReissueBlockedAtUtc);
+        }
+        finally
+        {
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [Fact]
+    public async Task OidcProviderRevocationMigration_PostgresHistoricalRowRemainsBlocked()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(
+            "GAMEHUB_TEST_POSTGRES_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<CoreContext>()
+            .UseNpgsql(connectionString)
+            .ConfigureWarnings(warnings =>
+                warnings.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .Options;
+        await using var db = new CoreContext(options, new FixedTenantContext(TenantA));
+        await db.Database.EnsureDeletedAsync();
+        try
+        {
+            var migrator = db.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260725084924_AddOidcSessionFamiliesPostgres");
+            var accountId = Guid.NewGuid();
+            var identityId = Guid.NewGuid();
+            var accountSessionId = Guid.NewGuid();
+            var providerSessionId = Guid.NewGuid();
+            var revokedAtUtc = new DateTime(2026, 7, 30, 12, 0, 0, DateTimeKind.Utc);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "UserAccounts"
+                    ("Id", "TenantId", "AccountType", "Email", "NormalizedEmail", "DisplayName",
+                     "PasswordHash", "CreatedAtUtc", "LastLoginAtUtc")
+                VALUES
+                    ({accountId}, {TenantA}, {0}, {"legacy-oidc@example.com"},
+                     {"LEGACY-OIDC@EXAMPLE.COM"}, {"Legacy OIDC"}, {"preserved-hash"},
+                     {revokedAtUtc}, NULL);
+                INSERT INTO "ExternalIdentities"
+                    ("Id", "Issuer", "Subject", "UserAccountId", "TenantId", "CreatedAtUtc",
+                     "LastLoginAtUtc")
+                VALUES
+                    ({identityId}, {"https://identity.example.test"}, {"legacy-subject"},
+                     {accountId}, {TenantA}, {revokedAtUtc}, NULL);
+                INSERT INTO "AccountSessions"
+                    ("Id", "UserAccountId", "TenantId", "CreatedAtUtc", "RevokedAtUtc")
+                VALUES
+                    ({accountSessionId}, {accountId}, {TenantA}, {revokedAtUtc},
+                     {revokedAtUtc});
+                INSERT INTO "OidcProviderSessions"
+                    ("Id", "SessionKeyHash", "ExternalIdentityId", "AccountSessionId",
+                     "UserAccountId", "TenantId", "CreatedAtUtc", "RevokedAtUtc")
+                VALUES
+                    ({providerSessionId}, {new string('D', 64)}, {identityId},
+                     {accountSessionId}, {accountId}, {TenantA}, {revokedAtUtc},
+                     {revokedAtUtc});
+                """);
+
+            await migrator.MigrateAsync();
+            db.ChangeTracker.Clear();
+
+            var providerSession = await db.OidcProviderSessions.SingleAsync();
+            Assert.Equal(revokedAtUtc, providerSession.RevokedAtUtc);
+            Assert.Equal(revokedAtUtc, providerSession.ReissueBlockedAtUtc);
         }
         finally
         {

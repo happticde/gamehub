@@ -325,7 +325,7 @@ sequenceDiagram
    C->>C: Validate signature, issuer, audience, time, algorithm, nonce, azp
    C->>D: Find exact ExternalIdentity issuer/subject
    D-->>C: Live UserAccount and Tenant
-   C->>D: Create/reuse durable AccountSession + hashed issuer/sid mapping
+   C->>D: Create/reuse/replace durable AccountSession + hashed issuer/sid mapping
    C->>D: Create rotating refresh row, update login timestamps
    C-->>B: GameHub access JWT + opaque refresh token
    B-->>U: HttpOnly session cookies + redirect, delete transaction cookie
@@ -446,6 +446,7 @@ erDiagram
         uuid ExternalIdentityId FK "nullable tombstone"
         uuid AccountSessionId FK "nullable tombstone"
         datetime RevokedAtUtc
+        datetime ReissueBlockedAtUtc "nullable permanent tombstone"
     }
 ```
 
@@ -461,6 +462,9 @@ Relevant database invariants:
   raw provider session IDs.
 - OIDC provider-session mappings use composite identity/session ownership keys; `sid` never directly
   chooses an account or tenant.
+- `RevokedAtUtc` closes the mapped local GameHub family, while `ReissueBlockedAtUtc` records the
+  stronger provider/logout or terminal-deletion tombstone. A fresh OIDC transaction may replace
+  only the former.
 - No email or provider profile data participates in the relationship.
 - Local accounts require non-empty email, normalized email, and password hash. External accounts
   require null normalized email and password hash; the normalized-email unique index is filtered
@@ -520,6 +524,10 @@ not advance the account epoch, which preserves the current family.
 This flow is provider- and Keycloak-independent. Local and OIDC-authenticated sessions are
 identical after GameHub session issuance. No provider API, SDK, credential, provider name, `sid`,
 raw provider session ID, user agent, or IP address participates in listing or authorization.
+A subsequent fully correlated and validated OIDC login may move a locally closed hashed mapping to
+a new GameHub family even when provider SSO reuses the same `sid`. Back-Channel Logout first claims
+the stronger provider-revocation marker, so a concurrent or later callback cannot reopen that
+provider session.
 
 ## 12. Cookie and secret inventory
 

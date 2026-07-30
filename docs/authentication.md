@@ -274,7 +274,10 @@ and refresh credentials remain usable.
 This capability is completely provider-neutral and Keycloak-independent. It uses only GameHub's
 local `AccountSession`; it neither reads nor depends on provider name, `sid`, or any other OIDC
 claim, and it never calls a provider API. GameHub stores and returns no raw provider session ID,
-user agent, device fingerprint, or IP address for this feature.
+user agent, device fingerprint, or IP address for this feature. Because this action does not end
+the provider's SSO session, a later fully validated OIDC transaction may create a new GameHub
+family even when the provider returns the same `sid`. Only a validated provider Logout Token
+permanently tombstones that issuer-bound `sid`.
 
 ## Change the Password
 
@@ -357,6 +360,11 @@ response interception. This convergence performs local GameHub cleanup only and 
 RP-Initiated Logout, contacts a provider, exposes tokens to JavaScript, or changes the still-active
 session that revoked another family.
 
+After this local convergence, selecting provider login starts a new state/nonce/PKCE-bound
+transaction. It can create a distinct GameHub family while the provider SSO session remains active;
+the user does not need to sign out of Keycloak first. A `sid` closed by validated Back-Channel
+Logout remains blocked and cannot be reopened by the same flow.
+
 The default Compose deployment uses plain HTTP and therefore sets
 `GAMEHUB_AUTH_COOKIE_SECURE=false`. Set it to `true` whenever a reverse proxy serves the frontend
 to browsers over HTTPS; browsers intentionally reject Secure cookies over plain HTTP.
@@ -394,6 +402,13 @@ Deployment of the session-family migration intentionally revokes legacy refresh 
 normal access JWTs that lack the new stable family claim. Users must sign in again. OIDC login also
 fails closed until the provider supplies `sid`; no provider claim, email, raw session ID, or request
 field can select a GameHub tenant.
+
+The follow-up provider-revocation migration distinguishes a locally closed GameHub mapping from a
+provider-authoritative `sid` tombstone. Historical revoked rows predate that distinction and are
+backfilled as provider-authoritative to avoid reopening a session that may have received a real
+Logout Token. Such a historical browser may require one provider logout/new provider session;
+local revocations created after the migration support immediate OIDC re-login with the same active
+provider SSO session.
 
 ## REQUIRED MANUAL ACTION AFTER DEPLOYMENT
 

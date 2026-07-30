@@ -155,7 +155,10 @@ public sealed class AccountDeletionService(
                     .SetProperty(row => row.TenantId, (Guid?)null)
                     .SetProperty(
                         row => row.RevokedAtUtc,
-                        row => row.RevokedAtUtc ?? deletedAtUtc),
+                        row => row.RevokedAtUtc ?? deletedAtUtc)
+                    .SetProperty(
+                        row => row.ReissueBlockedAtUtc,
+                        row => row.ReissueBlockedAtUtc ?? deletedAtUtc),
                 cancellationToken);
         await db.RefreshTokenSessions
             .Where(row => row.UserAccountId == accountId)
