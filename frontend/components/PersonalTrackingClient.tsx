@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PlayStatus } from "@/types/game";
 import { Star, Loader2, Check } from "lucide-react";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 
 interface PersonalTrackingProps {
     gameId: number;
@@ -28,7 +29,7 @@ export default function PersonalTrackingClient({
         setSaveSuccess(false);
 
         try {
-            const res = await fetch(`/api/core/library/${gameId}/personal`, {
+            const res = await fetchAuthenticated(`/api/core/library/${gameId}/personal`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DatabaseZap, RefreshCw, RotateCcw } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import { providerDisplayName, providerRefreshBlocker } from "@/lib/provider-sync-status";
 import type { ApiMessageResponse, LibrarySyncResult } from "@/types/api";
 import type { ProviderSyncStatus, ProviderSyncStatusResponse } from "@/types/game";
@@ -38,7 +39,7 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
 
     const fetchRefreshReadiness = useCallback(async () => {
         try {
-            const res = await fetch("/api/core/library/sync/providers", { cache: "no-store" });
+            const res = await fetchAuthenticated("/api/core/library/sync/providers", { cache: "no-store" });
             if (!res.ok) {
                 setReadinessError("Refresh availability could not be checked.");
                 return;
@@ -64,7 +65,7 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
         try {
             // Because this is a Client Component, we hit the Next.js API proxy route defined in next.config.ts
             // /api/core/ -> http://localhost:5001/api/
-            const res = await fetch(endpoint, {
+            const res = await fetchAuthenticated(endpoint, {
                 method: "POST",
             });
 

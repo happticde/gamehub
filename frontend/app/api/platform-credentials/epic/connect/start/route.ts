@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
     ACCESS_TOKEN_COOKIE,
     REFRESH_TOKEN_COOKIE,
+    createSessionEndedApiResponse,
     isFrontendAuthEnabled,
 } from "@/lib/auth-session";
 import { getEpicConnectCookieKey, shouldUseSecureCookies } from "@/lib/epic-connect-server";
@@ -20,10 +21,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (isFrontendAuthEnabled()
             && !request.cookies.get(ACCESS_TOKEN_COOKIE)?.value
             && !request.cookies.get(REFRESH_TOKEN_COOKIE)?.value) {
-            return NextResponse.json(
-                { code: "authentication_required", message: "Sign in is required." },
-                { status: 401, headers: { "Cache-Control": "no-store" } },
-            );
+            return createSessionEndedApiResponse();
         }
 
         const transaction = createEpicConnectTransaction();

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Gamepad2, Library, Globe, Sparkles } from "lucide-react";
-import { fetchCoreApi } from "@/lib/core-api";
+import { fetchCoreApi, rethrowCoreApiNavigation } from "@/lib/core-api";
 
 /** Fetches basic library stats for the landing page counters */
 async function getLibraryStats(): Promise<{ totalGames: number; totalPlatforms: number }> {
@@ -13,7 +13,8 @@ async function getLibraryStats(): Promise<{ totalGames: number; totalPlatforms: 
       const data = await res.json();
       return { totalGames: data.totalCount || 0, totalPlatforms: 4 };
     }
-  } catch {
+  } catch (error: unknown) {
+    rethrowCoreApiNavigation(error);
     // Silently fallback — landing page should never break
   }
   return { totalGames: 0, totalPlatforms: 4 };

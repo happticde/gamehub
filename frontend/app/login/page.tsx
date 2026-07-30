@@ -21,6 +21,7 @@ export default async function LoginPage({
         oidcLinked?: string | string[];
         accountDeleted?: string | string[];
         accountDeletionPending?: string | string[];
+        sessionEnded?: string | string[];
     }>;
 }) {
     const params = await searchParams;
@@ -80,6 +81,7 @@ export default async function LoginPage({
                             oidcLinked={params.oidcLinked === "true"}
                             accountDeleted={params.accountDeleted === "true"}
                             accountDeletionPending={params.accountDeletionPending === "true"}
+                            sessionEnded={params.sessionEnded === "true"}
                             multiUserEnabled={multiUserEnabled}
                         />
                     </CardContent>

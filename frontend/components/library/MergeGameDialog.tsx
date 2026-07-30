@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getErrorMessage } from "@/lib/errors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import { getPlatformColor } from "@/lib/platform-colors";
 import type { ApiMessageResponse } from "@/types/api";
 import type { Platform } from "@/types/game";
@@ -76,7 +77,7 @@ export default function MergeGameDialog({
 
         const timer = window.setTimeout(async () => {
             try {
-                const response = await fetch(
+                const response = await fetchAuthenticated(
                     `/api/core/library?search=${encodeURIComponent(trimmedQuery)}&includeIgnored=true&pageSize=10`,
                     { cache: "no-store", signal: abortController.signal },
                 );
@@ -120,7 +121,7 @@ export default function MergeGameDialog({
         setMergeError(null);
 
         try {
-            const response = await fetch("/api/core/library/merge", {
+            const response = await fetchAuthenticated("/api/core/library/merge", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

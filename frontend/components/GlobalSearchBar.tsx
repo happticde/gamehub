@@ -8,6 +8,7 @@ import { Search, Loader2, X, CornerDownLeft, Sparkles } from "lucide-react";
 import { UnifiedGame, PagedResult } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import { cn } from "@/lib/utils";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import {
     Dialog,
     DialogContent,
@@ -40,7 +41,7 @@ export default function GlobalSearchBar() {
         setLoading(true);
         const timer = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/core/library?search=${encodeURIComponent(query)}&pageSize=5`);
+                const res = await fetchAuthenticated(`/api/core/library?search=${encodeURIComponent(query)}&pageSize=5`);
                 if (res.ok) {
                     const data: PagedResult<UnifiedGame> = await res.json();
                     setResults(data.items || []);

@@ -72,9 +72,10 @@ test("session panel uses only same-origin BFF routes and the existing current lo
         "utf8",
     );
 
-    assert.match(source, /fetch\("\/api\/core\/auth\/sessions"/);
+    assert.match(source, /fetchAuthenticated\("\/api\/core\/auth\/sessions"/);
     assert.match(source, /\/api\/core\/auth\/sessions\/others/);
     assert.match(source, /encodeURIComponent\(sessionId\)/);
+    assert.doesNotMatch(source, /\bfetch\s*\(\s*["'`]\/api\/core/);
     assert.match(source, /<form action="\/api\/auth\/logout" method="post">/);
     assert.match(source, /role="status"/);
     assert.match(source, /role="alert"/);

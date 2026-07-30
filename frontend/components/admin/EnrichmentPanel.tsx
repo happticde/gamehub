@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,7 +71,7 @@ export function EnrichmentPanel() {
     const fetchStats = useCallback(async () => {
         setIsLoadingStats(true);
         try {
-            const res = await fetch("/api/core/library/enrichment-stats");
+            const res = await fetchAuthenticated("/api/core/library/enrichment-stats");
             if (res.ok) {
                 const enrichmentStats: EnrichmentStats = await res.json();
                 setStats(enrichmentStats);
@@ -87,7 +88,7 @@ export function EnrichmentPanel() {
         try {
             const params = new URLSearchParams({ limit: "100" });
             if (statusFilter !== "all") params.set("status", statusFilter);
-            const res = await fetch(`/api/core/library/enrichment-history?${params}`);
+            const res = await fetchAuthenticated(`/api/core/library/enrichment-history?${params}`);
             if (res.ok) {
                 const enrichmentLogs: EnrichmentAuditLog[] = await res.json();
                 setLogs(enrichmentLogs);
@@ -116,7 +117,7 @@ export function EnrichmentPanel() {
         setActionLoading(label);
         setResultMsg("");
         try {
-            const res = await fetch(url, { method });
+            const res = await fetchAuthenticated(url, { method });
             const data: ApiMessageResponse = await res.json();
             setResultMsg(data.Message || data.message || "Done.");
             // Refresh data after action completes
@@ -136,7 +137,7 @@ export function EnrichmentPanel() {
     const handleReEnrich = async (gameId: number) => {
         setReEnrichingId(gameId);
         try {
-            const res = await fetch(`/api/core/library/enrich/${gameId}?force=true`, { method: "POST" });
+            const res = await fetchAuthenticated(`/api/core/library/enrich/${gameId}?force=true`, { method: "POST" });
             const data: ApiMessageResponse = await res.json();
             setResultMsg(data.Message || data.message || "Re-enriched.");
             // Refresh stats and logs to reflect the update

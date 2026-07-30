@@ -6,7 +6,7 @@ import LibraryFilters from "@/components/LibraryFilters";
 import LibraryPagination from "@/components/LibraryPagination";
 import LibraryPageSizeSelect from "@/components/LibraryPageSizeSelect";
 import LibraryViewControls from "@/components/LibraryViewControls";
-import { fetchCoreApi } from "@/lib/core-api";
+import { fetchCoreApi, rethrowCoreApiNavigation } from "@/lib/core-api";
 import { getErrorMessage } from "@/lib/errors";
 import {
     isLibraryPageParamValid,
@@ -143,6 +143,7 @@ export default async function LibraryPage({
         if (devsRes.ok) developersList = await devsRes.json();
         if (pubsRes.ok) publishersList = await pubsRes.json();
     } catch (caughtError: unknown) {
+        rethrowCoreApiNavigation(caughtError);
         error = getErrorMessage(caughtError, "An unexpected error occurred while fetching your library.");
         console.error("Fetch Library Error:", error);
     }

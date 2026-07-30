@@ -16,6 +16,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { getPlatformColor } from "@/lib/platform-colors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type {
     IngestAuditLog,
     Platform,
@@ -103,7 +104,7 @@ export function IngestionPanel() {
     const fetchCredentialStatus = useCallback(async () => {
         setLoadingStatus(true);
         try {
-            const response = await fetch("/api/core/platform-credentials", { cache: "no-store" });
+            const response = await fetchAuthenticated("/api/core/platform-credentials", { cache: "no-store" });
             if (!response.ok) throw new Error(await readError(response));
             setCredentials(await response.json());
         } catch (caught) {
@@ -118,7 +119,7 @@ export function IngestionPanel() {
         try {
             const params = new URLSearchParams({ limit: "100" });
             if (platformFilter !== "all") params.set("platform", platformFilter);
-            const response = await fetch(
+            const response = await fetchAuthenticated(
                 `/api/core/platform-credentials/retrieval-history?${params}`,
                 { cache: "no-store" },
             );
@@ -144,7 +145,7 @@ export function IngestionPanel() {
         setMessage(null);
         setError(null);
         try {
-            const response = await fetch(`/api/core/platform-credentials/${platform}/retrieve`, {
+            const response = await fetchAuthenticated(`/api/core/platform-credentials/${platform}/retrieve`, {
                 method: "POST",
             });
             if (!response.ok) throw new Error(await readError(response));

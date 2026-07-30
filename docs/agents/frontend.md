@@ -40,6 +40,11 @@
   The client receives only local session ID, creation time, and current state. Other-family actions
   stay on the same-origin BFF; current sign-out reuses the native logout form. Tokens remain in
   HttpOnly cookies, and no provider, device, user-agent, or IP metadata enters browser state.
+- Protected page navigation live-checks the current family through Core before rendering and keeps
+  the existing single refresh attempt. A final Core `401` converges through
+  `/api/auth/session-ended`, which only clears GameHub cookies and redirects to the fixed login
+  notice. Browser-side Core calls use `fetchAuthenticated()` and react only to the BFF-owned final
+  `401` marker; network failures and `403`/`404`/`429`/`5xx` never trigger this path.
 - Operator readiness is intentionally not exposed to Client Components. The secret-free status API
   is an operator API-key endpoint, not a tenant-facing admin dashboard.
 - The active physical-capture UI is manual-first via the existing IGDB enrichment search. It must

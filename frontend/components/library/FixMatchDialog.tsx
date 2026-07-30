@@ -9,6 +9,7 @@ import { Search, Loader2, Link2 } from "lucide-react";
 import { MetadataSearchResultCard } from "@/components/library/MetadataSearchResultCard";
 import { getErrorMessage } from "@/lib/errors";
 import { parseIgdbProviderId } from "@/lib/igdb-provider-id";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type { ApiMessageResponse } from "@/types/api";
 import type { MetadataSearchResult } from "@/types/game";
 
@@ -31,7 +32,7 @@ export default function FixMatchDialog({ gameId, initialTitle }: { gameId: numbe
         setResults([]);
 
         try {
-            const res = await fetch(`/api/core/library/enrichment/search?title=${encodeURIComponent(query)}&limit=10`);
+            const res = await fetchAuthenticated(`/api/core/library/enrichment/search?title=${encodeURIComponent(query)}&limit=10`);
             if (!res.ok) throw new Error("Search failed");
             const data: MetadataSearchResult[] = await res.json();
             setResults(data || []);
@@ -47,7 +48,7 @@ export default function FixMatchDialog({ gameId, initialTitle }: { gameId: numbe
         setError(null);
 
         try {
-            const res = await fetch(`/api/core/library/${gameId}/enrichment/override`, {
+            const res = await fetchAuthenticated(`/api/core/library/${gameId}/enrichment/override`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ providerId }),

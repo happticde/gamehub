@@ -18,6 +18,7 @@ import {
     parseAccountSessions,
     removeRevokedSession,
 } from "@/lib/account-sessions";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 
 const loadErrorMessage =
     "Die aktiven Sitzungen konnten nicht geladen werden. Bitte versuche es erneut.";
@@ -39,7 +40,7 @@ export function ActiveSessionsPanel() {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch("/api/core/auth/sessions", {
+            const response = await fetchAuthenticated("/api/core/auth/sessions", {
                 cache: "no-store",
             });
             if (!response.ok) throw new Error("session_list_failed");
@@ -65,7 +66,7 @@ export function ActiveSessionsPanel() {
         setError(null);
         setSuccess(null);
         try {
-            const response = await fetch(
+            const response = await fetchAuthenticated(
                 `/api/core/auth/sessions/${encodeURIComponent(sessionId)}`,
                 { method: "DELETE" },
             );
@@ -84,7 +85,7 @@ export function ActiveSessionsPanel() {
         setError(null);
         setSuccess(null);
         try {
-            const response = await fetch("/api/core/auth/sessions/others", {
+            const response = await fetchAuthenticated("/api/core/auth/sessions/others", {
                 method: "DELETE",
             });
             if (!response.ok) throw new Error("other_session_revocation_failed");

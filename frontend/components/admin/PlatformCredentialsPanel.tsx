@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import { getPlatformColor } from "@/lib/platform-colors";
 import {
     parseEpicConnectObject,
@@ -72,7 +73,7 @@ export function PlatformCredentialsPanel() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch("/api/core/platform-credentials", { cache: "no-store" });
+            const response = await fetchAuthenticated("/api/core/platform-credentials", { cache: "no-store" });
             if (!response.ok) throw new Error(await readError(response));
             setState(await response.json());
         } catch (caught) {
@@ -91,7 +92,7 @@ export function PlatformCredentialsPanel() {
         setMessage(null);
         setError(null);
         try {
-            const response = await fetch(`/api/core/platform-credentials/${platform}`, {
+            const response = await fetchAuthenticated(`/api/core/platform-credentials/${platform}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ schemaVersion: 1, credentials }),
@@ -113,7 +114,7 @@ export function PlatformCredentialsPanel() {
         setMessage(null);
         setError(null);
         try {
-            const response = await fetch(`/api/core/platform-credentials/${platform}`, {
+            const response = await fetchAuthenticated(`/api/core/platform-credentials/${platform}`, {
                 method: "DELETE",
             });
             if (!response.ok) throw new Error(await readError(response));
@@ -131,7 +132,7 @@ export function PlatformCredentialsPanel() {
         setMessage(null);
         setError(null);
         try {
-            const response = await fetch("/api/platform-credentials/epic/connect/start", {
+            const response = await fetchAuthenticated("/api/platform-credentials/epic/connect/start", {
                 method: "POST",
                 cache: "no-store",
             });
@@ -155,7 +156,7 @@ export function PlatformCredentialsPanel() {
         setMessage(null);
         setError(null);
         try {
-            const response = await fetch("/api/platform-credentials/epic/connect/complete", {
+            const response = await fetchAuthenticated("/api/platform-credentials/epic/connect/complete", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ authorizationCode, state: connectState }),

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { useDebouncedMetadataSearch } from "@/hooks/useDebouncedMetadataSearch";
 import { getErrorMessage } from "@/lib/errors";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type { ApiMessageResponse } from "@/types/api";
 import type {
     MetadataSearchResult,
@@ -49,7 +50,7 @@ export function PhysicalGameCapture() {
         setSaving(true);
         setSaveError(null);
         try {
-            const response = await fetch("/api/core/library/physical-copies/capture", {
+            const response = await fetchAuthenticated("/api/core/library/physical-copies/capture", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

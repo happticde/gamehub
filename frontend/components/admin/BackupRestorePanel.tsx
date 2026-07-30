@@ -30,6 +30,7 @@ import type {
     BackupSummary,
     BackupValidationResult,
 } from "@/types/game";
+import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 
 const maxBackupSizeBytes = 25 * 1024 * 1024;
 
@@ -84,7 +85,7 @@ export function BackupRestorePanel() {
         setNotice(null);
 
         try {
-            const response = await fetch(endpoint);
+            const response = await fetchAuthenticated(endpoint);
             if (!response.ok) {
                 throw new Error(`${label} failed (Status ${response.status}).`);
             }
@@ -125,7 +126,7 @@ export function BackupRestorePanel() {
             const formData = new FormData();
             formData.append("file", file);
 
-            const response = await fetch("/api/core/backup/validate", {
+            const response = await fetchAuthenticated("/api/core/backup/validate", {
                 method: "POST",
                 body: formData,
             });
@@ -170,7 +171,7 @@ export function BackupRestorePanel() {
             const formData = new FormData();
             formData.append("file", selectedFile);
 
-            const response = await fetch("/api/core/backup/restore", {
+            const response = await fetchAuthenticated("/api/core/backup/restore", {
                 method: "POST",
                 body: formData,
             });

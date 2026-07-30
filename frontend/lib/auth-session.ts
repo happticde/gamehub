@@ -2,6 +2,10 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { OIDC_TRANSACTION_COOKIE } from "@/lib/oidc-security";
+import {
+    SESSION_ENDED_HEADER,
+    SESSION_ENDED_HEADER_VALUE,
+} from "@/lib/session-ended";
 export {
     isAccountDeletionTokenResponse,
     type CoreAccountDeletionTokenResponse,
@@ -41,6 +45,14 @@ export interface CoreAuthError {
     code: string;
     message: string;
 }
+
+export type RefreshTokenRotationResult =
+    | { kind: "rotated"; tokens: CoreTokenResponse }
+    | { kind: "missing" }
+    | { kind: "rejected" }
+    | { kind: "unavailable"; status: number };
+
+export type AccessTokenValidationResult = "valid" | "unauthorized" | "unavailable";
 
 /** Internal Core URL used only by the Next.js server, never shipped to browser JavaScript. */
 export function getCoreApiUrl(path: string): string {
@@ -109,11 +121,17 @@ export function isAccessTokenFresh(token: string | undefined, skewSeconds = 15):
     }
 }
 
-/** Rotates a refresh secret directly against Core from the trusted Next.js server. */
+/**
+ * Rotates a refresh secret directly against Core from the trusted Next.js server.
+ *
+ * A rejected credential is deliberately distinct from an unavailable refresh service. Only the
+ * former confirms that the local browser session has ended; network and non-401 failures must
+ * preserve the cookies so a temporary outage cannot sign the user out.
+ */
 export async function rotateRefreshToken(
     refreshToken: string | undefined,
-): Promise<CoreTokenResponse | null> {
-    if (!refreshToken) return null;
+): Promise<RefreshTokenRotationResult> {
+    if (!refreshToken) return { kind: "missing" };
 
     try {
         const response = await fetch(getCoreApiUrl("/auth/refresh"), {
@@ -122,15 +140,75 @@ export async function rotateRefreshToken(
             body: JSON.stringify({ refreshToken }),
             cache: "no-store",
         });
-        if (!response.ok) return null;
+        if (response.status === 401) return { kind: "rejected" };
+        if (!response.ok) {
+            return {
+                kind: "unavailable",
+                status: safeAuthenticationFailureStatus(response.status),
+            };
+        }
 
         const tokens = (await response.json()) as CoreTokenResponse;
-        return isTokenResponse(tokens) ? tokens : null;
+        return isTokenResponse(tokens)
+            ? { kind: "rotated", tokens }
+            : { kind: "unavailable", status: 502 };
     } catch {
-        // Network failures are treated like an unavailable session. Route handlers return a
-        // stable 401/login redirect instead of leaking infrastructure details to the browser.
-        return null;
+        return { kind: "unavailable", status: 503 };
     }
+}
+
+/**
+ * Performs a live, read-only Core authorization check for protected page navigation. The existing
+ * session-list endpoint derives all identity from the bearer token and exposes no additional
+ * trust boundary. Only its exact 401 result can initiate the refresh/session-ended flow.
+ */
+export async function validateAccessTokenWithCore(
+    accessToken: string,
+): Promise<AccessTokenValidationResult> {
+    try {
+        const response = await fetch(getCoreApiUrl("/auth/sessions"), {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            cache: "no-store",
+            signal: AbortSignal.timeout(10_000),
+        });
+        if (response.status === 401) return "unauthorized";
+        return response.ok ? "valid" : "unavailable";
+    } catch {
+        return "unavailable";
+    }
+}
+
+/** Returns the sole browser-visible 401 that means refresh has conclusively failed. */
+export function createSessionEndedApiResponse(): NextResponse {
+    const response = NextResponse.json(
+        {
+            code: "authentication_required",
+            message: "The GameHub session has ended.",
+        },
+        {
+            status: 401,
+            headers: {
+                "Cache-Control": "no-store",
+                [SESSION_ENDED_HEADER]: SESSION_ENDED_HEADER_VALUE,
+            },
+        },
+    );
+    clearAuthCookies(response);
+    return response;
+}
+
+/** Converts an inconclusive refresh failure into a safe non-401 response without clearing cookies. */
+export function createAuthenticationUnavailableResponse(status: number): NextResponse {
+    return NextResponse.json(
+        {
+            code: "authentication_unavailable",
+            message: "GameHub authentication is temporarily unavailable.",
+        },
+        {
+            status: safeAuthenticationFailureStatus(status),
+            headers: { "Cache-Control": "no-store" },
+        },
+    );
 }
 
 /** Runtime validation keeps malformed upstream JSON out of security-sensitive cookies. */
@@ -196,4 +274,16 @@ function shouldUseSecureCookies(): boolean {
     // The stock Compose setup serves plain HTTP on localhost, where browsers reject Secure
     // cookies. Reverse-proxy deployments should explicitly enable this after terminating TLS.
     return process.env.AUTH_COOKIE_SECURE?.toLowerCase() === "true";
+}
+
+function safeAuthenticationFailureStatus(status: number): number {
+    if (
+        status === 403
+        || status === 404
+        || status === 429
+        || (status >= 500 && status <= 599)
+    ) {
+        return status;
+    }
+    return 502;
 }
