@@ -7,13 +7,14 @@
  * needs to live in the browser — the user clicks tabs and the component
  * re-renders to show the right panel without a full page reload.
  *
- * Six tabs:
+ * Seven tabs:
  *   1. Enrichment — manage IGDB metadata enrichment (stats, actions, audit)
  *   2. Credentials — manage tenant-scoped encrypted platform credentials
  *   3. Ingestion  — trigger platform data fetches (Steam, GOG, PSN, Epic)
  *   4. Sync       — trigger and review unification syncs
  *   5. Activity   — recent system activity feed
- *   6. Backup     — export, validate, and restore portable backups
+ *   6. Security   — manage provider-neutral GameHub session families
+ *   7. Backup     — export, validate, and restore portable backups
  */
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -24,7 +25,17 @@ import { SyncPanel } from "@/components/admin/SyncPanel";
 import { ActivityPanel } from "@/components/admin/ActivityPanel";
 import { BackupRestorePanel } from "@/components/admin/BackupRestorePanel";
 import { PlatformCredentialsPanel } from "@/components/admin/PlatformCredentialsPanel";
-import { Settings, Sparkles, Download, RefreshCw, Bell, ArchiveRestore, KeyRound } from "lucide-react";
+import { ActiveSessionsPanel } from "@/components/admin/ActiveSessionsPanel";
+import {
+    Settings,
+    Sparkles,
+    Download,
+    RefreshCw,
+    Bell,
+    ArchiveRestore,
+    KeyRound,
+    ShieldCheck,
+} from "lucide-react";
 import { DEFAULT_ADMIN_TAB, getAdminTab } from "@/lib/admin-tabs";
 
 export default function AdminPage() {
@@ -84,6 +95,10 @@ export default function AdminPage() {
                             <Bell className="h-4 w-4" />
                             Activity
                         </TabsTrigger>
+                        <TabsTrigger value="security" className="gap-1.5">
+                            <ShieldCheck className="h-4 w-4" />
+                            Security
+                        </TabsTrigger>
                         <TabsTrigger value="backup" className="gap-1.5">
                             <ArchiveRestore className="h-4 w-4" />
                             Backup
@@ -108,6 +123,10 @@ export default function AdminPage() {
 
                     <TabsContent value="activity">
                         <ActivityPanel />
+                    </TabsContent>
+
+                    <TabsContent value="security">
+                        <ActiveSessionsPanel />
                     </TabsContent>
 
                     <TabsContent value="backup">

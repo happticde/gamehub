@@ -26,6 +26,7 @@ namespace GameHub.Core.Controllers;
 public sealed class AuthController : ControllerBase
 {
     private readonly AccountService _accounts;
+    private readonly AccountSessionManagementService _accountSessions;
     private readonly JwtTokenService _tokens;
     private readonly RefreshTokenService _refreshTokens;
     private readonly OidcTokenValidator _oidcTokens;
@@ -43,6 +44,7 @@ public sealed class AuthController : ControllerBase
     /// <summary>Initializes the authentication API with scoped account and tenant services.</summary>
     public AuthController(
         AccountService accounts,
+        AccountSessionManagementService accountSessions,
         JwtTokenService tokens,
         RefreshTokenService refreshTokens,
         OidcTokenValidator oidcTokens,
@@ -58,6 +60,7 @@ public sealed class AuthController : ControllerBase
         ILogger<AuthController> logger)
     {
         _accounts = accounts;
+        _accountSessions = accountSessions;
         _tokens = tokens;
         _refreshTokens = refreshTokens;
         _oidcTokens = oidcTokens;
@@ -71,6 +74,102 @@ public sealed class AuthController : ControllerBase
         _tenantContext = tenantContext;
         _configuration = configuration;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// GET: api/auth/sessions
+    /// Lists active provider-neutral GameHub session families for the signed account and tenant.
+    /// </summary>
+    [HttpGet("sessions")]
+    [Authorize]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType<IReadOnlyList<AccountSessionResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ListSessions(CancellationToken cancellationToken)
+    {
+        if (!TryGetAuthenticatedSessionIdentity(
+                out var accountId,
+                out var tenantId,
+                out var currentAccountSessionId))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_session_required",
+                "A current tenant account session is required."));
+        }
+
+        var sessions = await _accountSessions.ListActiveAsync(
+            accountId,
+            tenantId,
+            currentAccountSessionId,
+            cancellationToken);
+        if (sessions is null)
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_session_required",
+                "A current tenant account session is required."));
+        }
+
+        return Ok(sessions);
+    }
+
+    /// <summary>
+    /// DELETE: api/auth/sessions/{sessionId}
+    /// Revokes one exact owned family without revealing whether the supplied identifier exists.
+    /// </summary>
+    [HttpDelete("sessions/{sessionId:guid}")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RevokeSession(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAuthenticatedSessionIdentity(
+                out var accountId,
+                out var tenantId,
+                out _))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_session_required",
+                "A current tenant account session is required."));
+        }
+
+        await _accountSessions.RevokeAsync(
+            accountId,
+            tenantId,
+            sessionId,
+            cancellationToken);
+        _logger.LogInformation("Processed a provider-neutral local session revocation");
+        return NoContent();
+    }
+
+    /// <summary>
+    /// DELETE: api/auth/sessions/others
+    /// Revokes every owned family except the current one without advancing the account epoch.
+    /// </summary>
+    [HttpDelete("sessions/others")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RevokeOtherSessions(CancellationToken cancellationToken)
+    {
+        if (!TryGetAuthenticatedSessionIdentity(
+                out var accountId,
+                out var tenantId,
+                out var currentAccountSessionId)
+            || !await _accountSessions.RevokeOthersAsync(
+                accountId,
+                tenantId,
+                currentAccountSessionId,
+                cancellationToken))
+        {
+            return Unauthorized(new AuthErrorResponse(
+                "account_session_required",
+                "A current tenant account session is required."));
+        }
+
+        _logger.LogInformation("Revoked all other provider-neutral local sessions for an account");
+        return NoContent();
     }
 
     /// <summary>
@@ -806,6 +905,20 @@ public sealed class AuthController : ControllerBase
             && Guid.TryParse(User.FindFirstValue(GameHubClaimTypes.TenantId), out tenantId)
             && tenantId != Guid.Empty
             && tenantId == _tenantContext.TenantId;
+    }
+
+    private bool TryGetAuthenticatedSessionIdentity(
+        out Guid accountId,
+        out Guid tenantId,
+        out Guid accountSessionId)
+    {
+        accountSessionId = Guid.Empty;
+        return TryGetAuthenticatedIdentity(out accountId, out tenantId)
+            && User.FindFirstValue(GameHubClaimTypes.SessionPurpose) is null
+            && Guid.TryParse(
+                User.FindFirstValue(GameHubClaimTypes.AccountSessionId),
+                out accountSessionId)
+            && accountSessionId != Guid.Empty;
     }
 
     private static TokenResponse CreateTokenResponse(

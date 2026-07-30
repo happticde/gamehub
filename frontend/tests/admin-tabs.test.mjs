@@ -6,7 +6,15 @@ import {
 } from "../lib/admin-tabs.ts";
 
 test("Admin tab selection preserves every supported URL value", () => {
-    for (const tab of ["enrichment", "credentials", "ingestion", "sync", "activity", "backup"]) {
+    for (const tab of [
+        "enrichment",
+        "credentials",
+        "ingestion",
+        "sync",
+        "activity",
+        "security",
+        "backup",
+    ]) {
         assert.equal(getAdminTab(tab), tab);
     }
 });

@@ -149,10 +149,15 @@ public sealed class RefreshTokenService
 
         if (existing.ConsumedAtUtc is not null || existing.RevokedAtUtc is not null)
         {
-            await RevokeAllAccountSessionsAsync(
+            await using var replayTransaction =
+                await _db.Database.BeginTransactionAsync(cancellationToken);
+            await AccountSessionRevocation.RevokeAllFamiliesAsync(
+                _db,
                 existing.UserAccountId,
+                existing.UserAccount.TenantId,
                 nowUtc,
                 cancellationToken);
+            await replayTransaction.CommitAsync(cancellationToken);
             return RefreshTokenRotationResult.Invalid;
         }
 
@@ -173,10 +178,25 @@ public sealed class RefreshTokenService
                 cancellationToken);
         if (consumedRows != 1)
         {
-            await RevokeAllAccountSessionsAsync(
+            // A targeted family revocation can win this race legitimately. In that case the
+            // family is already closed and no account-wide replay response is needed. If the
+            // family is still active, another refresh consumed the secret and the stronger
+            // historical replay defense revokes every family.
+            var familyStillActive = await IsAccountSessionActiveAsync(
+                existing.AccountSessionId.Value,
                 existing.UserAccountId,
-                nowUtc,
+                existing.UserAccount.TenantId,
                 cancellationToken);
+            if (familyStillActive)
+            {
+                await AccountSessionRevocation.RevokeAllFamiliesAsync(
+                    _db,
+                    existing.UserAccountId,
+                    existing.UserAccount.TenantId,
+                    nowUtc,
+                    cancellationToken);
+            }
+
             await transaction.CommitAsync(cancellationToken);
             return RefreshTokenRotationResult.Invalid;
         }
@@ -192,6 +212,7 @@ public sealed class RefreshTokenService
         if (!await IsAccountSessionActiveAsync(
                 existing.AccountSessionId.Value,
                 existing.UserAccountId,
+                existing.UserAccount.TenantId,
                 cancellationToken))
         {
             return RefreshTokenRotationResult.Invalid;
@@ -224,7 +245,8 @@ public sealed class RefreshTokenService
             {
                 session.UserAccountId,
                 session.AccountSessionId,
-                session.ConsumedAtUtc
+                session.ConsumedAtUtc,
+                TenantId = session.UserAccount!.TenantId
             })
             .SingleOrDefaultAsync(cancellationToken);
         if (existing is null || existing.AccountSessionId is null)
@@ -234,17 +256,24 @@ public sealed class RefreshTokenService
 
         if (existing.ConsumedAtUtc is not null)
         {
-            await RevokeAllAccountSessionsAsync(
+            await using var replayTransaction =
+                await _db.Database.BeginTransactionAsync(cancellationToken);
+            await AccountSessionRevocation.RevokeAllFamiliesAsync(
+                _db,
                 existing.UserAccountId,
+                existing.TenantId,
                 nowUtc,
                 cancellationToken);
+            await replayTransaction.CommitAsync(cancellationToken);
             return;
         }
 
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
-        await RevokeAccountSessionAsync(
+        await AccountSessionRevocation.RevokeFamilyAsync(
+            _db,
             existing.AccountSessionId.Value,
             existing.UserAccountId,
+            existing.TenantId,
             nowUtc,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -310,6 +339,7 @@ public sealed class RefreshTokenService
             if (!await IsAccountSessionActiveAsync(
                     accountSessionId,
                     account.Id,
+                    account.TenantId,
                     cancellationToken))
             {
                 return OidcRefreshTokenIssueResult.Denied;
@@ -373,56 +403,17 @@ public sealed class RefreshTokenService
             new IssuedRefreshToken(plaintext, expiresAt, accountSessionId));
     }
 
-    private async Task RevokeAccountSessionAsync(
-        Guid accountSessionId,
-        Guid accountId,
-        DateTime revokedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        await _db.AccountSessions
-            .Where(session => session.Id == accountSessionId
-                && session.UserAccountId == accountId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
-                cancellationToken);
-        await _db.RefreshTokenSessions
-            .Where(session => session.AccountSessionId == accountSessionId
-                && session.UserAccountId == accountId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
-                cancellationToken);
-    }
-
     private Task<bool> IsAccountSessionActiveAsync(
         Guid accountSessionId,
         Guid accountId,
+        Guid tenantId,
         CancellationToken cancellationToken) =>
         _db.AccountSessions.AsNoTracking().AnyAsync(
             session => session.Id == accountSessionId
                 && session.UserAccountId == accountId
+                && session.TenantId == tenantId
                 && session.RevokedAtUtc == null,
             cancellationToken);
-
-    private async Task RevokeAllAccountSessionsAsync(
-        Guid accountId,
-        DateTime revokedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        await _db.AccountSessions
-            .Where(session => session.UserAccountId == accountId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
-                cancellationToken);
-        await _db.RefreshTokenSessions
-            .Where(session => session.UserAccountId == accountId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
-                cancellationToken);
-    }
 
     private static bool TryHashSubmittedToken(
         string? plaintextToken,

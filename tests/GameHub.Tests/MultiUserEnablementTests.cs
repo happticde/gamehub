@@ -114,6 +114,8 @@ public sealed class MultiUserEnablementTests : IDisposable
     [Theory]
     [InlineData("POST", "/api/auth/account", false)]
     [InlineData("DELETE", "/api/library", false)]
+    [InlineData("GET", "/api/auth/sessions", false)]
+    [InlineData("DELETE", "/api/auth/sessions/others", false)]
     [InlineData("DELETE", "/api/auth/account/other", false)]
     [InlineData("DELETE", "/api/auth/account", true)]
     public void DeletionOnlySession_RequestDataCannotWidenPurpose(
@@ -124,6 +126,17 @@ public sealed class MultiUserEnablementTests : IDisposable
         Assert.Equal(
             expected,
             MultiUserSessionBoundary.AllowsAccountDeletionOnlyRequest(method, path));
+    }
+
+    [Theory]
+    [InlineData("GET", "/api/auth/sessions")]
+    [InlineData("DELETE", "/api/auth/sessions/00000000-0000-0000-0000-000000000001")]
+    [InlineData("DELETE", "/api/auth/sessions/others")]
+    public void LinkOnlySession_SessionManagementRoutesRemainRejected(
+        string method,
+        string path)
+    {
+        Assert.False(MultiUserSessionBoundary.AllowsOidcLinkOnlyRequest(method, path));
     }
 
     [Fact]

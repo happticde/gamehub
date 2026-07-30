@@ -36,6 +36,10 @@
   200/400/503 outcomes, and never reads or clears browser cookies. Core owns all token validation,
   `sub`/`sid` consistency, hashed provider-session mapping, replay protection, and durable local
   session-family invalidation.
+- The Admin Security tab manages active GameHub session families through `/api/core/auth/sessions`.
+  The client receives only local session ID, creation time, and current state. Other-family actions
+  stay on the same-origin BFF; current sign-out reuses the native logout form. Tokens remain in
+  HttpOnly cookies, and no provider, device, user-agent, or IP metadata enters browser state.
 - Operator readiness is intentionally not exposed to Client Components. The secret-free status API
   is an operator API-key endpoint, not a tenant-facing admin dashboard.
 - The active physical-capture UI is manual-first via the existing IGDB enrichment search. It must

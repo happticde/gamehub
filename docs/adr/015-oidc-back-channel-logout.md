@@ -1,7 +1,7 @@
 # ADR-015: OIDC Back-Channel Logout and Session-Family Invalidation
 
 **Date:** 2026-07-18
-**Updated:** 2026-07-25
+**Updated:** 2026-07-30
 **Status:** Accepted
 **Deciders:** @jankahnt
 
@@ -90,6 +90,28 @@ provider credential is introduced. Keycloak is only one operator setup example.
 - Unknown or already revoked targets are accepted no-ops and do not reveal whether a mapping,
   account, tenant, or session exists.
 
+### Provider-neutral self-service session management
+
+Ordinary authenticated users can list and revoke the same durable local families without entering
+the provider trust boundary:
+
+- `GET /api/auth/sessions` derives the account, tenant, and current family only from validated
+  GameHub claims and returns only the stable local ID, creation time, and current marker.
+- `DELETE /api/auth/sessions/{sessionId}` closes one exact active family owned by that signed
+  account/tenant pair. Unknown, foreign, cross-tenant, and already revoked IDs are identical
+  successful no-ops.
+- `DELETE /api/auth/sessions/others` closes every owned active family except the current family and
+  does not advance the account epoch.
+
+All family revocation paths share one central transactional mutation for `AccountSession`, its
+refresh rows, and an optional local `OidcProviderSession`. This also orders targeted revocation
+against refresh rotation so no active replacement can survive. Restricted link/deletion tokens
+cannot use these routes.
+
+This management surface is completely provider- and Keycloak-independent. It does not inspect
+provider name, `sid`, or other OIDC claims, does not call a provider, and neither stores nor returns
+raw provider session IDs, user agents, IP addresses, or inferred device data.
+
 ### Replay, login/logout races, and deletion
 
 Core stores the SHA-256 hash of exact validated issuer plus `jti` as the existing short-lived replay
@@ -130,6 +152,8 @@ persisted mapping.
 - Issuer/subject tenant authority and cross-tenant isolation remain unchanged.
 - Unknown, deleted, repeated, and already revoked targets stay non-enumerating.
 - The implementation is provider-neutral and trusts only standard claims plus discovery/JWKS.
+- Users can inspect and revoke local GameHub families uniformly after local or OIDC login without
+  adding provider administration access or device-tracking metadata.
 
 ### Costs and limitations
 

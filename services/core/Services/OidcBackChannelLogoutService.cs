@@ -178,29 +178,13 @@ public sealed class OidcBackChannelLogoutService(
             return OidcBackChannelLogoutResult.NoLiveMapping;
         }
 
-        await db.OidcProviderSessions
-            .Where(candidate => candidate.Id == providerSession.Id
-                && candidate.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(candidate => candidate.RevokedAtUtc, nowUtc),
-                cancellationToken);
-        var revokedSessions = await db.AccountSessions
-            .Where(session => session.Id == providerSession.AccountSessionId
-                && session.UserAccountId == providerSession.UserAccountId
-                && session.TenantId == providerSession.TenantId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
-                cancellationToken);
-        await db.RefreshTokenSessions
-            .Where(session => session.AccountSessionId == providerSession.AccountSessionId
-                && session.UserAccountId == providerSession.UserAccountId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
-                cancellationToken);
-
-        if (revokedSessions != 1)
+        if (!await AccountSessionRevocation.RevokeFamilyAsync(
+                db,
+                providerSession.AccountSessionId.Value,
+                providerSession.UserAccountId.Value,
+                providerSession.TenantId.Value,
+                nowUtc,
+                cancellationToken))
         {
             return OidcBackChannelLogoutResult.NoLiveMapping;
         }
@@ -236,19 +220,12 @@ public sealed class OidcBackChannelLogoutService(
             return OidcBackChannelLogoutResult.NoLiveMapping;
         }
 
-        await db.AccountSessions
-            .Where(session => session.UserAccountId == mapping.UserAccountId
-                && session.TenantId == mapping.TenantId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
-                cancellationToken);
-        await db.RefreshTokenSessions
-            .Where(session => session.UserAccountId == mapping.UserAccountId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, nowUtc),
-                cancellationToken);
+        await AccountSessionRevocation.RevokeAllFamiliesAsync(
+            db,
+            mapping.UserAccountId,
+            mapping.TenantId,
+            nowUtc,
+            cancellationToken);
 
         await AddActivityAsync(
             mapping.TenantId,

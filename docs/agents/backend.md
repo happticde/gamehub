@@ -83,6 +83,12 @@ Two ASP.NET Core microservices:
   previously validated tenant-bound family; `sub` without `sid` advances the account epoch and
   revokes all families. Both claims must map consistently. Hash-only tombstones order login/logout
   races without allowing `sid` to select an account or tenant directly. See ADR-015.
+- Active session management uses only the existing provider-neutral `AccountSession`. Authenticated
+  account/tenant/current-family claims can list the minimal local ID/creation/current shape, revoke
+  one owned family, or revoke all other families without advancing the epoch. A central
+  transactional revoker closes the family, refresh rows, and optional local OIDC mapping for every
+  logout path. No provider claim, API, SDK, Keycloak integration, user agent, IP, or device metadata
+  participates.
 - OIDC provisioning: `Authentication:Oidc:ProvisioningMode` accepts only `Disabled` (default) or
   `PersonalTenantJit`. JIT requires active guarded mode and atomically creates a server-identified,
   sync-disabled tenant, `ExternalOidc` owner, exact mapping, refresh session, and secret-free

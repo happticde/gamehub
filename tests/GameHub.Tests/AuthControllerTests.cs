@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Xunit;
 
 namespace GameHub.Tests;
@@ -264,6 +265,55 @@ public sealed class AuthControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Sessions_ValidatedClaims_ListAndRevokeOwnedFamilies()
+    {
+        var account = (await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner")).Account!;
+        var current = await _refreshTokens.IssueAsync(account);
+        var other = await _refreshTokens.IssueAsync(account);
+        var controller = CreateController(apiKey: "configured", jwtEnabled: true);
+        SetSessionPrincipal(controller, account, current.AccountSessionId);
+
+        var listed = Assert.IsType<OkObjectResult>(
+            await controller.ListSessions(CancellationToken.None));
+        var sessions = Assert.IsAssignableFrom<IReadOnlyList<AccountSessionResponse>>(listed.Value);
+        Assert.Equal(2, sessions.Count);
+        Assert.Equal(current.AccountSessionId, sessions[0].SessionId);
+        Assert.True(sessions[0].IsCurrent);
+
+        Assert.IsType<NoContentResult>(await controller.RevokeSession(
+            other.AccountSessionId,
+            CancellationToken.None));
+        Assert.False((await _refreshTokens.RotateAsync(other.RefreshToken)).Rotated);
+        Assert.True((await _refreshTokens.RotateAsync(current.RefreshToken)).Rotated);
+    }
+
+    [Theory]
+    [InlineData(GameHubClaimTypes.OidcLinkOnlySessionPurpose)]
+    [InlineData(GameHubClaimTypes.AccountDeletionOnlySessionPurpose)]
+    public async Task Sessions_RestrictedTokenPurpose_IsRejected(string sessionPurpose)
+    {
+        var account = (await _accounts.BootstrapAsync(
+            TenantDefaults.DefaultTenantId,
+            "owner@example.com",
+            Password,
+            "Owner")).Account!;
+        var current = await _refreshTokens.IssueAsync(account);
+        var controller = CreateController(apiKey: "configured", jwtEnabled: true);
+        SetSessionPrincipal(controller, account, current.AccountSessionId, sessionPurpose);
+
+        var result = await controller.ListSessions(CancellationToken.None);
+
+        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
+        Assert.Equal(
+            "account_session_required",
+            Assert.IsType<AuthErrorResponse>(unauthorized.Value).Code);
+    }
+
+    [Fact]
     public async Task Token_MultiUserEnabledUnlinkedAccount_ReturnsOnlyRestrictedLinkSession()
     {
         await _accounts.BootstrapAsync(
@@ -423,6 +473,9 @@ public sealed class AuthControllerTests : IDisposable
         var tenantExecution = new TenantExecutionContext();
         var controller = new AuthController(
             _accounts,
+            new AccountSessionManagementService(
+                _db,
+                new AccountServiceTests.FixedTimeProvider(FixedNow)),
             new JwtTokenService(jwtSettings, new AccountServiceTests.FixedTimeProvider(FixedNow)),
             _refreshTokens,
             oidcValidator,
@@ -454,5 +507,26 @@ public sealed class AuthControllerTests : IDisposable
             HttpContext = new DefaultHttpContext()
         };
         return controller;
+    }
+
+    private static void SetSessionPrincipal(
+        AuthController controller,
+        UserAccount account,
+        Guid accountSessionId,
+        string? sessionPurpose = null)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, account.Id.ToString("D")),
+            new(GameHubClaimTypes.TenantId, account.TenantId.ToString("D")),
+            new(GameHubClaimTypes.AccountSessionId, accountSessionId.ToString("D"))
+        };
+        if (sessionPurpose is not null)
+        {
+            claims.Add(new Claim(GameHubClaimTypes.SessionPurpose, sessionPurpose));
+        }
+
+        controller.ControllerContext.HttpContext.User =
+            new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
     }
 }

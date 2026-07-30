@@ -310,7 +310,12 @@ public sealed class AccountService
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         account.PasswordHash = _passwordHasher.HashPassword(account, newPassword);
         account.SessionVersion = checked(account.SessionVersion + 1);
-        await RevokeAllSessionsForAccountAsync(account.Id, nowUtc, cancellationToken);
+        await AccountSessionRevocation.RevokeAllFamiliesAsync(
+            _db,
+            account.Id,
+            account.TenantId,
+            nowUtc,
+            cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return PasswordChangeResult.Succeeded;
@@ -335,8 +340,10 @@ public sealed class AccountService
 
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         account.SessionVersion = checked(account.SessionVersion + 1);
-        await RevokeAllSessionsForAccountAsync(
+        await AccountSessionRevocation.RevokeAllFamiliesAsync(
+            _db,
             accountId,
+            tenantId,
             _timeProvider.GetUtcNow().UtcDateTime,
             cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
@@ -394,7 +401,12 @@ public sealed class AccountService
         account.Tenant.PlatformSyncEnabled = false;
         account.Tenant.DeletionRequestedAtUtc ??= nowUtc;
         account.SessionVersion = checked(account.SessionVersion + 1);
-        await RevokeAllSessionsForAccountAsync(account.Id, nowUtc, cancellationToken);
+        await AccountSessionRevocation.RevokeAllFamiliesAsync(
+            _db,
+            account.Id,
+            account.TenantId,
+            nowUtc,
+            cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return AccountDeletionPreparationResult.Prepared;
@@ -412,24 +424,6 @@ public sealed class AccountService
 
         return _passwordHasher.VerifyHashedPassword(account, account.PasswordHash, password)
             != PasswordVerificationResult.Failed;
-    }
-
-    private async Task RevokeAllSessionsForAccountAsync(
-        Guid accountId,
-        DateTime revokedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        await _db.AccountSessions
-            .Where(session => session.UserAccountId == accountId
-                && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
-                cancellationToken);
-        await _db.RefreshTokenSessions
-            .Where(session => session.UserAccountId == accountId && session.RevokedAtUtc == null)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
-                cancellationToken);
     }
 
     /// <summary>
