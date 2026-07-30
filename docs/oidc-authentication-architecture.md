@@ -162,6 +162,13 @@ Read the implementation in this order:
     - Revoke one mapped local family for `sid`, or advance the mapped account epoch for `sub` only.
     - Enforce subject/session consistency, hashed race tombstones, and hashed replay markers.
     - Reject revoked local families and earlier access-JWT epochs during ordinary bearer validation.
+15. [`services/core/Services/AccountSessionManagementService.cs`](../services/core/Services/AccountSessionManagementService.cs),
+    [`services/core/Services/AccountSessionRevocation.cs`](../services/core/Services/AccountSessionRevocation.cs), and
+    [`frontend/components/admin/ActiveSessionsPanel.tsx`](../frontend/components/admin/ActiveSessionsPanel.tsx)
+    - List only active families for the signed account, tenant, and current local family.
+    - Apply one shared transactional revocation boundary to the family, refresh rows, and optional
+      local OIDC mapping.
+    - Keep all browser requests on the same-origin BFF without exposing tokens or provider state.
 
 ## 5. Configuration flows through two servers
 
@@ -489,6 +496,24 @@ The browser cannot read either GameHub token because both cookies are HttpOnly. 
 the access cookie into an `Authorization: Bearer` header for Core. A refresh token is random opaque
 data; Core stores only its SHA-256 hash and rotates it on every successful refresh.
 
+### Self-service active-session management
+
+Once Core has validated a normal GameHub access JWT, its signed account, tenant, and
+`gamehub:account_session_id` claims authorize `GET /api/auth/sessions` and the two DELETE routes.
+The API never accepts an account or tenant selector. It returns only the stable local family ID,
+creation time, and current marker; current is ordered first, then remaining families newest first.
+
+One-family revocation and "all other families" use the same central database mutation as refresh
+logout, account-wide lifecycle revocation, and OIDC Back-Channel Logout. The transaction closes the
+`AccountSession`, every associated refresh row, and an optional local hashed-provider-session
+mapping together. A refresh racing the revocation either commits first and is then revoked, or
+observes the closed family and cannot create a usable replacement. Revoking other families does
+not advance the account epoch, which preserves the current family.
+
+This flow is provider- and Keycloak-independent. Local and OIDC-authenticated sessions are
+identical after GameHub session issuance. No provider API, SDK, credential, provider name, `sid`,
+raw provider session ID, user agent, or IP address participates in listing or authorization.
+
 ## 12. Cookie and secret inventory
 
 | Value | Stored where | Browser-readable? | Lifetime/use |
@@ -705,6 +730,8 @@ Before enabling a provider:
 - RP-Initiated browser logout and provider-neutral `sid`/`sub` Back-Channel Logout are implemented
   without storing provider tokens or raw provider session IDs. Provider disabled-user event
   reconciliation is not implemented.
+- Authenticated users can list and revoke their local GameHub session families without any
+  provider integration. The intentionally minimal list has no device, user-agent, or IP metadata.
 - Provider access tokens are not retained or used for provider APIs.
 - Local account deletion still follows ADR-010's current-password confirmation path.
 - Guarded multi-user enablement is implemented, deliberately separate, and disabled by default.

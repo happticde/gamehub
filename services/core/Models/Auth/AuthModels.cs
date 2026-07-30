@@ -47,6 +47,15 @@ public sealed record OidcBackChannelLogoutRequest(string LogoutToken);
 /// </summary>
 public sealed record RefreshTokenRequest(string RefreshToken);
 
+/// <summary>
+/// Secret-free representation of one active provider-neutral GameHub session family.
+/// The identifier is generated locally and is never an OIDC or provider session identifier.
+/// </summary>
+public sealed record AccountSessionResponse(
+    Guid SessionId,
+    DateTimeOffset CreatedAtUtc,
+    bool IsCurrent);
+
 /// <summary>Current and replacement password for an authenticated password change.</summary>
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 

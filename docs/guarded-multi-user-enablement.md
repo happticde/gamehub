@@ -133,18 +133,19 @@ account can still obtain the restricted link-purpose token so rollout preparatio
 Local password hashes remain stored for rollback compatibility and current-password confirmation
 on existing lifecycle operations. They are not production login credentials.
 
-## Provider-initiated account logout
+## Provider-initiated and user-managed sessions
 
 Configure the provider's Back-Channel Logout URL as the public BFF route
-`https://<gamehub-host>/api/auth/oidc/backchannel-logout`. A valid signed Logout Token resolves only
-the exact persisted `(issuer, subject)`, advances that account's GameHub session epoch, revokes all
-of its refresh sessions, and writes a secret-free tenant activity entry. Existing access JWTs then
-fail their next live database check instead of remaining usable until expiry.
+`https://<gamehub-host>/api/auth/oidc/backchannel-logout`. A valid signed Logout Token with `sid`
+revokes only its previously mapped local family; `sub` without `sid` advances the exact account
+epoch and revokes all families. Both claims must resolve consistently. Duplicate and unknown
+identities return the same successful provider response. Invalid messages return 400; temporary
+discovery/JWKS/Core failures return 503 so the provider can retry.
 
-The current implementation is deliberately account-wide. It requires `sub` and does not use an
-optional Keycloak `sid` as a tenant or account selector. Duplicate and unknown identities return
-the same successful provider response. Invalid messages return 400; temporary discovery/JWKS/Core
-failures return 503 so the provider can retry.
+Signed users can also list and revoke their own local `AccountSession` families through the Admin
+Security tab. This path is fully provider- and Keycloak-independent: it uses no provider claim or
+API and stores no device, user-agent, or IP metadata. Revoking all other families deliberately
+preserves the current family and account epoch.
 
 ## Disable and rollback
 
@@ -250,7 +251,8 @@ SQLite/PostgreSQL migration for account session epochs and short-lived hashed lo
 
 - [ ] Switch is false during upgrade and preparation.
 - [ ] Provider issuer/client/callback and asymmetric algorithms are exact.
-- [ ] The exact public Back-Channel Logout URL is registered and account-wide logout is exercised.
+- [ ] The exact public Back-Channel Logout URL is registered and both session-specific and
+      account-wide logout are exercised.
 - [ ] Provider MFA, recovery, verification, abuse, and administrator policies are reviewed.
 - [ ] Frontend auth and Secure cookies are enabled behind correctly configured HTTPS proxying.
 - [ ] Operator, BFF, JWT, delegation, cookie, provider, and vault keys are independent.

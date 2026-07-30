@@ -1,5 +1,37 @@
 # Session History
 
+## Current Session Summary (2026-07-30)
+
+### What Changed
+
+**Provider-Neutral Active Session Management:**
+- Added authenticated list, targeted revoke, and revoke-other Core routes for durable local
+  `AccountSession` families. Responses contain only the stable local session ID, creation time, and
+  current marker; account, tenant, and current family come exclusively from validated GameHub
+  claims.
+- Centralized family invalidation across refresh logout, account lifecycle, OIDC Back-Channel
+  Logout, and self-service management. Each transaction closes the local family, every refresh
+  row, and optional local hashed OIDC-session mapping consistently.
+- Preserved refresh replay defense while distinguishing a legitimate targeted-revocation race, so
+  no replacement survives and unrelated families are not revoked account-wide.
+- Added an Admin Security tab with the **Aktive Sitzungen** card, current-session marking,
+  localized creation time, single/all-other actions, existing top-level current logout, and
+  explicit loading/success/sanitized-error states through the same-origin HttpOnly-cookie BFF.
+- Added direct local/OIDC parity, access/refresh invalidation, ordering, cross-account/tenant,
+  unknown/repeated ID, restricted-token, concurrent refresh/revoke, and frontend
+  security/interaction coverage.
+- No migration, dependency, Compose, environment, provider configuration, provider API, SDK,
+  plugin, service account, credential, device metadata, user agent, or IP storage was added. The
+  feature is fully provider- and Keycloak-independent.
+
+### Verification
+
+- Core builds with zero warnings and errors; the full .NET suite passes 439 tests with no skips
+  against an isolated real PostgreSQL 17 instance.
+- The explicit SQLite/PostgreSQL migration subset passes 11 tests, and EF reports no pending model
+  changes.
+- Frontend security passes 63 tests. Repository-wide lint and the Next.js production build pass.
+
 ## Current Session Summary (2026-07-25)
 
 ### What Changed

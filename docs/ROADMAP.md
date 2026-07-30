@@ -2,7 +2,7 @@
 
 Current status and future direction for the project. Ideas are grouped from **high-impact / foundational** to **nice-to-have**.
 
-Last audited against `origin/main`: **2026-07-16**.
+Last audited against `origin/main`: **2026-07-30**.
 
 ---
 
@@ -17,7 +17,7 @@ Last audited against `origin/main`: **2026-07-16**.
 | Tests | ✅ .NET, frontend, SQLite, and PostgreSQL migration/isolation coverage |
 | EF Core Migrations | ✅ Auto-applied on startup |
 | Structured Logging | ✅ All components, debugging guide |
-| Auth | ✅ API key, local/JWT/OIDC, JIT, Back-Channel Logout, encrypted vault, guarded multi-user mode |
+| Auth | ✅ API key, local/JWT/OIDC, active sessions, JIT, Back-Channel Logout, encrypted vault, guarded multi-user mode |
 | CI/CD | ✅ GitHub Actions (build, test, Docker) |
 | Frontend | ✅ Mobile-First: Grid/List, Filters Dialog, Screenshot Carousel |
 | Enrichment / metadata | ✅ IGDB provider with caching, rate-limiting, smart search |
@@ -126,6 +126,14 @@ boundaries; platform connector credentials are stored separately in the Ingest v
   background jobs, disable/rollback, readiness, and data-preservation boundaries are directly
   tested. See [ADR-012](adr/012-guarded-multi-user-enablement.md) and the
   [operator guide](guarded-multi-user-enablement.md).
+- **Provider-neutral active sessions (2026-07-30)**: Signed users can list only their active
+  GameHub `AccountSession` families, revoke one other family, or revoke all families except the
+  current one from the Admin Security tab. Account, tenant, and current session come exclusively
+  from validated GameHub claims. One shared transactional boundary invalidates access, refresh,
+  and optional local OIDC-session state while preserving account-wide password, revoke-all,
+  provider-subject logout, and deletion behavior. Local and arbitrary OIDC logins behave
+  identically; no provider API, Keycloak dependency, provider claim, user agent, IP address,
+  device inference, dependency, configuration change, or migration was added.
 - **Activation boundary**: Item #8 is technically complete, but production multi-user operation
   remains disabled after installation and upgrade until an operator deliberately satisfies the
   deployment/provider checklist, sets the guarded switch consistently, and restarts. This does not
@@ -354,6 +362,10 @@ existing explicit tenant-mapping, isolation, lifecycle, or default-off activatio
   order login/logout races, while duplicate, unknown, deleted, and already revoked targets remain
   externally indistinguishable. SQLite/PostgreSQL upgrades fail closed by revoking legacy sessions
   without a stable family reference.
+- **Self-service session management (2026-07-30)**: The same local session families now have a
+  provider-independent list/single-revoke/revoke-others API and Admin Security card. The feature is
+  Keycloak-independent, exposes only a local stable ID, creation time, and current marker, and
+  reuses the central family/refresh/OIDC-local-state revocation boundary.
 - **Remaining scope**: Automated provider lifecycle integration, disabled-user events, subject
   replacement recovery, SCIM/provider-event evaluation, and missed-event reconciliation remain
   future work.

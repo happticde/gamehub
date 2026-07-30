@@ -249,6 +249,33 @@ should always discard their local access and refresh tokens after this request. 
 revokes its complete durable family, so already-issued access JWTs and every refresh row in that
 same browser/device session stop together.
 
+## Manage Active GameHub Sessions
+
+An ordinary authenticated GameHub session can manage its own active local session families:
+
+```http
+GET /api/auth/sessions
+DELETE /api/auth/sessions/{sessionId}
+DELETE /api/auth/sessions/others
+```
+
+The list contains only `sessionId`, `createdAtUtc`, and `isCurrent`. The current family is first,
+followed by the remaining families from newest to oldest. Account, tenant, and current family come
+only from the validated GameHub access JWT; request parameters cannot select another account or
+tenant. Normal JWTs still require `gamehub:account_session_id`, and the restricted OIDC-link and
+account-deletion tokens cannot call any session-management route.
+
+Deleting one identifier atomically revokes the exact owned `AccountSession`, all of its refresh
+rows, and any associated local OIDC-session mapping. Unknown, foreign, cross-tenant, and already
+revoked identifiers return the same `204 No Content` and change nothing. Deleting `others` keeps
+only the current family and deliberately does not advance the account epoch, so the current access
+and refresh credentials remain usable.
+
+This capability is completely provider-neutral and Keycloak-independent. It uses only GameHub's
+local `AccountSession`; it neither reads nor depends on provider name, `sid`, or any other OIDC
+claim, and it never calls a provider API. GameHub stores and returns no raw provider session ID,
+user agent, device fingerprint, or IP address for this feature.
+
 ## Change the Password
 
 `PUT /api/auth/password` requires a bearer token and both the current and replacement password.
@@ -327,6 +354,12 @@ returns a 303 top-level RP-Initiated Logout navigation with the configured `clie
 on the exact configured callback origin. It accepts no browser redirect input and falls back to
 local `/login` when Core or provider logout is unavailable. Because GameHub stores no provider ID
 token, Keycloak may display a logout confirmation page.
+
+The Admin Security tab contains the **Aktive Sitzungen** card. It loads the minimal session list
+through the existing same-origin `/api/core/*` BFF, marks the current family, shows its creation
+time, and can revoke one other family or all other families. The current family uses the existing
+top-level logout form so local cookie cleanup and optional RP-Initiated Logout behavior remain
+unchanged. Access and refresh tokens stay in HttpOnly cookies and never enter React state.
 
 ### OIDC Back-Channel Logout
 

@@ -132,6 +132,7 @@ builder.Services.AddSingleton<ITenantJobRunner, TenantJobRunner>();
 // owns a request-scoped CoreContext.
 builder.Services.AddSingleton<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
 builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<AccountSessionManagementService>();
 builder.Services.AddScoped<AccountSessionValidationService>();
 builder.Services.AddScoped<ExternalIdentityService>();
 builder.Services.AddScoped<OidcJitProvisioningService>();

@@ -4,6 +4,7 @@ export const ADMIN_TAB_VALUES = [
     "ingestion",
     "sync",
     "activity",
+    "security",
     "backup",
 ] as const;
 
