@@ -66,9 +66,12 @@ export function LoginForm({
                 oidcLinkRequired?: boolean;
             };
             if (payload.oidcLinkRequired) {
-                window.location.assign(
-                    `/api/auth/oidc/start?intent=link&returnTo=${encodeURIComponent(returnTo)}`,
-                );
+                // The BFF route performs a document-level redirect to the identity provider. A
+                // client-side router navigation would incorrectly treat it as a renderable page.
+                const oidcLinkUrl = new URL("/api/auth/oidc/start", window.location.origin);
+                oidcLinkUrl.searchParams.set("intent", "link");
+                oidcLinkUrl.searchParams.set("returnTo", returnTo);
+                window.location.assign(oidcLinkUrl.toString());
                 return;
             }
 
