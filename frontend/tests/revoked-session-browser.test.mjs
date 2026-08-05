@@ -144,6 +144,13 @@ test("login displays a neutral ended-session message and public auth routes stay
         loginForm,
         /Diese GameHub-Sitzung wurde beendet\. Bitte melde dich erneut an\./,
     );
+    assert.match(
+        loginForm,
+        /new URL\("\/api\/auth\/oidc\/start", window\.location\.origin\)/,
+    );
+    assert.match(loginForm, /oidcLinkUrl\.searchParams\.set\("intent", "link"\)/);
+    assert.match(loginForm, /oidcLinkUrl\.searchParams\.set\("returnTo", returnTo\)/);
+    assert.match(loginForm, /window\.location\.assign\(oidcLinkUrl\.toString\(\)\)/);
     assert.doesNotMatch(`${loginRoute}\n${logoutRoute}`, /fetchAuthenticated/);
     assert.match(proxy, /const isLoginPage = request\.nextUrl\.pathname === "\/login"/);
     assert.match(proxy, /matcher:\s*\["\/\(\(\?!api/);
