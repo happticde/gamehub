@@ -1,5 +1,6 @@
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using System.Text.Json;
 
 namespace GameHub.Mcp.Tools;
 
@@ -117,13 +118,20 @@ public sealed class LibraryTools
         [Description("New play status: Unplayed, Played, Playing, Completed, or Abandoned")] string playStatus)
     {
         // Parse and validate the play status string
-        if (!Enum.TryParse<PlayStatusEnum>(playStatus, ignoreCase: true, out var parsedStatus))
+        if (!Enum.TryParse<PlayStatusEnum>(playStatus, ignoreCase: true, out var parsedStatus)
+            || !Enum.IsDefined(parsedStatus))
         {
             return $"Error: '{playStatus}' is not a valid play status. " +
                    "Valid values are: Unplayed, Played, Playing, Completed, Abandoned.";
         }
 
-        var body = new { PlayStatus = parsedStatus.ToString(), UserRating = (int?)null };
+        var current = await ReadPersonalTrackingAsync(gameId);
+        if (current is null)
+        {
+            return $"Error: Could not read personal tracking for game {gameId}. No changes were made.";
+        }
+
+        var body = new { PlayStatus = parsedStatus.ToString(), current.UserRating };
         var result = await _api.UpdatePersonalTrackingAsync(gameId, body);
         return result ?? $"Error: Could not update game {gameId}. Is the Core service running?";
     }
@@ -143,31 +151,59 @@ public sealed class LibraryTools
             return "Error: Rating must be between 1 and 5 (or null to clear).";
         }
 
-        // We need to also send PlayStatus — PATCH requires the full PersonalUpdateRequest.
-        // First, get the current game to read its existing play status.
-        var current = await _api.GetGameAsync(gameId);
-        if (current == null)
+        var current = await ReadPersonalTrackingAsync(gameId);
+        if (current is null)
         {
-            return $"Error: Game with ID {gameId} not found, or the Core service is unavailable.";
+            return $"Error: Could not read personal tracking for game {gameId}. No changes were made.";
         }
 
-        // Parse the current play status from the JSON response.
-        // Default to Unplayed if we can't parse it (safe fallback).
-        var currentStatus = "Unplayed";
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(current);
-            if (doc.RootElement.TryGetProperty("playStatus", out var ps))
-            {
-                currentStatus = ps.GetString() ?? "Unplayed";
-            }
-        }
-        catch { /* fallback to Unplayed */ }
-
-        var body = new { PlayStatus = currentStatus, UserRating = rating };
+        var body = new { PlayStatus = current.PlayStatus.ToString(), UserRating = rating };
         var result = await _api.UpdatePersonalTrackingAsync(gameId, body);
         return result ?? $"Error: Could not update rating for game {gameId}. Is the Core service running?";
     }
+
+    // Core currently replaces both tracking fields. Preserve the field the tool is not changing
+    // and reject malformed reads instead of writing invented defaults over the user's data.
+    private async Task<PersonalTracking?> ReadPersonalTrackingAsync(int gameId)
+    {
+        var json = await _api.GetGameAsync(gameId);
+        if (json is null) return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("playStatus", out var statusElement)
+                || statusElement.ValueKind != JsonValueKind.String
+                || !Enum.TryParse<PlayStatusEnum>(statusElement.GetString(), true, out var status)
+                || !Enum.IsDefined(status)
+                || !root.TryGetProperty("userRating", out var ratingElement))
+            {
+                return null;
+            }
+
+            int? rating = null;
+            if (ratingElement.ValueKind != JsonValueKind.Null)
+            {
+                if (ratingElement.ValueKind != JsonValueKind.Number
+                    || !ratingElement.TryGetInt32(out var value)
+                    || value is < 1 or > 5)
+                {
+                    return null;
+                }
+                rating = value;
+            }
+
+            return new PersonalTracking(status, rating);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record PersonalTracking(PlayStatusEnum PlayStatus, int? UserRating);
 
     // =========================================================================
     // Private helpers

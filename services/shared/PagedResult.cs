@@ -19,5 +19,5 @@ public class PagedResult<T>
     public int PageSize { get; set; }
 
     /// <summary>True if there are more pages after this one.</summary>
-    public bool HasMore => Page * PageSize < TotalCount;
+    public bool HasMore => (long)Page * PageSize < TotalCount;
 }

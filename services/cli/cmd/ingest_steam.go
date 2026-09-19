@@ -27,8 +27,11 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 
 	"github.com/spf13/cobra"
 )
@@ -68,30 +71,11 @@ var ingestSteamCmd = &cobra.Command{
 
 		fmt.Printf("🚀 Starting Steam ingest for Steam ID: %s\n", id)
 
-		// Build the Steam Web API URL
-		// include_appinfo=1 gives us game names, not just IDs
-		url := fmt.Sprintf(
-			"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=%s&steamid=%s&format=json&include_appinfo=1",
-			key, id,
-		)
-
 		client := NewHTTPClient()
 
-		// Fetch the library from Steam
-		resp, err := client.Get(url)
+		result, err := steamFetchGames(cmd.Context(), client, key, id)
 		if err != nil {
-			return fmt.Errorf("network error: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("Steam API returned status: %s", resp.Status)
-		}
-
-		// Decode the JSON response directly from the body stream
-		var result SteamResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("JSON parse error: %w", err)
+			return err
 		}
 
 		fmt.Printf("✅ Found %d games on Steam. Sending to backend...\n", len(result.Response.Games))
@@ -99,6 +83,39 @@ var ingestSteamCmd = &cobra.Command{
 		// Send to the Ingest service
 		return PostToBackend(client, "steam", result.Response.Games)
 	},
+}
+
+func steamFetchGames(ctx context.Context, client *http.Client, apiKey, steamID string) (SteamResponse, error) {
+	requestUrl := fmt.Sprintf(
+		"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?steamid=%s&format=json&include_appinfo=1",
+		url.QueryEscape(steamID),
+	)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestUrl, nil)
+	if err != nil {
+		return SteamResponse{}, fmt.Errorf("create Steam request: %w", err)
+	}
+	request.Header.Set("x-webapi-key", apiKey)
+
+	// The API key is a custom header; never let the default client redirect it to another host.
+	steamClient := *client
+	steamClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := steamClient.Do(request)
+	if err != nil {
+		return SteamResponse{}, fmt.Errorf("network error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return SteamResponse{}, fmt.Errorf("Steam API returned status: %s", resp.Status)
+	}
+
+	var result SteamResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return SteamResponse{}, fmt.Errorf("JSON parse error: %w", err)
+	}
+	return result, nil
 }
 
 func init() {

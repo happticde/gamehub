@@ -201,7 +201,7 @@ public class LibraryController : ControllerBase
         if (page > totalPages) page = totalPages;
 
         // Dynamic sorting — default to title ascending
-        query = (sortBy?.ToLower(), sortOrder.ToLower()) switch
+        var sortedQuery = (sortBy?.ToLowerInvariant(), sortOrder.ToLowerInvariant()) switch
         {
             ("rating", "desc")       => query.OrderByDescending(g => g.Rating ?? -1),
             ("rating", _)            => query.OrderBy(g => g.Rating ?? 999),
@@ -211,8 +211,9 @@ public class LibraryController : ControllerBase
             _                        => query.OrderBy(g => g.Title), // default: title asc
         };
 
-        // Fetch the current page
-        var games = await query
+        // A unique tie-breaker keeps equal titles, ratings, and release dates on stable pages.
+        var games = await sortedQuery
+            .ThenBy(g => g.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();

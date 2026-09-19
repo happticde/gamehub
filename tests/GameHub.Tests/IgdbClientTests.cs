@@ -5,6 +5,7 @@ using GameHub.Shared;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Moq.Protected;
 using Xunit;
@@ -33,8 +34,12 @@ public class IgdbClientTests
     }
 
     private HttpClient CreateMockHttpClient(Func<HttpRequestMessage, HttpResponseMessage> handlerFunc)
+        => CreateMockHttpClient(request => Task.FromResult(handlerFunc(request)));
+
+    private HttpClient CreateMockHttpClient(Func<HttpRequestMessage, Task<HttpResponseMessage>> handlerFunc)
     {
         var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+        handlerMock.Protected().Setup("Dispose", ItExpr.IsAny<bool>());
         handlerMock
             .Protected()
             .Setup<Task<HttpResponseMessage>>(
@@ -42,7 +47,7 @@ public class IgdbClientTests
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>()
             )
-            .ReturnsAsync((HttpRequestMessage request, CancellationToken _) => handlerFunc(request));
+            .Returns((HttpRequestMessage request, CancellationToken _) => handlerFunc(request));
 
         return new HttpClient(handlerMock.Object);
     }
@@ -228,5 +233,192 @@ public class IgdbClientTests
 
         // Assert
         Assert.Equal(1, tokenRequestCount); // Token should only be requested once and cached for the next two
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_OAuthCredentials_UsesEncodedBodyWithoutQueryString()
+    {
+        const string clientId = "client&with=reserved+characters";
+        const string clientSecret = "secret&with=reserved+# characters";
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Igdb:ClientId"] = clientId,
+            ["Igdb:ClientSecret"] = clientSecret
+        }).Build();
+        var tokenRequests = 0;
+        using var http = CreateMockHttpClient(async request =>
+        {
+            if (request.RequestUri!.Host == "id.twitch.tv")
+            {
+                tokenRequests++;
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.Equal("https://id.twitch.tv/oauth2/token", request.RequestUri.AbsoluteUri);
+                Assert.Equal("application/x-www-form-urlencoded", request.Content!.Headers.ContentType!.MediaType);
+                var form = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(
+                    await request.Content.ReadAsStringAsync());
+                Assert.Equal(clientId, form["client_id"]);
+                Assert.Equal(clientSecret, form["client_secret"]);
+                Assert.Equal("client_credentials", form["grant_type"]);
+                return JsonResponse("{\"access_token\":\"mock-token\",\"expires_in\":3600}");
+            }
+
+            Assert.Equal("mock-token", request.Headers.Authorization!.Parameter);
+            return JsonResponse("[]");
+        });
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var client = new IgdbClient(http, config, NullLogger<IgdbClient>.Instance, cache);
+
+        await client.GetByIdAsync(42);
+
+        Assert.Equal(1, tokenRequests);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, "provider-secret-must-not-be-logged")]
+    [InlineData(HttpStatusCode.OK, "{\"access_token\":\"\",\"expires_in\":3600}")]
+    [InlineData(HttpStatusCode.OK, "{\"access_token\":\"expired-token\",\"expires_in\":0}")]
+    public async Task GetByIdAsync_UnusableOAuthResponse_DoesNotSendGameRequestOrLogResponseBody(
+        HttpStatusCode status,
+        string body)
+    {
+        var logger = new RecordingLogger();
+        var tokenContent = new TrackingContent(body);
+        var requests = 0;
+        using var http = CreateMockHttpClient(request =>
+        {
+            requests++;
+            Assert.Equal("id.twitch.tv", request.RequestUri!.Host);
+            return new HttpResponseMessage(status) { Content = tokenContent };
+        });
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var client = new IgdbClient(http, _config, logger, cache);
+
+        Assert.Null(await client.GetByIdAsync(42));
+
+        Assert.Equal(1, requests);
+        Assert.True(tokenContent.IsDisposed);
+        Assert.DoesNotContain(logger.Messages, message => message.Contains(body, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_MissingCredentials_DoesNotContactProvider()
+    {
+        using var http = CreateMockHttpClient(_ => Task.FromException<HttpResponseMessage>(
+            new InvalidOperationException("Unexpected HTTP request")));
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var client = new IgdbClient(http, new ConfigurationBuilder().Build(), NullLogger<IgdbClient>.Instance, cache);
+
+        Assert.Null(await client.GetByIdAsync(42));
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_UnauthorizedThenSuccess_RetriesOnceAndDisposesEveryResponse()
+    {
+        var contents = new List<TrackingContent>();
+        var tokenRequests = 0;
+        var gameRequests = 0;
+        using var http = CreateMockHttpClient(request =>
+        {
+            if (request.RequestUri!.Host == "id.twitch.tv")
+            {
+                tokenRequests++;
+                var tokenContent = new TrackingContent(
+                    JsonSerializer.Serialize(new { access_token = $"token-{tokenRequests}", expires_in = 3600 }));
+                contents.Add(tokenContent);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = tokenContent };
+            }
+
+            gameRequests++;
+            Assert.Equal($"token-{gameRequests}", request.Headers.Authorization!.Parameter);
+            var content = new TrackingContent(gameRequests == 1 ? "expired" : "[{\"id\":42}]");
+            contents.Add(content);
+            return new HttpResponseMessage(gameRequests == 1 ? HttpStatusCode.Unauthorized : HttpStatusCode.OK)
+            {
+                Content = content
+            };
+        });
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var client = new IgdbClient(http, _config, NullLogger<IgdbClient>.Instance, cache);
+
+        Assert.Equal(42, (await client.GetByIdAsync(42))!.ProviderId);
+        Assert.Equal(2, tokenRequests);
+        Assert.Equal(2, gameRequests);
+        Assert.All(contents, content => Assert.True(content.IsDisposed));
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ProviderError_LogsOnlyStatusAndDisposesResponse()
+    {
+        const string sensitiveBody = "provider-secret-must-not-be-logged";
+        var logger = new RecordingLogger();
+        var failureContent = new TrackingContent(sensitiveBody);
+        using var http = CreateMockHttpClient(request => request.RequestUri!.Host == "id.twitch.tv"
+            ? JsonResponse("{\"access_token\":\"mock-token\",\"expires_in\":3600}")
+            : new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = failureContent });
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var client = new IgdbClient(http, _config, logger, cache);
+
+        Assert.Null(await client.GetByIdAsync(42));
+        Assert.True(failureContent.IsDisposed);
+        Assert.Contains(logger.Messages, message => message.Contains("BadGateway", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message => message.Contains(sensitiveBody, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Search_SpecialCharacters_KeepsTitleInsideOneStringLiteral(bool searchMany)
+    {
+        foreach (var title in new[] { "A \"quoted\" game", "A \\path", "A \\\"; limit 500; //" })
+        {
+            string? query = null;
+            using var http = CreateMockHttpClient(async request =>
+            {
+                if (request.RequestUri!.Host == "id.twitch.tv")
+                    return JsonResponse("{\"access_token\":\"mock-token\",\"expires_in\":3600}");
+
+                query = await request.Content!.ReadAsStringAsync();
+                return JsonResponse("[{\"id\":42,\"name\":\"Example\"}]");
+            });
+            using var cache = new MemoryCache(new MemoryCacheOptions());
+            var client = new IgdbClient(http, _config, NullLogger<IgdbClient>.Instance, cache);
+
+            if (searchMany)
+                await client.SearchManyAsync(title);
+            else
+                await client.SearchAsync(title);
+
+            Assert.NotNull(query);
+            Assert.StartsWith("search ", query);
+            // Parse the wire literal independently to prove that quotes/backslashes round-trip
+            // as data and cannot terminate the search clause.
+            var endOfLiteral = query.LastIndexOf("; fields ", StringComparison.Ordinal);
+            Assert.Equal(title, JsonSerializer.Deserialize<string>(query["search ".Length..endOfLiteral]));
+        }
+    }
+
+    private static HttpResponseMessage JsonResponse(string body) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(body)
+    };
+
+    private sealed class TrackingContent(string body) : StringContent(body)
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
+    }
+
+    private sealed class RecordingLogger : ILogger<IgdbClient>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
     }
 }

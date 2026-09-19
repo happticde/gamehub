@@ -53,11 +53,13 @@ public class SteamFetcher : ISteamFetcher
         _logger.LogInformation("Fetching Steam library for user {SteamId}", steamId);
 
         var url = $"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/" +
-                  $"?key={apiKey}&steamid={steamId}&format=json&include_appinfo=1";
+                  $"?steamid={Uri.EscapeDataString(steamId)}&format=json&include_appinfo=1";
 
         try
         {
-            var resp = await _http.GetAsync(url);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("x-webapi-key", apiKey);
+            using var resp = await _http.SendAsync(request);
             
             if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             {
@@ -79,13 +81,14 @@ public class SteamFetcher : ISteamFetcher
                 throw failure;
             }
 
-            var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
+            using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
 
             // Navigate: response -> games (array)
             if (doc.RootElement.TryGetProperty("response", out var response) &&
                 response.TryGetProperty("games", out var games))
             {
-                var list = games.EnumerateArray().ToList();
+                // Returned elements must outlive the response document disposed at method exit.
+                var list = games.EnumerateArray().Select(game => game.Clone()).ToList();
                 _logger.LogInformation("Steam: fetched {Count} games", list.Count);
                 await WriteAuditLogAsync("Steam", "Success", list.Count);
                 return list;
@@ -162,7 +165,7 @@ public class GogFetcher : IGogFetcher
                 var url = $"https://www.gog.com/u/{username}/games/stats?page={page}";
                 _logger.LogDebug("GOG: fetching page {Page} from {Url}", page, url);
 
-                var resp = await client.GetAsync(url);
+                using var resp = await client.GetAsync(url);
 
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
@@ -307,12 +310,12 @@ public class PsnFetcher : IPsnFetcher
                 var url = string.Format(GraphQLUrl, offset, pageSize);
                 _logger.LogDebug("PSN: fetching offset {Offset}", offset);
 
-                var req = new HttpRequestMessage(HttpMethod.Get, url);
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
                 req.Headers.Add("Accept", "application/json");
                 req.Headers.Add("x-apollo-operation-name", "getPurchasedGameList");
                 req.Headers.Add("apollo-require-preflight", "true");
 
-                var resp = await client.SendAsync(req);
+                using var resp = await client.SendAsync(req);
 
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {

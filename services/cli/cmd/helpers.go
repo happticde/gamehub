@@ -45,7 +45,13 @@ func PostToBackend(client *http.Client, platform string, payload any) error {
 		req.Header.Set("X-Api-Key", apiKey)
 	}
 
-	resp, err := client.Do(req)
+	// X-Api-Key is a custom header and Go would forward it on redirects. Clone the caller's
+	// client so backend uploads reject redirects without changing provider-fetch behavior.
+	backendClient := *client
+	backendClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := backendClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send to backend: %w", err)
 	}

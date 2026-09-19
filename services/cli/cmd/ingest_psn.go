@@ -149,32 +149,15 @@ func psnFetchAllGames(client *http.Client) ([]PsnGame, error) {
 	pageSize := 100
 
 	for {
-		// Build the GraphQL URL with pagination parameters
-		graphqlURL := fmt.Sprintf(psnGraphQLBaseURL, pageOffset, pageSize)
-
-		// Create request with Content-Type header (required by PSN)
-		req, err := http.NewRequest("GET", graphqlURL, nil)
+		result, err := psnFetchPage(client, pageOffset, pageSize)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("network error at offset %d: %w", pageOffset, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("PSN API returned status %s (are your cookies valid?)", resp.Status)
-		}
-
-		var result PsnGraphQLResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, fmt.Errorf("JSON parse error at offset %d: %w", pageOffset, err)
+			return nil, err
 		}
 
 		games := result.Data.PurchasedTitlesRetrieve.Games
+		if len(games) == 0 && !result.Data.PurchasedTitlesRetrieve.PageInfo.IsLast {
+			return nil, fmt.Errorf("PSN returned an empty non-final page at offset %d", pageOffset)
+		}
 		allGames = append(allGames, games...)
 
 		totalCount := result.Data.PurchasedTitlesRetrieve.PageInfo.TotalCount
@@ -189,6 +172,31 @@ func psnFetchAllGames(client *http.Client) ([]PsnGame, error) {
 	}
 
 	return allGames, nil
+}
+
+// Keep response ownership inside one page so a large library does not retain every open body.
+func psnFetchPage(client *http.Client, pageOffset, pageSize int) (PsnGraphQLResponse, error) {
+	var result PsnGraphQLResponse
+	graphqlURL := fmt.Sprintf(psnGraphQLBaseURL, pageOffset, pageSize)
+	req, err := http.NewRequest(http.MethodGet, graphqlURL, nil)
+	if err != nil {
+		return result, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return result, fmt.Errorf("network error at offset %d: %w", pageOffset, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return result, fmt.Errorf("PSN API returned status %s (are your cookies valid?)", resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return result, fmt.Errorf("JSON parse error at offset %d: %w", pageOffset, err)
+	}
+	return result, nil
 }
 
 func init() {

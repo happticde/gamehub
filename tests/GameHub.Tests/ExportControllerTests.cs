@@ -239,6 +239,100 @@ public class ExportControllerTests : IDisposable
     // PagedResult.HasMore logic
     // =========================================================================
 
+    [Theory]
+    [InlineData("steam")]
+    [InlineData("psn")]
+    [InlineData("gog")]
+    [InlineData("epic")]
+    public async Task Export_InvalidPagination_UsesBoundedSizeAndDoesNotWrapHugePages(string platform)
+    {
+        SeedPlatformsWithEqualTimestamps();
+        await _db.SaveChangesAsync();
+        var controller = new ExportController(_db, NullLogger<ExportController>.Instance);
+
+        foreach (var invalidSize in new[] { 0, -1, int.MinValue })
+        {
+            var page = Assert.IsType<PagedResult<RawGameDto>>(
+                Assert.IsType<OkObjectResult>(await controller.GetByPlatform(platform, -1, invalidSize)).Value);
+            Assert.Equal(1, page.Page);
+            Assert.Equal(200, page.PageSize);
+            Assert.Equal(3, page.Items.Count);
+            Assert.False(page.HasMore);
+        }
+
+        var beyondEnd = Assert.IsType<PagedResult<RawGameDto>>(
+            Assert.IsType<OkObjectResult>(await controller.GetByPlatform(platform, int.MaxValue, int.MaxValue)).Value);
+        Assert.Equal(int.MaxValue, beyondEnd.Page);
+        Assert.Equal(500, beyondEnd.PageSize);
+        Assert.Equal(3, beyondEnd.TotalCount);
+        Assert.Empty(beyondEnd.Items);
+        Assert.False(beyondEnd.HasMore);
+    }
+
+    [Theory]
+    [InlineData("steam")]
+    [InlineData("psn")]
+    [InlineData("gog")]
+    [InlineData("epic")]
+    public async Task Export_EqualTimestamps_ReturnsEachItemOnceInIdOrder(string platform)
+    {
+        SeedPlatformsWithEqualTimestamps();
+        await _db.SaveChangesAsync();
+        // Deliberately offer a different tie order through an index. Results must stay stable
+        // regardless of which query plan the database chooses for identical timestamps.
+        await _db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IX_Review_Steam ON SteamRawItems (TenantId, LastUpdated, Id DESC)");
+        await _db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IX_Review_Psn ON PsnRawItems (TenantId, LastUpdated, Id DESC)");
+        await _db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IX_Review_Gog ON GogRawItems (TenantId, LastUpdated, Id DESC)");
+        await _db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IX_Review_Epic ON EpicRawItems (TenantId, LastUpdated, Id DESC)");
+        var controller = new ExportController(_db, NullLogger<ExportController>.Instance);
+        var ids = new List<string>();
+
+        for (var pageNumber = 1; pageNumber <= 3; pageNumber++)
+        {
+            var page = Assert.IsType<PagedResult<RawGameDto>>(
+                Assert.IsType<OkObjectResult>(await controller.GetByPlatform(platform, pageNumber, 1)).Value);
+            ids.Add(Assert.Single(page.Items).Id);
+            Assert.Equal(pageNumber < 3, page.HasMore);
+        }
+
+        Assert.Equal(new[] { "10", "20", "30" }, ids);
+    }
+
+    [Fact]
+    public void PagedResult_LargePage_DoesNotOverflowHasMore()
+    {
+        var page = new PagedResult<string> { Page = int.MaxValue, PageSize = 500, TotalCount = 3 };
+        Assert.False(page.HasMore);
+    }
+
+    private void SeedPlatformsWithEqualTimestamps()
+    {
+        var timestamp = new DateTime(2026, 9, 18, 0, 0, 0, DateTimeKind.Utc);
+        foreach (var id in new[] { 30, 10, 20 })
+        {
+            _db.SteamRawItems.Add(new SteamRawItem
+            {
+                Id = id, AppId = id, Name = $"Game {id}", RawJson = "{}", LastUpdated = timestamp
+            });
+            _db.PsnRawItems.Add(new PsnRawItem
+            {
+                Id = id, TitleId = id.ToString(), TitleName = $"Game {id}", RawJson = "{}", LastUpdated = timestamp
+            });
+            _db.GogRawItems.Add(new GogRawItem
+            {
+                Id = id, GameId = id, Title = $"Game {id}", RawJson = "{}", LastUpdated = timestamp
+            });
+            _db.EpicRawItems.Add(new EpicRawItem
+            {
+                Id = id, AppName = id.ToString(), Title = $"Game {id}", RawJson = "{}", LastUpdated = timestamp
+            });
+        }
+    }
+
     [Fact]
     public void PagedResult_HasMore_CalculatesCorrectly()
     {

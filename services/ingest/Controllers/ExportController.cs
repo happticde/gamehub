@@ -53,6 +53,7 @@ public class ExportController : ControllerBase
             platform, page, pageSize, updatedAfter?.ToString("O") ?? "none");
 
         // Enforce safe bounds
+        if (pageSize < 1) pageSize = 200;
         if (pageSize > 500) pageSize = 500;
         if (page < 1) page = 1;
 
@@ -85,7 +86,8 @@ public class ExportController : ControllerBase
 
         // Fetch the current page
         var items = await query
-            .Skip((page - 1) * pageSize)
+            // Preserve empty out-of-range pages without overflowing back to the first page.
+            .Skip((int)Math.Min(((long)page - 1) * pageSize, int.MaxValue))
             .Take(pageSize)
             .ToListAsync();
 
@@ -116,8 +118,8 @@ public class ExportController : ControllerBase
         if (updatedAfter.HasValue)
             query = query.Where(x => x.LastUpdated > updatedAfter.Value);
 
-        // Order by LastUpdated ascending for stable, deterministic pagination
-        return query.OrderBy(x => x.LastUpdated).Select(selector);
+        // Batch imports can share timestamps; the unique ID makes page boundaries deterministic.
+        return query.OrderBy(x => x.LastUpdated).ThenBy(x => x.Id).Select(selector);
     }
 
     private async Task<IActionResult> GetEpicPageAsync(int page, int pageSize, DateTime? updatedAfter)
@@ -130,7 +132,8 @@ public class ExportController : ControllerBase
         var totalCount = await query.CountAsync();
         var rows = await query
             .OrderBy(x => x.LastUpdated)
-            .Skip((page - 1) * pageSize)
+            .ThenBy(x => x.Id)
+            .Skip((int)Math.Min(((long)page - 1) * pageSize, int.MaxValue))
             .Take(pageSize)
             .Select(x => new
             {
