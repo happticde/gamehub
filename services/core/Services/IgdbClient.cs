@@ -182,7 +182,7 @@ public class IgdbClient : IGameMetadataProvider
         }
         else
         {
-            var escaped = cleaned.Replace("\"", "\\\"");
+            var escaped = EscapeSearchText(cleaned);
             query = $"search \"{escaped}\"; fields {GameFields}; limit {limit};";
         }
 
@@ -198,7 +198,7 @@ public class IgdbClient : IGameMetadataProvider
     /// </summary>
     private async Task<GameMetadata?> SearchIgdbBestMatchAsync(string title, CancellationToken ct)
     {
-        var escaped = title.Replace("\"", "\\\"");
+        var escaped = EscapeSearchText(title);
         var query = $"search \"{escaped}\"; fields {GameFields}; limit 5;";
 
         var results = await QueryGamesAsync(query, ct);
@@ -213,6 +213,12 @@ public class IgdbClient : IGameMetadataProvider
 
         return MapToMetadata(best);
     }
+
+    // Escape backslashes first: otherwise a supplied backslash can neutralize the quote escape
+    // and turn part of a title into query syntax. Both search paths must use the same rule.
+    private static string EscapeSearchText(string title) =>
+        title.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
 
     /// <summary>
     /// Calculates a simple word-overlap similarity score between two titles.
@@ -319,14 +325,17 @@ public class IgdbClient : IGameMetadataProvider
             await EnsureAuthenticatedAsync(ct);
 
             var clientId = _config["Igdb:ClientId"] ?? "";
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{IgdbBaseUrl}/games")
+            if (string.IsNullOrEmpty(_accessToken))
+                return [];
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{IgdbBaseUrl}/games")
             {
                 Content = new StringContent(query, Encoding.UTF8, "text/plain")
             };
             request.Headers.Add("Client-ID", clientId);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
-            var response = await _http.SendAsync(request, ct);
+            using var response = await _http.SendAsync(request, ct);
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt == 0)
             {
@@ -337,8 +346,7 @@ public class IgdbClient : IGameMetadataProvider
 
             if (!response.IsSuccessStatusCode)
             {
-                var body = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning("IGDB API returned {StatusCode}: {Body}", response.StatusCode, body);
+                _logger.LogWarning("IGDB API returned {StatusCode}", response.StatusCode);
                 return [];
             }
 
@@ -366,6 +374,7 @@ public class IgdbClient : IGameMetadataProvider
         if (_accessToken != null && DateTime.UtcNow < _tokenExpiresAt.AddSeconds(-60))
             return;
 
+        _accessToken = null;
         var clientId = _config["Igdb:ClientId"];
         var clientSecret = _config["Igdb:ClientSecret"];
 
@@ -375,18 +384,24 @@ public class IgdbClient : IGameMetadataProvider
             return;
         }
 
-        var tokenUrl = $"{TwitchTokenUrl}?client_id={clientId}&client_secret={clientSecret}&grant_type=client_credentials";
-        var response = await _http.PostAsync(tokenUrl, null, ct);
+        // URLs are routinely logged by HTTP instrumentation. Keep credentials in the encoded
+        // POST body so neither logs nor reserved characters in a secret can expose/change them.
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
+            ["grant_type"] = "client_credentials"
+        });
+        using var response = await _http.PostAsync(TwitchTokenUrl, content, ct);
 
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogError("Failed to get Twitch OAuth token: {StatusCode} {Body}", response.StatusCode, body);
+            _logger.LogError("Failed to get Twitch OAuth token: {StatusCode}", response.StatusCode);
             return;
         }
 
         var tokenResponse = await response.Content.ReadFromJsonAsync<TwitchTokenResponse>(ct);
-        if (tokenResponse != null)
+        if (tokenResponse is { ExpiresIn: > 0 } && !string.IsNullOrWhiteSpace(tokenResponse.AccessToken))
         {
             _accessToken = tokenResponse.AccessToken;
             _tokenExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);

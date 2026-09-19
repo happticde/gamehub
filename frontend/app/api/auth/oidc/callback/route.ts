@@ -7,6 +7,7 @@ import {
     getCoreApiUrl,
     isAccountDeletionTokenResponse,
     isTokenResponse,
+    safeReturnPath,
     setAuthCookies,
 } from "@/lib/auth-session";
 import { getExternalRequestUrl } from "@/lib/external-request-url";
@@ -134,7 +135,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             // original local destination only as a sanitized returnTo value.
             const destination = new URL("/login", trustedRedirectBase);
             destination.searchParams.set("oidcLinked", "true");
-            destination.searchParams.set("returnTo", transaction.returnTo);
+            destination.searchParams.set("returnTo", safeReturnPath(transaction.returnTo));
             response = NextResponse.redirect(destination);
             clearAuthCookies(response);
         } else if (deletionIntent) {
@@ -175,7 +176,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             if (!coreResponse.ok || !isTokenResponse(payload)) {
                 throw new Error("oidc_session_failed");
             }
-            response = NextResponse.redirect(new URL(transaction.returnTo, trustedRedirectBase));
+            response = NextResponse.redirect(new URL(
+                safeReturnPath(transaction.returnTo),
+                trustedRedirectBase,
+            ));
             // `setAuthCookies` writes HttpOnly cookies; React never sees either token value.
             setAuthCookies(response, payload);
         }

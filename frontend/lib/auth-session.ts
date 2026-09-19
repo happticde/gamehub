@@ -2,6 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { OIDC_TRANSACTION_COOKIE } from "@/lib/oidc-security";
+export { safeReturnPath } from "@/lib/auth-return-path";
 import {
     SESSION_ENDED_HEADER,
     SESSION_ENDED_HEADER_VALUE,
@@ -235,13 +236,6 @@ export function isOidcLinkTokenResponse(value: unknown): value is CoreOidcLinkTo
         && token.refreshToken === null
         && token.refreshTokenExpiresAtUtc === null
         && token.sessionPurpose === "oidc_link_only";
-}
-
-/** Accepts only an application-local redirect path, preventing open-redirect attacks. */
-export function safeReturnPath(value: string | null | undefined): string {
-    return value?.startsWith("/") && !value.startsWith("//") && !value.startsWith("/login")
-        ? value
-        : "/library";
 }
 
 function setTokenCookie(

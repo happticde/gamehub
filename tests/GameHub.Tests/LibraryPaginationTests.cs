@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using Xunit;
 
 namespace GameHub.Tests;
@@ -77,6 +78,40 @@ public sealed class LibraryPaginationTests : IDisposable
         Assert.Equal(1, page.Page);
         Assert.Equal(50, page.PageSize);
         Assert.Equal(3, page.Items.Count);
+    }
+
+    [Theory]
+    [InlineData("title", "asc")]
+    [InlineData("title", "desc")]
+    [InlineData("rating", "asc")]
+    [InlineData("rating", "desc")]
+    [InlineData("releasedate", "asc")]
+    [InlineData("releasedate", "desc")]
+    public async Task GetLibrary_EqualSortValues_ReturnsEachGameOnceInIdOrder(string sortBy, string sortOrder)
+    {
+        var games = await _db.UnifiedGames.OrderBy(game => game.Id).ToListAsync();
+        foreach (var game in games)
+        {
+            game.Title = "Same title";
+            game.Rating = 80;
+            game.FirstReleaseDate = new DateTime(2026, 1, 1);
+        }
+        await _db.SaveChangesAsync();
+        await _db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IX_Review_Title ON UnifiedGames (TenantId, Title, Id DESC)");
+        var returnedIds = new List<int>();
+
+        for (var pageNumber = 1; pageNumber <= games.Count; pageNumber++)
+        {
+            var result = Assert.IsType<OkObjectResult>(await CreateController().GetLibrary(
+                null, null, null, null, null, null, null, sortBy, sortOrder,
+                page: pageNumber, pageSize: 1));
+            var page = Assert.IsType<PagedResult<object>>(result.Value);
+            var item = JsonSerializer.SerializeToElement(Assert.Single(page.Items));
+            returnedIds.Add(item.GetProperty("Id").GetInt32());
+        }
+
+        Assert.Equal(games.Select(game => game.Id), returnedIds);
     }
 
     private LibraryController CreateController() => new(

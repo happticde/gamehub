@@ -29,9 +29,8 @@ builder.Logging.AddConsole(opts =>
 builder.Services.AddHttpClient<CoreApiClient>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
-        // Allow HTTP (not just HTTPS) for local dev
-        ServerCertificateCustomValidationCallback =
-            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        // Keep normal TLS validation and never forward the API key to a redirect destination.
+        AllowAutoRedirect = false
     });
 
 // --- MCP server: stdio transport + auto-discover tools in this assembly ---

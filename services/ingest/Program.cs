@@ -27,10 +27,11 @@ builder.Services.AddHealthChecks()
 // --- Platform Fetchers (ADR-001: Server-Side Retrieval) ---
 // These services call external APIs (Steam, GOG, PSN, Epic) to fetch game libraries.
 // Used by RetrieveController for one-call fetch + ingest.
-// Steam's API key is a query parameter, so remove the framework's URI loggers from this
-// client. Epic's OAuth requests contain Authorization headers, so use the same no-framework-URI
-// logging boundary there. RetrieveController also returns only sanitized upstream errors.
-builder.Services.AddHttpClient<ISteamFetcher, SteamFetcher>().RemoveAllLoggers();
+// Steam's API key is sent in a request header. Keep redirects disabled so that header cannot be
+// forwarded to another host, and remove framework URI logging at this provider boundary.
+builder.Services.AddHttpClient<ISteamFetcher, SteamFetcher>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+    .RemoveAllLoggers();
 builder.Services.AddTransient<IGogFetcher, GogFetcher>();
 builder.Services.AddTransient<IPsnFetcher, PsnFetcher>();
 builder.Services.AddHttpClient<EpicGamesClient>().RemoveAllLoggers();

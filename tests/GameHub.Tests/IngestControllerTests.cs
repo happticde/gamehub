@@ -37,6 +37,29 @@ public class IngestControllerTests : IDisposable
     // =========================================================================
 
     [Fact]
+    public async Task ListItems_InvalidPagination_UsesSafeDefaultsAndKeepsHugePagesEmpty()
+    {
+        _db.SteamRawItems.Add(new SteamRawItem { AppId = 42, Name = "Example", RawJson = "{}" });
+        await _db.SaveChangesAsync();
+        var controller = new SteamIngestController(_db, NullLogger<SteamIngestController>.Instance);
+
+        foreach (var pageSize in new[] { 0, -1, int.MinValue })
+        {
+            var result = Assert.IsType<OkObjectResult>(await controller.ListItems(-1, pageSize));
+            var page = JsonSerializer.SerializeToElement(result.Value);
+            Assert.Equal(1, page.GetProperty("Page").GetInt32());
+            Assert.Equal(50, page.GetProperty("PageSize").GetInt32());
+            Assert.Equal(1, page.GetProperty("Items").GetArrayLength());
+        }
+
+        var beyondEnd = Assert.IsType<OkObjectResult>(await controller.ListItems(int.MaxValue, int.MaxValue));
+        var lastPage = JsonSerializer.SerializeToElement(beyondEnd.Value);
+        Assert.Equal(int.MaxValue, lastPage.GetProperty("Page").GetInt32());
+        Assert.Equal(100, lastPage.GetProperty("PageSize").GetInt32());
+        Assert.Equal(0, lastPage.GetProperty("Items").GetArrayLength());
+    }
+
+    [Fact]
     public async Task Ingest_NewItems_AreAdded()
     {
         // Arrange

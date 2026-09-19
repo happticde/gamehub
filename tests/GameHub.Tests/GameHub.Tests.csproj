@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\services\core\GameHub.Core.csproj" />
     <ProjectReference Include="..\..\services\ingest\GameHub.Ingest.csproj" />
+    <ProjectReference Include="..\..\services\mcp\GameHub.Mcp.csproj" />
     <ProjectReference Include="..\..\services\shared\GameHub.Shared.csproj" />
   </ItemGroup>
 

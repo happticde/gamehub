@@ -194,6 +194,7 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
     public async Task<IActionResult> ListItems([FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         // Enforce safe bounds
+        if (pageSize < 1) pageSize = 50;
         if (pageSize > 100) pageSize = 100;
         if (page < 1) page = 1;
 
@@ -203,7 +204,8 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
         // Project to a lightweight shape (no RawJson) for the list view
         var items = await query
             .OrderByDescending(x => x.LastUpdated)
-            .Skip((page - 1) * pageSize)
+            .ThenBy(x => x.Id)
+            .Skip((int)Math.Min(((long)page - 1) * pageSize, int.MaxValue))
             .Take(pageSize)
             .Select(x => new
             {

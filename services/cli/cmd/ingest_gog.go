@@ -138,23 +138,9 @@ func gogFetchAllGames(client *http.Client, user string) ([]GogGame, error) {
 	page := 1
 
 	for {
-		// Build the URL — matches Python's:
-		//   url = "https://www.gog.com/u/{user_id}/games/stats?page={page}"
-		apiURL := fmt.Sprintf("https://www.gog.com/u/%s/games/stats?page=%d", user, page)
-
-		resp, err := client.Get(apiURL)
+		result, err := gogFetchPage(client, user, page)
 		if err != nil {
-			return nil, fmt.Errorf("network error on page %d: %w", page, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("GOG API returned status %s on page %d (is your gog-al cookie valid?)", resp.Status, page)
-		}
-
-		var result GogStatsResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, fmt.Errorf("JSON parse error on page %d: %w", page, err)
+			return nil, err
 		}
 
 		// Extract game data from the embedded items
@@ -175,6 +161,25 @@ func gogFetchAllGames(client *http.Client, user string) ([]GogGame, error) {
 	}
 
 	return allGames, nil
+}
+
+// Close each response before requesting the next page, including status/decoding failures.
+func gogFetchPage(client *http.Client, user string, page int) (GogStatsResponse, error) {
+	var result GogStatsResponse
+	apiURL := fmt.Sprintf("https://www.gog.com/u/%s/games/stats?page=%d", url.PathEscape(user), page)
+	resp, err := client.Get(apiURL)
+	if err != nil {
+		return result, fmt.Errorf("network error on page %d: %w", page, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return result, fmt.Errorf("GOG API returned status %s on page %d (is your gog-al cookie valid?)", resp.Status, page)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return result, fmt.Errorf("JSON parse error on page %d: %w", page, err)
+	}
+	return result, nil
 }
 
 func init() {

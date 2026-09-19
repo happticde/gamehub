@@ -9,6 +9,7 @@ import { UnifiedGame, PagedResult } from "@/types/game";
 import { getPlatformColor } from "@/lib/platform-colors";
 import { cn } from "@/lib/utils";
 import { fetchAuthenticated } from "@/lib/authenticated-fetch";
+import { createLatestRequestGate } from "@/lib/latest-request-gate";
 import {
     Dialog,
     DialogContent,
@@ -28,33 +29,48 @@ export default function GlobalSearchBar() {
 
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const searchGate = useRef(createLatestRequestGate());
 
-    // Debounced search fetching
+    // Reuse the metadata search guard so an older response cannot replace the current query.
     useEffect(() => {
+        const gate = searchGate.current;
+        gate.invalidate();
+        setResults([]);
+        setTotalResults(0);
         if (!query.trim()) {
-            setResults([]);
-            setTotalResults(0);
             setLoading(false);
             return;
         }
 
+        const controller = new AbortController();
+        const generation = gate.begin();
         setLoading(true);
         const timer = setTimeout(async () => {
             try {
-                const res = await fetchAuthenticated(`/api/core/library?search=${encodeURIComponent(query)}&pageSize=5`);
+                const res = await fetchAuthenticated(
+                    `/api/core/library?search=${encodeURIComponent(query)}&pageSize=5`,
+                    { signal: controller.signal },
+                );
                 if (res.ok) {
                     const data: PagedResult<UnifiedGame> = await res.json();
+                    if (!gate.isLatest(generation)) return;
                     setResults(data.items || []);
                     setTotalResults(data.totalCount || 0);
                 }
             } catch (err) {
-                console.error("Error fetching global search results:", err);
+                if (!controller.signal.aborted && gate.isLatest(generation)) {
+                    console.error("Error fetching global search results:", err);
+                }
             } finally {
-                setLoading(false);
+                if (gate.isLatest(generation)) setLoading(false);
             }
         }, 300);
 
-        return () => clearTimeout(timer);
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+            gate.invalidate();
+        };
     }, [query]);
 
     // Handle clicks outside the dropdown to close it
