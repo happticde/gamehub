@@ -7,6 +7,11 @@ on:
         type: string
         default: dev
         required: false
+      select-changes:
+        description: Select relevant jobs for PR and push events; releases always run all checks
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -16,8 +21,35 @@ defaults:
     shell: bash
 
 jobs:
+  select:
+    name: Select relevant checks
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      workflow: ${{ steps.select.outputs.workflow }}
+      semgrep: ${{ steps.select.outputs.semgrep }}
+      dependencies: ${{ steps.select.outputs.dependencies }}
+      backend: ${{ steps.select.outputs.backend }}
+      frontend: ${{ steps.select.outputs.frontend }}
+      cli: ${{ steps.select.outputs.cli }}
+      images: ${{ steps.select.outputs.images }}
+      image-matrix: ${{ steps.select.outputs.image-matrix }}
+      plan: ${{ steps.select.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: select
+        env:
+          SELECT_CHANGES: ${{ inputs.select-changes }}
+          RELEASE_VERSION: ${{ inputs.release-version }}
+        run: python3 scripts/ci/select-checks.py select
+
   workflow:
     name: Workflow and release tooling
+    needs: select
+    if: needs.select.outputs.workflow == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -54,6 +86,8 @@ jobs:
 
   semgrep:
     name: Static security patterns
+    needs: select
+    if: needs.select.outputs.semgrep == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -84,6 +118,8 @@ jobs:
 
   dependencies:
     name: Dependencies and production configuration
+    needs: select
+    if: needs.select.outputs.dependencies == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
@@ -119,6 +155,8 @@ jobs:
 
   backend:
     name: Backend build and test
+    needs: select
+    if: needs.select.outputs.backend == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
@@ -139,6 +177,8 @@ jobs:
 
   frontend:
     name: Frontend lint, security contracts and build
+    needs: select
+    if: needs.select.outputs.frontend == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
@@ -155,7 +195,6 @@ jobs:
           path: frontend/.next/cache
           key: ${{ runner.os }}-${{ runner.arch }}-next-24-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-next-24-${{ hashFiles('frontend/package-lock.json') }}-
-      - run: node --test services/cli/scripts/test-macos-installer.mjs
       - run: npm ci
         working-directory: frontend
       - run: npm run lint && npm run test:security && npm run test:physical-capture && npm run build
@@ -163,6 +202,8 @@ jobs:
 
   cli:
     name: Go CLI tests and release packages
+    needs: select
+    if: needs.select.outputs.cli == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
@@ -173,6 +214,10 @@ jobs:
         with:
           go-version-file: services/cli/go.mod
           cache-dependency-path: services/cli/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: node --test services/cli/scripts/test-macos-installer.mjs
       - run: go test -race ./... && go vet ./...
         working-directory: services/cli
       - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
@@ -212,18 +257,13 @@ jobs:
 
   images:
     name: Image scan (${{ matrix.component }}, ${{ matrix.arch }})
+    needs: select
+    if: needs.select.outputs.images == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        component: [core, ingest, frontend]
-        arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            runner: ubuntu-26.04
-          - arch: arm64
-            runner: ubuntu-26.04-arm
+      matrix: ${{ fromJSON(needs.select.outputs.image-matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -283,12 +323,15 @@ jobs:
   required:
     name: CI passed
     if: always()
-    needs: [workflow, gitleaks, semgrep, dependencies, backend, frontend, cli, images]
+    needs: [select, workflow, gitleaks, semgrep, dependencies, backend, frontend, cli, images]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
-      - name: Require every build and security job to succeed
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require all selected checks and reject unexpected skips
         env:
+          CHECK_PLAN: ${{ needs.select.outputs.plan }}
           CHECK_RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 -c 'import json, os, sys; results = json.loads(os.environ["CHECK_RESULTS"]); sys.exit(any(job["result"] != "success" for job in results.values()))'
+        run: python3 scripts/ci/select-checks.py gate
