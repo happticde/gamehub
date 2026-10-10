@@ -1,0 +1,29 @@
+rules:
+  - id: gamehub-go-tls-verification-disabled
+    languages: [go]
+    message: TLS peer verification must remain enabled.
+    severity: ERROR
+    pattern: "tls.Config{..., InsecureSkipVerify: true, ...}"
+  - id: gamehub-csharp-tls-verification-disabled
+    languages: [csharp]
+    message: Do not disable certificate validation on outbound HTTP requests.
+    severity: ERROR
+    pattern: $HANDLER.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+  - id: gamehub-csharp-interpolated-raw-sql
+    languages: [csharp]
+    message: Use parameterized SQL; interpolation passed to a raw SQL API is unsafe.
+    severity: ERROR
+    pattern-either:
+      - pattern: $DB.ExecuteSqlRaw($"...", ...)
+      - pattern: $DB.ExecuteSqlRawAsync($"...", ...)
+      - pattern: $DB.FromSqlRaw($"...", ...)
+  - id: gamehub-javascript-dynamic-eval
+    languages: [javascript, typescript]
+    message: Avoid executing dynamically constructed JavaScript.
+    severity: ERROR
+    pattern: eval($CODE)
+  - id: gamehub-javascript-tls-verification-disabled
+    languages: [javascript, typescript]
+    message: TLS peer verification must remain enabled.
+    severity: ERROR
+    pattern: "{..., rejectUnauthorized: false, ...}"

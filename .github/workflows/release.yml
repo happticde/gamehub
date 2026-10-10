@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment (auto uses Conventional Commits)
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gamehub-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    name: Prepare version and release notes
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 scripts/ci/install-tool.py git-cliff "$RUNNER_TEMP/tools"
+      - id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: bash scripts/ci/prepare-release.sh "$BUMP" "$RUNNER_TEMP/release-metadata"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-metadata
+          path: ${{ runner.temp }}/release-metadata/
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    needs: prepare
+    uses: ./.github/workflows/checks.yml
+    with:
+      release-version: ${{ needs.prepare.outputs.version }}
+
+  publish-images:
+    name: Publish verified image (${{ matrix.component }}, ${{ matrix.arch }})
+    needs: [prepare, verify]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [core, ingest, frontend]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-image-${{ matrix.component }}-${{ matrix.arch }}
+          path: image
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push without rebuilding the scanned image
+        env:
+          COMPONENT: ${{ matrix.component }}
+          ARCH: ${{ matrix.arch }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          docker load < image/image.tar.gz
+          destination="ghcr.io/${GITHUB_REPOSITORY,,}-$COMPONENT:$TAG-$ARCH"
+          docker tag "gamehub-$COMPONENT:verified" "$destination"
+          docker push "$destination"
+
+  publish-release:
+    name: Publish multi-platform containers and GitHub Release
+    needs: [prepare, verify, publish-images]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-cli
+          path: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-metadata
+          path: metadata
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-reports-*
+          merge-multiple: true
+          path: image-reports
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.0
+          driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Assemble versioned manifests and release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > existing-draft; then
+            [[ "$(cat existing-draft)" == true ]] || { echo 'Published releases cannot be overwritten' >&2; exit 1; }
+            target=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')
+            [[ "$target" == "$GITHUB_SHA" ]] || { echo 'Draft tag points to a different commit' >&2; exit 1; }
+          fi
+          cd release
+          sha256sum --check SHA256SUMS
+          cd ..
+          cp image-reports/*.cdx.json release/
+          (cd release && sha256sum ./*.cdx.json >> SHA256SUMS)
+          for component in core ingest frontend; do
+            image="ghcr.io/${GITHUB_REPOSITORY,,}-$component"
+            docker buildx imagetools create -t "$image:$TAG" "$image:$TAG-amd64" "$image:$TAG-arm64"
+            printf '\n- %s:%s (Linux amd64/arm64)\n' "$image" "$TAG" >> metadata/RELEASE_NOTES.md
+          done
+          # A draft makes failed uploads recoverable; the public release is the final step.
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "GameHub $TAG" --notes-file metadata/RELEASE_NOTES.md --draft
+          fi
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          for component in core ingest frontend; do
+            image="ghcr.io/${GITHUB_REPOSITORY,,}-$component"
+            docker buildx imagetools create -t "$image:latest" "$image:$TAG"
+          done
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

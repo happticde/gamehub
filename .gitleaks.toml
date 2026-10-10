@@ -1,0 +1,7 @@
+title = "GameHub secret scanning"
+
+[extend]
+useDefault = true
+
+# Keep the upstream rules. Add only narrowly justified false-positive exceptions.
+# User-owned environment files are excluded by git pathspec before scanning.

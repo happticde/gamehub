@@ -1,5 +1,78 @@
 # Session History
 
+## Current Session Summary (2026-10-11)
+
+### What Changed
+
+**Native ARM Image Builds and CI Caching:**
+- Replace QEMU-on-AMD64 image builds with native Ubuntu 26.04 runners per target architecture.
+  All six image matrix jobs still run in parallel and retain their security scans/release gates.
+- Use the pinned Docker build Action for authenticated v2 GitHub caches. Keep scopes separate
+  per service/architecture and bound best-effort cache export to three minutes.
+- Cache NuGet downloads and the frontend check's Next.js incremental output. Keep npm/Go caches.
+- Separate Go module downloads into a cached helper layer. Copy helper archives only into the
+  frontend runtime so BuildKit can build the helper and Next.js independently.
+
+### Verification
+
+- Actionlint, frontend lint, and the production build without pre-build helper downloads pass.
+- Both helper archives build independently and are served with HTTP 200 at the unchanged URLs
+  after copying them into the standalone runtime. Download SHA-256 hashes match the archives.
+- Native ARM runner support for private repositories and current stable Action pins were
+  verified against official sources. Full Docker builds, cache behavior, and elapsed-time
+  improvements require the next hosted run; no hosted timing reduction is claimed yet.
+
+## Current Session Summary (2026-10-11)
+
+### What Changed
+
+**Frontend Runtime Package Manager Removal:**
+- Reproduced all seven hosted frontend image blockers on the current official Node 24 Alpine
+  image for AMD64 and ARM64. The affected packages belong to bundled npm, not the application.
+- Remove npm/npx and Yarn, including their bundled dependencies, only in the runtime stage.
+  Build stages retain package managers. Keep the Trivy gate and exclusions unchanged.
+
+### Verification
+
+- Frontend lint passes. A secret-free source snapshot builds with Next.js 16.3.8 on the actual
+  Node 24.21.0 / Alpine 3.24.2 base. Its standalone server runs without package managers as UID
+  1001, and `/login` returns HTTP 200.
+- The exported runtime filesystem has zero of the seven reported CVEs and zero blocking
+  HIGH/CRITICAL findings. The unchanged Trivy gate passes; lower-severity findings remain visible.
+- This checks an isolated runtime container, not a complete multi-stage image build. A local
+  Docker-socket verifier was rejected by automatic approval review; no socket was mounted.
+  The complete AMD64/ARM64 Dockerfile build and scan remain for hosted CI.
+
+## Current Session Summary (2026-10-10)
+
+### What Changed
+
+**Security CI and Shared Release Pipeline:**
+- Added reusable read-only build/security jobs: Gitleaks history scanning, local tested Semgrep
+  rules, Trivy source/compiled-CLI/runtime-image scanning, full tests and a stable aggregate gate.
+- Pin Actions by commit, tools by version/archive checksum, and scanner/build images by digest.
+  Preserve full vulnerability reports while blocking fixable HIGH/CRITICAL and high-risk config.
+- Add git-cliff shared semantic versioning and a manually dispatched main-only release. Publish
+  the scanned images for Linux AMD64/ARM64 to GHCR, with CLI/macOS helper downloads, SBOMs and
+  checksums in one GitHub Release. Use QEMU to support private repositories on standard runners.
+- Fix the first scan's actionable findings with Next.js 16.3.8, compatible sharp/source-map-js/
+  brace-expansion updates, and Go 1.26.9. Scope historical Gitleaks false positives to thirteen
+  exact documentation fingerprints. The unfixed braces development-dependency finding remains
+  visible without an ignore entry. Add Dependabot and operator/recovery documentation.
+
+### Verification
+
+- 482 backend tests, Go race tests/vet, frontend lint/74 security tests/7 capture tests/production
+  build, four installer tests, nine CI tooling integration/boundary tests and Actionlint/
+  ShellCheck pass. Semgrep fixtures cover all five rules and the source scan has no findings.
+- Gitleaks history passes with narrow reviewed exceptions; a new synthetic secret in a README
+  still fails and is fully redacted. Source and compiled CLI Trivy gates pass after fixes.
+- Four release archives were built; checksum and native CLI version checks pass. No environment
+  files or runtime secret configuration were changed.
+- Full image builds and publishing need hosted CI: the current devcontainer has no Docker CLI
+  or socket. No GHCR visibility, branch protection, live release, or registry publication was
+  changed. See `docs/ci-and-releases.md` for activation and failure recovery.
+
 ## Current Session Summary (2026-10-10)
 
 ### What Changed

@@ -18,3 +18,5 @@ public/downloads/helper/
 *.md
 .env
 .env.*
+**/.env
+**/.env.*

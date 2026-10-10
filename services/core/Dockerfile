@@ -7,11 +7,17 @@ RUN dotnet restore "services/core/GameHub.Core.csproj"
 
 COPY . .
 WORKDIR "/src/services/core"
-RUN dotnet publish "GameHub.Core.csproj" -c Release -o /app/publish /p:UseAppHost=false
+ARG VERSION=0.0.0
+RUN dotnet publish "GameHub.Core.csproj" -c Release -o /app/publish /p:UseAppHost=false /p:Version=$VERSION
 
 # aspnet:alpine is ~100-115 MB (vs ~220 MB full aspnet) and has wget + sh built in.
 # Avoids all chiseled-image ABI/shell compatibility issues.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+ARG VERSION=0.0.0
+ARG REVISION=unknown
+LABEL org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/happticde/gamehub"
 WORKDIR /app
 COPY --from=build /app/publish .
 

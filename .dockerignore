@@ -39,3 +39,5 @@ tests/
 # Environment files (secrets should be passed via env vars at runtime)
 .env
 .env.*
+**/.env
+**/.env.*
