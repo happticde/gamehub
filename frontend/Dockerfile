@@ -1,5 +1,11 @@
 FROM node:24-alpine AS base
 
+# The named context is restricted by services/cli/.dockerignore.
+FROM golang:1.26.5-bookworm AS helper-builder
+WORKDIR /src
+COPY --from=helper-source . .
+RUN sh scripts/package-macos-helper.sh /downloads
+
 # Install dependencies only when needed
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
@@ -12,6 +18,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+COPY --from=helper-builder /downloads ./public/downloads/helper
 # Environment variables needed during build can be passed as ARG
 RUN npm run build
 

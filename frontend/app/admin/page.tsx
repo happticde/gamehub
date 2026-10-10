@@ -81,7 +81,7 @@ export default function AdminPage() {
                         </TabsTrigger>
                         <TabsTrigger value="credentials" className="gap-1.5">
                             <KeyRound className="h-4 w-4" />
-                            Credentials
+                            Accounts
                         </TabsTrigger>
                         <TabsTrigger value="ingestion" className="gap-1.5">
                             <Download className="h-4 w-4" />

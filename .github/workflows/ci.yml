@@ -72,3 +72,6 @@ jobs:
 
       - name: Build Core image
         run: docker build -f services/core/Dockerfile -t gamehub-core:ci .
+
+      - name: Build frontend with macOS helper downloads
+        run: docker build --build-context helper-source=./services/cli -f frontend/Dockerfile -t gamehub-frontend:ci frontend

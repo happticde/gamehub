@@ -7,6 +7,9 @@ node_modules/
 .next/
 out/
 
+# Always use freshly compiled downloads from the helper-builder stage.
+public/downloads/helper/
+
 # TypeScript incremental build info
 *.tsbuildinfo
 

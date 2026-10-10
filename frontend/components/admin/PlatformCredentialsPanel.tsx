@@ -12,6 +12,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { HelperSetupProvider, PlatformConnectAssistant } from "@/components/admin/PlatformConnectAssistant";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,10 +69,12 @@ export function PlatformCredentialsPanel() {
     const [busyPlatform, setBusyPlatform] = useState<Platform | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [errorPlatform, setErrorPlatform] = useState<Platform | null>(null);
 
     const loadStatus = useCallback(async () => {
         setLoading(true);
         setError(null);
+        setErrorPlatform(null);
         try {
             const response = await fetchAuthenticated("/api/core/platform-credentials", { cache: "no-store" });
             if (!response.ok) throw new Error(await readError(response));
@@ -91,6 +94,7 @@ export function PlatformCredentialsPanel() {
         setBusyPlatform(platform);
         setMessage(null);
         setError(null);
+        setErrorPlatform(null);
         try {
             const response = await fetchAuthenticated(`/api/core/platform-credentials/${platform}`, {
                 method: "PUT",
@@ -103,6 +107,7 @@ export function PlatformCredentialsPanel() {
             return true;
         } catch (caught) {
             setError(errorMessage(caught));
+            setErrorPlatform(platform);
             return false;
         } finally {
             setBusyPlatform(null);
@@ -113,6 +118,7 @@ export function PlatformCredentialsPanel() {
         setBusyPlatform(platform);
         setMessage(null);
         setError(null);
+        setErrorPlatform(null);
         try {
             const response = await fetchAuthenticated(`/api/core/platform-credentials/${platform}`, {
                 method: "DELETE",
@@ -131,6 +137,7 @@ export function PlatformCredentialsPanel() {
         setBusyPlatform("Epic");
         setMessage(null);
         setError(null);
+        setErrorPlatform(null);
         try {
             const response = await fetchAuthenticated("/api/platform-credentials/epic/connect/start", {
                 method: "POST",
@@ -142,6 +149,7 @@ export function PlatformCredentialsPanel() {
             return payload;
         } catch (caught) {
             setError(errorMessage(caught));
+            setErrorPlatform("Epic");
             return null;
         } finally {
             setBusyPlatform(null);
@@ -155,6 +163,7 @@ export function PlatformCredentialsPanel() {
         setBusyPlatform("Epic");
         setMessage(null);
         setError(null);
+        setErrorPlatform(null);
         try {
             const response = await fetchAuthenticated("/api/platform-credentials/epic/connect/complete", {
                 method: "POST",
@@ -167,6 +176,7 @@ export function PlatformCredentialsPanel() {
             return true;
         } catch (caught) {
             setError(errorMessage(caught));
+            setErrorPlatform("Epic");
             return false;
         } finally {
             setBusyPlatform(null);
@@ -193,10 +203,10 @@ export function PlatformCredentialsPanel() {
                         <div>
                             <CardTitle className="flex items-center gap-2 text-lg">
                                 <ShieldCheck className="h-5 w-5 text-primary" />
-                                Encrypted platform vault
+                                Gaming accounts
                             </CardTitle>
                             <CardDescription className="mt-1">
-                                Credentials are encrypted per tenant and are never displayed again.
+                                Connect your accounts to import your game libraries. Credentials are stored encrypted.
                             </CardDescription>
                         </div>
                         <Badge variant={state?.platformSyncEnabled ? "default" : "secondary"}>
@@ -205,8 +215,8 @@ export function PlatformCredentialsPanel() {
                     </div>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground">
-                    Sync is enabled by Core only after at least one supported credential has been
-                    stored and verified. Removing the final credential disables sync first.
+                    Store a credential for at least one platform to enable library sync.
+                    Removing the final credential disables sync.
                 </CardContent>
             </Card>
 
@@ -223,34 +233,39 @@ export function PlatformCredentialsPanel() {
                 </div>
             )}
 
-            <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
-                <SteamCredentialCard
-                    status={statusFor("Steam")}
-                    busy={busyPlatform === "Steam"}
-                    onSave={(payload) => save("Steam", payload)}
-                    onDelete={() => remove("Steam")}
-                />
-                <GogCredentialCard
-                    status={statusFor("Gog")}
-                    busy={busyPlatform === "Gog"}
-                    onSave={(payload) => save("Gog", payload)}
-                    onDelete={() => remove("Gog")}
-                />
-                <PsnCredentialCard
-                    status={statusFor("Psn")}
-                    busy={busyPlatform === "Psn"}
-                    onSave={(payload) => save("Psn", payload)}
-                    onDelete={() => remove("Psn")}
-                />
-                <EpicCredentialCard
-                    status={statusFor("Epic")}
-                    busy={busyPlatform === "Epic"}
-                    onSave={(payload) => save("Epic", payload)}
-                    onStartConnect={startEpicConnect}
-                    onCompleteConnect={completeEpicConnect}
-                    onDelete={() => remove("Epic")}
-                />
-            </div>
+            <HelperSetupProvider>
+                <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
+                    <SteamCredentialCard
+                        status={statusFor("Steam")}
+                        busy={busyPlatform === "Steam"}
+                        onSave={(payload) => save("Steam", payload)}
+                        onDelete={() => remove("Steam")}
+                    />
+                    <GogCredentialCard
+                        status={statusFor("Gog")}
+                        busy={busyPlatform === "Gog"}
+                        saveError={errorPlatform === "Gog" ? error : null}
+                        onSave={(payload) => save("Gog", payload)}
+                        onDelete={() => remove("Gog")}
+                    />
+                    <PsnCredentialCard
+                        status={statusFor("Psn")}
+                        busy={busyPlatform === "Psn"}
+                        saveError={errorPlatform === "Psn" ? error : null}
+                        onSave={(payload) => save("Psn", payload)}
+                        onDelete={() => remove("Psn")}
+                    />
+                    <EpicCredentialCard
+                        status={statusFor("Epic")}
+                        busy={busyPlatform === "Epic"}
+                        saveError={errorPlatform === "Epic" ? error : null}
+                        onSave={(payload) => save("Epic", payload)}
+                        onStartConnect={startEpicConnect}
+                        onCompleteConnect={completeEpicConnect}
+                        onDelete={() => remove("Epic")}
+                    />
+                </div>
+            </HelperSetupProvider>
         </div>
     );
 }
@@ -332,6 +347,7 @@ function CredentialCard({
 interface FormProps {
     status?: PlatformCredentialStatus;
     busy: boolean;
+    saveError?: string | null;
     onSave: (credentials: CredentialPayload) => Promise<boolean>;
     onDelete: () => Promise<void>;
 }
@@ -372,7 +388,7 @@ function SteamCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     );
 }
 
-function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
+function GogCredentialCard({ status, busy, saveError, onSave, onDelete }: FormProps) {
     const [cookie, setCookie] = useState("");
     const [user, setUser] = useState("");
     const [helperPayload, setHelperPayload] = useState("");
@@ -553,46 +569,23 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     return (
         <CredentialCard
             platform="Gog"
-            description="Guided connect flow with manual credential fallback"
+            description="Connect your GOG account with GameHub Helper"
             status={status}
             busy={busy}
             onDelete={onDelete}
         >
-            <CredentialSection
-                icon={<PlugZap className="h-4 w-4 text-primary" />}
-                title={status?.isConfigured ? "Reconnect GOG" : "Connect GOG"}
-                description="Launch the local helper, sign in with GOG in the visible browser, and import the one-time handoff automatically."
-                tone="primary"
+            <PlatformConnectAssistant
+                provider="gog"
+                configured={status?.isConfigured ?? false}
+                busy={busy}
+                waiting={handoffPolling || helperLaunching}
+                saved={handoffMessage === helperStatusMessage("gog", "saved")}
+                message={handoffMessage}
+                error={handoffError ?? saveError ?? null}
+                onConnect={launchProtocolHelper}
+                onReset={() => clearHelperState()}
+                onStop={stopHandoffPolling}
             >
-                <p className="text-xs leading-5 text-muted-foreground">
-                    The launch URL contains only this Admin page origin and a one-time launch ID,
-                    never the gog-al cookie.
-                </p>
-                <Button
-                    variant="default"
-                    size="sm"
-                    className="w-full"
-                    disabled={busy || handoffPolling || helperLaunching}
-                    onClick={() => void launchProtocolHelper()}
-                >
-                    {helperLaunching ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <PlugZap className="mr-2 h-4 w-4" />
-                    )}
-                    {helperLaunching ? "Starting helper…" : "Connect GOG"}
-                </Button>
-                <HelperStatusMessage message={handoffMessage} error={handoffError} />
-                {(handoffPolling || helperLaunching) && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full"
-                        onClick={stopHandoffPolling}
-                    >
-                        Stop waiting
-                    </Button>
-                )}
                 <CommandFallback
                     title="Advanced helper options"
                     commands={[
@@ -626,73 +619,73 @@ function GogCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         {handoffPolling ? "Waiting for helper…" : "Import pasted handoff URL"}
                     </Button>
                 </CommandFallback>
-            </CredentialSection>
 
-            <HiddenFallback
-                title="JSON fallback"
-                description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
-            >
-                <Textarea
-                    aria-label="GOG helper result"
-                    className="min-h-24 font-mono text-xs"
-                    placeholder='{"provider":"gog","user":"gog-user","cookies":{"gog-al":"..."}}'
-                    value={helperPayload}
-                    onChange={(event) => {
-                        setHelperPayload(event.target.value);
-                        setHelperError(null);
-                    }}
-                />
-                {helperError && (
-                    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {helperError}
-                    </p>
-                )}
-                <Button
-                    className="w-full"
-                    disabled={busy || !helperPayload.trim()}
-                    onClick={() => void saveHelperPayload()}
+                <HiddenFallback
+                    title="JSON fallback"
+                    description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
                 >
-                    {busy ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : status?.isConfigured ? (
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                    ) : (
-                        <PlugZap className="mr-2 h-4 w-4" />
-                    )}
-                    {busy
-                        ? "Saving…"
-                        : status?.isConfigured
-                            ? "Store refreshed GOG session"
-                            : "Store JSON helper result"}
-                </Button>
-            </HiddenFallback>
-
-            <HiddenFallback
-                title="Manual fallback"
-                description="Use only when the helper cannot capture the session for you."
-                action={
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => {
-                            window.open("https://www.gog.com/account", "_blank", "noopener,noreferrer");
+                    <Textarea
+                        aria-label="GOG helper result"
+                        className="min-h-24 font-mono text-xs"
+                        placeholder='{"provider":"gog","user":"gog-user","cookies":{"gog-al":"..."}}'
+                        value={helperPayload}
+                        onChange={(event) => {
+                            setHelperPayload(event.target.value);
+                            setHelperError(null);
                         }}
+                    />
+                    {helperError && (
+                        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                            {helperError}
+                        </p>
+                    )}
+                    <Button
+                        className="w-full"
+                        disabled={busy || !helperPayload.trim()}
+                        onClick={() => void saveHelperPayload()}
                     >
-                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                        Open GOG
+                        {busy ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : status?.isConfigured ? (
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                        ) : (
+                            <PlugZap className="mr-2 h-4 w-4" />
+                        )}
+                        {busy
+                            ? "Saving…"
+                            : status?.isConfigured
+                                ? "Store refreshed GOG session"
+                                : "Store JSON helper result"}
                     </Button>
-                }
-            >
-                <CredentialInput label="GOG username" value={user} onChange={setUser} />
-                <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
-                <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
-            </HiddenFallback>
+                </HiddenFallback>
+
+                <HiddenFallback
+                    title="Manual fallback"
+                    description="Use only when the helper cannot capture the session for you."
+                    action={
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                                window.open("https://www.gog.com/account", "_blank", "noopener,noreferrer");
+                            }}
+                        >
+                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                            Open GOG
+                        </Button>
+                    }
+                >
+                    <CredentialInput label="GOG username" value={user} onChange={setUser} />
+                    <CredentialInput label="gog-al cookie" value={cookie} onChange={setCookie} secret />
+                    <SaveButton busy={busy} disabled={!cookie.trim() || !user.trim()} onClick={submit} />
+                </HiddenFallback>
+            </PlatformConnectAssistant>
         </CredentialCard>
     );
 }
 
-function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
+function PsnCredentialCard({ status, busy, saveError, onSave, onDelete }: FormProps) {
     const [cookies, setCookies] = useState([{ key: "", value: "" }]);
     const [helperPayload, setHelperPayload] = useState("");
     const [handoffUrl, setHandoffUrl] = useState("");
@@ -906,50 +899,26 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
     return (
         <CredentialCard
             platform="Psn"
-            description="One-click helper with persistent Chrome and manual fallbacks"
+            description="Connect your PlayStation account with GameHub Helper"
             status={status}
             busy={busy}
             onDelete={onDelete}
         >
-            <CredentialSection
-                icon={<PlugZap className="h-4 w-4 text-primary" />}
-                title={status?.isConfigured ? "Reconnect PlayStation" : "Connect PlayStation"}
-                description="Start the local helper from the browser and import the one-time handoff automatically."
-                tone="primary"
+            <PlatformConnectAssistant
+                provider="psn"
+                configured={status?.isConfigured ?? false}
+                busy={busy}
+                waiting={handoffPolling || helperLaunching}
+                saved={handoffMessage === helperStatusMessage("psn", "saved")}
+                message={handoffMessage}
+                error={handoffError ?? saveError ?? null}
+                onConnect={launchProtocolHelper}
+                onReset={() => clearHelperState()}
+                onStop={stopHandoffPolling}
             >
-                <p className="text-xs leading-5 text-muted-foreground">
-                    GameHub never asks for your PSN password. Complete the Sony sign-in in the
-                    visible helper browser. Cookies stay in a local one-time handoff before
-                    encrypted vault storage; <span className="font-medium text-foreground">pdccws_p</span> is the relevant cookie.
-                </p>
-                <Button
-                    variant="default"
-                    size="sm"
-                    className="w-full"
-                    disabled={busy || handoffPolling || helperLaunching}
-                    onClick={() => void launchProtocolHelper()}
-                >
-                    {helperLaunching ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <PlugZap className="mr-2 h-4 w-4" />
-                    )}
-                    {helperLaunching ? "Starting helper…" : "Connect PlayStation"}
-                </Button>
-                <HelperStatusMessage message={handoffMessage} error={handoffError} />
-                {(handoffPolling || helperLaunching) && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full"
-                        onClick={stopHandoffPolling}
-                    >
-                        Stop waiting
-                    </Button>
-                )}
                 <HiddenFallback
-                    title="Persistent Chrome fallback"
-                    description="Use this when Sony blocks the one-click helper or returns HTTP 429 for fresh profiles."
+                    title="Manual PlayStation browser connection"
+                    description="Use this if the installed helper cannot open or attach to the dedicated Chrome profile."
                 >
                     <div className="space-y-2 rounded-md border bg-background/70 p-3 text-xs">
                         <p className="font-medium text-foreground">1. Start or reuse the persistent Chrome profile</p>
@@ -1018,103 +987,103 @@ function PsnCredentialCard({ status, busy, onSave, onDelete }: FormProps) {
                         ]}
                     />
                 </HiddenFallback>
-            </CredentialSection>
 
-            <HiddenFallback
-                title="JSON fallback"
-                description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
-            >
-                <Textarea
-                    aria-label="PlayStation helper result"
-                    className="min-h-24 font-mono text-xs"
-                    placeholder='{"provider":"psn","cookies":{"pdccws_p":"..."}}'
-                    value={helperPayload}
-                    onChange={(event) => {
-                        setHelperPayload(event.target.value);
-                        setHelperError(null);
-                    }}
-                />
-                {helperError && (
-                    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {helperError}
-                    </p>
-                )}
-                <Button
-                    className="w-full"
-                    disabled={busy || !helperPayload.trim()}
-                    onClick={() => void saveHelperPayload()}
+                <HiddenFallback
+                    title="JSON fallback"
+                    description="If loopback handoff is unavailable, paste the helper's one-time JSON result here."
                 >
-                    {busy ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : status?.isConfigured ? (
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                    ) : (
-                        <PlugZap className="mr-2 h-4 w-4" />
-                    )}
-                    {busy
-                        ? "Saving…"
-                        : status?.isConfigured
-                            ? "Store refreshed PlayStation session"
-                            : "Store JSON helper result"}
-                </Button>
-            </HiddenFallback>
-
-            <HiddenFallback
-                title="Manual fallback"
-                description="Add only the cookies needed for the vault; pdccws_p is required for PSN import."
-                action={
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => {
-                            window.open("https://store.playstation.com/", "_blank", "noopener,noreferrer");
+                    <Textarea
+                        aria-label="PlayStation helper result"
+                        className="min-h-24 font-mono text-xs"
+                        placeholder='{"provider":"psn","cookies":{"pdccws_p":"..."}}'
+                        value={helperPayload}
+                        onChange={(event) => {
+                            setHelperPayload(event.target.value);
+                            setHelperError(null);
                         }}
+                    />
+                    {helperError && (
+                        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                            {helperError}
+                        </p>
+                    )}
+                    <Button
+                        className="w-full"
+                        disabled={busy || !helperPayload.trim()}
+                        onClick={() => void saveHelperPayload()}
                     >
-                        <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                        Open PlayStation
+                        {busy ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : status?.isConfigured ? (
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                        ) : (
+                            <PlugZap className="mr-2 h-4 w-4" />
+                        )}
+                        {busy
+                            ? "Saving…"
+                            : status?.isConfigured
+                                ? "Store refreshed PlayStation session"
+                                : "Store JSON helper result"}
                     </Button>
-                }
-            >
-                {cookies.map((cookie, index) => (
-                    <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
-                        <Input
-                            aria-label={`Cookie ${index + 1} name`}
-                            placeholder="Cookie name"
-                            value={cookie.key}
-                            onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
-                                itemIndex === index ? { ...item, key: event.target.value } : item))}
-                        />
-                        <Input
-                            aria-label={`Cookie ${index + 1} value`}
-                            placeholder="Cookie value"
-                            type="password"
-                            autoComplete="off"
-                            value={cookie.value}
-                            onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
-                                itemIndex === index ? { ...item, value: event.target.value } : item))}
-                        />
+                </HiddenFallback>
+
+                <HiddenFallback
+                    title="Manual fallback"
+                    description="Add only the cookies needed for the vault; pdccws_p is required for PSN import."
+                    action={
                         <Button
                             variant="ghost"
-                            size="icon"
-                            aria-label={`Remove cookie ${index + 1}`}
-                            disabled={cookies.length === 1}
-                            onClick={() => setCookies((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                                window.open("https://store.playstation.com/", "_blank", "noopener,noreferrer");
+                            }}
                         >
-                            <Trash2 className="h-4 w-4" />
+                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                            Open PlayStation
                         </Button>
-                    </div>
-                ))}
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => setCookies((current) => [...current, { key: "", value: "" }])}
+                    }
                 >
-                    <Plus className="mr-2 h-4 w-4" /> Add cookie
-                </Button>
-                <SaveButton busy={busy} disabled={validCookies.length === 0} onClick={submit} />
-            </HiddenFallback>
+                    {cookies.map((cookie, index) => (
+                        <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
+                            <Input
+                                aria-label={`Cookie ${index + 1} name`}
+                                placeholder="Cookie name"
+                                value={cookie.key}
+                                onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, key: event.target.value } : item))}
+                            />
+                            <Input
+                                aria-label={`Cookie ${index + 1} value`}
+                                placeholder="Cookie value"
+                                type="password"
+                                autoComplete="off"
+                                value={cookie.value}
+                                onChange={(event) => setCookies((current) => current.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, value: event.target.value } : item))}
+                            />
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Remove cookie ${index + 1}`}
+                                disabled={cookies.length === 1}
+                                onClick={() => setCookies((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ))}
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setCookies((current) => [...current, { key: "", value: "" }])}
+                    >
+                        <Plus className="mr-2 h-4 w-4" /> Add cookie
+                    </Button>
+                    <SaveButton busy={busy} disabled={validCookies.length === 0} onClick={submit} />
+                </HiddenFallback>
+            </PlatformConnectAssistant>
         </CredentialCard>
     );
 }
@@ -1127,6 +1096,7 @@ interface EpicFormProps extends FormProps {
 function EpicCredentialCard({
     status,
     busy,
+    saveError,
     onSave,
     onStartConnect,
     onCompleteConnect,
@@ -1335,51 +1305,23 @@ function EpicCredentialCard({
     return (
         <CredentialCard
             platform="Epic"
-            description="Guided Epic Games authorization with manual fallback"
+            description="Connect your Epic Games account with GameHub Helper"
             status={status}
             busy={busy}
             onDelete={onDelete}
         >
-            <CredentialSection
-                icon={<PlugZap className="h-4 w-4 text-primary" />}
-                title={status?.isConfigured ? "Reconnect Epic Games" : "Connect Epic Games"}
-                description="Launch the local helper, sign in with Epic Games in the visible browser, and exchange the captured authorization code server-side."
-                tone="primary"
+            <PlatformConnectAssistant
+                provider="epic"
+                configured={status?.isConfigured ?? false}
+                busy={busy}
+                waiting={handoffPolling || helperLaunching}
+                saved={handoffMessage === helperStatusMessage("epic", "saved")}
+                message={handoffMessage}
+                error={handoffError ?? saveError ?? null}
+                onConnect={launchProtocolHelper}
+                onReset={() => clearHelperState()}
+                onStop={stopHandoffPolling}
             >
-                <p className="text-xs leading-5 text-muted-foreground">
-                    The helper handoff contains only a short-lived authorization code. Refresh tokens
-                    are exchanged and encrypted server-side.
-                </p>
-                {connectExpiresAt && (
-                    <p className="text-xs text-muted-foreground">
-                        Connect session expires {new Date(connectExpiresAt).toLocaleTimeString()}.
-                    </p>
-                )}
-                <Button
-                    variant="default"
-                    size="sm"
-                    className="w-full"
-                    disabled={busy || handoffPolling || helperLaunching}
-                    onClick={() => void launchProtocolHelper()}
-                >
-                    {helperLaunching ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <PlugZap className="mr-2 h-4 w-4" />
-                    )}
-                    {helperLaunching ? "Starting helper…" : "Connect Epic Games"}
-                </Button>
-                <HelperStatusMessage message={handoffMessage} error={handoffError} />
-                {(handoffPolling || helperLaunching) && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full"
-                        onClick={stopHandoffPolling}
-                    >
-                        Stop waiting
-                    </Button>
-                )}
                 <CommandFallback
                     title="Advanced helper options"
                     commands={[
@@ -1413,126 +1355,91 @@ function EpicCredentialCard({
                         {handoffPolling ? "Waiting for helper…" : "Import pasted handoff URL"}
                     </Button>
                 </CommandFallback>
-            </CredentialSection>
 
-            <HiddenFallback
-                title="JSON fallback"
-                description="If loopback handoff is unavailable, paste the helper or browser one-time JSON result here."
-                action={
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        disabled={busy}
-                        onClick={() => void startBrowserConnect()}
-                    >
-                        {busy ? (
-                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        Open Epic
-                    </Button>
-                }
-            >
-                <p className="text-xs leading-5 text-muted-foreground">
-                    Epic&apos;s launcher-compatible page returns JSON instead of redirecting back to
-                    GameHub. Paste that result here to finish through the BFF.
-                </p>
-                {localError && (
-                    <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                        {localError}
+                <HiddenFallback
+                    title="JSON fallback"
+                    description="If loopback handoff is unavailable, paste the helper or browser one-time JSON result here."
+                    action={
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            disabled={busy}
+                            onClick={() => void startBrowserConnect()}
+                        >
+                            {busy ? (
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            Open Epic
+                        </Button>
+                    }
+                >
+                    <p className="text-xs leading-5 text-muted-foreground">
+                        Epic&apos;s launcher-compatible page returns JSON instead of redirecting back to
+                        GameHub. Paste that result here to finish through the BFF.
                     </p>
-                )}
-                <Textarea
-                    aria-label="Epic authorization result"
-                    placeholder='Paste Epic JSON, e.g. {"authorizationCode":"..."}'
-                    value={epicResult}
-                    onChange={(event) => setEpicResult(event.target.value)}
-                    className="min-h-24 font-mono text-xs"
-                    autoComplete="off"
-                />
-                <Button
-                    className="w-full"
-                    disabled={busy || !connectState || !epicResult.trim()}
-                    onClick={() => void finishConnect()}
-                >
-                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
-                    {busy ? "Saving…" : "Finish Epic connect"}
-                </Button>
-            </HiddenFallback>
+                    {connectExpiresAt && (
+                        <p className="text-xs text-muted-foreground">
+                            Connect session expires {new Date(connectExpiresAt).toLocaleTimeString()}.
+                        </p>
+                    )}
+                    {localError && (
+                        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                            {localError}
+                        </p>
+                    )}
+                    <Textarea
+                        aria-label="Epic authorization result"
+                        placeholder='Paste Epic JSON, e.g. {"authorizationCode":"..."}'
+                        value={epicResult}
+                        onChange={(event) => setEpicResult(event.target.value)}
+                        className="min-h-24 font-mono text-xs"
+                        autoComplete="off"
+                    />
+                    <Button
+                        className="w-full"
+                        disabled={busy || !connectState || !epicResult.trim()}
+                        onClick={() => void finishConnect()}
+                    >
+                        {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
+                        {busy ? "Saving…" : "Finish Epic connect"}
+                    </Button>
+                </HiddenFallback>
 
-            <HiddenFallback
-                title="Manual fallback"
-                description="Use direct entry only when the helper or JSON fallback cannot be completed."
-            >
-                <CredentialInput
-                    label="Epic authorizationCode"
-                    value={manualAuthorizationCode}
-                    onChange={setManualAuthorizationCode}
-                    secret
-                />
-                <Button
-                    className="w-full"
-                    disabled={busy || !manualAuthorizationCode.trim()}
-                    onClick={() => void saveAuthorizationCode()}
+                <HiddenFallback
+                    title="Manual fallback"
+                    description="Use direct entry only when the helper or JSON fallback cannot be completed."
                 >
-                    {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
-                    {busy ? "Saving…" : "Exchange and store authorization code"}
-                </Button>
-                <CredentialInput
-                    label="Epic refresh token"
-                    value={refreshToken}
-                    onChange={setRefreshToken}
-                    secret
-                />
-                <SaveButton
-                    busy={busy}
-                    disabled={!refreshToken.trim()}
-                    onClick={saveRefreshToken}
-                />
-            </HiddenFallback>
+                    <CredentialInput
+                        label="Epic authorizationCode"
+                        value={manualAuthorizationCode}
+                        onChange={setManualAuthorizationCode}
+                        secret
+                    />
+                    <Button
+                        className="w-full"
+                        disabled={busy || !manualAuthorizationCode.trim()}
+                        onClick={() => void saveAuthorizationCode()}
+                    >
+                        {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
+                        {busy ? "Saving…" : "Exchange and store authorization code"}
+                    </Button>
+                    <CredentialInput
+                        label="Epic refresh token"
+                        value={refreshToken}
+                        onChange={setRefreshToken}
+                        secret
+                    />
+                    <SaveButton
+                        busy={busy}
+                        disabled={!refreshToken.trim()}
+                        onClick={saveRefreshToken}
+                    />
+                </HiddenFallback>
+            </PlatformConnectAssistant>
         </CredentialCard>
-    );
-}
-
-function CredentialSection({
-    icon,
-    title,
-    description,
-    action,
-    tone = "muted",
-    children,
-}: {
-    icon: ReactNode;
-    title: string;
-    description: string;
-    action?: ReactNode;
-    tone?: "muted" | "primary";
-    children: ReactNode;
-}) {
-    return (
-        <section
-            className={`rounded-lg border p-3 ${
-                tone === "primary" ? "bg-primary/5" : "bg-muted/20"
-            }`}
-        >
-            <div className="flex items-start gap-3">
-                <div className="mt-0.5 shrink-0">{icon}</div>
-                <div className="min-w-0 flex-1 space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                            <h4 className="text-sm font-medium text-foreground">{title}</h4>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                {description}
-                            </p>
-                        </div>
-                        {action}
-                    </div>
-                    {children}
-                </div>
-            </div>
-        </section>
     );
 }
 
@@ -1692,7 +1599,7 @@ function helperStatusMessage(provider: ConnectProvider, status: HelperStatusKind
         case "saving":
             return "Saving result in the encrypted vault.";
         case "saved":
-            return "Saved successfully. The connector is ready to sync.";
+            return "Credential saved securely. The next library import will verify the provider session.";
     }
 }
 
@@ -1783,7 +1690,7 @@ function localLaunchErrorMessage(error: unknown): string {
         return "GameHub could not reach the local helper. Install or reinstall the protocol handler, allow the browser prompt to open GameHub Helper, or use the fallback command below.";
     }
     if (message.includes("\nDetails: ")) return message;
-    return `The local helper could not start. Use the fallback command below or paste a helper result manually.\nDetails: ${message}`;
+    return `The local helper could not start. Check the helper installation or use the advanced connection options.\nDetails: ${message}`;
 }
 
 function localHandoffErrorMessage(error: unknown): string {

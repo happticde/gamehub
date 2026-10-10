@@ -1,5 +1,33 @@
 # Session History
 
+## Current Session Summary (2026-10-10)
+
+### What Changed
+
+**Guided macOS Account Setup:**
+- Added one shared helper/install/sign-in/save assistant for PlayStation, GOG and Epic Games.
+- Simplified the Accounts overview and grouped manual handoff, JSON, credential and diagnostic
+  options inside the corresponding dialog. Save errors remain visible inside the assistant.
+- Added self-contained Apple Silicon/Intel CLI download packages and a macOS installer that keeps
+  the binary in a stable per-user location. Frontend Docker builds bundle the downloads through a
+  restricted source context; missing local packages produce an explicit unavailable state.
+- Clarified that the normal PSN helper already opens/reuses persistent Chrome, and that storing a
+  credential does not verify the subsequent provider library import.
+
+### Verification
+
+- Frontend lint, production build and the 72 frontend security/contract tests pass.
+- The Go CLI suite passes. Both download archives contain only the expected executable, installer
+  and README, with the correct Darwin Mach-O architecture and executable permissions.
+- Browser checks cover the provider dialogs, shared setup acknowledgment and both download links.
+
+### Limitations
+
+- Packages are unsigned/not notarized. Native macOS installation and live provider sign-in were
+  not performed in this session. Windows/Linux/mobile guided setup remains follow-up work.
+- The devcontainer has no Docker CLI, so the complete frontend Docker image build was not run;
+  its packaging command and frontend production build were verified separately in the container.
+
 ## Current Session Summary (2026-07-30)
 
 ### What Changed
