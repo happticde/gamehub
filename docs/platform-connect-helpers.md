@@ -22,7 +22,57 @@ For the Epic retrieval lifecycle after a credential is saved, including audit-st
 cooldown discipline, and safe payload-drift investigation, see
 [Epic Stored Retrieval Operations](epic-stored-retrieval-operations.md).
 
-## Build the CLI
+## Recommended macOS Setup
+
+The Admin **Accounts** tab shows a compact card for each provider. PlayStation, GOG and Epic
+Games use the same three-step assistant: install the helper, sign in with the provider, and confirm
+encrypted credential storage. Steam retains its API-key setup. Manual handoff URLs, JSON results,
+credential fields and diagnostics are grouped under **Having trouble? Advanced connection options**.
+
+1. Choose **Connect** or **Reconnect** on the provider card.
+2. Download the helper for Apple Silicon or Intel. Find the processor in Apple menu → About This Mac.
+3. Extract the archive and open **Install GameHub Helper.command**. The installer copies the CLI to
+   `~/Library/Application Support/GameHub/Helper` and registers `~/Applications/GameHub Helper.app`.
+   No local Go installation is required, and the extracted download can be deleted afterwards.
+4. Choose **Continue after installation** (or **Already installed**), then **Open Helper & sign in**.
+5. Allow the browser to open GameHub Helper and complete the provider-owned login in its browser.
+6. Wait for GameHub to report that the credential was stored. The next library import separately
+   verifies whether the provider accepts the session; storage alone is not a successful import.
+
+Install on the Mac where the GameHub browser runs, even if the server runs elsewhere. Google Chrome
+must be installed on that Mac. The installation acknowledgment is shared between the three
+connectors while the Accounts page is open; it is not an automatic installation check. Closing a
+connecting dialog stops frontend polling, but does not terminate the local helper/browser. The
+dialog cannot be dismissed during an in-flight credential write.
+
+The downloads currently support desktop macOS only. The packages are unsigned and not notarized;
+macOS may require approval to open them. Signing/notarization and installers for other systems are
+follow-up work. Existing advanced CLI paths are retained, without claiming guided support for them.
+
+For PlayStation, the normal installed helper starts or reuses the dedicated persistent Chrome
+profile automatically. Manual Chrome commands are troubleshooting options, not a separate
+recommended setup path. GOG and Epic keep their own existing visible-browser capture flows.
+
+### Bundling the Downloads
+
+The frontend Docker build cross-compiles the existing Go CLI for Darwin `arm64` and `amd64`, packages
+only the executable, installer and README, and serves the archives from `/downloads/helper/`.
+Docker Compose supplies the restricted `helper-source` build context from `services/cli`.
+No new environment variables or provider credentials are required for packaging.
+
+For local frontend development, generate the same downloads through the devcontainer:
+
+```bash
+docker exec -w /workspaces/game-library-backend/services/cli \
+  game-library-backend_devcontainer-app-1 \
+  sh scripts/package-macos-helper.sh /workspaces/game-library-backend/frontend/public/downloads/helper
+```
+
+Generated downloads are ignored by Git. If they are absent, the assistant reports that downloads
+are unavailable instead of offering a broken link. Building the frontend Dockerfile independently
+also requires the named context `helper-source=./services/cli`; see the frontend image CI command.
+
+## Build the CLI (Advanced)
 
 Run the helper on the host machine, not inside the devcontainer, because it needs to open or attach
 to a local browser.
@@ -59,7 +109,7 @@ JSON fallback on those hosts.
 
 ## Normal Admin UI Flow
 
-1. Open the Admin credentials/connectors view.
+1. Open the Admin Accounts view and choose the matching connect assistant.
 2. Click the provider connect action for Epic Games, GOG, or PlayStation.
 3. Allow the browser or operating system to open `gamehub-helper://` with GameHub Helper.
 4. Complete provider login in the visible provider browser. GameHub never asks for the provider
@@ -145,9 +195,10 @@ After the profile is signed in, keep Chrome open and run:
   --origin http://localhost:3005
 ```
 
-Paste the printed handoff URL into the PlayStation connector field. Do not click the normal
-PlayStation connect button again during this attempt, because that starts a fresh helper-launched
-browser flow.
+Paste the printed handoff URL into the PlayStation assistant's advanced connection field. Do not
+start another connect attempt while manually importing this one-time result. The installed
+protocol handler already uses this persistent profile; plain `connect psn` without a remote-debugging
+URL still opens the fresh diagnostic browser.
 
 The fresh helper-launched PSN browser remains useful for diagnosis or fallback only. It is not the
 recommended operator path because Sony's fresh-profile behavior is fragile.

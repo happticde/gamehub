@@ -47,6 +47,11 @@
   `401` marker; network failures and `403`/`404`/`429`/`5xx` never trigger this path.
 - Operator readiness is intentionally not exposed to Client Components. The secret-free status API
   is an operator API-key endpoint, not a tenant-facing admin dashboard.
+- The Admin Accounts tab uses `PlatformConnectAssistant` for PlayStation, GOG and Epic. Keep the
+  shared macOS helper installation separate from provider-specific capture/save logic. Download
+  URLs are fixed same-origin build artifacts for Apple Silicon/Intel, and installation confirmation
+  is shared only in page state. Technical fallbacks stay inside the assistant; credential-save
+  errors must remain visible inside the dialog. Stored credentials do not prove a successful import.
 - The active physical-capture UI is manual-first via the existing IGDB enrichment search. It must
   debounce requests, reject stale responses, require explicit result and PS3/PS4/PS5 selection, and
   write only from the final confirmation. IGDB platform data is a hint only. Barcode, typed GTIN,
