@@ -11,6 +11,56 @@ The private frontend npm package version is not the release authority: Git tags,
 pull requests to `main`, main pushes, Monday mornings, and manual dispatch. There are no
 `pull_request_target` jobs and build/scan jobs receive only read permission.
 
+### Checks selected by changed files
+
+Pull requests and pushes select checks using
+[`scripts/ci/select-checks.py`](../scripts/ci/select-checks.py). Every run keeps **Select relevant
+checks**, **Secret history scan**, and the final **CI passed** gate. Documentation can contain
+secrets, so a documentation-only change still receives Gitleaks scanning but skips application
+builds, Semgrep, dependency restoration/scanning, and container builds.
+
+| Changed files | Additional checks | Runtime images built and scanned |
+| --- | --- | --- |
+| Markdown outside CI/tooling directories, `docs/**`, `.agents/**`, or `LICENSE` only | None | None |
+| Frontend application, assets, or build configuration | Frontend lint/contracts/build and Semgrep | Frontend, AMD64 and ARM64 |
+| Frontend tests only | Frontend lint/contracts/build | None |
+| Core or Ingest implementation/configuration | Full backend build/tests and Semgrep | The changed service, AMD64 and ARM64 |
+| Shared backend implementation | Full backend build/tests and Semgrep | Core and Ingest, both architectures |
+| Backend tests only | Full backend build/tests | None |
+| MCP or backend benchmark tooling | Full backend build/tests and Semgrep | None |
+| CLI implementation or helper installer inputs | CLI race tests/vet, installer contracts, compiled binary scan, and Semgrep | Frontend, both architectures, because it embeds the helper |
+| Go tests or installer contract tests only | CLI tests/contracts and compiled binary scan; CI tooling for CLI script changes | None |
+| Dependency manifests, lockfiles, or dependency configuration | Add the repository-wide Trivy source/dependency scan to the affected component checks | As selected for the component |
+| Service Dockerfile or frontend `.dockerignore` | Trivy source/production-configuration scan | The affected service, both architectures |
+| Root `.dockerignore` | Trivy source/production-configuration scan | Core and Ingest, both architectures |
+| Root .NET solution/SDK/build configuration | Backend build/tests, Semgrep, and Trivy source/dependency scan | Core and Ingest, both architectures |
+| Docker Compose configuration | Trivy source/production-configuration scan | None |
+| `.github/**`, `.ci/**`, `scripts/ci/**`, scanner policy, or `cliff.toml` | All checks | All six images |
+| Unrecognized paths | All checks, conservatively | All six images |
+
+Selections are combined when several components change. `services/cli/helper-distribution/README.txt`
+is a packaged helper input and rebuilds the frontend image despite containing documentation.
+CLI packaging script changes also run workflow/tooling checks. Backend builds/tests remain
+solution-wide because Core, Ingest, Shared, MCP, and test projects share references. Semgrep and
+the Trivy source scan retain their repository-wide scope whenever selected.
+
+PR selection compares the base and head through their merge base. Push selection compares the
+previous and new commit across the whole push. Git returns the complete changed-path list,
+including deleted files and both sides of renames; the selector does not use GitHub's limited
+workflow path-filter list. A missing comparison or unavailable history selects all checks.
+The selection job writes its plan to the workflow run's job summary.
+
+Scheduled checks, manual CI runs, and releases always run the complete suite. The reusable
+workflow defaults to full verification; selective checks require an explicit `select-changes`
+input, and a release version always forces full verification.
+
+The workflow deliberately still starts for documentation PRs. Skipping an entire workflow with
+path filters can leave required checks pending and block merging, as described in
+[GitHub's workflow trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+Keep **CI passed** as the required aggregate. It requires the selector and Gitleaks to succeed,
+requires every selected job to succeed, and accepts `skipped` only for explicitly unselected
+jobs. Failures, cancellations, missing results, and unexpected skips fail the gate.
+
 CI and release jobs explicitly use GitHub-hosted Ubuntu 26.04 runners. Image jobs use
 `ubuntu-26.04` for AMD64 and `ubuntu-26.04-arm` for ARM64, so both architectures build natively.
 The explicit OS labels avoid automatic distribution changes through `ubuntu-latest`, while
@@ -128,7 +178,9 @@ and version; no separate release lookup is needed in the credential assistant.
   Actions access. No provider credential or application secret is needed by the workflows.
 - Configure branch protection to require the aggregate **CI passed** check. Remove obsolete
   required job names after observing the new checks on a PR. A failed or skipped dependency
-  cannot make the aggregate green. This repository-setting change is not made by the code PR.
+  that the selection plan requires cannot make the aggregate green. Require the aggregate
+  rather than individual component jobs that may intentionally be skipped. This repository-setting
+  change is not made by the code PR.
 - New GHCR packages normally start private. Set each application's package visibility to public
   once if anonymous pulls are desired; otherwise authenticate with `read:packages`. GitHub
   Release downloads follow repository visibility. Changing visibility is an operator decision.

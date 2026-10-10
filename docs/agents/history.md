@@ -4,6 +4,29 @@
 
 ### What Changed
 
+**Selective CI Checks:**
+- Select PR/push checks from complete Git changed-path comparisons. Documentation keeps the
+  secret scan and aggregate gate while skipping application, dependency, and image jobs.
+- Route Core/Ingest/shared/frontend/CLI changes to their affected builds and native image
+  architectures. CLI and packaged installer inputs also rebuild the frontend helper image.
+- Keep complete verification for releases, scheduled/manual CI, security/workflow changes,
+  unrecognized paths, and unavailable comparison history.
+- Require every selected job to succeed; accept only planned skips. Move macOS installer
+  contracts into the CLI job and document the selection rules.
+
+### Verification
+
+- All 25 CI tooling tests pass in Docker, including real Git rename/push/PR comparisons,
+  documentation-only selection, full-release defaults, and unexpected-skip/failure rejection.
+- Actionlint and the four macOS installer contracts pass. Application code and dependencies
+  are unchanged; application builds and image publication are not repeated for this CI change.
+- Hosted execution of the dynamic image matrix and branch-protection check remains to be
+  confirmed on the next PR run.
+
+## Current Session Summary (2026-10-11)
+
+### What Changed
+
 **Native ARM Image Builds and CI Caching:**
 - Replace QEMU-on-AMD64 image builds with native Ubuntu 26.04 runners per target architecture.
   All six image matrix jobs still run in parallel and retain their security scans/release gates.
