@@ -52,6 +52,9 @@
   URLs are fixed same-origin build artifacts for Apple Silicon/Intel, and installation confirmation
   is shared only in page state. Technical fallbacks stay inside the assistant; credential-save
   errors must remain visible inside the dialog. Stored credentials do not prove a successful import.
+- Helper launches choose a fresh dynamic loopback status port per attempt and pass it as non-secret
+  `statusPort` metadata. Poll that exact port; do not restore the shared fixed slot for new launches.
+  Ship frontend and helper updates together. Origin/launch-ID validation remains mandatory.
 - The active physical-capture UI is manual-first via the existing IGDB enrichment search. It must
   debounce requests, reject stale responses, require explicit result and PS3/PS4/PS5 selection, and
   write only from the final confirmation. IGDB platform data is a hint only. Barcode, typed GTIN,

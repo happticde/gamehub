@@ -9,6 +9,8 @@ The installer copies the CLI to ~/Library/Application Support/GameHub/Helper
 and registers ~/Applications/GameHub Helper.app for gamehub-helper:// links.
 You can remove the extracted archive after installation. No Go installation is needed.
 Install once for PlayStation, GOG and Epic Games. Chrome must be installed on this Mac.
+After updating GameHub's helper protocol, install the matching new helper download.
+Current launches use a separate loopback status port per attempt to avoid retry conflicts.
 Your provider password is entered only on the provider's own website.
 
 These packages are unsigned and not notarized. macOS may require approval to open them.

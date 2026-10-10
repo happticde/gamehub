@@ -21,6 +21,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import { getPlatformColor } from "@/lib/platform-colors";
 import {
+    allocateHelperStatusPort,
+    buildHelperLaunchUrls,
     parseEpicConnectObject,
     parseGogConnectObject,
     parseGogConnectPayload,
@@ -56,8 +58,6 @@ type EpicConnectStart = {
     state: string;
     expiresAtUtc: string;
 };
-
-const helperLaunchStatusBaseUrl = "http://127.0.0.1:53935";
 
 /**
  * Tenant credential management through Core's authenticated BFF route. Secret values live only
@@ -450,9 +450,7 @@ function GogCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
 
     const launchProtocolHelper = async () => {
         const launchId = newHelperLaunchId();
-        const url = new URL("gamehub-helper://connect/gog");
-        url.searchParams.set("origin", window.location.origin);
-        url.searchParams.set("launchId", launchId);
+        const { launchUrl, statusUrl } = newHelperLaunchUrls("gog", launchId);
 
         const attempt = handoffAttemptRef.current + 1;
         handoffAttemptRef.current = attempt;
@@ -461,10 +459,10 @@ function GogCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
         setHandoffUrl("");
         setHelperLaunching(true);
         setHandoffMessage(helperStatusMessage("gog", "starting"));
-        window.location.href = url.toString();
+        window.location.href = launchUrl;
 
         try {
-            const launchedHandoffUrl = await waitForHelperLaunchStatus("gog", launchId, attempt, handoffAttemptRef);
+            const launchedHandoffUrl = await waitForHelperLaunchStatus(statusUrl, attempt, handoffAttemptRef);
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
@@ -781,9 +779,7 @@ function PsnCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
 
     const launchProtocolHelper = async () => {
         const launchId = newHelperLaunchId();
-        const url = new URL("gamehub-helper://connect/psn");
-        url.searchParams.set("origin", window.location.origin);
-        url.searchParams.set("launchId", launchId);
+        const { launchUrl, statusUrl } = newHelperLaunchUrls("psn", launchId);
 
         const attempt = handoffAttemptRef.current + 1;
         handoffAttemptRef.current = attempt;
@@ -792,10 +788,10 @@ function PsnCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
         setHandoffUrl("");
         setHelperLaunching(true);
         setHandoffMessage(helperStatusMessage("psn", "starting"));
-        window.location.href = url.toString();
+        window.location.href = launchUrl;
 
         try {
-            const launchedHandoffUrl = await waitForHelperLaunchStatus("psn", launchId, attempt, handoffAttemptRef);
+            const launchedHandoffUrl = await waitForHelperLaunchStatus(statusUrl, attempt, handoffAttemptRef);
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
@@ -1170,9 +1166,7 @@ function EpicCredentialCard({
 
     const launchProtocolHelper = async () => {
         const launchId = newHelperLaunchId();
-        const url = new URL("gamehub-helper://connect/epic");
-        url.searchParams.set("origin", window.location.origin);
-        url.searchParams.set("launchId", launchId);
+        const { launchUrl, statusUrl } = newHelperLaunchUrls("epic", launchId);
 
         const attempt = handoffAttemptRef.current + 1;
         handoffAttemptRef.current = attempt;
@@ -1180,10 +1174,10 @@ function EpicCredentialCard({
         setHandoffUrl("");
         setHelperLaunching(true);
         setHandoffMessage(helperStatusMessage("epic", "starting"));
-        window.location.href = url.toString();
+        window.location.href = launchUrl;
 
         try {
-            const launchedHandoffUrl = await waitForHelperLaunchStatus("epic", launchId, attempt, handoffAttemptRef);
+            const launchedHandoffUrl = await waitForHelperLaunchStatus(statusUrl, attempt, handoffAttemptRef);
             if (handoffAttemptRef.current !== attempt) return;
 
             setHandoffUrl(launchedHandoffUrl);
@@ -1632,15 +1626,11 @@ async function readError(response: Response): Promise<string> {
 }
 
 async function waitForHelperLaunchStatus(
-    provider: ConnectProvider,
-    launchId: string,
+    statusUrl: string,
     attempt: number,
     handoffAttemptRef: RefObject<number>,
 ): Promise<string> {
     const deadline = Date.now() + 45 * 1000;
-    const statusUrl = new URL(`${helperLaunchStatusBaseUrl}/connect/${provider}/launch-status`);
-    statusUrl.searchParams.set("launchId", launchId);
-    statusUrl.searchParams.set("origin", window.location.origin);
     let reachedHelper = false;
 
     while (Date.now() < deadline && handoffAttemptRef.current === attempt) {
@@ -1689,7 +1679,7 @@ function localLaunchErrorMessage(error: unknown): string {
     if (message.toLowerCase().includes("timed out")) {
         return "GameHub could not reach the local helper. Install or reinstall the protocol handler, allow the browser prompt to open GameHub Helper, or use the fallback command below.";
     }
-    if (message.includes("\nDetails: ")) return message;
+    if (message.includes("\nDetails: ") || message.startsWith("Another GameHub helper")) return message;
     return `The local helper could not start. Check the helper installation or use the advanced connection options.\nDetails: ${message}`;
 }
 
@@ -1714,6 +1704,9 @@ function localHandoffErrorMessage(error: unknown): string {
 async function readLocalHelperFailure(response: Response): Promise<string> {
     try {
         const body = await response.json() as { message?: string; status?: string };
+        if (body.status === "busy") {
+            return "Another GameHub helper connection is still running. Finish that connection or install the latest helper download before retrying.";
+        }
         if (body.message) {
             return `The local helper reported a provider sign-in failure. Use the manual fallback below to retry.\nDetails: ${body.message}`;
         }
@@ -1736,6 +1729,11 @@ function newHelperLaunchId(): string {
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function newHelperLaunchUrls(provider: ConnectProvider, launchId: string) {
+    const randomValue = crypto.getRandomValues(new Uint16Array(1))[0];
+    return buildHelperLaunchUrls(provider, window.location.origin, launchId, allocateHelperStatusPort(randomValue));
 }
 
 function cookieMapToRows(cookies: Record<string, string>): { key: string; value: string }[] {
