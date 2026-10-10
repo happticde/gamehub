@@ -120,23 +120,91 @@ to download and compile dependencies; compare hosted job timings after caches ar
 
 ## Release a version
 
-1. Merge the intended changes through a pull request and confirm CI passed.
-2. Open **Actions → Release → Run workflow**, select **main**, and normally choose **auto**.
-3. `git-cliff` calculates the version and notes from the selected main commit. The first version
-   is `v0.1.0`; existing tags are not overwritten. `feat:` increments minor, `fix:` increments
-   patch, and `!`/`BREAKING CHANGE` increments major. Legacy non-conventional commits remain in
-   the notes and cause a patch bump. Explicit patch/minor/major selection is available.
-4. All source, build, binary, and image checks run again for that exact commit and version.
-   The workflow saves the scanned images instead of rebuilding them during publication.
-5. Only after every check succeeds, the publication jobs upload the images and create their
-   multi-platform manifests. A draft GitHub Release receives the CLI/helper archives and SBOMs.
-   Checksums cover all archives and SBOMs. After successful uploads, `latest` is promoted and
-   the GitHub Release is published.
+### Start the release
+
+Release publication is manual. Merging a PR into `main` starts **CI**, but does not publish a
+release. Dependabot runs, scheduled checks, and manually creating a Git tag also do not start
+the **Release** workflow. Its only trigger is `workflow_dispatch` in
+[release.yml](../.github/workflows/release.yml).
+
+1. Merge all changes intended for this release through pull requests and confirm CI passed.
+2. Open [Actions → Release](https://github.com/happticde/gamehub/actions/workflows/release.yml).
+3. Click **Run workflow** and select **main** in the branch selector. The preparation job is
+   skipped on other branches, so those runs cannot publish a release.
+4. Set **Version increment** (`bump`) to **auto**, or select an explicit increment from the
+   table below. This field selects an increment, not a complete version number.
+5. Click the final **Run workflow** button, then open the new run to follow its jobs.
+
+The run uses the `main` commit selected when it starts. Changes merged afterwards belong to a
+later release; verification and publication use the same selected commit. Do not create the
+release tag or a GitHub Release manually before starting the workflow.
+
+### Choose the version
+
+[git-cliff](../cliff.toml) calculates one version for Core, Ingest, Frontend, and the CLI.
+It reads commits since the last matching `vMAJOR.MINOR.PATCH` tag. Without an existing matching
+tag, the configured initial version is **v0.1.0**.
+
+| `bump` selection | Behavior after an existing release | Example from `v0.3.2` |
+| --- | --- | --- |
+| `auto` | Uses the highest increment required by the commits: breaking change, feature, then patch. | `feat: add a provider` → `v0.4.0`; `fix: repair helper launch` → `v0.3.3` |
+| `patch` | Explicitly increments the patch version. | `v0.3.3` |
+| `minor` | Explicitly increments the minor version and resets patch. | `v0.4.0` |
+| `major` | Explicitly increments the major version and resets minor and patch. | `v1.0.0` |
+
+Use Conventional Commit messages in the commits that reach `main`, including the PR title when
+using squash merge. `feat:` requests a minor increment, `fix:` requests a patch increment, and
+`!` or a `BREAKING CHANGE:` footer requests a major increment. The configuration requests a
+major increment for breaking changes even while the project is on `0.x`. Documentation,
+maintenance, performance, and legacy non-conventional changes normally result in a patch
+increment when no feature or breaking change requires a larger one. Explicit increments
+override automatic selection, so check compatibility before choosing one.
+
+Existing release tags are not overwritten. If the calculated tag already exists, preparation
+fails with `The calculated release already exists; there are no releasable changes.`
+
+### Follow the jobs and release notes
+
+| Stage | What happens | Publication state |
+| --- | --- | --- |
+| `prepare` | Calculates the tag and generates `RELEASE_NOTES.md` with git-cliff. Uploads these as the `release-metadata` workflow artifact. | No new Git tag, container, or GitHub Release is published. |
+| `verify` | Runs the reusable source, build, test, CLI, and six image checks for the selected commit and version. Saves the scanned images and CLI archives. | Publication remains blocked until every required check succeeds. |
+| `publish-images` | Six parallel jobs upload the verified Core, Ingest, and Frontend images for AMD64 and ARM64. Images are loaded from artifacts, without rebuilding. | Architecture-specific tags such as `v0.1.0-arm64` become available on GHCR. |
+| `publish-release` | Creates multi-platform version manifests, verifies checksums, adds image SBOMs, creates a draft release/tag, and uploads all assets. Then promotes container `latest` tags and publishes the GitHub Release. | The published release and its downloads are ready after this job succeeds. |
+
+Every successfully published release includes generated notes. They group commits into
+**Features**, **Fixes**, **Performance**, **Documentation**, and **Other changes**, with short
+commit IDs. Merge commits are omitted. The final notes also list the versioned GHCR image
+references. Read them on the GitHub Release page; before publication, download the
+`release-metadata` artifact from the workflow run. This workflow does not commit a
+`CHANGELOG.md` or a release log back to `main`.
 
 Release execution is serialized. No version commit is pushed to protected `main`; the release
 tag points to the checked-out commit. Tag creation and publishing happen in the same workflow,
 so no PAT or secondary tag-trigger workflow is required. Write permissions are limited to the
 publication jobs. The first runs should be reviewed before relying on this process for production.
+
+### Confirm publication
+
+1. Confirm the **Release** run, including `publish-release`, finished successfully. Passing CI
+   alone or successful architecture uploads do not confirm a complete release.
+2. Open [GitHub Releases](https://github.com/happticde/gamehub/releases) and check the published
+   **GameHub vX.Y.Z** release, its notes, and the downloads listed below. A draft is incomplete.
+3. Check all three GHCR version tags contain Linux AMD64 and ARM64 manifests. For example,
+   inspect a published frontend release with:
+
+   ```bash
+   docker buildx imagetools inspect ghcr.io/happticde/gamehub-frontend:v0.1.0
+   ```
+
+4. Download the CLI/helper archive for your OS and architecture, verify it against the release's
+   `SHA256SUMS`, and confirm the extracted `gamehub-cli --version` reports the release version.
+
+Use the actual published version in commands. A private repository or private GHCR package
+requires authenticated access; see [GitHub setup and recovery](#github-setup-and-recovery).
+A failed run may leave partial publication artifacts, so follow that recovery procedure before
+trying again. Starting the release does not deploy the images to a running GameHub installation;
+update the deployment's image references separately.
 
 ## Retrieve artifacts
 
@@ -167,7 +235,11 @@ frontend-amd64.cdx.json / frontend-arm64.cdx.json
 ```
 
 Download `SHA256SUMS` with the assets and run `sha256sum --check SHA256SUMS` on Linux or
-`shasum -a 256 -c SHA256SUMS` on macOS. The macOS archives contain the existing guided installer,
+`shasum -a 256 -c SHA256SUMS` on macOS after downloading all files listed in it. The manifest
+currently covers the four archives and six image SBOMs; the separately uploaded `cli.cdx.json`
+is not included in it. To verify a single archive, calculate its SHA-256 with
+`sha256sum <archive>` or `shasum -a 256 <archive>` and compare it with that archive's entry.
+The macOS archives contain the existing guided installer,
 README, and versioned CLI. The frontend image embeds helper downloads built from its own source
 and version; no separate release lookup is needed in the credential assistant.
 
