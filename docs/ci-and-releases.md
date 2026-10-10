@@ -11,6 +11,11 @@ The private frontend npm package version is not the release authority: Git tags,
 pull requests to `main`, main pushes, Monday mornings, and manual dispatch. There are no
 `pull_request_target` jobs and build/scan jobs receive only read permission.
 
+All CI and release jobs explicitly use the GitHub-hosted `ubuntu-26.04` runner. The
+explicit OS label avoids automatic distribution changes through `ubuntu-latest`, while
+GitHub continues updating the runner image. Runtime container bases are configured separately
+in their Dockerfiles.
+
 | Check | Scope and policy |
 | --- | --- |
 | Gitleaks | Full fetched Git history, with complete secret redaction. Only individually reviewed historical documentation fingerprints are ignored. A synthetic secret in a new README is tested to remain blocking. Git subprocess failures fail the scan. |
