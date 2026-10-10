@@ -4,6 +4,36 @@
 
 ### What Changed
 
+**Security CI and Shared Release Pipeline:**
+- Added reusable read-only build/security jobs: Gitleaks history scanning, local tested Semgrep
+  rules, Trivy source/compiled-CLI/runtime-image scanning, full tests and a stable aggregate gate.
+- Pin Actions by commit, tools by version/archive checksum, and scanner/build images by digest.
+  Preserve full vulnerability reports while blocking fixable HIGH/CRITICAL and high-risk config.
+- Add git-cliff shared semantic versioning and a manually dispatched main-only release. Publish
+  the scanned images for Linux AMD64/ARM64 to GHCR, with CLI/macOS helper downloads, SBOMs and
+  checksums in one GitHub Release. Use QEMU to support private repositories on standard runners.
+- Fix the first scan's actionable findings with Next.js 16.3.8, compatible sharp/source-map-js/
+  brace-expansion updates, and Go 1.26.9. Scope historical Gitleaks false positives to thirteen
+  exact documentation fingerprints. The unfixed braces development-dependency finding remains
+  visible without an ignore entry. Add Dependabot and operator/recovery documentation.
+
+### Verification
+
+- 482 backend tests, Go race tests/vet, frontend lint/74 security tests/7 capture tests/production
+  build, four installer tests, nine CI tooling integration/boundary tests and Actionlint/
+  ShellCheck pass. Semgrep fixtures cover all five rules and the source scan has no findings.
+- Gitleaks history passes with narrow reviewed exceptions; a new synthetic secret in a README
+  still fails and is fully redacted. Source and compiled CLI Trivy gates pass after fixes.
+- Four release archives were built; checksum and native CLI version checks pass. No environment
+  files or runtime secret configuration were changed.
+- Full image builds and publishing need hosted CI: the current devcontainer has no Docker CLI
+  or socket. No GHCR visibility, branch protection, live release, or registry publication was
+  changed. See `docs/ci-and-releases.md` for activation and failure recovery.
+
+## Current Session Summary (2026-10-10)
+
+### What Changed
+
 **Independent Helper Retry Status Ports:**
 - Reproduced a second installed-helper start failing because a previous attempt still owned
   fixed loopback status port `53935`. The old status response hid mismatched-launch errors behind

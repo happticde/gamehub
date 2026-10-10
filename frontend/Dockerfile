@@ -1,10 +1,11 @@
 FROM node:24-alpine AS base
 
 # The named context is restricted by services/cli/.dockerignore.
-FROM golang:1.26.5-bookworm AS helper-builder
+FROM golang:1.26.9-bookworm AS helper-builder
 WORKDIR /src
 COPY --from=helper-source . .
-RUN sh scripts/package-macos-helper.sh /downloads
+ARG VERSION=dev
+RUN sh scripts/package-macos-helper.sh /downloads "$VERSION"
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -24,6 +25,11 @@ RUN npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.source="https://github.com/happticde/gamehub"
 WORKDIR /app
 
 ENV NODE_ENV=production

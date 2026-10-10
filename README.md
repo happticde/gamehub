@@ -2,6 +2,9 @@
 
 ![CI](https://github.com/happticde/gamehub/actions/workflows/ci.yml/badge.svg)
 
+See [CI security and shared releases](docs/ci-and-releases.md) for release versioning,
+GHCR images, CLI downloads, scanner policies, and the first-release setup.
+
 A unified game library aggregator that ingests data from **Steam**, **PSN**, **GOG**, and **Epic** into a single queryable library. It merges games across platforms using intelligent title matching, enriches them with IGDB metadata, and provides a modern web interface along with REST APIs.
 
 ## Architecture

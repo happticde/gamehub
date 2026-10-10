@@ -1,0 +1,26 @@
+{
+  "gitleaks": {
+    "version": "8.30.1",
+    "repository": "gitleaks/gitleaks",
+    "amd64": ["gitleaks_8.30.1_linux_x64.tar.gz", "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"],
+    "arm64": ["gitleaks_8.30.1_linux_arm64.tar.gz", "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"]
+  },
+  "trivy": {
+    "version": "0.75.0",
+    "repository": "aquasecurity/trivy",
+    "amd64": ["trivy_0.75.0_Linux-64bit.tar.gz", "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f"],
+    "arm64": ["trivy_0.75.0_Linux-ARM64.tar.gz", "a1ee9f6ffb7d112b64ff726a2a0717c21175c1114361391f4a132956751a13b3"]
+  },
+  "git-cliff": {
+    "version": "2.14.2",
+    "repository": "orhun/git-cliff",
+    "amd64": ["git-cliff-2.14.2-x86_64-unknown-linux-musl.tar.gz", "fa21e2fc70046fcfd0e43e5e4613873ab799aff3d9dc8559c00d31b270e417d0"],
+    "arm64": ["git-cliff-2.14.2-aarch64-unknown-linux-musl.tar.gz", "4be21b21ec9699af4d330b224aeba8a41d41d8f5b351ca2da8a9ea2bdc36380f"]
+  },
+  "actionlint": {
+    "version": "1.7.12",
+    "repository": "rhysd/actionlint",
+    "amd64": ["actionlint_1.7.12_linux_amd64.tar.gz", "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"],
+    "arm64": ["actionlint_1.7.12_linux_arm64.tar.gz", "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"]
+  }
+}

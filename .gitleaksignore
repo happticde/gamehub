@@ -1,0 +1,16 @@
+# Historical English prose describing authentication lifecycle, not secret material.
+185ac0d8c3bacdbd1bee673bd7edb9948df65736:docs/ROADMAP.md:generic-api-key:62
+3ac14fd4995abf017d84000a2aa73feacdc6e86c:docs/ROADMAP.md:generic-api-key:62
+00d542c5e876f66d81f7fba7ab4d44f48b41b16e:docs/ROADMAP.md:generic-api-key:62
+7bebf06e048a9a4afa888459b586117de2a96c01:docs/ROADMAP.md:generic-api-key:62
+096b5d70cc4e27cf89dd5c230dde72887afe6810:docs/ROADMAP.md:generic-api-key:62
+c7789378c0158eadd68aaa28e300e8618302fba5:docs/ROADMAP.md:generic-api-key:62
+8e5728de83c282b4c0ac34b42625e7130d490dd2:docs/ROADMAP.md:generic-api-key:62
+a78caf41e3bbb21690554b62ce73b984e58c1c62:docs/ROADMAP.md:generic-api-key:62
+2194827f195363fa359c856d82543d25a94abfc9:docs/ROADMAP.md:generic-api-key:62
+# Local database address, not a credential: keycloak-db:5432/keycloak.
+285a546ca404ec8c15126af2111cde82a32b6ebd:docs/keycloak-oidc-setup.md:generic-api-key:118
+# Explicit "your-..." API-key placeholders in historical curl examples.
+ae5cc12a3c1a1d03b97d64603092a6ea604476fb:README.md:curl-auth-header:150
+ae5cc12a3c1a1d03b97d64603092a6ea604476fb:README.md:curl-auth-header:205
+ae5cc12a3c1a1d03b97d64603092a6ea604476fb:README.md:curl-auth-header:209

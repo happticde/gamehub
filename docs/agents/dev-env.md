@@ -4,6 +4,10 @@
 - **dotnet is NOT installed on the host machine.** 
 - **npm / npx are NOT installed on the host machine.**
 - Use **Docker Exec** for all building, testing, and dependency management.
+- CI and shared release workflows are documented in `docs/ci-and-releases.md`. The reusable
+  checks include source/CLI/image security scans; release publication is manually dispatched
+  from `main` and gated by every check. Keep versions, tool archive hashes, and Action/image pins
+  reviewed. Go remains on the 1.26 line with the patched 1.26.9 toolchain/helper builder.
 - `dotnet-ef` is installed system-wide by the devcontainer image and pinned to the EF Core version
   used by the service projects. Rebuild the devcontainer after changing that version.
 

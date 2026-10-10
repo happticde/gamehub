@@ -1,0 +1,283 @@
+name: Build and security checks
+
+on:
+  workflow_call:
+    inputs:
+      release-version:
+        type: string
+        default: dev
+        required: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  workflow:
+    name: Workflow and release tooling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 scripts/ci/install-tool.py actionlint "$RUNNER_TEMP/tools"
+      - run: actionlint
+      - run: python3 scripts/ci/install-tool.py git-cliff "$RUNNER_TEMP/tools"
+      - run: python3 scripts/ci/install-tool.py gitleaks "$RUNNER_TEMP/tools"
+      - run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+      - run: shellcheck scripts/ci/*.sh services/cli/scripts/package-release.sh services/cli/scripts/package-macos-helper.sh
+
+  gitleaks:
+    name: Secret history scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 scripts/ci/install-tool.py gitleaks "$RUNNER_TEMP/tools"
+      - name: Scan history with redacted findings
+        run: |
+          mkdir -p reports
+          bash scripts/ci/scan-secrets.sh reports/gitleaks.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gitleaks-report
+          path: reports/gitleaks.json
+          retention-days: 7
+
+  semgrep:
+    name: Static security patterns
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Export tracked source without environment files
+        run: python3 scripts/ci/export-source.py "$RUNNER_TEMP/source"
+      - name: Scan with reviewed local rules and no network
+        run: |
+          mkdir -p reports
+          docker run --rm --network none \
+            -v "$RUNNER_TEMP/source:/src:ro" -v "$PWD/reports:/reports" -w /src \
+            --entrypoint /bin/sh \
+            semgrep/semgrep:1.180.0@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3 \
+            -c 'for fixture in .ci/semgrep-fixtures/security.go .ci/semgrep-fixtures/security.cs .ci/semgrep-fixtures/security.ts; do
+            semgrep --test --config .semgrep.yml "$fixture" --metrics=off --disable-version-check || exit $?; done &&
+            semgrep scan --config .semgrep.yml --error --strict --metrics=off \
+            --disable-version-check --exclude "tests/**" --exclude "*_test.go" \
+            --exclude "frontend/tests/**" --exclude ".ci/semgrep-fixtures/**" \
+            --sarif --output /reports/semgrep.sarif .'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: semgrep-report
+          path: reports/semgrep.sarif
+          retention-days: 7
+
+  dependencies:
+    name: Dependencies and production configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
+      - run: python3 scripts/ci/export-source.py "$RUNNER_TEMP/source"
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Resolve transitive NuGet dependencies only in the scan snapshot
+        run: |
+          cd "$RUNNER_TEMP/source"
+          dotnet restore --use-lock-file --verbosity quiet
+      - name: Block fixable high and critical vulnerabilities and misconfigurations
+        run: |
+          mkdir -p reports
+          trivy fs --scanners vuln,misconfig --include-dev-deps --skip-dirs '**/obj' \
+            --format json --output reports/trivy-source.json "$RUNNER_TEMP/source"
+          python3 scripts/ci/gate-trivy.py reports/trivy-source.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: trivy-source-report
+          path: reports/trivy-source.json
+          retention-days: 7
+
+  backend:
+    name: Backend build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore
+      - run: dotnet build --no-restore --verbosity quiet
+      - run: dotnet test --no-build --verbosity quiet
+
+  frontend:
+    name: Frontend lint, security contracts and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: node --test services/cli/scripts/test-macos-installer.mjs
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint && npm run test:security && npm run test:physical-capture && npm run build
+        working-directory: frontend
+
+  cli:
+    name: Go CLI tests and release packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/cli/go.mod
+          cache-dependency-path: services/cli/go.sum
+      - run: go test -race ./... && go vet ./...
+        working-directory: services/cli
+      - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
+      - name: Build and scan a versioned native CLI binary
+        working-directory: services/cli
+        env:
+          RELEASE_VERSION: ${{ inputs.release-version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/cli-scan" "$GITHUB_WORKSPACE/reports"
+          go build -trimpath -ldflags "-s -w -X happtic/gamehub-cli/cmd.Version=$RELEASE_VERSION" \
+            -o "$RUNNER_TEMP/cli-scan/gamehub-cli" .
+          trivy rootfs --scanners vuln --format json \
+            --output "$GITHUB_WORKSPACE/reports/trivy-cli.json" "$RUNNER_TEMP/cli-scan"
+          trivy convert --format cyclonedx --output "$GITHUB_WORKSPACE/reports/cli.cdx.json" \
+            "$GITHUB_WORKSPACE/reports/trivy-cli.json"
+          python3 "$GITHUB_WORKSPACE/scripts/ci/gate-trivy.py" "$GITHUB_WORKSPACE/reports/trivy-cli.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: cli-security-report
+          path: reports/
+          retention-days: 7
+      - name: Build release archives and checksums
+        if: inputs.release-version != 'dev'
+        env:
+          RELEASE_VERSION: ${{ inputs.release-version }}
+        run: |
+          sh services/cli/scripts/package-release.sh "$RUNNER_TEMP/release-cli" "$RELEASE_VERSION"
+          cp reports/cli.cdx.json "$RUNNER_TEMP/release-cli/"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: inputs.release-version != 'dev'
+        with:
+          name: release-cli
+          path: ${{ runner.temp }}/release-cli/
+          if-no-files-found: error
+          retention-days: 7
+
+  images:
+    name: Image scan (${{ matrix.component }}, ${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [core, ingest, frontend]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: matrix.arch == 'arm64'
+        with:
+          platforms: arm64
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.0
+          driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
+      - name: Build the image that will be scanned and published
+        env:
+          COMPONENT: ${{ matrix.component }}
+          ARCH: ${{ matrix.arch }}
+          RELEASE_VERSION: ${{ inputs.release-version }}
+        run: |
+          version=$RELEASE_VERSION
+          [[ "$version" != dev ]] || version=0.0.0
+          context=.
+          dockerfile="services/$COMPONENT/Dockerfile"
+          extra=()
+          if [[ "$COMPONENT" == frontend ]]; then
+            context=frontend
+            dockerfile=frontend/Dockerfile
+            extra+=(--build-context helper-source=./services/cli)
+          fi
+          docker buildx build --load --platform "linux/$ARCH" -f "$dockerfile" \
+            --build-arg "VERSION=$version" --build-arg "REVISION=$GITHUB_SHA" \
+            --cache-from "type=gha,scope=$COMPONENT-$ARCH" \
+            --cache-to "type=gha,mode=max,scope=$COMPONENT-$ARCH" \
+            -t "gamehub-$COMPONENT:verified" "${extra[@]}" "$context"
+      - name: Scan runtime image and export its SBOM
+        env:
+          COMPONENT: ${{ matrix.component }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p reports
+          trivy image --scanners vuln --format json \
+            --output "reports/$COMPONENT-$ARCH.json" "gamehub-$COMPONENT:verified"
+          trivy convert --format cyclonedx --output "reports/$COMPONENT-$ARCH.cdx.json" "reports/$COMPONENT-$ARCH.json"
+          python3 scripts/ci/gate-trivy.py "reports/$COMPONENT-$ARCH.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: image-reports-${{ matrix.component }}-${{ matrix.arch }}
+          path: reports/
+          retention-days: 7
+      - name: Save the verified release image
+        if: inputs.release-version != 'dev'
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: docker save "gamehub-$COMPONENT:verified" | gzip > "$RUNNER_TEMP/image.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: inputs.release-version != 'dev'
+        with:
+          name: release-image-${{ matrix.component }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  required:
+    name: CI passed
+    if: always()
+    needs: [workflow, gitleaks, semgrep, dependencies, backend, frontend, cli, images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every build and security job to succeed
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 -c 'import json, os, sys; results = json.loads(os.environ["CHECK_RESULTS"]); sys.exit(any(job["result"] != "success" for job in results.values()))'

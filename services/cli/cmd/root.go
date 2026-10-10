@@ -18,9 +18,13 @@ var backendUrl string
 // Set via --api-key flag or "api-key" in config file.
 var apiKeyFlag string
 
+// Version is supplied by release builds; local builds remain explicitly marked as dev.
+var Version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "gamehub-cli",
-	Short: "CLI for GameHub Ingestion and Management",
+	Use:     "gamehub-cli",
+	Short:   "CLI for GameHub Ingestion and Management",
+	Version: Version,
 }
 
 func init() {

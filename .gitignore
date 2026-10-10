@@ -32,3 +32,8 @@ secrets.json
 # appsettings.Development.json
 
 .env
+.env.*
+
+## Python CI tooling cache
+__pycache__/
+*.pyc

@@ -1,5 +1,5 @@
 FROM node:24.15.0-bookworm-slim AS node
-FROM golang:1.26.5-bookworm AS go
+FROM golang:1.26.9-bookworm AS go
 
 FROM mcr.microsoft.com/devcontainers/dotnet:10.0-preview-trixie-slim
 
