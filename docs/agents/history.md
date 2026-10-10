@@ -1,5 +1,26 @@
 # Session History
 
+## Current Session Summary (2026-10-11)
+
+### What Changed
+
+**Frontend Runtime Package Manager Removal:**
+- Reproduced all seven hosted frontend image blockers on the current official Node 24 Alpine
+  image for AMD64 and ARM64. The affected packages belong to bundled npm, not the application.
+- Remove npm/npx and Yarn, including their bundled dependencies, only in the runtime stage.
+  Build stages retain package managers. Keep the Trivy gate and exclusions unchanged.
+
+### Verification
+
+- Frontend lint passes. A secret-free source snapshot builds with Next.js 16.3.8 on the actual
+  Node 24.21.0 / Alpine 3.24.2 base. Its standalone server runs without package managers as UID
+  1001, and `/login` returns HTTP 200.
+- The exported runtime filesystem has zero of the seven reported CVEs and zero blocking
+  HIGH/CRITICAL findings. The unchanged Trivy gate passes; lower-severity findings remain visible.
+- This checks an isolated runtime container, not a complete multi-stage image build. A local
+  Docker-socket verifier was rejected by automatic approval review; no socket was mounted.
+  The complete AMD64/ARM64 Dockerfile build and scan remain for hosted CI.
+
 ## Current Session Summary (2026-10-10)
 
 ### What Changed

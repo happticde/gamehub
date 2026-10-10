@@ -16,6 +16,11 @@ explicit OS label avoids automatic distribution changes through `ubuntu-latest`,
 GitHub continues updating the runner image. Runtime container bases are configured separately
 in their Dockerfiles.
 
+The frontend's standalone server starts directly with Node. npm and Yarn remain available
+in the build stages but are removed, together with their bundled dependencies, from the
+runtime stage. Runtime image scans still cover Alpine, Node, and the shipped application
+dependencies; no package paths or CVEs are excluded from the gate.
+
 | Check | Scope and policy |
 | --- | --- |
 | Gitleaks | Full fetched Git history, with complete secret redaction. Only individually reviewed historical documentation fingerprints are ignored. A synthetic secret in a new README is tested to remain blocking. Git subprocess failures fail the scan. |

@@ -25,6 +25,11 @@ RUN npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
+# The standalone server runs directly with Node. Package managers are build tools;
+# remove their bundled dependencies from the shipped runtime image.
+RUN rm -rf /usr/local/lib/node_modules/npm /opt/yarn-v* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+       /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.version=$VERSION \
