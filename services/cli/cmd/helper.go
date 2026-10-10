@@ -50,9 +50,10 @@ var (
 )
 
 type helperLaunchRequest struct {
-	Platform string
-	Origin   string
-	LaunchID string
+	Platform   string
+	Origin     string
+	LaunchID   string
+	StatusPort int
 }
 
 var helperCmd = &cobra.Command{
@@ -161,7 +162,7 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		state, shutdown, err := startHelperLaunchStatusServer(request.Platform, request.LaunchID, allowedOrigins)
+		state, shutdown, err := startHelperLaunchStatusServer(request.Platform, request.LaunchID, allowedOrigins, request.StatusPort)
 		if err != nil {
 			return err
 		}
@@ -362,7 +363,7 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 	values := parsed.Query()
 	for name := range values {
 		switch strings.ToLower(name) {
-		case "origin", "launchid":
+		case "origin", "launchid", "statusport":
 		case "authorizationcode", "code", "cookie", "cookies", "gog-al", "gogal", "gogalcookie", "npsso", "psnauthbearertoken", "psnauthrefreshtoken", "jsessionid", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "accesstoken", "refreshtoken", "session", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
 			return helperLaunchRequest{}, fmt.Errorf("helper URL must not contain secret parameter %q", name)
 		default:
@@ -384,7 +385,22 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 		return helperLaunchRequest{}, fmt.Errorf("launchId must be a URL-safe non-secret identifier")
 	}
 
-	return helperLaunchRequest{Platform: platform, Origin: origin, LaunchID: launchID}, nil
+	statusPort := helperLaunchStatusPort
+	if values.Has("statusPort") {
+		ports := values["statusPort"]
+		if len(ports) != 1 {
+			return helperLaunchRequest{}, fmt.Errorf("statusPort must appear exactly once")
+		}
+		statusPort, err = strconv.Atoi(ports[0])
+		if err != nil || statusPort < 49152 || statusPort > 65535 {
+			return helperLaunchRequest{}, fmt.Errorf("statusPort must be a port between 49152 and 65535")
+		}
+		if launchID == "" {
+			return helperLaunchRequest{}, fmt.Errorf("statusPort requires a launchId")
+		}
+	}
+
+	return helperLaunchRequest{Platform: platform, Origin: origin, LaunchID: launchID, StatusPort: statusPort}, nil
 }
 
 func isValidHelperLaunchID(value string) bool {
@@ -640,11 +656,6 @@ func (state *helperLaunchStatusState) handler(expectedLaunchID string, allowedOr
 		response.Header().Set("Cache-Control", "no-store")
 		response.Header().Set("Content-Type", "application/json")
 
-		if request.URL.Query().Get("launchId") != expectedLaunchID {
-			http.Error(response, `{"status":"invalid_launch"}`, http.StatusNotFound)
-			return
-		}
-
 		if !applyGogHandoffCors(response, request, allowedOrigins) {
 			http.Error(response, `{"status":"forbidden"}`, http.StatusForbidden)
 			return
@@ -656,6 +667,12 @@ func (state *helperLaunchStatusState) handler(expectedLaunchID string, allowedOr
 		}
 		if request.Method != http.MethodGet {
 			http.Error(response, `{"status":"method_not_allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		if request.URL.Query().Get("launchId") != expectedLaunchID {
+			// Legacy clients use one fixed port. Report contention without revealing
+			// the active launch ID, result nonce, provider error, or credentials.
+			http.Error(response, `{"status":"busy"}`, http.StatusConflict)
 			return
 		}
 
@@ -686,8 +703,8 @@ func (state *helperLaunchStatusState) handler(expectedLaunchID string, allowedOr
 	}
 }
 
-func startHelperLaunchStatusServer(platform string, launchID string, allowedOrigins map[string]struct{}) (*helperLaunchStatusState, func(context.Context) error, error) {
-	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(helperLaunchStatusPort))
+func startHelperLaunchStatusServer(platform string, launchID string, allowedOrigins map[string]struct{}, port int) (*helperLaunchStatusState, func(context.Context) error, error) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to start local helper launch status server: %w", err)
 	}

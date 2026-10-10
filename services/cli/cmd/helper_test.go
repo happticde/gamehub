@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +46,30 @@ func TestParseHelperLaunchURL_GogWithoutOrigin_UsesDefaultLater(t *testing.T) {
 	}
 	if request.Origin != "" {
 		t.Fatalf("Origin = %q, want empty", request.Origin)
+	}
+	if request.StatusPort != helperLaunchStatusPort {
+		t.Fatalf("legacy launch status port = %d", request.StatusPort)
+	}
+}
+
+func TestParseHelperLaunchURL_StatusPort_RequiresDynamicPortAndLaunchID(t *testing.T) {
+	for _, port := range []string{"49152", "65535"} {
+		request, err := parseHelperLaunchURL("gamehub-helper://connect/psn?launchId=launch-1234567890&statusPort=" + port)
+		if err != nil || strconv.Itoa(request.StatusPort) != port {
+			t.Fatalf("port %s: request = %+v, error = %v", port, request, err)
+		}
+	}
+	for _, query := range []string{
+		"launchId=launch-1234567890&statusPort=80",
+		"launchId=launch-1234567890&statusPort=65536",
+		"launchId=launch-1234567890&statusPort=abc",
+		"launchId=launch-1234567890&statusPort=",
+		"launchId=launch-1234567890&statusPort=55000&statusPort=55001",
+		"statusPort=55000",
+	} {
+		if _, err := parseHelperLaunchURL("gamehub-helper://connect/psn?" + query); err == nil {
+			t.Fatalf("invalid port query accepted: %s", query)
+		}
 	}
 }
 
@@ -340,6 +366,73 @@ func TestHelperLaunchStatusPath_UsesProviderSpecificPath(t *testing.T) {
 	}
 	if helperLaunchStatusPath("epic") != "/connect/epic/launch-status" {
 		t.Fatalf("unexpected Epic Games launch status path")
+	}
+}
+
+func TestHelperLaunchStatusHandler_BusyStatusDoesNotExposePreviousLaunch(t *testing.T) {
+	state := &helperLaunchStatusState{}
+	state.ready("http://127.0.0.1:55000/connect/psn/result?nonce=private-result-nonce")
+	handler := state.handler("previous-launch-12345", mustParseGogHandoffOrigins(t, "https://gamehub.example.com"))
+	for _, method := range []string{http.MethodGet, http.MethodOptions} {
+		request := httptest.NewRequest(method, "/connect/psn/launch-status?launchId=next-launch-123456", nil)
+		request.Header.Set("Origin", "https://gamehub.example.com")
+		response := httptest.NewRecorder()
+		handler(response, request)
+		expected := http.StatusConflict
+		if method == http.MethodOptions {
+			expected = http.StatusNoContent
+		}
+		if response.Code != expected || response.Header().Get("Access-Control-Allow-Origin") != "https://gamehub.example.com" {
+			t.Fatalf("busy %s status = %d, headers = %v", method, response.Code, response.Header())
+		}
+		if strings.Contains(response.Body.String(), "private-result-nonce") || strings.Contains(response.Body.String(), "previous-launch-12345") {
+			t.Fatal("busy response exposed the previous handoff")
+		}
+	}
+	request := httptest.NewRequest(http.MethodGet, "/connect/psn/launch-status?launchId=next-launch-123456", nil)
+	request.Header.Set("Origin", "https://untrusted.example.com")
+	response := httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusForbidden || response.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("busy status must retain the origin boundary")
+	}
+}
+
+func TestHelperLaunchStatusServers_ConcurrentAttemptsUseSeparatePorts(t *testing.T) {
+	origin := "https://gamehub.example.com"
+	allowed := mustParseGogHandoffOrigins(t, origin)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for index, provider := range []string{"psn", "psn", "gog", "epic"} {
+		// Reserve an OS-selected port before starting each independent status server.
+		reservation, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := reservation.Addr().(*net.TCPAddr).Port
+		_ = reservation.Close()
+		launchID := fmt.Sprintf("concurrent-launch-%d", index)
+		state, shutdown, err := startHelperLaunchStatusServer(provider, launchID, allowed, port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = shutdown(ctx)
+		})
+		state.ready(fmt.Sprintf("http://127.0.0.1:60000/connect/%s/result?nonce=result-%d", provider, index))
+		request, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d%s?launchId=%s", port, helperLaunchStatusPath(provider), launchID), nil)
+		request.Header.Set("Origin", origin)
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]string
+		err = json.NewDecoder(response.Body).Decode(&payload)
+		_ = response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusOK || !strings.HasSuffix(payload["handoffUrl"], fmt.Sprintf("result-%d", index)) {
+			t.Fatalf("concurrent attempt %d received another attempt's status: %+v, error = %v", index, payload, err)
+		}
 	}
 }
 

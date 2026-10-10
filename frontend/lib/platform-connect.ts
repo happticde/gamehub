@@ -17,6 +17,37 @@ export type PsnChromeDebugVersion = {
     product: string | null;
 };
 
+// Do not reuse a port within this page: stopping UI polling leaves the previous CLI alive.
+const usedHelperStatusPorts = new Set([49333, 53935]);
+
+export function allocateHelperStatusPort(randomValue: number): number {
+    for (let offset = 0; offset < 16384; offset++) {
+        const port = 49152 + ((randomValue + offset) % 16384);
+        if (!usedHelperStatusPorts.has(port)) {
+            usedHelperStatusPorts.add(port);
+            return port;
+        }
+    }
+    throw new Error("Too many helper attempts. Reload this page before trying again.");
+}
+
+export function buildHelperLaunchUrls(
+    provider: "gog" | "psn" | "epic", pageOrigin: string, launchId: string, statusPort: number,
+): { launchUrl: string; statusUrl: string } {
+    if (!Number.isInteger(statusPort) || statusPort < 49152 || statusPort > 65535) {
+        throw new Error("The helper status port must be between 49152 and 65535.");
+    }
+    const launchUrl = new URL(`gamehub-helper://connect/${provider}`);
+    launchUrl.searchParams.set("origin", pageOrigin);
+    launchUrl.searchParams.set("launchId", launchId);
+    launchUrl.searchParams.set("statusPort", String(statusPort));
+    // Host and scheme are fixed; the supplied page origin never becomes a fetch destination.
+    const statusUrl = new URL(`http://127.0.0.1:${statusPort}/connect/${provider}/launch-status`);
+    statusUrl.searchParams.set("launchId", launchId);
+    statusUrl.searchParams.set("origin", pageOrigin);
+    return { launchUrl: launchUrl.toString(), statusUrl: statusUrl.toString() };
+}
+
 export function parseGogConnectPayload(value: string): ProviderConnectResult | Error {
     const parsed = parseJsonObject(value, "Paste the JSON result returned by the local GOG helper.");
     if (parsed instanceof Error) return parsed;

@@ -45,6 +45,11 @@ connectors while the Accounts page is open; it is not an automatic installation 
 connecting dialog stops frontend polling, but does not terminate the local helper/browser. The
 dialog cannot be dismissed during an in-flight credential write.
 
+Each installed-helper launch now uses its own dynamic loopback status port, so retries do not
+compete for an older attempt's fixed status slot. Update the frontend and the downloaded helper
+together; older CLI builds do not accept the new `statusPort` metadata. Existing manual URLs
+without that parameter still use port `53935`.
+
 The downloads currently support desktop macOS only. The packages are unsigned and not notarized;
 macOS may require approval to open them. Signing/notarization and installers for other systems are
 follow-up work. Existing advanced CLI paths are retained, without claiming guided support for them.
@@ -223,6 +228,9 @@ installer error and confirm that the download matches the Mac's processor.
 
 ### Helper does not start
 
+- After updating GameHub, download and install the matching helper version. Older helpers reject
+  the new per-attempt `statusPort` parameter. A previous legacy attempt may occupy port `53935`;
+  updated UI/helper launches use separate ports, while manual handoff remains available.
 - If the installed app has a modified/invalid `Info.plist` signature, reinstall from an updated
   helper download. The installer now signs and verifies the final app before registering it.
 - Rebuild the CLI with `go build -o gamehub-cli .`.

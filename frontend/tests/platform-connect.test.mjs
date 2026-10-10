@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+    allocateHelperStatusPort,
+    buildHelperLaunchUrls,
     parseEpicAuthorizationCodePayload,
     parseEpicConnectPayload,
     parseGogConnectPayload,
@@ -9,6 +11,35 @@ import {
     parsePsnChromeDebugVersion,
     parsePsnConnectPayload,
 } from "../lib/platform-connect.ts";
+
+test("helper retries use distinct loopback status ports and matching protocol metadata", () => {
+    const ports = new Set();
+    for (const provider of ["gog", "psn", "epic", "psn"]) {
+        // Even repeated random input must not reuse an active attempt's port.
+        const port = allocateHelperStatusPort(4783); // legacy fixed port would be 53935
+        assert.ok(port >= 49152 && port <= 65535);
+        assert.notEqual(port, 53935);
+        assert.notEqual(port, 49333);
+        assert.ok(!ports.has(port));
+        ports.add(port);
+        const urls = buildHelperLaunchUrls(provider, "https://gamehub.example.com", "launch-1234567890", port);
+        const launch = new URL(urls.launchUrl);
+        const status = new URL(urls.statusUrl);
+        assert.equal(launch.searchParams.get("statusPort"), status.port);
+        assert.equal(launch.pathname, `/${provider}`);
+        assert.equal(status.pathname, `/connect/${provider}/launch-status`);
+        assert.equal(status.hostname, "127.0.0.1");
+        assert.equal(status.protocol, "http:");
+        assert.equal(status.searchParams.get("launchId"), launch.searchParams.get("launchId"));
+        assert.equal(status.searchParams.get("origin"), "https://gamehub.example.com");
+    }
+});
+
+test("helper status URLs reject ports outside the dynamic range", () => {
+    for (const port of [0, 80, 49151, 65536, 53935.5, NaN]) {
+        assert.throws(() => buildHelperLaunchUrls("psn", "https://gamehub.example.com", "launch-1234567890", port));
+    }
+});
 
 test("GOG helper payload accepts current contract aliases", () => {
     const result = parseGogConnectPayload(JSON.stringify({
