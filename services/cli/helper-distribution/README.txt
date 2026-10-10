@@ -13,6 +13,11 @@ Your provider password is entered only on the provider's own website.
 
 These packages are unsigned and not notarized. macOS may require approval to open them.
 Use only packages downloaded from your trusted GameHub deployment.
+If macOS blocks the installer or gamehub-cli, open System Settings > Privacy & Security
+and choose Open Anyway for the blocked file, then confirm Open.
+Run the installer again after approving gamehub-cli. It keeps the installed binary at
+~/Library/Application Support/GameHub/Helper/gamehub-cli and does not replace an
+identical version on retry. An updated helper version may require a new approval.
 Windows, Linux, iOS and iPadOS installation is not supported in this release.
 
 To unregister the helper:

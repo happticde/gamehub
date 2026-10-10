@@ -205,6 +205,19 @@ recommended operator path because Sony's fresh-profile behavior is fragile.
 
 ## Troubleshooting
 
+### macOS blocks the downloaded installer or CLI
+
+After trying to open the blocked file, go to **System Settings → Privacy & Security**,
+choose **Open Anyway** for that file, and confirm **Open**. The installer and `gamehub-cli`
+can require separate approvals.
+
+The installer executes the CLI only at
+`~/Library/Application Support/GameHub/Helper/gamehub-cli`. It leaves that file in place
+when execution fails and reuses it when the downloaded version is identical. After approving
+`gamehub-cli`, run the installer again to finish registering the protocol handler. A new
+helper version may need another approval. If no security warning appeared, inspect the
+installer error and confirm that the download matches the Mac's processor.
+
 ### Helper does not start
 
 - Rebuild the CLI with `go build -o gamehub-cli .`.
