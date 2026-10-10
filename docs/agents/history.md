@@ -4,6 +4,24 @@
 
 ### What Changed
 
+**Stable macOS Helper Approval:**
+- The installer now executes only the CLI's final installed path, instead of a randomly named
+  temporary file. Failed execution leaves the installed CLI available for manual macOS approval.
+- Identical binaries are reused on retry, preserving the file instead of replacing it. Updated
+  versions are still installed and may require a new approval.
+- Added visible failure/retry instructions and documented separate installer/CLI approvals.
+
+### Verification
+
+- Installer regression coverage simulates blocked execution, approval/retry, identical reinstall,
+  updated binaries, and unsupported operating systems in the devcontainer.
+- Both macOS download archives were regenerated and checked for the updated installer.
+- Actual macOS Gatekeeper approval is not exercised by the Linux-based regression check.
+
+## Current Session Summary (2026-10-10)
+
+### What Changed
+
 **Guided macOS Account Setup:**
 - Added one shared helper/install/sign-in/save assistant for PlayStation, GOG and Epic Games.
 - Simplified the Accounts overview and grouped manual handoff, JSON, credential and diagnostic
