@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -126,6 +131,54 @@ func TestMacOSHelperAppleScript_StartsLaunchCommandWithoutTerminalOrCookieData(t
 	}
 	if strings.Contains(script, "gog-al") || strings.Contains(script, "cookie") {
 		t.Fatalf("AppleScript should not embed cookie-related data")
+	}
+}
+
+func TestFinalizeMacOSHelperApp_SignsFinalInfoPlistBeforeVerification(t *testing.T) {
+	appPath := filepath.Join(t.TempDir(), "GameHub Helper.app")
+	if err := os.MkdirAll(filepath.Join(appPath, "Contents"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var calls [][]string
+	err := finalizeMacOSHelperApp(appPath, func(name string, args ...string) ([]byte, error) {
+		plist, err := os.ReadFile(filepath.Join(appPath, "Contents", "Info.plist"))
+		if err != nil || string(plist) != macOSHelperInfoPlist() {
+			t.Fatal("the protocol Info.plist must be finalized before signing")
+		}
+		calls = append(calls, append([]string{name}, args...))
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := [][]string{
+		{"codesign", "--force", "--sign", "-", "--timestamp=none", appPath},
+		{"codesign", "--verify", "--strict", appPath},
+	}
+	if !reflect.DeepEqual(calls, expected) {
+		t.Fatalf("finalization commands = %v, want %v", calls, expected)
+	}
+}
+
+func TestFinalizeMacOSHelperApp_StopsOnSigningOrVerificationFailure(t *testing.T) {
+	for _, failingCall := range []int{1, 2} {
+		t.Run(fmt.Sprint(failingCall), func(t *testing.T) {
+			appPath := filepath.Join(t.TempDir(), "GameHub Helper.app")
+			if err := os.MkdirAll(filepath.Join(appPath, "Contents"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			err := finalizeMacOSHelperApp(appPath, func(name string, args ...string) ([]byte, error) {
+				calls++
+				if calls == failingCall {
+					return []byte("signature rejected"), errors.New("exit status 1")
+				}
+				return nil, nil
+			})
+			if err == nil || !strings.Contains(err.Error(), "signature rejected") || calls != failingCall {
+				t.Fatalf("failed finalization: error = %v, calls = %d", err, calls)
+			}
+		})
 	}
 }
 

@@ -462,6 +462,9 @@ func installMacOSProtocolHandler(appPath string, cliPath string) error {
 	if _, err := exec.LookPath("osacompile"); err != nil {
 		return fmt.Errorf("macOS osacompile is required to create the helper app: %w", err)
 	}
+	if _, err := exec.LookPath("codesign"); err != nil {
+		return fmt.Errorf("macOS codesign is required to finalize the helper app: %w", err)
+	}
 
 	if err := os.MkdirAll(filepath.Dir(appPath), 0755); err != nil {
 		return fmt.Errorf("failed to create helper app parent directory: %w", err)
@@ -486,15 +489,36 @@ func installMacOSProtocolHandler(appPath string, cliPath string) error {
 		return fmt.Errorf("failed to compile helper app: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
-	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
-	if err := os.WriteFile(plistPath, []byte(macOSHelperInfoPlist()), 0644); err != nil {
-		return fmt.Errorf("failed to write helper app Info.plist: %w", err)
+	if err := finalizeMacOSHelperApp(appPath, func(name string, args ...string) ([]byte, error) {
+		return exec.Command(name, args...).CombinedOutput()
+	}); err != nil {
+		return err
 	}
 
 	if err := registerMacOSProtocolHandler(appPath); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func finalizeMacOSHelperApp(appPath string, runCommand func(string, ...string) ([]byte, error)) error {
+	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
+	if err := os.WriteFile(plistPath, []byte(macOSHelperInfoPlist()), 0644); err != nil {
+		return fmt.Errorf("failed to write helper app Info.plist: %w", err)
+	}
+
+	// osacompile can sign its output. Replacing Info.plist invalidates that signature,
+	// so seal the finished, locally generated bundle before registering it.
+	// Ad-hoc signing requires no Developer ID and does not provide notarization/trust.
+	output, err := runCommand("codesign", "--force", "--sign", "-", "--timestamp=none", appPath)
+	if err != nil {
+		return fmt.Errorf("failed to sign the local helper app: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	output, err = runCommand("codesign", "--verify", "--strict", appPath)
+	if err != nil {
+		return fmt.Errorf("failed to verify the local helper app signature: %w: %s", err, strings.TrimSpace(string(output)))
+	}
 	return nil
 }
 

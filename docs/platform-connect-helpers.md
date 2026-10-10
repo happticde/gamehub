@@ -91,7 +91,10 @@ On macOS, install the `gamehub-helper://` handler from the built binary:
 ```
 
 The installer creates a local `GameHub Helper.app` in `~/Applications` and registers the custom URI
-scheme with Launch Services. The Admin UI can then launch URLs such as:
+scheme with Launch Services. After writing the final protocol `Info.plist`, it applies a local
+ad-hoc signature and verifies the bundle before registration. This repairs the signature produced
+by `osacompile`, which becomes invalid when the plist is changed. It does not provide Developer ID
+trust or notarization. The Admin UI can then launch URLs such as:
 
 ```text
 gamehub-helper://connect/gog?origin=http%3A%2F%2Flocalhost%3A3005&launchId=one-time-random-value
@@ -220,6 +223,8 @@ installer error and confirm that the download matches the Mac's processor.
 
 ### Helper does not start
 
+- If the installed app has a modified/invalid `Info.plist` signature, reinstall from an updated
+  helper download. The installer now signs and verifies the final app before registering it.
 - Rebuild the CLI with `go build -o gamehub-cli .`.
 - Re-run `./gamehub-cli helper install-protocol-handler` after moving the binary.
 - On macOS, confirm that `~/Applications/GameHub Helper.app` exists and try the connect action again.
