@@ -18,6 +18,9 @@ and choose Open Anyway for the blocked file, then confirm Open.
 Run the installer again after approving gamehub-cli. It keeps the installed binary at
 ~/Library/Application Support/GameHub/Helper/gamehub-cli and does not replace an
 identical version on retry. An updated helper version may require a new approval.
+The installer signs the locally generated protocol-handler app ad hoc after setting
+its URL scheme, then verifies the finished bundle before registration. This requires
+no paid certificate and does not provide Developer ID trust or notarization.
 Windows, Linux, iOS and iPadOS installation is not supported in this release.
 
 To unregister the helper:
