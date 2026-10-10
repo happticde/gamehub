@@ -8,6 +8,9 @@
   checks include source/CLI/image security scans; release publication is manually dispatched
   from `main` and gated by every check. Keep versions, tool archive hashes, and Action/image pins
   reviewed. Go remains on the 1.26 line with the patched 1.26.9 toolchain/helper builder.
+- Image CI uses native Ubuntu 26.04 AMD64/ARM64 runners, with no QEMU build emulation.
+  Keep the frontend helper build independent from Next.js by copying downloads only into
+  the runtime stage. Docker cache export is best-effort; build/scan/release gates are mandatory.
 - `dotnet-ef` is installed system-wide by the devcontainer image and pinned to the EF Core version
   used by the service projects. Rebuild the devcontainer after changing that version.
 

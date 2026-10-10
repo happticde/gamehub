@@ -3,6 +3,8 @@ FROM node:24-alpine AS base
 # The named context is restricted by services/cli/.dockerignore.
 FROM golang:1.26.9-bookworm AS helper-builder
 WORKDIR /src
+COPY --from=helper-source go.mod go.sum ./
+RUN go mod download
 COPY --from=helper-source . .
 ARG VERSION=dev
 RUN sh scripts/package-macos-helper.sh /downloads "$VERSION"
@@ -19,7 +21,6 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-COPY --from=helper-builder /downloads ./public/downloads/helper
 # Environment variables needed during build can be passed as ARG
 RUN npm run build
 
@@ -49,6 +50,8 @@ RUN chown nextjs:nodejs .next
 
 # Copy necessary files from the builder
 COPY --from=builder /app/public ./public
+# Runtime-only downloads let BuildKit build Next.js and the Go helper independently.
+COPY --from=helper-builder /downloads ./public/downloads/helper
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 

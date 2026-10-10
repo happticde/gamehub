@@ -4,6 +4,28 @@
 
 ### What Changed
 
+**Native ARM Image Builds and CI Caching:**
+- Replace QEMU-on-AMD64 image builds with native Ubuntu 26.04 runners per target architecture.
+  All six image matrix jobs still run in parallel and retain their security scans/release gates.
+- Use the pinned Docker build Action for authenticated v2 GitHub caches. Keep scopes separate
+  per service/architecture and bound best-effort cache export to three minutes.
+- Cache NuGet downloads and the frontend check's Next.js incremental output. Keep npm/Go caches.
+- Separate Go module downloads into a cached helper layer. Copy helper archives only into the
+  frontend runtime so BuildKit can build the helper and Next.js independently.
+
+### Verification
+
+- Actionlint, frontend lint, and the production build without pre-build helper downloads pass.
+- Both helper archives build independently and are served with HTTP 200 at the unchanged URLs
+  after copying them into the standalone runtime. Download SHA-256 hashes match the archives.
+- Native ARM runner support for private repositories and current stable Action pins were
+  verified against official sources. Full Docker builds, cache behavior, and elapsed-time
+  improvements require the next hosted run; no hosted timing reduction is claimed yet.
+
+## Current Session Summary (2026-10-11)
+
+### What Changed
+
 **Frontend Runtime Package Manager Removal:**
 - Reproduced all seven hosted frontend image blockers on the current official Node 24 Alpine
   image for AMD64 and ARM64. The affected packages belong to bundled npm, not the application.

@@ -95,6 +95,11 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('services/**/*.csproj', 'tests/**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
       - name: Resolve transitive NuGet dependencies only in the scan snapshot
         run: |
           cd "$RUNNER_TEMP/source"
@@ -123,6 +128,11 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('services/**/*.csproj', 'tests/**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
       - run: dotnet restore
       - run: dotnet build --no-restore --verbosity quiet
       - run: dotnet test --no-build --verbosity quiet
@@ -140,6 +150,11 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: frontend/.next/cache
+          key: ${{ runner.os }}-${{ runner.arch }}-next-24-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-next-24-${{ hashFiles('frontend/package-lock.json') }}-
       - run: node --test services/cli/scripts/test-macos-installer.mjs
       - run: npm ci
         working-directory: frontend
@@ -197,48 +212,44 @@ jobs:
 
   images:
     name: Image scan (${{ matrix.component }}, ${{ matrix.arch }})
-    runs-on: ubuntu-26.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         component: [core, ingest, frontend]
         arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: matrix.arch == 'arm64'
-        with:
-          platforms: arm64
-          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           version: v0.38.0
           driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
       - name: Build the image that will be scanned and published
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         env:
-          COMPONENT: ${{ matrix.component }}
-          ARCH: ${{ matrix.arch }}
-          RELEASE_VERSION: ${{ inputs.release-version }}
-        run: |
-          version=$RELEASE_VERSION
-          [[ "$version" != dev ]] || version=0.0.0
-          context=.
-          dockerfile="services/$COMPONENT/Dockerfile"
-          extra=()
-          if [[ "$COMPONENT" == frontend ]]; then
-            context=frontend
-            dockerfile=frontend/Dockerfile
-            extra+=(--build-context helper-source=./services/cli)
-          fi
-          docker buildx build --load --platform "linux/$ARCH" -f "$dockerfile" \
-            --build-arg "VERSION=$version" --build-arg "REVISION=$GITHUB_SHA" \
-            --cache-from "type=gha,scope=$COMPONENT-$ARCH" \
-            --cache-to "type=gha,mode=max,scope=$COMPONENT-$ARCH" \
-            -t "gamehub-$COMPONENT:verified" "${extra[@]}" "$context"
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: ${{ matrix.component == 'frontend' && './frontend' || '.' }}
+          file: ${{ matrix.component == 'frontend' && 'frontend/Dockerfile' || format('services/{0}/Dockerfile', matrix.component) }}
+          build-contexts: ${{ matrix.component == 'frontend' && 'helper-source=./services/cli' || '' }}
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: gamehub-${{ matrix.component }}:verified
+          build-args: |
+            VERSION=${{ inputs.release-version == 'dev' && '0.0.0' || inputs.release-version }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,version=2,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: type=gha,version=2,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }},timeout=3m,ignore-error=true
       - name: Scan runtime image and export its SBOM
         env:
           COMPONENT: ${{ matrix.component }}

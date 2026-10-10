@@ -11,9 +11,10 @@ The private frontend npm package version is not the release authority: Git tags,
 pull requests to `main`, main pushes, Monday mornings, and manual dispatch. There are no
 `pull_request_target` jobs and build/scan jobs receive only read permission.
 
-All CI and release jobs explicitly use the GitHub-hosted `ubuntu-26.04` runner. The
-explicit OS label avoids automatic distribution changes through `ubuntu-latest`, while
-GitHub continues updating the runner image. Runtime container bases are configured separately
+CI and release jobs explicitly use GitHub-hosted Ubuntu 26.04 runners. Image jobs use
+`ubuntu-26.04` for AMD64 and `ubuntu-26.04-arm` for ARM64, so both architectures build natively.
+The explicit OS labels avoid automatic distribution changes through `ubuntu-latest`, while
+GitHub continues updating the runner images. Runtime container bases are configured separately
 in their Dockerfiles.
 
 The frontend's standalone server starts directly with Node. npm and Yarn remain available
@@ -42,10 +43,30 @@ Untracked files, local build outputs, and the development container are not sour
 Keep credentials out of version control; these exclusions are not a secret-storage mechanism.
 
 All external Actions use full commit SHAs. Scanner/release binaries use versions and committed
-archive checksums in `.ci/tools.json`. Semgrep, BuildKit, and QEMU images use verified digests;
+archive checksums in `.ci/tools.json`. Semgrep and BuildKit images use verified digests;
 Buildx has an explicit version. Update these pins in reviewed PRs, checking upstream release
 metadata and hashes. Dependabot proposes weekly updates for Actions, Docker bases, npm, Go,
 and NuGet. The vulnerability database and Trivy configuration checks remain current feeds.
+
+## Build performance
+
+Independent checks and the six image matrix jobs run in parallel within the account's
+available runner concurrency. ARM64 image builds use native runners, eliminating QEMU
+emulation of npm, Next.js, Go, and .NET. GitHub lists standard ARM64 Linux runners for both
+[public and private repositories](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+NuGet downloads and the frontend check's Next.js incremental cache persist between runs.
+The existing npm and Go caches remain enabled. Docker builds use the pinned official build
+Action to authenticate GitHub's v2 cache, with separate scopes per service and architecture.
+Cache export is limited to three minutes and is best-effort: a failed export causes later
+cold builds, never bypasses a build, scan, or publication gate. See
+[Docker's cache authentication documentation](https://docs.docker.com/build/cache/backends/gha/).
+
+The frontend's Go helper and Next.js build are independent stages. Helper downloads are copied
+into the runtime's public directory after the application build, retaining the same URLs and
+shared version without invalidating the Next.js build when only the helper version changes.
+Go module downloads have a separate layer keyed by the CLI module files. Cold runs still need
+to download and compile dependencies; compare hosted job timings after caches are populated.
 
 ## Release a version
 
@@ -112,8 +133,8 @@ and version; no separate release lookup is needed in the credential assistant.
   once if anonymous pulls are desired; otherwise authenticate with `read:packages`. GitHub
   Release downloads follow repository visibility. Changing visibility is an operator decision.
   See the [official GHCR documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
-- Builds use standard Ubuntu AMD64 runners and pinned QEMU for ARM64, avoiding a dependency on
-  native ARM runner availability for private repositories. Emulated builds can take longer.
+- Builds use standard native Ubuntu AMD64 and ARM64 runners. Ensure repository/organization
+  policy allows both labels; runner queue time still depends on the account's concurrency.
 - A failed publish can leave architecture tags, version manifests, or a draft release. Registry
   and GitHub publication are not an atomic transaction. Inspect the failure and rerun failed jobs
   while image artifacts are available. Do not rerun successful image publication unnecessarily.
