@@ -118,6 +118,67 @@ shared version without invalidating the Next.js build when only the helper versi
 Go module downloads have a separate layer keyed by the CLI module files. Cold runs still need
 to download and compile dependencies; compare hosted job timings after caches are populated.
 
+## Branches and dependency maintenance
+
+Use `main` as the integration and release branch. Start each change on a short-lived branch
+from current `main` (`codex/...`, `feature/...`, or `fix/...`) and open a pull request back to
+`main`. Dependabot also targets `main`. A permanent `develop` or dependency integration branch
+is not part of this workflow. Merge after **CI passed** succeeds; do not push directly to `main`.
+
+The repository's GitHub merge settings use squash merging only, with the PR title and description
+as the default commit message. Use a Conventional Commit PR title, such as
+`chore(deps): update frontend dependencies`, `fix: repair helper launch`, or
+`feat: add a provider`. Put breaking-change information in the title (`!`) or a
+`BREAKING CHANGE:` footer. GitHub automatically deletes merged head branches; they can be
+restored from the merged PR. These GitHub settings are separate from repository files.
+
+[`dependabot.yml`](../.github/dependabot.yml) defines the maintenance policy:
+
+| Setting | Policy |
+| --- | --- |
+| Regular version checks | Monday at 08:00, `Europe/Berlin` (including daylight saving time). This is the requested check time, not a guarantee of PR creation time. |
+| Minor and patch updates | One wildcard group per ecosystem: GitHub Actions, Docker, npm, Go, and NuGet. Docker and NuGet groups cover their configured service directories. |
+| Major updates | Individual PRs, except one Next.js family group (`next`, `eslint-config-next`) and one EF Core family group (Microsoft EF Core packages, EF health checks, and the Npgsql EF provider). Review compatibility across the whole family. |
+| Open version-update PRs | At most two per ecosystem, ten across the five entries. Existing backlog can occupy these slots; this is not a weekly PR quota. |
+| Security updates | Separate groups per ecosystem, including major fixes. When Dependabot security updates are enabled, they are independent of the weekly version schedule and version-update PR limit. |
+| Commit messages | Explicit `chore` prefix with dependency scope (`deps` or `deps-dev`) for consistent squash titles and release notes. |
+
+Normally, available minor/patch updates produce up to five regular grouped PRs per check cycle.
+Major upgrades, security fixes, subsequent cycles, incompatible updates, and already-open PRs
+can increase the total. Do not treat five as a repository-wide hard limit. The configuration
+takes effect after merging into the default branch; observe the next Dependabot run for actual
+grouping and existing-PR reconciliation. No automatic merge is configured.
+
+Dependabot alerts and security updates were enabled in GitHub on 2026-10-11 and verified after
+reloading the settings page. The generic **Grouped security updates** switch remains off:
+the explicit `security-updates` groups in `dependabot.yml` define grouping after this file
+reaches `main`.
+
+Groups stay within ecosystems so the CI selector can run the affected component checks.
+GitHub Actions updates and changes to `dependabot.yml` still select the full suite because
+`.github/**` is a CI/security input. Grouping reduces PR and CI volume without skipping checks.
+See [GitHub's grouping guide](https://docs.github.com/en/code-security/tutorials/secure-your-dependencies/optimizing-pr-creation-version-updates)
+and [Dependabot's option reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
+
+Collect approved updates and features on `main`, then dispatch one shared release when the batch
+is ready, normally weekly or after a completed feature. An urgent security fix can receive an
+earlier patch release. This cadence is an operating practice, not a scheduled publication job.
+Merging multiple dependency PRs creates no release tags; only the manual release workflow
+publishes the next shared version with notes covering all included commits. A dependency's own
+major version does not imply a GameHub major version: use breaking-change markers for changes
+to GameHub's compatibility contract. Maintenance-only batches normally get a patch version
+when a release is explicitly started.
+
+### Branch protection availability
+
+As checked on 2026-10-11, GitHub shows the existing `main` ruleset as **Not enforced** for this
+private repository and states that enforcement requires upgrading the organization to
+**GitHub Team**. Classic branch protection is not configured. The PR-only policy above must
+currently be followed by contributors; repository files and a passing CI workflow cannot
+enforce it at GitHub's merge boundary. No billing, plan, or visibility change was made.
+Once plan support is available, activate the `main` ruleset and require the aggregate
+**CI passed** check as described below.
+
 ## Release a version
 
 ### Start the release
