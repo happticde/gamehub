@@ -20,9 +20,25 @@ spec.loader.exec_module(selection)
 class SelectionTests(unittest.TestCase):
     def test_documentation_skips_builds_and_images(self):
         plan = selection.select_checks(["README.md", "AGENTS.md", "docs/ci-and-releases.md", ".agents/skills/example/SKILL.md"])
-        self.assertFalse(any(plan["jobs"].values()))
+        self.assertTrue(plan["jobs"]["docs"])
+        self.assertFalse(any(value for job, value in plan["jobs"].items() if job != "docs"))
         self.assertEqual(plan["components"], [])
         self.assertEqual(selection.image_matrix(plan), {"include": []})
+
+    def test_docs_configuration_dependencies_and_mixed_changes(self):
+        for path in ("Makefile", "docs/site/package.json", "docs/site/package-lock.json", "docs/site/scripts/prepare.mjs",
+                     "docs/site/src/pages/index.jsx", "docs/site/content.json"):
+            with self.subTest(path=path):
+                plan = selection.select_checks([path])
+                self.assertEqual([job for job, selected in plan["jobs"].items() if selected], ["docs"])
+                self.assertEqual(plan["components"], [])
+        plan = selection.select_checks(["docs/index.md", "services/core/Program.cs"])
+        self.assertTrue(plan["jobs"]["docs"])
+        self.assertTrue(plan["jobs"]["backend"])
+        self.assertEqual(plan["components"], ["core"])
+        plan = selection.select_checks([".github/workflows/docs.yml"])
+        self.assertEqual([job for job, selected in plan["jobs"].items() if selected], ["workflow", "docs"])
+        self.assertFalse(any(selection.select_checks(["docs/agents/history.md"])["jobs"].values()))
 
     def test_frontend_code_and_dependencies(self):
         plan = selection.select_checks(["frontend/app/page.tsx"])
@@ -118,11 +134,14 @@ class RequiredCheckTests(unittest.TestCase):
                 for job, selected in {**plan["jobs"], "select": True, "gitleaks": True, "images": bool(plan["components"])}.items()}
 
     def test_docs_allow_only_planned_skips_and_still_require_secret_scan(self):
-        plan = selection.select_checks(["README.md"])
+        plan = selection.select_checks(["docs/index.md"])
         results = self.results(plan)
         self.assertEqual(selection.required_failures(plan, results), [])
         results["gitleaks"]["result"] = "skipped"
         self.assertEqual(selection.required_failures(plan, results), ["gitleaks"])
+        results = self.results(plan)
+        results["docs"]["result"] = "skipped"
+        self.assertEqual(selection.required_failures(plan, results), ["docs"])
 
     def test_selected_skipped_failed_cancelled_and_missing_checks_block(self):
         plan = selection.select_checks(["services/core/Program.cs"])

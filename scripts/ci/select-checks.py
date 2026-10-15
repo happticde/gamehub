@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 
-JOBS = ("workflow", "semgrep", "dependencies", "backend", "frontend", "cli")
+JOBS = ("workflow", "semgrep", "dependencies", "backend", "frontend", "cli", "docs")
 COMPONENTS = ("core", "ingest", "frontend")
 
 
@@ -32,12 +32,21 @@ def select_checks(paths, full=False):
     jobs, components = set(), set()
     for path in paths:
         name = PurePosixPath(path).name
+        if path == ".github/workflows/docs.yml":
+            jobs.update(("workflow", "docs"))
+            continue
         # Selection, workflow, and security policy changes require full verification.
         if path.startswith((".github/", ".ci/", "scripts/ci/")) or path in {
             ".gitleaks.toml", ".gitleaksignore", ".semgrep.yml", "cliff.toml"
         }:
             return make_plan(JOBS, COMPONENTS)
-        if path.startswith(("docs/", ".agents/")) or name.endswith(".md") or path == "LICENSE":
+        if path.startswith("docs/agents/") or path.startswith(".agents/"):
+            continue
+        # The root Makefile contains only documentation shortcuts, never product build inputs.
+        if path.startswith("docs/") or path == "Makefile":
+            jobs.add("docs")
+            continue
+        if name.endswith(".md") or path == "LICENSE":
             continue
         if path.startswith("frontend/"):
             if name in {"Dockerfile", ".dockerignore"}:
@@ -121,6 +130,21 @@ def image_matrix(plan):
     ]}
 
 
+def require_product_changes():
+    """Reject docs-only manual releases before restoration, builds, or publication."""
+    tags = subprocess.check_output([
+        "git", "tag", "--merged", "HEAD", "--sort=-version:refname"
+    ], text=True).splitlines()
+    latest = next((tag for tag in tags if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag)), None)
+    command = (["git", "diff", "--name-only", "--no-renames", "-z", f"{latest}..HEAD", "--"]
+               if latest else ["git", "ls-files", "-z"])
+    paths = subprocess.check_output(command).decode().split("\0")
+    plan = select_checks([path for path in paths if path])
+    product_jobs = (selected for job, selected in plan["jobs"].items() if job not in {"docs", "workflow"})
+    if not plan["components"] and not any(product_jobs):
+        raise ValueError("No product changes since the last release; documentation must be published separately.")
+
+
 def required_failures(plan, results):
     if set(plan["jobs"]) != set(JOBS) or any(type(value) is not bool for value in plan["jobs"].values()):
         raise ValueError("Invalid check selection")
@@ -134,6 +158,9 @@ def required_failures(plan, results):
 
 
 def main():
+    if sys.argv[1] == "release":
+        require_product_changes()
+        return 0
     if sys.argv[1] == "gate":
         failures = required_failures(json.loads(os.environ["CHECK_PLAN"]), json.loads(os.environ["CHECK_RESULTS"]))
         if failures:

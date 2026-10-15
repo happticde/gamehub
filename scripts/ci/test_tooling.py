@@ -97,7 +97,7 @@ class SecretScanTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("git-cliff"), "Install the pinned git-cliff to run release integration tests")
 class ReleaseVersionTests(unittest.TestCase):
-    def prepare(self, message, tagged=True):
+    def prepare(self, message, tagged=True, bump="auto"):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -112,8 +112,11 @@ class ReleaseVersionTests(unittest.TestCase):
         if tagged:
             git("tag", "v1.2.3")
         if message:
-            git("commit", "--allow-empty", "-m", message)
-        result = subprocess.run(["bash", str(ROOT / "scripts/ci/prepare-release.sh"), "auto", str(root / "metadata")],
+            name = "README.md" if message.startswith("docs:") else "application.cs"
+            (root / name).write_text(message)
+            git("add", name)
+            git("commit", "-m", message)
+        result = subprocess.run(["bash", str(ROOT / "scripts/ci/prepare-release.sh"), bump, str(root / "metadata")],
                                 cwd=root, text=True, capture_output=True)
         return root, git, result
 
@@ -136,3 +139,12 @@ class ReleaseVersionTests(unittest.TestCase):
         _, git, result = self.prepare(None)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(git("tag", "--list").decode().strip(), "v1.2.3")
+
+    def test_docs_only_manual_release_is_rejected_before_versioning(self):
+        for bump in ("auto", "patch", "minor", "major"):
+            with self.subTest(bump=bump):
+                root, git, result = self.prepare("docs: explain installation", bump=bump)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("No product changes", result.stderr)
+                self.assertFalse((root / "metadata").exists())
+                self.assertEqual(git("tag", "--list").decode().strip(), "v1.2.3")

@@ -16,12 +16,17 @@ pull requests to `main`, main pushes, Monday mornings, and manual dispatch. Ther
 Pull requests and pushes select checks using
 [`scripts/ci/select-checks.py`](../scripts/ci/select-checks.py). Every run keeps **Select relevant
 checks**, **Secret history scan**, and the final **CI passed** gate. Documentation can contain
-secrets, so a documentation-only change still receives Gitleaks scanning but skips application
-builds, Semgrep, dependency restoration/scanning, and container builds.
+secrets, so documentation-only changes still receive Gitleaks scanning. Public handbook changes
+also run the independent Docusaurus build/contracts and documentation dependency scan, while
+skipping application builds, Semgrep, application dependency restoration/scanning, and container
+builds. Agent-context-only changes keep the secret scan and aggregate gate.
+Pages publication remains exclusively manual; see [Documentation](documentation.md).
 
 | Changed files | Additional checks | Runtime images built and scanned |
 | --- | --- | --- |
-| Markdown outside CI/tooling directories, `docs/**`, `.agents/**`, or `LICENSE` only | None | None |
+| `docs/**` except agent context, or the documentation-only root `Makefile` | Docusaurus build/contracts and targeted documentation dependency scan | None |
+| Markdown outside CI/tooling directories, `docs/agents/**`, `.agents/**`, or `LICENSE` only | None | None |
+| `.github/workflows/docs.yml` | Workflow/tooling and documentation checks | None |
 | Frontend application, assets, or build configuration | Frontend lint/contracts/build and Semgrep | Frontend, AMD64 and ARM64 |
 | Frontend tests only | Frontend lint/contracts/build | None |
 | Core or Ingest implementation/configuration | Full backend build/tests and Semgrep | The changed service, AMD64 and ARM64 |
@@ -35,7 +40,7 @@ builds, Semgrep, dependency restoration/scanning, and container builds.
 | Root `.dockerignore` | Trivy source/production-configuration scan | Core and Ingest, both architectures |
 | Root .NET solution/SDK/build configuration | Backend build/tests, Semgrep, and Trivy source/dependency scan | Core and Ingest, both architectures |
 | Docker Compose configuration | Trivy source/production-configuration scan | None |
-| `.github/**`, `.ci/**`, `scripts/ci/**`, scanner policy, or `cliff.toml` | All checks | All six images |
+| Other `.github/**`, `.ci/**`, `scripts/ci/**`, scanner policy, or `cliff.toml` | All checks | All six images |
 | Unrecognized paths | All checks, conservatively | All six images |
 
 Selections are combined when several components change. `services/cli/helper-distribution/README.txt`
@@ -53,6 +58,9 @@ The selection job writes its plan to the workflow run's job summary.
 Scheduled checks, manual CI runs, and releases always run the complete suite. The reusable
 workflow defaults to full verification; selective checks require an explicit `select-changes`
 input, and a release version always forces full verification.
+Release verification also builds a numbered documentation candidate from that exact checkout.
+It does not deploy Pages. A manual documentation publication builds all supported published
+release snapshots plus Next without running product builds.
 
 The workflow deliberately still starts for documentation PRs. Skipping an entire workflow with
 path filters can leave required checks pending and block merging, as described in
@@ -157,6 +165,8 @@ reaches `main`.
 Groups stay within ecosystems so the CI selector can run the affected component checks.
 GitHub Actions updates and changes to `dependabot.yml` still select the full suite because
 `.github/**` is a CI/security input. Grouping reduces PR and CI volume without skipping checks.
+The npm entry covers both `frontend` and `docs/site`; documentation package/lockfile changes
+select only documentation checks. A grouped PR touching both directories selects both.
 See [GitHub's grouping guide](https://docs.github.com/en/code-security/tutorials/secure-your-dependencies/optimizing-pr-creation-version-updates)
 and [Dependabot's option reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
 
@@ -216,13 +226,18 @@ tag, the configured initial version is **v0.1.0**.
 Use Conventional Commit messages in the commits that reach `main`, including the PR title when
 using squash merge. `feat:` requests a minor increment, `fix:` requests a patch increment, and
 `!` or a `BREAKING CHANGE:` footer requests a major increment. The configuration requests a
-major increment for breaking changes even while the project is on `0.x`. Documentation,
-maintenance, performance, and legacy non-conventional changes normally result in a patch
-increment when no feature or breaking change requires a larger one. Explicit increments
+major increment for breaking changes even while the project is on `0.x`. A complete path check
+rejects documentation-only changes before calculating a version, even for explicit increments.
+Documentation commits may still appear in the notes of a product release containing other
+changes. Maintenance, performance, and legacy non-conventional product changes normally result
+in a patch increment when no feature or breaking change requires a larger one. Explicit increments
 override automatic selection, so check compatibility before choosing one.
 
 Existing release tags are not overwritten. If the calculated tag already exists, preparation
 fails with `The calculated release already exists; there are no releasable changes.`
+If only documentation changed since the latest reachable stable tag, preparation fails with
+`No product changes since the last release; documentation must be published separately.` No
+application builds or publication jobs start. Use the separate manual documentation workflow.
 
 ### Follow the jobs and release notes
 

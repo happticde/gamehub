@@ -32,6 +32,7 @@ jobs:
       backend: ${{ steps.select.outputs.backend }}
       frontend: ${{ steps.select.outputs.frontend }}
       cli: ${{ steps.select.outputs.cli }}
+      docs: ${{ steps.select.outputs.docs }}
       images: ${{ steps.select.outputs.images }}
       image-matrix: ${{ steps.select.outputs.image-matrix }}
       plan: ${{ steps.select.outputs.plan }}
@@ -151,6 +152,49 @@ jobs:
         with:
           name: trivy-source-report
           path: reports/trivy-source.json
+          retention-days: 7
+
+  docs:
+    name: Documentation build and contracts
+    needs: select
+    if: needs.select.outputs.docs == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
+      - run: npm ci --no-fund
+        working-directory: docs/site
+      - name: Test contracts and build the handbook (including release candidate when applicable)
+        env:
+          RELEASE_VERSION: ${{ inputs.release-version }}
+        run: |
+          if [[ "$RELEASE_VERSION" != dev ]]; then
+            export DOCS_CANDIDATE_VERSION="$RELEASE_VERSION"
+          fi
+          npm run check
+        working-directory: docs/site
+      - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
+      - run: python3 scripts/ci/export-source.py "$RUNNER_TEMP/docs-source"
+      - name: Scan documentation dependencies independently of application builds
+        run: |
+          mkdir -p reports
+          trivy fs --scanners vuln --include-dev-deps --format json \
+            --output reports/trivy-docs.json "$RUNNER_TEMP/docs-source/docs/site"
+          python3 scripts/ci/gate-trivy.py reports/trivy-docs.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: documentation-reports
+          path: reports/trivy-docs.json
+          if-no-files-found: ignore
           retention-days: 7
 
   backend:
@@ -323,7 +367,7 @@ jobs:
   required:
     name: CI passed
     if: always()
-    needs: [select, workflow, gitleaks, semgrep, dependencies, backend, frontend, cli, images]
+    needs: [select, workflow, gitleaks, semgrep, dependencies, backend, frontend, cli, docs, images]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:

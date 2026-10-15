@@ -1,0 +1,118 @@
+name: Publish documentation (manual)
+
+# Deliberately no push, release, schedule, workflow_run, or workflow_call trigger.
+# Enable Pages separately when repository visibility and plan are ready.
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Republish unchanged documentation (for recovery or Pages configuration changes)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gamehub-documentation-pages
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build versioned handbook
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      - name: Require the protected source branch
+        env:
+          SOURCE_REF: ${{ github.ref }}
+        run: test "$SOURCE_REF" = refs/heads/main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
+      - name: Read published release metadata (including all API pages)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq 'add' > "$RUNNER_TEMP/docs-releases.json"
+      - run: npm ci --no-fund
+        working-directory: docs/site
+      - name: Verify and build the complete versioned site
+        env:
+          DOCS_RELEASES_FILE: ${{ runner.temp }}/docs-releases.json
+        run: npm run check
+        working-directory: docs/site
+      - name: Scan documentation dependencies
+        run: |
+          python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
+          python3 scripts/ci/export-source.py "$RUNNER_TEMP/docs-source"
+          trivy fs --scanners vuln --include-dev-deps --format json \
+            --output "$RUNNER_TEMP/trivy-docs.json" "$RUNNER_TEMP/docs-source/docs/site"
+          python3 scripts/ci/gate-trivy.py "$RUNNER_TEMP/trivy-docs.json"
+      - name: Fingerprint documentation, renderer, and release versions
+        run: node docs/site/scripts/fingerprint.mjs
+      - id: compare
+        name: Skip publication when inputs match the previous successful manual run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          changed=true
+          previous=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/docs.yml/runs?event=workflow_dispatch&status=success&branch=main&per_page=1" \
+            --jq '.workflow_runs[0].id // empty')
+          if [[ -n "$previous" && "$FORCE" != true ]]; then
+            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous/artifacts" \
+              --jq '.artifacts[] | select(.name == "documentation-state" and .expired == false) | .id')
+            if [[ -n "$artifact" ]]; then
+              gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$RUNNER_TEMP/previous-docs.zip"
+              unzip -p "$RUNNER_TEMP/previous-docs.zip" fingerprint.txt > "$RUNNER_TEMP/previous-fingerprint.txt"
+              if cmp -s "$RUNNER_TEMP/previous-fingerprint.txt" docs/site/.generated/publish-state/fingerprint.txt; then
+                changed=false
+              fi
+            fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Documentation publication needed: $changed. Force: $FORCE." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: steps.compare.outputs.changed == 'true'
+        with:
+          path: docs/site/build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: documentation-state
+          path: docs/site/.generated/publish-state/fingerprint.txt
+          retention-days: 90
+          if-no-files-found: error
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the verified artifact
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

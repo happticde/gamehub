@@ -5,6 +5,7 @@ set -euo pipefail
 bump=${1:-auto}
 output_dir=${2:?Pass a release metadata directory}
 case "$bump" in auto|patch|minor|major) ;; *) exit 2 ;; esac
+python3 "$(dirname "$0")/select-checks.py" release
 mkdir -p "$output_dir"
 if [[ "$bump" == auto ]]; then
     tag=$(git-cliff --config cliff.toml --bumped-version)

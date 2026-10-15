@@ -1,0 +1,84 @@
+:root {
+  --ifm-color-primary: #2457c5;
+  --ifm-color-primary-dark: #204eb1;
+  --ifm-color-primary-darker: #1e4aa7;
+  --ifm-color-primary-darkest: #193d8a;
+  --ifm-color-primary-light: #2d63d9;
+  --ifm-color-primary-lighter: #386bdb;
+  --ifm-color-primary-lightest: #5882e1;
+  --ifm-background-color: #fbfcfe;
+  --ifm-font-color-base: #18263d;
+  --ifm-font-family-base: 'Avenir Next', Avenir, 'Segoe UI', sans-serif;
+  --ifm-heading-font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
+  --ifm-font-family-monospace: 'SFMono-Regular', Consolas, monospace;
+  --ifm-heading-font-weight: 700;
+  --ifm-line-height-base: 1.75;
+  --ifm-code-font-size: 90%;
+  --ifm-global-radius: 0.5rem;
+  --handbook-border: #d5deec;
+  --handbook-muted: #52627b;
+  --handbook-focus: #b74c17;
+  --handbook-scrollbar: #8797b0;
+  --handbook-scrollbar-hover: #52627b;
+  scrollbar-color: var(--handbook-scrollbar) var(--ifm-background-color);
+  scrollbar-width: auto;
+}
+:root[data-theme='dark'] {
+  --ifm-color-primary: #9bbcff;
+  --ifm-color-primary-dark: #80aaff;
+  --ifm-color-primary-darker: #72a0ff;
+  --ifm-color-primary-darkest: #4986ff;
+  --ifm-color-primary-light: #b6ceff;
+  --ifm-color-primary-lighter: #c4d7ff;
+  --ifm-color-primary-lightest: #edf3ff;
+  --ifm-background-color: #152033;
+  --ifm-background-surface-color: #1c2a41;
+  --ifm-font-color-base: #e5ecf7;
+  --handbook-border: #435570;
+  --handbook-muted: #b3c2d8;
+  --handbook-focus: #ffbc8c;
+  --handbook-scrollbar: #8194af;
+  --handbook-scrollbar-hover: #b3c2d8;
+}
+* { scrollbar-color: var(--handbook-scrollbar) var(--ifm-background-color); }
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track { background: var(--ifm-background-color); }
+*::-webkit-scrollbar-thumb { background: var(--handbook-scrollbar); border: 3px solid var(--ifm-background-color); border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--handbook-scrollbar-hover); }
+*::-webkit-scrollbar-thumb:active { background: var(--ifm-color-primary); }
+html { scrollbar-gutter: stable; }
+a, button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--handbook-focus); outline-offset: 4px; }
+.navbar { box-shadow: none; border-bottom: 1px solid var(--handbook-border); }
+.navbar__title { letter-spacing: -0.04em; font-size: 1.4rem; }
+.navbar__logo { width: 32px; height: 32px; }
+.markdown h1 { letter-spacing: -0.035em; }
+.markdown { max-width: 80ch; }
+.handbook-home { max-width: 1160px; width: 100%; margin: 0 auto; padding: 5rem 2rem 4rem; }
+.handbook-intro { max-width: 810px; }
+.handbook-kicker { color: var(--ifm-color-primary); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.16em; margin-bottom: 1.5rem; }
+.handbook-intro h1 { font-size: clamp(2.6rem, 5.7vw, 4.7rem); letter-spacing: -0.05em; line-height: 1.08; margin-bottom: 1.7rem; }
+.handbook-lead { color: var(--handbook-muted); font-size: 1.2rem; max-width: 660px; }
+.handbook-actions { display: flex; flex-wrap: wrap; gap: 1rem; margin: 2rem 0 1.2rem; }
+.handbook-actions .button--secondary { color: var(--ifm-font-color-base); border-color: var(--handbook-border); }
+.handbook-actions .button--secondary:hover { border-color: var(--ifm-color-primary); background: var(--ifm-background-surface-color); }
+.handbook-version { color: var(--handbook-muted); font-size: 0.9rem; }
+.handbook-shelves { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 2.5rem; margin-top: 4rem; }
+.handbook-shelf { position: relative; display: block; padding: 1.5rem 2rem 1.5rem 1rem; border-top: 1px solid var(--handbook-border); border-left: 4px solid var(--ifm-color-primary); margin-bottom: 1.5rem; color: var(--ifm-font-color-base); }
+.handbook-shelf h2 { font-size: 1.35rem; }
+.handbook-shelf p { color: var(--handbook-muted); margin-bottom: 0; }
+.handbook-shelf > span { position: absolute; top: 1.5rem; right: 0.5rem; color: var(--ifm-color-primary); }
+.handbook-shelf:hover { text-decoration: none; background: var(--ifm-background-surface-color); }
+.handbook-shelf:active { border-left-color: var(--handbook-focus); }
+@media (max-width: 650px) {
+  .handbook-home { padding: 2.5rem 1.25rem; }
+  .handbook-shelves { grid-template-columns: 1fr; margin-top: 2.5rem; }
+  .handbook-actions { flex-direction: column; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  :focus-visible { outline-color: Highlight; }
+}
