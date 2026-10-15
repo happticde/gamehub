@@ -81,7 +81,7 @@ func TestGogHandoffHandler_PendingResult_RequiresAllowedOrigin(t *testing.T) {
 	}
 }
 
-func TestGogHandoffHandler_AllowsNonceBoundPrivateOrigin(t *testing.T) {
+func TestGogHandoffHandler_RejectsSelfDeclaredPrivateOrigin(t *testing.T) {
 	state := newGogHandoffState()
 	handler := state.handler("nonce", mustParseGogHandoffOrigins(t, "http://localhost:3005"))
 
@@ -90,11 +90,11 @@ func TestGogHandoffHandler_AllowsNonceBoundPrivateOrigin(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusAccepted {
-		t.Fatalf("private origin handoff status = %d, want %d", response.Code, http.StatusAccepted)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("private origin handoff status = %d, want %d", response.Code, http.StatusForbidden)
 	}
-	if response.Header().Get("Access-Control-Allow-Origin") != "http://192.168.1.25:3005" {
-		t.Fatalf("private origin CORS header was not set")
+	if response.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("unapproved private origin received CORS permission")
 	}
 }
 

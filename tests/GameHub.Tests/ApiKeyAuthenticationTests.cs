@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
+using Microsoft.Extensions.Hosting;
+using Moq;
 
 namespace GameHub.Tests;
 
@@ -16,7 +18,7 @@ namespace GameHub.Tests;
 /// Tests for the ApiKeyAuthenticationHandler — the core security component.
 ///
 /// Covers all four scenarios:
-///   1. No key configured → auth disabled (backward compatible)
+///   1. No key configured → fail closed unless anonymous development is explicitly enabled
 ///   2. Key configured, no header → 401
 ///   3. Key configured, wrong key → 401
 ///   4. Key configured, correct key → authenticated
@@ -31,7 +33,8 @@ public class ApiKeyAuthenticationTests
     /// </summary>
     private async Task<ApiKeyAuthenticationHandler> CreateHandler(
         Dictionary<string, string?> configValues,
-        HttpContext httpContext)
+        HttpContext httpContext,
+        string environmentName = "Development")
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(configValues)
@@ -47,7 +50,8 @@ public class ApiKeyAuthenticationTests
         var loggerFactory = NullLoggerFactory.Instance;
 
         var handler = new ApiKeyAuthenticationHandler(
-            options, loggerFactory, UrlEncoder.Default, configuration);
+            options, loggerFactory, UrlEncoder.Default, configuration,
+            Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == environmentName));
 
         var scheme = new AuthenticationScheme(
             ApiKeyAuthenticationHandler.SchemeName,
@@ -69,11 +73,11 @@ public class ApiKeyAuthenticationTests
     }
 
     // =========================================================================
-    // Scenario 1: No API key configured → auth disabled
+    // Scenario 1: Missing API keys fail closed; anonymous development is an explicit opt-in.
     // =========================================================================
 
     [Fact]
-    public async Task NoKeyConfigured_AllowsAllRequests()
+    public async Task NoKeyConfigured_FailsClosed()
     {
         var context = CreateHttpContext();
         var handler = await CreateHandler(
@@ -82,12 +86,11 @@ public class ApiKeyAuthenticationTests
 
         var result = await handler.AuthenticateAsync();
 
-        Assert.True(result.Succeeded);
-        Assert.Equal("anonymous", result.Principal?.Identity?.Name);
+        Assert.False(result.Succeeded);
     }
 
     [Fact]
-    public async Task NullKeyConfigured_AllowsAllRequests()
+    public async Task NullKeyConfigured_FailsClosed()
     {
         var context = CreateHttpContext();
         var handler = await CreateHandler(
@@ -96,7 +99,45 @@ public class ApiKeyAuthenticationTests
 
         var result = await handler.AuthenticateAsync();
 
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task ExplicitAnonymousDevelopment_NoBrowserAuthentication_AllowsDefaultTenant()
+    {
+        var handler = await CreateHandler(new Dictionary<string, string?>
+        {
+            [AuthenticationSafety.AnonymousDevelopmentKey] = "true"
+        }, CreateHttpContext());
+        var result = await handler.AuthenticateAsync();
         Assert.True(result.Succeeded);
+        Assert.Equal(GameHubTenantDefaults.DefaultTenantId.ToString("D"),
+            result.Principal?.FindFirst(GameHubClaimTypes.TenantId)?.Value);
+    }
+
+    [Fact]
+    public async Task ProductionHandler_AnonymousFlagCannotDisableAuthentication()
+    {
+        var handler = await CreateHandler(new Dictionary<string, string?>
+        {
+            [AuthenticationSafety.AnonymousDevelopmentKey] = "true"
+        }, CreateHttpContext(), "Production");
+        Assert.False((await handler.AuthenticateAsync()).Succeeded);
+    }
+
+    [Theory]
+    [InlineData("Authentication:Jwt:SigningKey", "configured-signing-key")]
+    [InlineData("Authentication:Frontend:Enabled", "true")]
+    [InlineData("Authentication:Oidc:Enabled", "true")]
+    [InlineData("MultiUser:Enabled", "true")]
+    public async Task ExplicitAnonymousDevelopment_BrowserAuthenticationConfigured_CannotBypassLogin(string key, string value)
+    {
+        var handler = await CreateHandler(new Dictionary<string, string?>
+        {
+            [AuthenticationSafety.AnonymousDevelopmentKey] = "true",
+            [key] = value
+        }, CreateHttpContext());
+        Assert.False((await handler.AuthenticateAsync()).Succeeded);
     }
 
     // =========================================================================

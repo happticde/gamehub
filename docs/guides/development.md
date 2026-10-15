@@ -24,6 +24,12 @@ docker exec -w /workspaces/game-library-backend/services/cli game-library-backen
 
 For documentation commands, see [Maintaining documentation](../documentation.md).
 
+For an intentionally anonymous local service, explicitly set `ASPNETCORE_ENVIRONMENT=Development`
+and `Authentication__AllowAnonymousLocalDevelopment=true`, leave browser/JWT/OIDC/multi-user
+authentication disabled, and bind only to loopback. Missing keys alone never disable authentication.
+The Next.js dev server defaults browser origin checks to `http://localhost:3005`; set `PUBLIC_ORIGIN`
+when using a different dev origin. Do not use this anonymous setup for the Compose deployment.
+
 ## Make a focused change
 
 Start a short-lived branch from current `main` and integrate through a pull request. Never commit

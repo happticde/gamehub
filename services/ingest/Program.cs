@@ -44,7 +44,7 @@ builder.Services.AddTransient<IEpicFetcher>(
 // External callers use the compatibility API key, which always maps to one server-configured
 // tenant. Core uses a separate internal key plus tenant header. Selecting the delegation
 // scheme whenever either internal header is present makes spoofed partial requests fail closed.
-builder.Services.AddApiKeyAuthentication(builder.Configuration);
+builder.Services.AddApiKeyAuthentication(builder.Configuration, builder.Environment);
 const string ingestAuthenticationScheme = "GameHubIngest";
 builder.Services.AddAuthentication(options =>
     {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rejectUnsafeBrowserRequest } from "@/lib/browser-request";
 import {
     ACCESS_TOKEN_COOKIE,
     REFRESH_TOKEN_COOKIE,
@@ -19,6 +20,8 @@ type CoreRouteContext = { params: Promise<{ path: string[] }> };
  * this server route translates the access cookie into the Authorization header Core expects.
  */
 async function proxyCore(request: NextRequest, context: CoreRouteContext): Promise<NextResponse> {
+    const rejection = rejectUnsafeBrowserRequest(request);
+    if (rejection) return rejection;
     const { path } = await context.params;
     const corePath = `/${path.map(encodeURIComponent).join("/")}${request.nextUrl.search}`;
     const body = request.method === "GET" || request.method === "HEAD"

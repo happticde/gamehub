@@ -51,8 +51,8 @@ jobs:
         run: |
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq 'add' > "$RUNNER_TEMP/docs-releases.json"
-      - run: npm ci --no-fund
-        working-directory: docs/site
+      - name: Install documentation dependencies (retry transient network failures)
+        run: bash scripts/ci/npm-ci.sh docs/site
       - name: Verify and build the complete versioned site
         env:
           DOCS_RELEASES_FILE: ${{ runner.temp }}/docs-releases.json
@@ -64,7 +64,7 @@ jobs:
           python3 scripts/ci/export-source.py "$RUNNER_TEMP/docs-source"
           trivy fs --scanners vuln --include-dev-deps --format json \
             --output "$RUNNER_TEMP/trivy-docs.json" "$RUNNER_TEMP/docs-source/docs/site"
-          python3 scripts/ci/gate-trivy.py "$RUNNER_TEMP/trivy-docs.json"
+          python3 scripts/ci/gate-trivy.py "$RUNNER_TEMP/trivy-docs.json" --target-prefix docs/site
       - name: Fingerprint documentation, renderer, and release versions
         run: node docs/site/scripts/fingerprint.mjs
       - id: compare

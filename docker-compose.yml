@@ -1,4 +1,4 @@
-# Production-Ready Docker Compose
+# Secure local-port deployment baseline; expose the frontend through a trusted HTTPS proxy.
 # To deploy: docker compose up -d --build
 
 services:
@@ -10,12 +10,13 @@ services:
         helper-source: ./services/cli
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       # Use the internal docker service name to connect to the backend
       - CORE_URL=http://core:8080
       - INGEST_URL=http://ingest:8080
-      - AUTH_ENABLED=${GAMEHUB_FRONTEND_AUTH_ENABLED:-false}
+      - PUBLIC_ORIGIN=${GAMEHUB_PUBLIC_ORIGIN:-http://localhost:3000}
+      - AUTH_ENABLED=${GAMEHUB_FRONTEND_AUTH_ENABLED:-true}
       - AUTH_COOKIE_SECURE=${GAMEHUB_AUTH_COOKIE_SECURE:-false}
       - MULTI_USER_ENABLED=${GAMEHUB_MULTI_USER_ENABLED:-false}
       - OIDC_ENABLED=${GAMEHUB_OIDC_ENABLED:-false}
@@ -44,12 +45,12 @@ services:
       context: .
       dockerfile: services/ingest/Dockerfile
     restart: unless-stopped
-    ports: [ "5000:8080" ]
+    ports: [ "127.0.0.1:5000:8080" ]
     volumes: [ "gamehub_data:/app/data" ]
     environment:
       - Database__Provider=${INGEST_DB_PROVIDER:-Sqlite}
       - ConnectionStrings__DefaultConnection=${INGEST_DB_CONN:-Data Source=/app/data/ingest.db}
-      - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
+      - Authentication__ApiKey=${GAMEHUB_API_KEY:?Set a strong GameHub API key}
       - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       - Authentication__ServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:-}
       - MultiUser__Enabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
@@ -67,20 +68,20 @@ services:
       context: .
       dockerfile: services/core/Dockerfile
     restart: unless-stopped
-    ports: [ "5001:8080" ]
+    ports: [ "127.0.0.1:5001:8080" ]
     volumes: [ "gamehub_data:/app/data" ]
     environment:
       - Database__Provider=${CORE_DB_PROVIDER:-Postgres}
-      - ConnectionStrings__Postgres=Host=db;Port=5432;Database=${POSTGRES_DB:-gamehub_core};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres_password}
+      - ConnectionStrings__Postgres=Host=db;Port=5432;Database=${POSTGRES_DB:-gamehub_core};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?Set a strong PostgreSQL password}
       - ConnectionStrings__Sqlite=Data Source=/app/data/core.db
       - Services__IngestUrl=http://ingest:8080
       - Services__IngestServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:-}
-      - Authentication__ApiKey=${GAMEHUB_API_KEY:-}
+      - Authentication__ApiKey=${GAMEHUB_API_KEY:?Set a strong GameHub API key}
       - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
-      - Authentication__Jwt__SigningKey=${GAMEHUB_JWT_SIGNING_KEY:-}
+      - Authentication__Jwt__SigningKey=${GAMEHUB_JWT_SIGNING_KEY:?Set an independent JWT signing key}
       - Authentication__Jwt__RefreshTokenLifetimeDays=${GAMEHUB_JWT_REFRESH_TOKEN_DAYS:-30}
       # Core validates these mirrored BFF states so a partial rollout cannot activate the gate.
-      - Authentication__Frontend__Enabled=${GAMEHUB_FRONTEND_AUTH_ENABLED:-false}
+      - Authentication__Frontend__Enabled=${GAMEHUB_FRONTEND_AUTH_ENABLED:-true}
       - Authentication__Frontend__SecureCookies=${GAMEHUB_AUTH_COOKIE_SECURE:-false}
       - Authentication__Frontend__MultiUserEnabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
       - Authentication__Oidc__Enabled=${GAMEHUB_OIDC_ENABLED:-false}
@@ -112,9 +113,9 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-gamehub_core}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres_password}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set a strong PostgreSQL password}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

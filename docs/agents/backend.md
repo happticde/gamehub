@@ -14,7 +14,8 @@ Two ASP.NET Core microservices:
 - **AuthenticationHandler<T>** — API key auth using ASP.NET's pipeline, not raw middleware.
 
 ## Configuration
-- Auth: `Authentication:ApiKey` in appsettings.json or `Authentication__ApiKey` env var. Empty = legacy auth-disabled mode. `Authentication:TenantId` maps the API key to a trusted tenant claim. Setting `Authentication:Jwt:SigningKey` (minimum 32 UTF-8 bytes) enables JWT validation and token issuance. `Authentication:Jwt:RefreshTokenLifetimeDays` controls rotating opaque refresh sessions (default 30, range 1–90).
+- Auth: `Authentication:ApiKey` in appsettings.json or `Authentication__ApiKey` env var. Missing keys fail closed. Anonymous local services require both Development and `Authentication:AllowAnonymousLocalDevelopment=true`, incompatible with JWT/frontend/OIDC/multi-user authentication. Production API/service keys require 32–512 printable non-space ASCII characters. `Authentication:TenantId` maps the API key to a trusted tenant claim. Setting `Authentication:Jwt:SigningKey` (minimum 32 UTF-8 bytes) enables JWT validation and token issuance. `Authentication:Jwt:RefreshTokenLifetimeDays` controls rotating opaque refresh sessions (default 30, range 1–90).
+- Auth attempt limits use hashed normalized-email, refresh-token, provider-token, or trusted account/tenant buckets after bounded model binding. They never use browser-selected forwarding headers or a shared BFF source IP. A process-wide concurrency budget protects verification work.
 - Physical product catalogue: `ProductCatalog:Provider` accepts only `None` until ADR-014's
   permission and representative benchmark gate is satisfied. `ProductCatalog:TimeoutMilliseconds`
   defaults to 1500 and accepts 250–5000. No catalogue credential exists in Phase 2B. Local

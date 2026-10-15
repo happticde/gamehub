@@ -55,6 +55,7 @@
 - Helper launches choose a fresh dynamic loopback status port per attempt and pass it as non-secret
   `statusPort` metadata. Poll that exact port; do not restore the shared fixed slot for new launches.
   Ship frontend and helper updates together. Origin/launch-ID validation remains mandatory.
+- Browser mutation routes use `rejectUnsafeBrowserRequest()` before cookie use, body reads, or upstream work. `PUBLIC_ORIGIN` is the trusted exact browser origin (or configured OIDC callback origin outside Compose), never a Host/forwarded-header decision. Back-channel logout remains outside this browser-only boundary. Protocol-handler launches require native confirmation of the destination before any provider capture or loopback status server starts.
 - The active physical-capture UI is manual-first via the existing IGDB enrichment search. It must
   debounce requests, reject stale responses, require explicit result and PS3/PS4/PS5 selection, and
   write only from the final confirmation. IGDB platform data is a hint only. Barcode, typed GTIN,

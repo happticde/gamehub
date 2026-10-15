@@ -1,5 +1,12 @@
 # Platform Connect Helpers
 
+Every protocol-handler launch requires a native macOS confirmation showing the exact receiving
+GameHub origin before any login browser or loopback status endpoint starts. Cancel unexpected
+requests. URL parameters and private-network addresses cannot grant themselves CORS access. Manual
+CLI handoff commands must specify the actual frontend with `--origin` when it differs from the
+listed defaults. Install the updated helper and frontend together; an older helper does not gain
+this protection from a frontend-only update.
+
 This guide is the practical operator runbook for GameHub's local account-connect helpers. For the
 lower-level protocol and payload contract, see
 [Platform Connect Helper Contract](gog-connect-helper-contract.md).

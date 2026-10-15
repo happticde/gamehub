@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rejectUnsafeBrowserRequest } from "@/lib/browser-request";
 import {
     REFRESH_TOKEN_COOKIE,
     clearAuthCookies,
@@ -11,6 +12,8 @@ export const runtime = "nodejs";
 
 /** Revokes locally, clears every GameHub auth cookie, then optionally ends provider SSO. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    const rejection = rejectUnsafeBrowserRequest(request);
+    if (rejection) return rejection;
     const refreshToken = request.cookies.get(REFRESH_TOKEN_COOKIE)?.value;
     const location = await resolveLogoutLocation(
         refreshToken,

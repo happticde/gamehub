@@ -1,6 +1,7 @@
 """Exercise checksum rejection, source boundaries and real git-cliff version decisions."""
 
 import hashlib
+from datetime import date
 import importlib.util
 import io
 import json
@@ -34,9 +35,26 @@ class ToolBoundaryTests(unittest.TestCase):
             {"Severity": "HIGH", "Status": "FAIL", "ID": "bad-config"},
             {"Severity": "HIGH", "Status": "PASS", "ID": "good-config"},
         ]}]}
-        self.assertEqual(gate.blocking_findings(report), [("image", "fixed-critical"), ("image", "bad-config")])
+        self.assertEqual(gate.blocking_findings(report), [("image", "fixed-critical"), ("image", "unfixed-high"), ("image", "bad-config")])
         with self.assertRaises(ValueError):
             gate.blocking_findings({"SchemaVersion": 2, "Results": []})
+
+    def test_unfixed_high_exception_is_scoped_expires_and_never_hides_a_fix_or_critical(self):
+        gate = load_module("gate-trivy")
+        exception = {"vulnerability": "CVE-test", "package": "braces", "version": "3.0.3",
+                     "targets": ["frontend/package-lock.json"], "expires": "2026-11-14",
+                     "owner": "Maintainers", "reason": "No patch; reviewed build-only path"}
+        vulnerability = {"Severity": "HIGH", "VulnerabilityID": "CVE-test",
+                         "PkgName": "braces", "InstalledVersion": "3.0.3"}
+        result = {"Target": "frontend/package-lock.json", "Vulnerabilities": [vulnerability]}
+        report = {"SchemaVersion": 2, "Results": [result]}
+        self.assertEqual(gate.blocking_findings(report, [exception], date(2026, 10, 15)), [])
+        self.assertTrue(gate.blocking_findings(report, [exception], date(2026, 11, 15)))
+        for change in [{"FixedVersion": "3.0.4"}, {"Severity": "CRITICAL"}, {"InstalledVersion": "3.0.2"}]:
+            modified = {"SchemaVersion": 2, "Results": [{**result, "Vulnerabilities": [{**vulnerability, **change}]}]}
+            self.assertTrue(gate.blocking_findings(modified, [exception], date(2026, 10, 15)))
+        result["Target"] = "runtime-image"
+        self.assertTrue(gate.blocking_findings(report, [exception], date(2026, 10, 15)))
 
     def test_corrupt_tool_archive_is_rejected_before_extraction(self):
         with self.assertRaisesRegex(ValueError, "checksum"):

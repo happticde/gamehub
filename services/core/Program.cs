@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Security.Claims;
-using System.Threading.RateLimiting;
 using GameHub.Core.Data;
 using GameHub.Core.Models.Auth;
 using GameHub.Core.Services;
@@ -10,7 +9,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -64,24 +62,10 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// Login endpoints are attractive brute-force targets. This named policy limits each
-// remote IP address independently, so one noisy client does not consume the allowance
-// for every other client. QueueLimit=0 rejects excess attempts immediately with HTTP 429
-// instead of holding password-verification work in memory.
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy(AuthRateLimitPolicies.Token, context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-});
+// Browser callers share the BFF's transport address. Throttle bounded authentication
+// models/account identities instead; never trust a forwarded browser IP as identity.
+builder.Services.AddSingleton<AuthAttemptLimiter>();
+builder.Services.AddScoped<AuthAttemptLimitFilter>();
 
 // --- Health Checks (Improvement #9) ---
 // Registers a /health endpoint that checks DB connectivity.
@@ -212,7 +196,7 @@ if (syncStatus.IsEnabled)
 // --- Authentication (ADR-002) ---
 // Always register the legacy API-key handler first. It remains the only/default scheme
 // when JWT has no signing key, which preserves existing CLI and service-to-service clients.
-builder.Services.AddApiKeyAuthentication(builder.Configuration);
+builder.Services.AddApiKeyAuthentication(builder.Configuration, builder.Environment);
 if (jwtSettings.IsEnabled)
 {
     // A policy scheme is a dispatcher, not another credential format. Controllers can keep
@@ -466,10 +450,7 @@ if (app.Environment.IsDevelopment())
 app.MapHealthChecks("/health");
 
 // --- Authentication & Authorization ---
-// Rate limiting must run before endpoint execution. Authentication then validates the
-// selected credential and creates HttpContext.User; authorization evaluates [Authorize]
-// metadata against that principal before MapControllers invokes an action.
-app.UseRateLimiter();
+// The MVC attempt filter runs after authenticated identity and bounded model binding.
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rejectUnsafeBrowserRequest } from "@/lib/browser-request";
 import {
     CoreAuthError,
     CoreOidcLinkTokenResponse,
@@ -14,6 +15,8 @@ import { validateFrontendMultiUserConfiguration } from "@/lib/multi-user";
 
 /** Browser-facing login endpoint. Core verifies the password; Next.js owns the cookies. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    const rejection = rejectUnsafeBrowserRequest(request);
+    if (rejection) return rejection;
     try {
         validateFrontendMultiUserConfiguration();
     } catch {

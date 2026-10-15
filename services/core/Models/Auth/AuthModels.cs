@@ -1,12 +1,5 @@
 namespace GameHub.Core.Models.Auth;
 
-/// <summary>Named rate-limit policies used by authentication endpoints.</summary>
-public static class AuthRateLimitPolicies
-{
-    /// <summary>Per-IP fixed-window policy applied to password/token exchange.</summary>
-    public const string Token = "auth-token";
-}
-
 /// <summary>
 /// Credentials used to create the first local account for a tenant. TenantId is deliberately
 /// absent: bootstrap gets it from the authenticated API-key claim.

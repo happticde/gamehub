@@ -14,7 +14,7 @@ containers; restart alone does not update a container's environment.
 | `INGEST_DB_CONN` | `Data Source=/app/data/ingest.db` in the baseline |
 | `POSTGRES_DB` | `gamehub_core` |
 | `POSTGRES_USER` | `postgres` |
-| `POSTGRES_PASSWORD` | Replace the development fallback before deployment |
+| `POSTGRES_PASSWORD` | Required; no fallback password |
 | `IGDB_CLIENT_ID` | Twitch application client ID for IGDB metadata |
 | `IGDB_CLIENT_SECRET` | Twitch application secret for IGDB metadata |
 
@@ -26,14 +26,15 @@ use internal Compose hostnames; keep those distinct from public browser URLs.
 
 | Variable | Requirement / purpose |
 | --- | --- |
-| `GAMEHUB_API_KEY` | Compatibility/operator key; empty permits legacy auth-disabled mode |
+| `GAMEHUB_API_KEY` | Required by Compose; 32–512 printable non-space ASCII characters outside Development |
 | `GAMEHUB_TENANT_ID` | Trusted compatibility tenant; defaults to the original default tenant |
 | `GAMEHUB_INGEST_SERVICE_KEY` | Independent Core-to-Ingest delegation key |
 | `GAMEHUB_CREDENTIAL_KEY_VERSION` | Active vault key version; defaults to `1` |
 | `GAMEHUB_CREDENTIAL_KEY_1` | Base64-encoded 32-byte AES vault key |
-| `GAMEHUB_JWT_SIGNING_KEY` | At least 32 UTF-8 bytes; enables GameHub JWT issuance/validation |
+| `GAMEHUB_JWT_SIGNING_KEY` | Required by Compose; independent secret of at least 32 UTF-8 bytes |
 | `GAMEHUB_JWT_REFRESH_TOKEN_DAYS` | `30`; supported range `1`–`90` |
-| `GAMEHUB_FRONTEND_AUTH_ENABLED` | `false`; enable the frontend authentication flow |
+| `GAMEHUB_FRONTEND_AUTH_ENABLED` | `true` in Compose; enables the frontend authentication flow |
+| `GAMEHUB_PUBLIC_ORIGIN` | Exact browser origin; Compose defaults to `http://localhost:3000`; set the external HTTPS origin behind a proxy |
 | `GAMEHUB_AUTH_COOKIE_SECURE` | `false` locally; requires true for production HTTPS/OIDC |
 | `GAMEHUB_MULTI_USER_ENABLED` | `false`; explicit guarded admission switch mirrored across components |
 

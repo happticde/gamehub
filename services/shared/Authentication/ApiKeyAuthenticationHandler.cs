@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 
 namespace GameHub.Shared.Authentication;
 
@@ -18,7 +19,7 @@ namespace GameHub.Shared.Authentication;
 ///   - Standard 401/403 responses via the authentication pipeline
 ///
 /// Behavior:
-///   - If no API key is configured → auth is disabled (all requests succeed)
+///   - Missing API keys fail closed unless anonymous development is explicitly enabled
 ///   - If API key is configured → X-Api-Key header must match
 ///   - Assigns the configured server-side tenant, or the legacy default tenant
 ///   - Creates a ClaimsPrincipal with "ApiKeyUser" identity (ready for role claims)
@@ -38,15 +39,18 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
     private const string TenantConfigKey = "Authentication:TenantId";
 
     private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _environment;
 
     public ApiKeyAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory loggerFactory,
         UrlEncoder encoder,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHostEnvironment environment)
         : base(options, loggerFactory, encoder)
     {
         _configuration = configuration;
+        _environment = environment;
     }
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -75,12 +79,15 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             tenantId = configuredTenantId.ToString("D");
         }
 
-        // If no API key is configured, auth is disabled — let everything through.
-        // This preserves backward compatibility for local dev.
+        // JWT or frontend login must never leave an anonymous alternative authentication path.
         var configuredKey = _configuration[ConfigKey];
-        if (string.IsNullOrEmpty(configuredKey))
+        if (string.IsNullOrWhiteSpace(configuredKey))
         {
-            Logger.LogDebug("No API key configured — authentication disabled");
+            if (!AuthenticationSafety.AllowsAnonymous(_configuration, _environment))
+            {
+                return Task.FromResult(AuthenticateResult.Fail("API-key authentication is not configured"));
+            }
+            Logger.LogDebug("Explicit anonymous development access enabled");
             var anonymousClaims = new[]
             {
                 new Claim(ClaimTypes.Name, "anonymous"),

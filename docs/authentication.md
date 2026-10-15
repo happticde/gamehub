@@ -139,9 +139,22 @@ GAMEHUB_JWT_SIGNING_KEY=replace-with-a-random-secret-of-at-least-32-bytes
 GAMEHUB_FRONTEND_AUTH_ENABLED=true
 ```
 
-Restart the Compose services after changing authentication configuration. Leaving
-`GAMEHUB_JWT_SIGNING_KEY` empty and `GAMEHUB_FRONTEND_AUTH_ENABLED=false` preserves the legacy
-local mode without a login screen.
+Recreate the Compose services after changing authentication configuration. Compose requires
+independent API/JWT keys and a PostgreSQL password; missing secrets no longer enable anonymous
+access. Set `GAMEHUB_PUBLIC_ORIGIN` to the exact frontend origin. Browser mutation routes reject
+missing, foreign, and sibling origins before using session cookies; the provider callback and
+server-to-server logout retain their own protocol validation.
+
+Outside Compose, an explicitly anonymous development instance requires both
+`ASPNETCORE_ENVIRONMENT=Development` and `Authentication__AllowAnonymousLocalDevelopment=true`.
+It cannot be combined with JWT, frontend authentication, OIDC, or multi-user enablement. Keep this
+instance bound to loopback. Production rejects that opt-in, and an absent API key never provides
+an anonymous alternative to configured JWT authentication.
+
+Authentication attempts have separate hashed credential/account buckets and a bounded concurrent
+verification budget. They do not trust forwarded client-IP headers or share a ten-request budget
+for all browsers behind one BFF. Per-account password protection intentionally limits repeated
+attempts for the same normalized email; it does not grant that email any identity or tenant rights.
 
 `GAMEHUB_INGEST_SERVICE_KEY` is an internal Core-to-Ingest credential and must not reuse the
 external API key. Only requests authenticated with this service key may supply

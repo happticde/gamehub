@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rejectUnsafeBrowserRequest } from "@/lib/browser-request";
 import {
     ACCESS_TOKEN_COOKIE,
     REFRESH_TOKEN_COOKIE,
@@ -25,10 +26,10 @@ type EpicConnectCompleteRequest = {
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+    const rejection = rejectUnsafeBrowserRequest(request);
+    if (rejection) return rejection;
     let response: NextResponse;
     try {
-        validateSameOrigin(request);
-
         const sealedTransaction = request.cookies.get(EPIC_CONNECT_TRANSACTION_COOKIE)?.value;
         if (!sealedTransaction) throw new Error("missing_epic_connect_transaction");
 
@@ -150,13 +151,6 @@ async function copyCoreJsonResponse(upstream: Response): Promise<NextResponse> {
         status: upstream.status,
         headers,
     });
-}
-
-function validateSameOrigin(request: NextRequest): void {
-    const origin = request.headers.get("origin");
-    if (origin && origin !== request.nextUrl.origin) {
-        throw new Error("invalid_epic_connect_origin");
-    }
 }
 
 function readAuthorizationCode(value: unknown): string {

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "vulnerability": "CVE-2026-93687",
+      "package": "braces",
+      "version": "3.0.3",
+      "targets": ["frontend/package-lock.json", "docs/site/package-lock.json"],
+      "expires": "2026-11-14",
+      "owner": "GameHub maintainers",
+      "reason": "No upstream patch exists as of 2026-10-15. These source-lockfile occurrences belong to lint/documentation build tooling; no public request path supplying attacker-controlled patterns was found. Do not expose development servers or process untrusted glob patterns. Reassess before expiry; runtime image findings are not covered."
+    }
+  ]
+}

@@ -47,6 +47,7 @@ var (
 		return err == nil
 	}
 	startPsnRemoteDebugChrome = defaultStartPsnRemoteDebugChrome
+	confirmHelperOrigin       = defaultConfirmHelperOrigin
 )
 
 type helperLaunchRequest struct {
@@ -146,6 +147,14 @@ func runHelperLaunch(cmd *cobra.Command, args []string) error {
 	}
 	if request.Platform != "gog" && request.Platform != "psn" && request.Platform != "epic" {
 		return fmt.Errorf("unsupported helper platform %q", request.Platform)
+	}
+	// The URI is untrusted input, including its origin, launch ID, and status port. Obtain
+	// independent native consent before opening a browser or exposing even the status nonce.
+	if request.Origin == "" {
+		return fmt.Errorf("helper launch requires an explicit GameHub origin")
+	}
+	if err := confirmHelperOrigin(cmd.Context(), request.Origin, request.Platform); err != nil {
+		return fmt.Errorf("helper connection was not approved: %w", err)
 	}
 
 	var launchStatus *helperLaunchStatusState
@@ -340,6 +349,26 @@ func defaultPsnRemoteDebugProfileDir() (string, error) {
 	return filepath.Join(cacheDir, "GameHub", psnChromeProfileDirName), nil
 }
 
+const helperOriginConfirmationScript = `on run argv
+set targetOrigin to item 1 of argv
+set providerName to item 2 of argv
+set messageText to "Allow this website to receive your " & providerName & " account connection?" & return & return & targetOrigin & return & return & "Continue only if this is your GameHub website. Cancel unexpected requests."
+display dialog messageText with title "GameHub Helper" buttons {"Cancel", "Connect"} default button "Cancel" cancel button "Cancel" with icon caution
+end run`
+
+func defaultConfirmHelperOrigin(ctx context.Context, origin string, provider string) error {
+	if helperRuntimeGOOS != "darwin" {
+		return fmt.Errorf("native approval is unavailable; use the explicit connect command with --origin instead")
+	}
+	approvalCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	// Pass display values as argv, never as interpolated AppleScript or shell source.
+	if err := exec.CommandContext(approvalCtx, "osascript", "-e", helperOriginConfirmationScript, origin, provider).Run(); err != nil {
+		return fmt.Errorf("native origin confirmation was cancelled or unavailable")
+	}
+	return nil
+}
+
 func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 	parsed, err := url.Parse(strings.TrimSpace(value))
 	if err != nil {
@@ -362,6 +391,9 @@ func parseHelperLaunchURL(value string) (helperLaunchRequest, error) {
 
 	values := parsed.Query()
 	for name := range values {
+		if len(values[name]) != 1 {
+			return helperLaunchRequest{}, fmt.Errorf("helper URL parameters must appear exactly once")
+		}
 		switch strings.ToLower(name) {
 		case "origin", "launchid", "statusport":
 		case "authorizationcode", "code", "cookie", "cookies", "gog-al", "gogal", "gogalcookie", "npsso", "psnauthbearertoken", "psnauthrefreshtoken", "jsessionid", "pdccws_p", "sb-cdn.session", "psn-csrf-token", "accesstoken", "refreshtoken", "session", "password", "token", "nonce", "handoff", "handoffurl", "result", "resulturl":
@@ -714,7 +746,7 @@ func startHelperLaunchStatusServer(platform string, launchID string, allowedOrig
 	mux.HandleFunc(helperLaunchStatusPath(platform), state.handler(launchID, allowedOrigins))
 
 	server := &http.Server{
-		Handler:           mux,
+		Handler:           loopbackHostOnly(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

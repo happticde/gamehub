@@ -23,6 +23,11 @@ docker compose up -d --build
 The baseline frontend is at `http://localhost:3000`, Core Swagger at
 `http://localhost:5001/swagger`, and Ingest Swagger at `http://localhost:5000/`.
 Both APIs expose `/health`. Use an actual release tag for a versioned deployment.
+All baseline ports bind to `127.0.0.1`. Compose requires independent API/JWT keys and a PostgreSQL
+password; frontend authentication defaults on. Set `GAMEHUB_PUBLIC_ORIGIN` to the browser-visible
+origin when using a hostname or HTTPS proxy (the local default is `http://localhost:3000`).
+Existing installations should review the [security hardening transition](docs/security-hardening-2026-10-15.md)
+before updating the deployment and installed connection helpers.
 
 ## Documentation
 

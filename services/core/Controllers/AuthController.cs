@@ -7,7 +7,6 @@ using GameHub.Core.Services;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace GameHub.Core.Controllers;
 
@@ -23,6 +22,7 @@ namespace GameHub.Core.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/auth")]
+[RequestSizeLimit(64 * 1024)]
 public sealed class AuthController : ControllerBase
 {
     private readonly AccountService _accounts;
@@ -189,9 +189,8 @@ public sealed class AuthController : ControllerBase
         [FromBody] BootstrapAccountRequest request,
         CancellationToken cancellationToken)
     {
-        // ApiKeyAuthenticationHandler intentionally treats an empty key as authenticated for
-        // backward-compatible local mode. Bootstrap is more sensitive: without a configured
-        // key, anybody reaching the server could claim the first account. Refuse that state.
+        // Even an explicitly anonymous development instance must require an operator key to
+        // bootstrap an account; ordinary local library access never grants account ownership.
         if (string.IsNullOrWhiteSpace(_configuration["Authentication:ApiKey"]))
         {
             return StatusCode(
@@ -256,8 +255,8 @@ public sealed class AuthController : ControllerBase
         [FromBody] ProvisionTenantRequest request,
         CancellationToken cancellationToken)
     {
-        // The API-key handler permits keyless legacy mode for ordinary local endpoints. That
-        // compatibility behavior must never turn tenant creation into a public operation.
+        // The explicit anonymous development opt-in must never turn tenant creation into a
+        // public operation. Provisioning always requires a configured operator credential.
         if (string.IsNullOrWhiteSpace(_configuration["Authentication:ApiKey"]))
         {
             return StatusCode(
@@ -317,7 +316,7 @@ public sealed class AuthController : ControllerBase
     // operation itself. AllowAnonymous bypasses [Authorize], not password verification below.
     [AllowAnonymous]
     // Password verification is intentionally rate-limited to reduce online guessing attacks.
-    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ServiceFilter(typeof(AuthAttemptLimitFilter))]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
@@ -406,7 +405,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpPost("oidc/token")]
     [AllowAnonymous]
-    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ServiceFilter(typeof(AuthAttemptLimitFilter))]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
@@ -576,7 +575,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpPost("oidc/link")]
     [Authorize]
-    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ServiceFilter(typeof(AuthAttemptLimitFilter))]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status409Conflict)]
@@ -643,7 +642,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpPost("oidc/account-deletion-token")]
     [AllowAnonymous]
-    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ServiceFilter(typeof(AuthAttemptLimitFilter))]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
@@ -714,7 +713,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpPost("refresh")]
     [AllowAnonymous]
-    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ServiceFilter(typeof(AuthAttemptLimitFilter))]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
@@ -784,7 +783,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpPut("password")]
     [Authorize]
-    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ServiceFilter(typeof(AuthAttemptLimitFilter))]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]
@@ -845,7 +844,7 @@ public sealed class AuthController : ControllerBase
     /// </summary>
     [HttpDelete("account")]
     [Authorize]
-    [EnableRateLimiting(AuthRateLimitPolicies.Token)]
+    [ServiceFilter(typeof(AuthAttemptLimitFilter))]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<AuthErrorResponse>(StatusCodes.Status401Unauthorized)]

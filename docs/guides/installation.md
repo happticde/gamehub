@@ -8,7 +8,7 @@ required for a Compose installation. Obtain IGDB/Twitch application credentials 
 metadata enrichment. Platform connections are configured after installation.
 
 Choose a local test installation first, or follow [Deployment](deployment.md) for an internet-facing
-instance. Keep an unauthenticated test instance on a trusted machine and network.
+instance. The Compose baseline requires authentication even for a local installation.
 
 ## Get the source matching your version
 
@@ -37,6 +37,10 @@ all trust boundaries.
 
 The Compose baseline defaults Core to PostgreSQL and Ingest to SQLite. Supply a strong PostgreSQL
 password before starting. The configuration reference explains both database providers.
+Compose requires `GAMEHUB_API_KEY`, `GAMEHUB_JWT_SIGNING_KEY`, and `POSTGRES_PASSWORD` and enables
+frontend login by default. Set `GAMEHUB_PUBLIC_ORIGIN` to the exact browser origin if it differs
+from `http://localhost:3000`; requests from another origin, including sibling subdomains, cannot
+perform browser mutations. OIDC callbacks and server-to-server logout keep their separate checks.
 
 ## Start and check the services
 
@@ -52,7 +56,7 @@ docker compose ps
 | Ingest | `http://localhost:5000` | `GET /health`; Swagger at `/` |
 | PostgreSQL | `localhost:5432` | Compose health status |
 
-The baseline publishes these ports. For production, restrict backend/database access and expose
+The baseline binds these ports only to `127.0.0.1`. For production, keep backend/database access private and expose
 the frontend through an HTTPS reverse proxy. A container being started is not the same as being
 healthy; use [Troubleshooting](../DEBUGGING.md) if startup dependencies do not become healthy.
 

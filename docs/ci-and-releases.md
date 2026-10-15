@@ -22,6 +22,12 @@ skipping application builds, Semgrep, application dependency restoration/scannin
 builds. Agent-context-only changes keep the secret scan and aggregate gate.
 Pages publication remains exclusively manual; see [Documentation](documentation.md).
 
+Both documentation workflows install the locked dependencies with `scripts/ci/npm-ci.sh`.
+Recognized npm connection errors retry the complete installation up to three times, waiting
+10 and 20 seconds between attempts. Persistent network failures retain npm's exit status;
+lockfile, integrity, authentication, and lifecycle errors fail immediately. Documentation
+contracts, builds, and vulnerability scans must still succeed after installation.
+
 | Changed files | Additional checks | Runtime images built and scanned |
 | --- | --- | --- |
 | `docs/**` except agent context, or the documentation-only root `Makefile` | Docusaurus build/contracts and targeted documentation dependency scan | None |
@@ -89,9 +95,12 @@ dependencies; no package paths or CVEs are excluded from the gate.
 | Build/contracts | .NET build/tests, Go race tests and vet, frontend lint/security/capture tests/build, and macOS installer contracts. |
 | Workflow/tooling | Actionlint, ShellCheck, checksum rejection, source export boundaries, actual secret detection, Trivy gating, and real git-cliff version decisions. |
 
-Trivy blocks fixable `HIGH`/`CRITICAL` vulnerabilities and failed `HIGH`/`CRITICAL`
-misconfiguration checks. Findings without a published fix remain in the reports and require
-operator review; a green gate does not mean the report is empty. Scanner failures and malformed
+Trivy blocks `HIGH`/`CRITICAL` vulnerabilities and failed `HIGH`/`CRITICAL` misconfiguration checks.
+Unfixed High findings require an exact package/version/target exception with an owner, reason,
+and unexpired review date in `.ci/security-exceptions.json`. Critical findings and newly available
+fixes cannot be exempted. The temporary `braces` build-tool exception expires on 2026-11-14 and
+does not cover runtime images. Full reports retain those findings; a green gate does not mean
+the report is empty. Scanner failures and malformed
 or empty reports fail closed. Reports are retained for seven days. Image transfer artifacts
 are retained for one day to reduce storage costs.
 

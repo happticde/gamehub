@@ -170,8 +170,8 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: docs/site/package-lock.json
-      - run: npm ci --no-fund
-        working-directory: docs/site
+      - name: Install documentation dependencies (retry transient network failures)
+        run: bash scripts/ci/npm-ci.sh docs/site
       - name: Test contracts and build the handbook (including release candidate when applicable)
         env:
           RELEASE_VERSION: ${{ inputs.release-version }}
@@ -188,7 +188,7 @@ jobs:
           mkdir -p reports
           trivy fs --scanners vuln --include-dev-deps --format json \
             --output reports/trivy-docs.json "$RUNNER_TEMP/docs-source/docs/site"
-          python3 scripts/ci/gate-trivy.py reports/trivy-docs.json
+          python3 scripts/ci/gate-trivy.py reports/trivy-docs.json --target-prefix docs/site
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

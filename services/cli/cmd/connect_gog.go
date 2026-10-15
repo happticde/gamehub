@@ -389,15 +389,8 @@ func allowedGogHandoffOrigin(request *http.Request, allowedOrigins map[string]st
 		return origin, true
 	}
 
-	queryOrigin, parsed, err := normalizeGogHandoffOrigin(request.URL.Query().Get("origin"))
-	if err != nil || queryOrigin != origin {
-		return "", false
-	}
-	if !isLocalOrPrivateGogHandoffOrigin(parsed) {
-		return "", false
-	}
-
-	return origin, true
+	// A query parameter (even a private-network address) is never a trust grant.
+	return "", false
 }
 
 func startGogHandoffServer(allowedOrigins map[string]struct{}) (string, *gogHandoffState, func(context.Context) error, error) {
@@ -421,7 +414,7 @@ func startPlatformHandoffServer(platform string, allowedOrigins map[string]struc
 	mux.HandleFunc(resultPath, state.handler(nonce, allowedOrigins))
 
 	server := &http.Server{
-		Handler:           mux,
+		Handler:           loopbackHostOnly(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -472,24 +465,30 @@ func parseGogHandoffOrigins(value string) (map[string]struct{}, error) {
 func normalizeGogHandoffOrigin(value string) (string, *url.URL, error) {
 	origin := strings.TrimSpace(value)
 	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
 		return "", nil, fmt.Errorf("handoff origin %q must be an origin like http://localhost:3005", origin)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", nil, fmt.Errorf("handoff origin %q must use http or https", origin)
 	}
+	for _, character := range parsed.Host {
+		if character < '!' || character > '~' {
+			return "", nil, fmt.Errorf("handoff origin must use a printable ASCII host")
+		}
+	}
 
 	return parsed.Scheme + "://" + parsed.Host, parsed, nil
 }
 
-func isLocalOrPrivateGogHandoffOrigin(origin *url.URL) bool {
-	hostname := strings.ToLower(origin.Hostname())
-	if hostname == "localhost" {
-		return true
-	}
-
-	ip := net.ParseIP(hostname)
-	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified())
+func loopbackHostOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		host, _, err := net.SplitHostPort(request.Host)
+		if err != nil || (host != "127.0.0.1" && host != "localhost") {
+			http.Error(response, "invalid loopback host", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(response, request)
+	})
 }
 
 func init() {
