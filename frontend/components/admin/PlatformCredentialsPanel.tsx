@@ -579,7 +579,7 @@ function GogCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
                 waiting={handoffPolling || helperLaunching}
                 saved={handoffMessage === helperStatusMessage("gog", "saved")}
                 message={handoffMessage}
-                error={handoffError ?? saveError ?? null}
+                error={[saveError, handoffError].filter(Boolean).join(" ") || null}
                 onConnect={launchProtocolHelper}
                 onReset={() => clearHelperState()}
                 onStop={stopHandoffPolling}
@@ -907,7 +907,7 @@ function PsnCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
                 waiting={handoffPolling || helperLaunching}
                 saved={handoffMessage === helperStatusMessage("psn", "saved")}
                 message={handoffMessage}
-                error={handoffError ?? saveError ?? null}
+                error={[saveError, handoffError].filter(Boolean).join(" ") || null}
                 onConnect={launchProtocolHelper}
                 onReset={() => clearHelperState()}
                 onStop={stopHandoffPolling}
@@ -1311,7 +1311,7 @@ function EpicCredentialCard({
                 waiting={handoffPolling || helperLaunching}
                 saved={handoffMessage === helperStatusMessage("epic", "saved")}
                 message={handoffMessage}
-                error={handoffError ?? saveError ?? null}
+                error={[saveError, handoffError].filter(Boolean).join(" ") || null}
                 onConnect={launchProtocolHelper}
                 onReset={() => clearHelperState()}
                 onStop={stopHandoffPolling}

@@ -10,6 +10,9 @@ for Ingest by default.
 For a production installation:
 
 - Expose the frontend through a trusted HTTPS reverse proxy.
+- Compose binds the frontend to `127.0.0.1` by default. If the HTTPS proxy runs on another host,
+  set `GAMEHUB_FRONTEND_BIND_IP` to a reserved private/VPN address on the GameHub host and restrict
+  port 3000 to the proxy host. Keep Core, Ingest, and PostgreSQL on loopback.
 - Keep Core, Ingest, PostgreSQL, and internal service-key routes on private networks.
 - Supply strong independent secrets through your deployment system.
 - Keep databases and vault keys on persistent, backed-up storage.
@@ -19,6 +22,40 @@ For a production installation:
 OIDC configuration does not itself enable production multi-user operation. The default-off
 operator switch and readiness checks remain mandatory. For a self-hosted identity provider,
 use the detailed [Keycloak guide](../keycloak-oidc-setup.md).
+
+## Run the HTTPS proxy on another host
+
+Supply these settings through your deployment environment, replacing the example private IP
+with a reserved address on the GameHub host and the example origin with the browser-facing URL:
+
+```text
+GAMEHUB_FRONTEND_BIND_IP=192.168.1.20
+GAMEHUB_PUBLIC_ORIGIN=https://games.example.com
+GAMEHUB_AUTH_COOKIE_SECURE=true
+```
+
+Point the proxy upstream at `http://192.168.1.20:3000` and restrict port 3000 to the proxy host
+through your network firewall. Publishing on `0.0.0.0` also accepts connections on other IPv4
+interfaces. Docker-published ports can bypass ordinary UFW rules; use network filtering or
+[Docker-aware firewall rules](https://docs.docker.com/engine/network/packet-filtering-firewalls/).
+
+The bind IP controls how the proxy reaches GameHub. The public origin independently controls
+which browser origin may submit writes, including provider credential storage. Recreate the
+frontend after changing these settings:
+
+```bash
+docker compose up -d --no-deps --force-recreate frontend
+```
+
+If the public domain returns a proxy `502` while `/login` returns `200` on the GameHub host,
+check the proxy upstream and the frontend bind IP. The default loopback binding accepts only
+connections local to the GameHub host.
+
+If a provider helper captures a result but saving returns `invalid_request_origin`, verify that
+the frontend's `PUBLIC_ORIGIN` matches the exact external HTTPS origin. Compose supplies it from
+`GAMEHUB_PUBLIC_ORIGIN`, whose default is `http://localhost:3000`. An existing signed-in session
+can still render pages while writes are rejected. Keep the origin check enabled and correct the
+deployment setting before retrying the save.
 
 ## Choose source builds or release images
 

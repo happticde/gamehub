@@ -10,7 +10,7 @@ services:
         helper-source: ./services/cli
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${GAMEHUB_FRONTEND_BIND_IP:-127.0.0.1}:3000:3000"
     environment:
       # Use the internal docker service name to connect to the backend
       - CORE_URL=http://core:8080

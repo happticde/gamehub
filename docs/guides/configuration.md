@@ -9,6 +9,7 @@ containers; restart alone does not update a container's environment.
 
 | Variable | Default / purpose |
 | --- | --- |
+| `GAMEHUB_FRONTEND_BIND_IP` | `127.0.0.1`; host address for the published frontend port. Set to a reserved private/VPN interface address when the HTTPS proxy runs on another host. |
 | `CORE_DB_PROVIDER` | `Postgres`; Core supports `Postgres` or `Sqlite` |
 | `INGEST_DB_PROVIDER` | `Sqlite`; Ingest database provider |
 | `INGEST_DB_CONN` | `Data Source=/app/data/ingest.db` in the baseline |
@@ -21,6 +22,9 @@ containers; restart alone does not update a container's environment.
 Core's Compose SQLite connection is `/app/data/core.db`. Its PostgreSQL connection is built from
 the PostgreSQL variables. Frontend `CORE_URL` and `INGEST_URL`, and Core's `Services__IngestUrl`,
 use internal Compose hostnames; keep those distinct from public browser URLs.
+When the reverse proxy runs on another host, set `GAMEHUB_FRONTEND_BIND_IP` to the GameHub host's
+reserved private or VPN address and allow port 3000 only from that proxy. Core, Ingest, and
+PostgreSQL remain bound to loopback by default.
 
 ## Authentication and encrypted credentials
 
