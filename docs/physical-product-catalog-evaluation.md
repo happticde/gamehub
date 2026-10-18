@@ -95,8 +95,8 @@ Dataset shape:
 Run only in the devcontainer:
 
 ```bash
-docker exec -w /workspaces/game-library-backend \
-  game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub \
+  gamehub_devcontainer-app-1 \
   dotnet run --project tools/product-catalog-benchmark/GameHub.ProductCatalogBenchmark.csproj -- \
   --dataset /path/to/operator-owned-dataset.json \
   --output /path/to/sanitized-report.json

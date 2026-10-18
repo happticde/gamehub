@@ -1,5 +1,5 @@
 {
-    "name": "Game Lib Backend",
+    "name": "GameHub",
     // .NET, Node.js, and Go are installed by the Dockerfile so plain Docker Compose
     // and VS Code Dev Containers use the same toolchain.
     "dockerComposeFile": "docker-compose.yml",

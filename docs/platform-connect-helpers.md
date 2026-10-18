@@ -75,9 +75,9 @@ No new environment variables or provider credentials are required for packaging.
 For local frontend development, generate the same downloads through the devcontainer:
 
 ```bash
-docker exec -w /workspaces/game-library-backend/services/cli \
-  game-library-backend_devcontainer-app-1 \
-  sh scripts/package-macos-helper.sh /workspaces/game-library-backend/frontend/public/downloads/helper
+docker exec -w /workspaces/gamehub/services/cli \
+  gamehub_devcontainer-app-1 \
+  sh scripts/package-macos-helper.sh /workspaces/gamehub/frontend/public/downloads/helper
 ```
 
 Generated downloads are ignored by Git. If they are absent, the assistant reports that downloads

@@ -35,7 +35,7 @@ ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.version=$VERSION \
       org.opencontainers.image.revision=$REVISION \
-      org.opencontainers.image.source="https://github.com/happticde/gamehub"
+      org.opencontainers.image.source="https://github.com/jfk1987/gamehub"
 WORKDIR /app
 
 ENV NODE_ENV=production

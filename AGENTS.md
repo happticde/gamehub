@@ -29,25 +29,25 @@ Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 
 ## Modular Context Files
 
-Before starting work, use `view_file` on the relevant file(s):
+Before starting work, read the relevant file(s) below. Resolve these paths from the current repository root:
 
 | Area | Context File | Contents |
 |-------|--------------|----------|
-| **Frontend** | [frontend.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/agents/frontend.md) | React/Next.js conventions, shadcn/ui rules, user preferences |
-| **Backend** | [backend.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/agents/backend.md) | Service patterns, Core vs Ingest logic, configuration, migrations |
-| **Dev Env** | [dev-env.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/agents/dev-env.md) | Docker exec commands, environment restrictions, build/test workflows |
-| **History** | [history.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/agents/history.md) | Last session summary, "What Changed", current status |
+| **Frontend** | [frontend.md](docs/agents/frontend.md) | React/Next.js conventions, shadcn/ui rules, user preferences |
+| **Backend** | [backend.md](docs/agents/backend.md) | Service patterns, Core vs Ingest logic, configuration, migrations |
+| **Dev Env** | [dev-env.md](docs/agents/dev-env.md) | Docker exec commands, environment restrictions, build/test workflows |
+| **History** | [history.md](docs/agents/history.md) | Last session summary, "What Changed", current status |
 
 ## Key Directories
 
 - `services/core/`: Unified library logic.
 - `services/ingest/`: Platform fetchers.
 - `frontend/`: Next.js application.
-- `docs/`: [ROADMAP.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/ROADMAP.md), [DEBUGGING.md](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/DEBUGGING.md), [adr/](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/docs/adr/)
+- `docs/`: [ROADMAP.md](docs/ROADMAP.md), [DEBUGGING.md](docs/DEBUGGING.md), [adr/](docs/adr/)
 
 ## Reusable Workflow Skills
 
-- Use [gamehub-pr-workflow](file:///Users/jankahnt/Documents/programming/src/csharp/game-library-backend/.agents/skills/gamehub-pr-workflow/SKILL.md) for PR-bound changes: protected branch setup, Docker verification, env-file safeguards, dependency/config checks, English commit, push, and prefilled PR link.
+- Use [gamehub-pr-workflow](.agents/skills/gamehub-pr-workflow/SKILL.md) for PR-bound changes: protected branch setup, Docker verification, env-file safeguards, dependency/config checks, English commit, push, and prefilled PR link.
 
 ## 🚨 Critical AI Agent Rules 🚨
 

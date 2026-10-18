@@ -83,14 +83,14 @@ Example: `GetStats_WithEnrichedGames_ReturnsCorrectCounts`
 
 ```bash
 # Build backend
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet build services/core/GameHub.Core.csproj --verbosity quiet
 
 # Run tests
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet test --verbosity quiet
 
 # Build frontend (if types were added)
-docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub/frontend gamehub_devcontainer-app-1 \
   npm run build
 ```

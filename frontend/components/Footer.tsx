@@ -21,7 +21,7 @@ export function Footer() {
                     <div className="flex items-center gap-4">
                         <span>© {new Date().getFullYear()}</span>
                         <a
-                            href="https://github.com/happticde/game-library-backend"
+                            href="https://github.com/jfk1987/gamehub"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:text-foreground transition-colors"

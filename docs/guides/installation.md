@@ -13,7 +13,7 @@ instance. The Compose baseline requires authentication even for a local installa
 ## Get the source matching your version
 
 ```bash
-git clone https://github.com/happticde/gamehub.git
+git clone https://github.com/jfk1987/gamehub.git
 cd gamehub
 git checkout vX.Y.Z
 ```

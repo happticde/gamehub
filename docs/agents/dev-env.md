@@ -24,21 +24,21 @@
 - Push only the task branch and integrate changes into `main` through a pull request.
 
 ## Docker Shortcuts (via `docker exec`)
-The devcontainer name is: **`game-library-backend_devcontainer-app-1`**. 
-The workspace is mounted at `/workspaces/game-library-backend`.
+The devcontainer name is: **`gamehub_devcontainer-app-1`**.
+The workspace is mounted at `/workspaces/gamehub`.
 
 ### Common Commands
 
 ```bash
 # Backend build
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 dotnet build services/core/GameHub.Core.csproj --verbosity quiet
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 dotnet build services/core/GameHub.Core.csproj --verbosity quiet
 
 # Backend tests
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 dotnet test --verbosity quiet
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 dotnet test --verbosity quiet
 
 # Frontend build
-docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 npm run build
+docker exec -w /workspaces/gamehub/frontend gamehub_devcontainer-app-1 npm run build
 
 # EF Core migrations
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 dotnet ef migrations add <Name> --project services/core/GameHub.Core.csproj
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 dotnet ef migrations add <Name> --project services/core/GameHub.Core.csproj
 ```

@@ -2,6 +2,10 @@
 
 GameHub uses one version for Core, Ingest, Frontend, and the CLI. A release produces three
 multi-platform GHCR images, CLI/helper archives, SHA-256 checksums, and CycloneDX SBOMs.
+Moving source to a new repository does not transfer GitHub Releases or GHCR packages. Publish
+a verified release from this repository before using its image names in a deployment; existing
+packages under another owner retain their own access and visibility settings.
+
 The private frontend npm package version is not the release authority: Git tags, image labels,
 .NET assembly versions, and `gamehub-cli --version` receive the workflow's shared version.
 
@@ -208,7 +212,7 @@ the **Release** workflow. Its only trigger is `workflow_dispatch` in
 [release.yml](../.github/workflows/release.yml).
 
 1. Merge all changes intended for this release through pull requests and confirm CI passed.
-2. Open [Actions → Release](https://github.com/happticde/gamehub/actions/workflows/release.yml).
+2. Open [Actions → Release](https://github.com/jfk1987/gamehub/actions/workflows/release.yml).
 3. Click **Run workflow** and select **main** in the branch selector. The preparation job is
    skipped on other branches, so those runs cannot publish a release.
 4. Set **Version increment** (`bump`) to **auto**, or select an explicit increment from the
@@ -273,13 +277,13 @@ publication jobs. The first runs should be reviewed before relying on this proce
 
 1. Confirm the **Release** run, including `publish-release`, finished successfully. Passing CI
    alone or successful architecture uploads do not confirm a complete release.
-2. Open [GitHub Releases](https://github.com/happticde/gamehub/releases) and check the published
+2. Open [GitHub Releases](https://github.com/jfk1987/gamehub/releases) and check the published
    **GameHub vX.Y.Z** release, its notes, and the downloads listed below. A draft is incomplete.
 3. Check all three GHCR version tags contain Linux AMD64 and ARM64 manifests. For example,
    inspect a published frontend release with:
 
    ```bash
-   docker buildx imagetools inspect ghcr.io/happticde/gamehub-frontend:v0.1.0
+   docker buildx imagetools inspect ghcr.io/jfk1987/gamehub-frontend:v0.1.0
    ```
 
 4. Download the CLI/helper archive for your OS and architecture, verify it against the release's
@@ -296,9 +300,9 @@ update the deployment's image references separately.
 For release `v0.1.0`, the image references are:
 
 ```text
-ghcr.io/happticde/gamehub-core:v0.1.0
-ghcr.io/happticde/gamehub-ingest:v0.1.0
-ghcr.io/happticde/gamehub-frontend:v0.1.0
+ghcr.io/jfk1987/gamehub-core:v0.1.0
+ghcr.io/jfk1987/gamehub-ingest:v0.1.0
+ghcr.io/jfk1987/gamehub-frontend:v0.1.0
 ```
 
 Each manifest supports Linux AMD64 and ARM64. Release tags are preferred for deployments;

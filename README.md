@@ -1,6 +1,6 @@
 # GameHub
 
-![CI](https://github.com/happticde/gamehub/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/jfk1987/gamehub/actions/workflows/ci.yml/badge.svg)
 
 GameHub brings Steam, PlayStation, GOG, Epic, and physical games into one collection. It combines
 cross-platform ownership, IGDB metadata, personal tracking, custom tags, statistics, and portable

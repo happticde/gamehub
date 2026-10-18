@@ -63,9 +63,9 @@ For source builds, check out a published tag and run the Compose build from that
 For prebuilt images, configure your deployment to use all three images from the same release:
 
 ```text
-ghcr.io/happticde/gamehub-core:vX.Y.Z
-ghcr.io/happticde/gamehub-ingest:vX.Y.Z
-ghcr.io/happticde/gamehub-frontend:vX.Y.Z
+ghcr.io/jfk1987/gamehub-core:vX.Y.Z
+ghcr.io/jfk1987/gamehub-ingest:vX.Y.Z
+ghcr.io/jfk1987/gamehub-frontend:vX.Y.Z
 ```
 
 Replace the example tag with an existing release. Release images support Linux AMD64 and ARM64.

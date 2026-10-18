@@ -1,4 +1,4 @@
-name: game-library-backend_devcontainer
+name: gamehub_devcontainer
 
 services:
   app:
