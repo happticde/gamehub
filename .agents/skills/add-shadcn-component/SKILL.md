@@ -68,5 +68,5 @@ export { ComponentName, ComponentNameTrigger, ComponentNameContent }
 ## 4. Verify
 
 ```bash
-docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 npm run build
+docker exec -w /workspaces/gamehub/frontend gamehub_devcontainer-app-1 npm run build
 ```

@@ -3,8 +3,8 @@
 
 DOCS_PORT ?= 3001
 DOCS_VERSION ?=
-DOCS_CONTAINER ?= game-library-backend_devcontainer-app-1
-DOCS_WORKSPACE ?= /workspaces/game-library-backend
+DOCS_CONTAINER ?= gamehub_devcontainer-app-1
+DOCS_WORKSPACE ?= /workspaces/gamehub
 
 MAKEFILE_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 IN_CONTAINER := $(shell test -f /.dockerenv && printf yes)

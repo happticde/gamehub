@@ -12,10 +12,10 @@ The project runs inside a devcontainer. All build/test commands must be executed
 The devcontainer must be running. Verify with:
 
 ```bash
-docker ps --filter name=game-library-backend_devcontainer-app-1 --format '{{.Names}} | {{.Status}}'
+docker ps --filter name=gamehub_devcontainer-app-1 --format '{{.Names}} | {{.Status}}'
 ```
 
-Expected output: `game-library-backend_devcontainer-app-1 | Up ...`
+Expected output: `gamehub_devcontainer-app-1 | Up ...`
 
 If not running, the user needs to open the project in VS Code with the Dev Containers extension.
 
@@ -28,8 +28,8 @@ back to hand-written migrations solely because the command is missing.
 
 | Property | Value |
 |----------|-------|
-| Container name | `game-library-backend_devcontainer-app-1` |
-| Workspace mount | `/workspaces/game-library-backend` |
+| Container name | `gamehub_devcontainer-app-1` |
+| Workspace mount | `/workspaces/gamehub` |
 | .NET version | 10.0 preview |
 | Node.js version | 24 |
 | Go version | 1.26 |
@@ -39,42 +39,42 @@ back to hand-written migrations solely because the command is missing.
 ### Backend Build
 
 ```bash
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet build services/core/GameHub.Core.csproj --verbosity quiet
 ```
 
 To build the Ingest service:
 
 ```bash
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet build services/ingest/GameHub.Ingest.csproj --verbosity quiet
 ```
 
 ### Backend Tests
 
 ```bash
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet test --verbosity quiet
 ```
 
 ### Frontend Build
 
 ```bash
-docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub/frontend gamehub_devcontainer-app-1 \
   npm run build
 ```
 
 ### EF Core Migrations
 
 ```bash
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet ef migrations add <MigrationName> --project services/core/GameHub.Core.csproj
 ```
 
 ### Install npm Package
 
 ```bash
-docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub/frontend gamehub_devcontainer-app-1 \
   npm install <package-name>
 ```
 

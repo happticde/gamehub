@@ -7,18 +7,19 @@ published handbook.
 ## Environment
 
 Use the project's development container for builds, tests, package operations, and migrations.
-The expected container is `game-library-backend_devcontainer-app-1`, with the repository mounted
-at `/workspaces/game-library-backend`. Open the project using your editor's Dev Containers support
-and verify that the container is running.
+The expected container is `gamehub_devcontainer-app-1`, with the repository mounted
+at `/workspaces/gamehub`. Open the project using your editor's Dev Containers support
+and verify that the container is running. After moving the checkout or changing the Compose
+project name, rebuild/reopen the devcontainer so its name and workspace match this checkout.
 
 ```bash
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet test --verbosity quiet
-docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub/frontend gamehub_devcontainer-app-1 \
   npm run lint
-docker exec -w /workspaces/game-library-backend/frontend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub/frontend gamehub_devcontainer-app-1 \
   npm run build
-docker exec -w /workspaces/game-library-backend/services/cli game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub/services/cli gamehub_devcontainer-app-1 \
   go test -race ./...
 ```
 

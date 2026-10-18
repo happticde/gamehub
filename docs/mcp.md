@@ -65,7 +65,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "args": [
         "run",
         "--project",
-        "/path/to/game-library-backend/services/mcp/GameHub.Mcp.csproj",
+        "/path/to/gamehub/services/mcp/GameHub.Mcp.csproj",
         "--no-launch-profile"
       ],
       "env": {
@@ -89,7 +89,7 @@ Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project-level):
       "args": [
         "run",
         "--project",
-        "/path/to/game-library-backend/services/mcp/GameHub.Mcp.csproj",
+        "/path/to/gamehub/services/mcp/GameHub.Mcp.csproj",
         "--no-launch-profile"
       ],
       "env": {
@@ -152,7 +152,7 @@ The MCP server is a thin proxy: it forwards tool calls to the Core REST API and 
 Build the MCP project inside the devcontainer:
 
 ```bash
-docker exec -w /workspaces/game-library-backend game-library-backend_devcontainer-app-1 \
+docker exec -w /workspaces/gamehub gamehub_devcontainer-app-1 \
   dotnet build services/mcp/GameHub.Mcp.csproj --verbosity quiet
 ```
 
