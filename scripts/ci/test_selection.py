@@ -110,7 +110,8 @@ class SelectionTests(unittest.TestCase):
 
     def test_ci_security_unknown_and_full_mode_keep_all_checks(self):
         for path in (".github/workflows/checks.yml", ".ci/tools.json", "scripts/ci/select-checks.py",
-                     ".semgrep.yml", ".gitleaksignore", "cliff.toml", "new-service/main.rs"):
+                     ".semgrep.yml", ".gitleaksignore", "cliff.toml", "new-service/main.rs",
+                     "LICENSE", "licensing/standard/MIT.txt", "licensing/generate.mjs"):
             with self.subTest(path=path):
                 plan = selection.select_checks([path])
                 self.assertTrue(all(plan["jobs"].values()))

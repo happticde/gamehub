@@ -1,8 +1,9 @@
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {copyFileSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {generateNotices} from '../../../licensing/generate.mjs';
 
 const site = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const stableTag = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -168,4 +169,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   prepare({root: path.resolve(site, '../..'), output: site, releases,
     repository: process.env.GITHUB_REPOSITORY || 'jfk1987/gamehub',
     candidate: process.env.DOCS_CANDIDATE_VERSION || ''});
+  const legal = path.join(site, 'static/legal');
+  mkdirSync(legal, {recursive: true});
+  const generated = path.join(site, '.generated/legal');
+  generateNotices({input: site, output: generated});
+  copyFileSync(path.join(generated, 'THIRD_PARTY_NOTICES.txt'), path.join(legal, 'THIRD_PARTY_NOTICES.txt'));
+  copyFileSync(path.resolve(site, '../../LICENSE'), path.join(legal, 'AGPL-3.0-only.txt'));
+  copyFileSync(path.join(site, 'LICENSE'), path.join(legal, 'MIT.txt'));
+
 }

@@ -2,7 +2,10 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "scripts": {
+    "predev": "node scripts/prepare-legal.mjs",
+    "prebuild": "node scripts/prepare-legal.mjs",
     "dev": "next dev -H 0.0.0.0 -p 3005",
     "build": "next build",
     "test:physical-capture": "node --no-warnings --test tests/physical-igdb-capture.test.ts",

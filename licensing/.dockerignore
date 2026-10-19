@@ -1,0 +1,8 @@
+# Expose only original legal inputs and the build wrapper to the named context.
+**
+!LICENSE
+!generate.mjs
+!standard
+!standard/*.txt
+!notices
+!notices/*.txt

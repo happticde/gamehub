@@ -1,5 +1,10 @@
 FROM node:24-alpine AS base
 
+# Compile a dependency-free notice collector for the native build platform.
+FROM golang:1.26.9-bookworm AS notice-builder
+COPY --from=helper-source tools/license-notices/main.go /license-notices.go
+RUN CGO_ENABLED=0 go build -o /license-notices /license-notices.go
+
 # The named context is restricted by services/cli/.dockerignore.
 FROM golang:1.26.9-bookworm AS helper-builder
 WORKDIR /src
@@ -7,7 +12,11 @@ COPY --from=helper-source go.mod go.sum ./
 RUN go mod download
 COPY --from=helper-source . .
 ARG VERSION=dev
-RUN sh scripts/package-macos-helper.sh /downloads "$VERSION"
+ARG REVISION=unknown
+ARG SOURCE_REPOSITORY=jfk1987/gamehub
+COPY --from=license-source . /licensing
+RUN GAMEHUB_LICENSE_DIR=/licensing GAMEHUB_SOURCE_REVISION="$REVISION" \
+    GAMEHUB_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" sh scripts/package-macos-helper.sh /downloads "$VERSION"
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -21,8 +30,15 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Environment variables needed during build can be passed as ARG
-RUN npm run build
+# Source references are public build metadata, never application credentials.
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG SOURCE_REPOSITORY=jfk1987/gamehub
+COPY --from=license-source . /licensing
+COPY --from=notice-builder /license-notices /usr/local/bin/license-notices
+ENV GAMEHUB_NOTICE_GENERATOR=/usr/local/bin/license-notices
+RUN GAMEHUB_LICENSE_DIR=/licensing GAMEHUB_BUILD_VERSION="$VERSION" \
+    GAMEHUB_SOURCE_REVISION="$REVISION" GAMEHUB_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -35,7 +51,8 @@ ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.version=$VERSION \
       org.opencontainers.image.revision=$REVISION \
-      org.opencontainers.image.source="https://github.com/jfk1987/gamehub"
+      org.opencontainers.image.source="https://github.com/jfk1987/gamehub" \
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 WORKDIR /app
 
 ENV NODE_ENV=production

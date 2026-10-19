@@ -7,6 +7,10 @@
 !cmd/*.go
 !scripts
 !scripts/package-macos-helper.sh
+!scripts/package-legal.sh
+!tools
+!tools/license-notices
+!tools/license-notices/main.go
 !helper-distribution
 !helper-distribution/install.command
 !helper-distribution/README.txt

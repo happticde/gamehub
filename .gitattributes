@@ -1,0 +1,3 @@
+# Preserve original upstream legal formatting.
+licensing/standard/*.txt -whitespace
+licensing/notices/*.txt -whitespace

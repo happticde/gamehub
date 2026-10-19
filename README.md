@@ -1,5 +1,10 @@
 # GameHub
 
+GameHub application code and handbook content are licensed under **AGPL-3.0-only**.
+The independent website tooling in `docs/site` is **MIT**. Third-party components retain
+their own terms. See [LICENSE](LICENSE), [COPYRIGHT](COPYRIGHT),
+[licensing and source availability](licensing/README.md), and [contribution terms](CONTRIBUTING.md).
+
 ![CI](https://github.com/jfk1987/gamehub/actions/workflows/ci.yml/badge.svg)
 
 GameHub brings Steam, PlayStation, GOG, Epic, and physical games into one collection. It combines

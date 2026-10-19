@@ -30,6 +30,9 @@ fi
 exit 0
 `;
     writeFileSync(source, fakeCli, { mode: 0o755 });
+    for (const name of ['LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'SOURCE.txt']) {
+        writeFileSync(join(bundle, name), `Original ${name}\n`);
+    }
     const script = join(bundle, 'Install GameHub Helper.command');
     writeFileSync(script, readFileSync(installer));
     const run = (os = 'Darwin') => spawnSync('bash', [script], {
@@ -54,7 +57,10 @@ test('blocked execution keeps a stable file for approval and subsequent retries'
     assert.match(blocked.stdout, /Open Anyway for gamehub-cli/);
     assert.ok(blocked.stdout.includes(f.installed));
     const firstInode = statSync(f.installed).ino;
-    assert.deepEqual(readdirSync(join(f.installed, '..')), ['gamehub-cli']);
+    assert.deepEqual(readdirSync(join(f.installed, '..')).sort(), ['LICENSE.txt', 'SOURCE.txt', 'THIRD_PARTY_NOTICES.txt', 'gamehub-cli']);
+    for (const name of ['LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'SOURCE.txt']) {
+        assert.equal(readFileSync(join(f.installed, '..', name), 'utf8'), `Original ${name}\n`);
+    }
     assert.equal(readFileSync(f.log, 'utf8'), `${f.installed}\n--help\n`);
 
     writeFileSync(f.approval, 'approved');

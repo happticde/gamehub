@@ -39,6 +39,10 @@ jobs:
         env:
           BUMP: ${{ inputs.bump }}
         run: bash scripts/ci/prepare-release.sh "$BUMP" "$RUNNER_TEMP/release-metadata"
+      - name: Package corresponding GameHub source from the selected commit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python3 scripts/ci/package-source.py "$RUNNER_TEMP/release-metadata/gamehub-source-$VERSION.tar.gz"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-metadata
@@ -130,8 +134,10 @@ jobs:
           cd release
           sha256sum --check SHA256SUMS
           cd ..
+          cp metadata/gamehub-source-*.tar.gz release/
           cp image-reports/*.cdx.json release/
-          (cd release && sha256sum ./*.cdx.json >> SHA256SUMS)
+          (cd release && sha256sum ./gamehub-source-*.tar.gz ./*.cdx.json >> SHA256SUMS)
+          printf '\n## License and source\n\nGameHub is AGPL-3.0-only; docs/site tooling is MIT. The corresponding GameHub source archive is included with these downloads. Third-party components retain their own licenses and notices.\n' >> metadata/RELEASE_NOTES.md
           for component in core ingest frontend; do
             image="ghcr.io/${GITHUB_REPOSITORY,,}-$component"
             docker buildx imagetools create -t "$image:$TAG" "$image:$TAG-amd64" "$image:$TAG-arm64"

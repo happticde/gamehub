@@ -1,5 +1,8 @@
 GameHub Helper for macOS
 
+Licensed under AGPL-3.0-only. See LICENSE.txt, THIRD_PARTY_NOTICES.txt and SOURCE.txt.
+The installer preserves these files next to the installed binary.
+
 1. Extract this archive on the Mac where you use your GameHub browser.
 2. Open "Install GameHub Helper.command" and complete the installation.
    If you prefer Terminal, run: bash "Install GameHub Helper.command"

@@ -9,10 +9,11 @@ output_dir=$(CDPATH='' cd -- "$output_dir" && pwd)
 package_dir=$(mktemp -d)
 trap 'rm -rf "$package_dir"' EXIT HUP INT TERM
 cd "$cli_dir"
+sh scripts/package-legal.sh "$package_dir" "$version"
 for architecture in amd64 arm64; do
     CGO_ENABLED=0 GOOS=linux GOARCH="$architecture" go build -trimpath \
         -ldflags "-s -w -X happtic/gamehub-cli/cmd.Version=$version" -o "$package_dir/gamehub-cli" .
-    tar -czf "$output_dir/gamehub-cli-$version-linux-$architecture.tar.gz" -C "$package_dir" gamehub-cli
+    tar -czf "$output_dir/gamehub-cli-$version-linux-$architecture.tar.gz" -C "$package_dir" gamehub-cli LICENSE.txt THIRD_PARTY_NOTICES.txt SOURCE.txt
 done
 sh scripts/package-macos-helper.sh "$output_dir" "$version"
 for architecture in amd64 arm64; do
