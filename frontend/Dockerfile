@@ -13,7 +13,7 @@ RUN go mod download
 COPY --from=helper-source . .
 ARG VERSION=dev
 ARG REVISION=unknown
-ARG SOURCE_REPOSITORY=jfk1987/gamehub
+ARG SOURCE_REPOSITORY=happticde/gamehub
 COPY --from=license-source . /licensing
 RUN GAMEHUB_LICENSE_DIR=/licensing GAMEHUB_SOURCE_REVISION="$REVISION" \
     GAMEHUB_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" sh scripts/package-macos-helper.sh /downloads "$VERSION"
@@ -33,7 +33,7 @@ COPY . .
 # Source references are public build metadata, never application credentials.
 ARG VERSION=dev
 ARG REVISION=unknown
-ARG SOURCE_REPOSITORY=jfk1987/gamehub
+ARG SOURCE_REPOSITORY=happticde/gamehub
 COPY --from=license-source . /licensing
 COPY --from=notice-builder /license-notices /usr/local/bin/license-notices
 ENV GAMEHUB_NOTICE_GENERATOR=/usr/local/bin/license-notices
@@ -51,7 +51,7 @@ ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.version=$VERSION \
       org.opencontainers.image.revision=$REVISION \
-      org.opencontainers.image.source="https://github.com/jfk1987/gamehub" \
+      org.opencontainers.image.source="https://github.com/happticde/gamehub" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
 WORKDIR /app
 

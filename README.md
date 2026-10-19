@@ -5,7 +5,7 @@ The independent website tooling in `docs/site` is **MIT**. Third-party component
 their own terms. See [LICENSE](LICENSE), [COPYRIGHT](COPYRIGHT),
 [licensing and source availability](licensing/README.md), and [contribution terms](CONTRIBUTING.md).
 
-![CI](https://github.com/jfk1987/gamehub/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/happticde/gamehub/actions/workflows/ci.yml/badge.svg)
 
 GameHub brings Steam, PlayStation, GOG, Epic, and physical games into one collection. It combines
 cross-platform ownership, IGDB metadata, personal tracking, custom tags, statistics, and portable

@@ -100,7 +100,7 @@ function writeJson(destination, value) {
   writeFileSync(destination, JSON.stringify(value, null, 2) + '\n');
 }
 
-export function prepare({root, output, releases = [], repository = 'jfk1987/gamehub', candidate = ''}) {
+export function prepare({root, output, releases = [], repository = 'happticde/gamehub', candidate = ''}) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Invalid GitHub repository');
   if (candidate && !stableTag.test(`v${candidate}`)) throw new Error('Invalid candidate version');
   const currentManifest = JSON.parse(readSource(root, null, 'docs/site/content.json'));
@@ -167,7 +167,7 @@ export function prepare({root, output, releases = [], repository = 'jfk1987/game
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const releases = process.env.DOCS_RELEASES_FILE ? JSON.parse(readFileSync(process.env.DOCS_RELEASES_FILE, 'utf8')) : [];
   prepare({root: path.resolve(site, '../..'), output: site, releases,
-    repository: process.env.GITHUB_REPOSITORY || 'jfk1987/gamehub',
+    repository: process.env.GITHUB_REPOSITORY || 'happticde/gamehub',
     candidate: process.env.DOCS_CANDIDATE_VERSION || ''});
   const legal = path.join(site, 'static/legal');
   mkdirSync(legal, {recursive: true});
