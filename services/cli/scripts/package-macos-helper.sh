@@ -17,6 +17,7 @@ for architecture in arm64 amd64; do
     mkdir -p "$bundle"
     CGO_ENABLED=0 GOOS=darwin GOARCH="$architecture" go build -trimpath \
         -ldflags "-s -w -X happtic/gamehub-cli/cmd.Version=$version" -o "$bundle/gamehub-cli" .
+    sh scripts/package-legal.sh "$bundle" "$version"
     cp helper-distribution/install.command "$bundle/Install GameHub Helper.command"
     cp helper-distribution/README.txt "$bundle/README.txt"
     chmod 755 "$bundle/gamehub-cli" "$bundle/Install GameHub Helper.command"

@@ -16,7 +16,17 @@ wait_to_close() {
     fi
 }
 
+# Keep legal notices even after the extracted download is removed.
+for notice in LICENSE.txt THIRD_PARTY_NOTICES.txt SOURCE.txt; do
+    if [[ ! -f "$package_dir/$notice" ]]; then
+        echo "Incomplete helper package: missing $notice. Download a complete package."
+        exit 1
+    fi
+done
 mkdir -p "$install_dir"
+for notice in LICENSE.txt THIRD_PARTY_NOTICES.txt SOURCE.txt; do
+    cp "$package_dir/$notice" "$install_dir/$notice"
+done
 # The protocol handler must not depend on the download remaining in Downloads.
 # Keep the same file on retries so a user's macOS approval is not discarded.
 if [[ ! -f "$installed_binary" ]] || ! cmp -s "$package_dir/gamehub-cli" "$installed_binary"; then

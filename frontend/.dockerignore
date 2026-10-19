@@ -9,6 +9,8 @@ out/
 
 # Always use freshly compiled downloads from the helper-builder stage.
 public/downloads/helper/
+public/legal/
+.generated/legal/
 
 # TypeScript incremental build info
 *.tsbuildinfo

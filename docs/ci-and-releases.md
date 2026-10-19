@@ -316,6 +316,7 @@ gamehub-cli-0.1.0-linux-amd64.tar.gz
 gamehub-cli-0.1.0-linux-arm64.tar.gz
 gamehub-helper-0.1.0-macos-amd64.tar.gz
 gamehub-helper-0.1.0-macos-arm64.tar.gz
+gamehub-source-0.1.0.tar.gz
 SHA256SUMS
 cli.cdx.json
 core-amd64.cdx.json / core-arm64.cdx.json
@@ -325,11 +326,12 @@ frontend-amd64.cdx.json / frontend-arm64.cdx.json
 
 Download `SHA256SUMS` with the assets and run `sha256sum --check SHA256SUMS` on Linux or
 `shasum -a 256 -c SHA256SUMS` on macOS after downloading all files listed in it. The manifest
-currently covers the four archives and six image SBOMs; the separately uploaded `cli.cdx.json`
+covers the four binary archives, the corresponding GameHub source archive, and six image SBOMs; the separately uploaded `cli.cdx.json`
 is not included in it. To verify a single archive, calculate its SHA-256 with
 `sha256sum <archive>` or `shasum -a 256 <archive>` and compare it with that archive's entry.
 The macOS archives contain the existing guided installer,
-README, and versioned CLI. The frontend image embeds helper downloads built from its own source
+README, versioned CLI, license text, third-party notices, and source references. The installer
+preserves the legal files alongside the installed binary. The frontend image embeds helper downloads built from its own source
 and version; no separate release lookup is needed in the credential assistant.
 
 ## GitHub setup and recovery

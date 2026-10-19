@@ -32,6 +32,9 @@ def select_checks(paths, full=False):
     jobs, components = set(), set()
     for path in paths:
         name = PurePosixPath(path).name
+        # Legal files ship with every image and helper, even when no code changes.
+        if path in {'LICENSE', 'COPYRIGHT', 'CONTRIBUTING.md', 'REUSE.toml'} or path.startswith(('LICENSES/', 'licensing/')):
+            return make_plan(JOBS, COMPONENTS)
         if path == ".github/workflows/docs.yml":
             jobs.update(("workflow", "docs"))
             continue

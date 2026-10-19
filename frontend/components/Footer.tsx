@@ -21,12 +21,12 @@ export function Footer() {
                     <div className="flex items-center gap-4">
                         <span>© {new Date().getFullYear()}</span>
                         <a
-                            href="https://github.com/jfk1987/gamehub"
+                            href="/legal/index.html"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="hover:text-foreground transition-colors"
+                            className="hover:text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-4"
                         >
-                            GitHub
+                            Source &amp; license
                         </a>
                     </div>
                 </div>

@@ -1,0 +1,19 @@
+GameHub
+Copyright (c) 2026 jfk1987 and GameHub contributors
+
+Original GameHub application code, backend services, CLI/helper, build scripts,
+tests, and documentation content are licensed under AGPL-3.0-only, unless a
+file carries another notice. See LICENSE for the unmodified license text.
+
+Exception: the independent documentation website implementation and tooling
+under docs/site are licensed under MIT (docs/site/LICENSE). This exception does
+not relicense handbook content copied from docs into the generated website.
+
+Third-party code, templates, icons, fonts, packages, and other assets retain
+their original licenses and notices. In particular, shadcn/ui-derived components
+under frontend/components/ui and Next.js starter assets are not claimed as
+exclusively original GameHub code. See licensing/notices/frontend.txt and licensing/README.md.
+
+Copyright and license notices belonging to third parties must be preserved.
+The source-code license grants no permission to misrepresent a fork as the
+official GameHub project. This notice does not add restrictions to the AGPL.

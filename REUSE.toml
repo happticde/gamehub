@@ -1,0 +1,31 @@
+version = 1
+
+# Defaults for original GameHub work; file-level upstream notices take precedence.
+[[annotations]]
+path = ["services/**", "frontend/**", "scripts/**", "tools/**", "tests/**", "docs/**",
+        ".agents/**", ".github/**", ".devcontainer/**", "*.md", "*.props", "*.slnx",
+        "*.yml", "*.toml", "Makefile", "cliff.toml", "COPYRIGHT"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 jfk1987 and GameHub contributors"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+# Website code/tooling is independent; generated handbook content retains AGPL.
+[[annotations]]
+path = "docs/site/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 jfk1987 and GameHub contributors"
+SPDX-License-Identifier = "MIT"
+
+# Preserve the copied component provenance alongside GameHub's modifications.
+[[annotations]]
+path = "frontend/components/ui/**"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2023 shadcn", "2026 jfk1987 and GameHub contributors"]
+SPDX-License-Identifier = "MIT AND AGPL-3.0-only"
+
+[[annotations]]
+path = ["frontend/public/file.svg", "frontend/public/globe.svg", "frontend/public/next.svg",
+        "frontend/public/vercel.svg", "frontend/public/window.svg"]
+precedence = "closest"
+SPDX-FileCopyrightText = "Vercel, Inc."
+SPDX-License-Identifier = "MIT"

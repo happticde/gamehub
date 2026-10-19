@@ -51,6 +51,16 @@ jobs:
         run: |
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq 'add' > "$RUNNER_TEMP/docs-releases.json"
+      - name: Verify licensing before publishing the website
+        run: python3 scripts/ci/check-licenses.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/cli/go.mod
+          cache: false
+      - name: Build the local license notice collector
+        run: |
+          go build -o "$RUNNER_TEMP/license-notices" services/cli/tools/license-notices/main.go
+          echo "GAMEHUB_NOTICE_GENERATOR=$RUNNER_TEMP/license-notices" >> "$GITHUB_ENV"
       - name: Install documentation dependencies (retry transient network failures)
         run: bash scripts/ci/npm-ci.sh docs/site
       - name: Verify and build the complete versioned site
@@ -58,6 +68,13 @@ jobs:
           DOCS_RELEASES_FILE: ${{ runner.temp }}/docs-releases.json
         run: npm run check
         working-directory: docs/site
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: documentation-license-evidence
+          path: docs/site/.generated/legal/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
       - name: Scan documentation dependencies
         run: |
           python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"

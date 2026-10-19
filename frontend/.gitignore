@@ -42,3 +42,7 @@ next-env.d.ts
 
 # Generated macOS helper packages; built from CLI source for each deployment.
 /public/downloads/helper/
+
+# Generated from the reviewed licensing inputs at development/build time.
+/public/legal/
+/.generated/legal/

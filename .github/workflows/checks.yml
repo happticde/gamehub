@@ -41,6 +41,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify project license metadata
+        run: python3 scripts/ci/check-licenses.py
       - id: select
         env:
           SELECT_CHANGES: ${{ inputs.select-changes }}
@@ -62,7 +64,7 @@ jobs:
       - run: python3 scripts/ci/install-tool.py git-cliff "$RUNNER_TEMP/tools"
       - run: python3 scripts/ci/install-tool.py gitleaks "$RUNNER_TEMP/tools"
       - run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
-      - run: shellcheck scripts/ci/*.sh services/cli/scripts/package-release.sh services/cli/scripts/package-macos-helper.sh
+      - run: shellcheck scripts/ci/*.sh services/cli/scripts/package-*.sh
 
   gitleaks:
     name: Secret history scan
@@ -170,6 +172,14 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: docs/site/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/cli/go.mod
+          cache: false
+      - name: Build the local license notice collector
+        run: |
+          go build -o "$RUNNER_TEMP/license-notices" services/cli/tools/license-notices/main.go
+          echo "GAMEHUB_NOTICE_GENERATOR=$RUNNER_TEMP/license-notices" >> "$GITHUB_ENV"
       - name: Install documentation dependencies (retry transient network failures)
         run: bash scripts/ci/npm-ci.sh docs/site
       - name: Test contracts and build the handbook (including release candidate when applicable)
@@ -183,6 +193,13 @@ jobs:
         working-directory: docs/site
       - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
       - run: python3 scripts/ci/export-source.py "$RUNNER_TEMP/docs-source"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: documentation-license-evidence
+          path: docs/site/.generated/legal/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
       - name: Scan documentation dependencies independently of application builds
         run: |
           mkdir -p reports
@@ -218,6 +235,23 @@ jobs:
       - run: dotnet restore
       - run: dotnet build --no-restore --verbosity quiet
       - run: dotnet test --no-build --verbosity quiet
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/cli/go.mod
+          cache: false
+      - name: Generate service dependency license evidence
+        run: |
+          go build -o "$RUNNER_TEMP/license-notices" services/cli/tools/license-notices/main.go
+          for component in core ingest; do
+            "$RUNNER_TEMP/license-notices" -kind nuget -input "services/$component/obj/project.assets.json" \
+              -legal licensing -output "reports/licenses/$component"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backend-license-evidence
+          path: reports/licenses/
+          if-no-files-found: error
+          retention-days: 7
 
   frontend:
     name: Frontend lint, security contracts and build
@@ -239,10 +273,25 @@ jobs:
           path: frontend/.next/cache
           key: ${{ runner.os }}-${{ runner.arch }}-next-24-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-next-24-${{ hashFiles('frontend/package-lock.json') }}-
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/cli/go.mod
+          cache: false
+      - name: Build the local license notice collector
+        run: |
+          go build -o "$RUNNER_TEMP/license-notices" services/cli/tools/license-notices/main.go
+          echo "GAMEHUB_NOTICE_GENERATOR=$RUNNER_TEMP/license-notices" >> "$GITHUB_ENV"
       - run: npm ci
         working-directory: frontend
       - run: npm run lint && npm run test:security && npm run test:physical-capture && npm run build
         working-directory: frontend
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-license-evidence
+          path: frontend/.generated/legal/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
 
   cli:
     name: Go CLI tests and release packages
@@ -262,6 +311,14 @@ jobs:
         with:
           node-version: '24'
       - run: node --test services/cli/scripts/test-macos-installer.mjs
+      - name: Generate CLI dependency license evidence
+        run: go run services/cli/tools/license-notices/main.go -kind go -input services/cli -legal licensing -output reports/cli-licenses
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-license-evidence
+          path: reports/cli-licenses/
+          if-no-files-found: error
+          retention-days: 7
       - run: go test -race ./... && go vet ./...
         working-directory: services/cli
       - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
@@ -324,7 +381,9 @@ jobs:
         with:
           context: ${{ matrix.component == 'frontend' && './frontend' || '.' }}
           file: ${{ matrix.component == 'frontend' && 'frontend/Dockerfile' || format('services/{0}/Dockerfile', matrix.component) }}
-          build-contexts: ${{ matrix.component == 'frontend' && 'helper-source=./services/cli' || '' }}
+          build-contexts: |
+            ${{ matrix.component == 'frontend' && 'helper-source=./services/cli' || '' }}
+            ${{ matrix.component == 'frontend' && 'license-source=./licensing' || '' }}
           platforms: linux/${{ matrix.arch }}
           load: true
           push: false
@@ -332,8 +391,22 @@ jobs:
           build-args: |
             VERSION=${{ inputs.release-version == 'dev' && '0.0.0' || inputs.release-version }}
             REVISION=${{ github.sha }}
+            SOURCE_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,version=2,scope=${{ matrix.component }}-${{ matrix.arch }}
           cache-to: type=gha,version=2,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }},timeout=3m,ignore-error=true
+      - name: Export generated image license evidence
+        env:
+          COMPONENT: ${{ matrix.component }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p reports/licenses
+          container=$(docker create "gamehub-$COMPONENT:verified")
+          trap 'docker rm "$container" >/dev/null' EXIT
+          if [[ "$COMPONENT" == frontend ]]; then
+            docker cp "$container:/app/public/legal/." reports/licenses/
+          else
+            docker cp "$container:/app/legal/." reports/licenses/
+          fi
       - name: Scan runtime image and export its SBOM
         env:
           COMPONENT: ${{ matrix.component }}
