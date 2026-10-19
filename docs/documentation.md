@@ -105,7 +105,7 @@ changes repository visibility, billing, Pages settings, or a live deployment.
 7. Confirm both build and deployment succeed, then open the reported Pages URL. Check the home
    page, search, a nested page, mobile navigation, and the version selector.
 
-The default URL is `https://jfk1987.github.io/gamehub/`. Repository forks derive owner and
+The default URL is `https://happticde.github.io/gamehub/`. Repository forks derive owner and
 project from `GITHUB_REPOSITORY`. For a custom domain or project path, consistently configure
 `DOCS_URL` and `DOCS_BASE_URL` in the build environment and follow GitHub's domain setup guide.
 The workflow intentionally does not create a Pages site automatically.

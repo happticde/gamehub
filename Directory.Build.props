@@ -2,6 +2,6 @@
   <PropertyGroup>
     <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
     <Copyright>Copyright (c) 2026 jfk1987 and GameHub contributors</Copyright>
-    <RepositoryUrl>https://github.com/jfk1987/gamehub</RepositoryUrl>
+    <RepositoryUrl>https://github.com/happticde/gamehub</RepositoryUrl>
   </PropertyGroup>
 </Project>

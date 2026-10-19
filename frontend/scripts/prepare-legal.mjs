@@ -9,7 +9,7 @@ const escapeHtml = value => value.replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[character]);
 
-export function prepareLegal({legalDirectory, output, repository = 'jfk1987/gamehub', revision = 'unknown', version = 'dev'}) {
+export function prepareLegal({legalDirectory, output, repository = 'happticde/gamehub', revision = 'unknown', version = 'dev'}) {
   if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository) || repository.endsWith('/..')) {
     throw new Error('Invalid source repository');
   }
@@ -54,6 +54,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const {generateNotices} = await import(pathToFileURL(path.join(legal, 'generate.mjs')).href);
   generateNotices({input: frontend, output: generated, production: true, frontend: true});
   prepareLegal({legalDirectory: generated,
-    output: path.join(frontend, 'public/legal'), repository: process.env.GAMEHUB_SOURCE_REPOSITORY || 'jfk1987/gamehub',
+    output: path.join(frontend, 'public/legal'), repository: process.env.GAMEHUB_SOURCE_REPOSITORY || 'happticde/gamehub',
     revision: process.env.GAMEHUB_SOURCE_REVISION || 'unknown', version: process.env.GAMEHUB_BUILD_VERSION || 'dev'});
 }

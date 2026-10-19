@@ -6,7 +6,7 @@ destination=${1:?Pass the package directory}
 version=${2:?Pass the build version}
 cli_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 legal_dir=${GAMEHUB_LICENSE_DIR:-$cli_dir/../../licensing}
-repository=${GAMEHUB_SOURCE_REPOSITORY:-${GITHUB_REPOSITORY:-jfk1987/gamehub}}
+repository=${GAMEHUB_SOURCE_REPOSITORY:-${GITHUB_REPOSITORY:-happticde/gamehub}}
 revision=${GAMEHUB_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}
 if [ "$version" != dev ] && [ "$version" != 0.0.0 ] && [ "$revision" = unknown ]; then
     echo 'Versioned packages require their exact source revision.' >&2

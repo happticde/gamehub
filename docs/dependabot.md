@@ -6,7 +6,7 @@ You need repository administration access for the settings below.
 
 ## 1. Enable dependency security features
 
-Open [GameHub's Advanced Security settings](https://github.com/jfk1987/gamehub/settings/security_analysis)
+Open [GameHub's Advanced Security settings](https://github.com/happticde/gamehub/settings/security_analysis)
 under **Settings → Security and quality → Advanced Security**.
 Enable these features in order:
 
@@ -78,7 +78,7 @@ exceptions when a fix becomes available or before they expire.
 
 Once the repository is public, enable **Private vulnerability reporting** on the
 same Advanced Security page. Confirm that **Report a vulnerability** is available
-on the [advisories page](https://github.com/jfk1987/gamehub/security/advisories).
+on the [advisories page](https://github.com/happticde/gamehub/security/advisories).
 Follow [SECURITY.md](../SECURITY.md) when reporting a suspected vulnerability.
 This reporting channel is separate from Dependabot dependency alerts.
 
