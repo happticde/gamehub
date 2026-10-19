@@ -13,6 +13,8 @@ what you own and play from one interface.
   [configuration reference](guides/configuration.md).
 - **Contributing or integrating:** read the [architecture](guides/architecture.md),
   [development guide](guides/development.md), [API overview](guides/api.md), and [CLI reference](guides/cli.md).
+- **Security and updates:** follow the [security policy](../SECURITY.md) and
+  [Dependabot setup and maintenance guide](dependabot.md).
 
 ## Match the handbook to your installation
 

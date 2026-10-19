@@ -45,6 +45,7 @@ before updating the deployment and installed connection helpers.
 | Configure production authentication | [Authentication](docs/authentication.md), [guarded activation](docs/guarded-multi-user-enablement.md), [Keycloak](docs/keycloak-oidc-setup.md) |
 | Integrate clients | [API overview](docs/guides/api.md), [CLI](docs/guides/cli.md), [MCP](docs/mcp.md) |
 | Understand or contribute to the code | [Architecture](docs/guides/architecture.md), [development](docs/guides/development.md), [roadmap](docs/ROADMAP.md) |
+| Report a vulnerability or maintain dependencies | [Security policy](SECURITY.md), [Dependabot setup](docs/dependabot.md) |
 | Publish a product release | [CI and release runbook](docs/ci-and-releases.md) |
 | Preview or manually publish the handbook | [Documentation runbook](docs/documentation.md) |
 
