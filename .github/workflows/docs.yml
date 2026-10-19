@@ -49,8 +49,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq 'add' > "$RUNNER_TEMP/docs-releases.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq 'add // []' > "$RUNNER_TEMP/docs-releases.json"
       - name: Verify licensing before publishing the website
         run: python3 scripts/ci/check-licenses.py
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
