@@ -1,4 +1,4 @@
-FROM node:24-alpine AS base
+FROM node:26-alpine AS base
 
 # Compile a dependency-free notice collector for the native build platform.
 FROM golang:1.26.9-bookworm AS notice-builder
