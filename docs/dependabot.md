@@ -88,6 +88,8 @@ Update that Dockerfile value when changing EF Core, then rebuild the devcontaine
 The service Dockerfiles copy the central manifest before restoring packages.
 Backend CI starts a temporary PostgreSQL database. This runs the PostgreSQL migration
 and isolation tests as well as the SQLite tests when database packages change.
+The same early check keeps all Go builders aligned with the CLI toolchain.
+Update the CLI toolchain and its Docker build stages together when applying a Go security patch.
 
 ## Read a failed update check
 

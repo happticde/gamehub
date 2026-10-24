@@ -24,7 +24,14 @@ class DependencyTests(unittest.TestCase):
             '<Project><ItemGroup><PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />'
             '</ItemGroup></Project>')
         (root / ".devcontainer").mkdir()
-        (root / ".devcontainer/Dockerfile").write_text('ARG DOTNET_EF_VERSION=10.0.13\n')
+        (root / ".devcontainer/Dockerfile").write_text(
+            'FROM golang:1.27.3-bookworm AS go\nARG DOTNET_EF_VERSION=10.0.13\n')
+        (root / "services/cli").mkdir(parents=True)
+        (root / "services/cli/go.mod").write_text('module example.test/cli\n\ngo 1.26.0\ntoolchain go1.27.3\n')
+        for path in ("frontend/Dockerfile", "services/core/Dockerfile", "services/ingest/Dockerfile"):
+            file = root / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('FROM golang:1.27.3-bookworm AS builder\n')
 
     def test_shared_versions_apply_to_test_projects(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -65,3 +72,12 @@ class DependencyTests(unittest.TestCase):
         self.assertIn("!contains(needs.*.result, 'failure')", image_job)
         self.assertIn("!contains(needs.*.result, 'cancelled')", image_job)
         self.assertIn("needs.select.outputs.images == 'true'", image_job)
+
+    def test_a_go_builder_cannot_keep_an_older_toolchain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            file = root / 'frontend/Dockerfile'
+            file.write_text(file.read_text().replace('1.27.3', '1.27.2'))
+            with self.assertRaisesRegex(ValueError, 'Go builders must match'):
+                dependencies.check(root)

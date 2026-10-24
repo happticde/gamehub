@@ -37,8 +37,21 @@ def check(root):
     tool_version = re.search(r"^ARG DOTNET_EF_VERSION=([^\s]+)$", dockerfile, re.MULTILINE)
     if not tool_version or tool_version.group(1) != ef_version:
         raise ValueError(f"The devcontainer dotnet-ef version must match EF Core {ef_version}")
+    check_go_toolchain(root)
+
+
+def check_go_toolchain(root):
+    module = (root / "services/cli/go.mod").read_text()
+    toolchain = re.search(r"^toolchain go(\S+)$", module, re.MULTILINE)
+    if not toolchain:
+        raise ValueError("The CLI must declare its verified Go toolchain")
+    for path in ("frontend/Dockerfile", "services/core/Dockerfile",
+                 "services/ingest/Dockerfile", ".devcontainer/Dockerfile"):
+        versions = re.findall(r"^FROM golang:([^\s-]+)-", (root / path).read_text(), re.MULTILINE)
+        if not versions or any(version != toolchain.group(1) for version in versions):
+            raise ValueError(f"{path}: Go builders must match toolchain go{toolchain.group(1)}")
 
 
 if __name__ == "__main__":
     check(Path(__file__).resolve().parents[2])
-    print("Central NuGet versions and the EF migration tool are consistent.")
+    print("Central NuGet versions, the EF migration tool, and Go builders are consistent.")
