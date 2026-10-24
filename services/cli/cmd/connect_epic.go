@@ -13,6 +13,7 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 	"github.com/spf13/cobra"
 )
 
@@ -142,9 +143,12 @@ func captureEpicConnectPayload(parent context.Context, profileDir string, timeou
 	defer cancelAllocator()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
-	defer cancelBrowser()
+	defer closeConnectBrowser(browserCtx, cancelBrowser)
 
-	if err := chromedp.Run(browserCtx, network.Enable(), chromedp.Navigate(epicConnectStartURL())); err != nil {
+	if _, err := chromedp.Call(browserCtx, network.Enable, network.EnableParams{}); err != nil {
+		return epicConnectPayload{}, fmt.Errorf("failed to prepare Epic Games browser session: %w", err)
+	}
+	if err := chromedp.Do(browserCtx, chromedp.Navigate(epicConnectStartURL())); err != nil {
 		return epicConnectPayload{}, fmt.Errorf("failed to open Epic Games browser session: %w", err)
 	}
 
@@ -184,19 +188,18 @@ func epicConnectStartURL() string {
 }
 
 func readEpicAuthorizationCode(ctx context.Context) (string, error) {
-	var currentURL string
-	var bodyText string
-	err := chromedp.Run(ctx,
-		chromedp.Location(&currentURL),
-		chromedp.Text("body", &bodyText, chromedp.ByQuery),
-	)
+	// Read URL and text together. Navigation can replace DOM nodes between separate queries.
+	page, err := chromedp.Run(ctx, chromedp.Evaluate[struct {
+		URL      string `json:"url"`
+		BodyText string `json:"bodyText"`
+	}](`({url: window.location.href, bodyText: document.body?.innerText ?? ""})`))
 	if err != nil {
 		return "", err
 	}
-	if !isEpicRedirectAPIURL(currentURL) {
+	if !isEpicRedirectAPIURL(page.URL) {
 		return "", nil
 	}
-	return readEpicAuthorizationCodeFromBody(bodyText)
+	return readEpicAuthorizationCodeFromBody(page.BodyText)
 }
 
 func isEpicRedirectAPIURL(value string) bool {
@@ -218,7 +221,8 @@ func epicBrowserAllocatorOptions(profileDir string) ([]chromedp.ExecAllocatorOpt
 	}
 
 	flags := epicBrowserLaunchFlags(profileDir, debuggingPort)
-	options := make([]chromedp.ExecAllocatorOption, 0, len(flags))
+	options := make([]chromedp.ExecAllocatorOption, 0, len(flags)+1)
+	options = append(options, remote.WebSocket)
 	for _, flag := range flags {
 		options = append(options, chromedp.Flag(flag.Name, flag.Value))
 	}

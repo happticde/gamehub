@@ -165,9 +165,12 @@ func captureGogConnectPayload(parent context.Context, profileDir string, userOve
 	defer cancelAllocator()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
-	defer cancelBrowser()
+	defer closeConnectBrowser(browserCtx, cancelBrowser)
 
-	if err := chromedp.Run(browserCtx, network.Enable(), chromedp.Navigate(gogConnectStartURL)); err != nil {
+	if _, err := chromedp.Call(browserCtx, network.Enable, network.EnableParams{}); err != nil {
+		return gogConnectPayload{}, fmt.Errorf("failed to prepare GOG browser session: %w", err)
+	}
+	if err := chromedp.Do(browserCtx, chromedp.Navigate(gogConnectStartURL)); err != nil {
 		return gogConnectPayload{}, fmt.Errorf("failed to open GOG browser session: %w", err)
 	}
 
@@ -203,20 +206,23 @@ func captureGogConnectPayload(parent context.Context, profileDir string, userOve
 	}
 }
 
+// Let Chrome flush its temporary profile before removal. Remote allocators close only our tab.
+func closeConnectBrowser(ctx context.Context, cancel context.CancelFunc) {
+	defer cancel()
+	shutdownCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+	defer stop()
+	_ = chromedp.Cancel(shutdownCtx)
+}
+
 func readGogAlCookie(ctx context.Context) (*network.Cookie, error) {
-	var cookies []*network.Cookie
-	err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		var err error
-		cookies, err = network.GetCookies().
-			WithURLs([]string{"https://www.gog.com", "https://gog.com"}).
-			Do(ctx)
-		return err
-	}))
+	result, err := chromedp.Call(ctx, network.GetCookies, network.GetCookiesParams{
+		URLs: []string{"https://www.gog.com", "https://gog.com"},
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	for _, cookie := range cookies {
+	for _, cookie := range result.Cookies {
 		if cookie.Name == "gog-al" && strings.TrimSpace(cookie.Value) != "" {
 			return cookie, nil
 		}
@@ -226,12 +232,10 @@ func readGogAlCookie(ctx context.Context) (*network.Cookie, error) {
 }
 
 func readGogUsername(ctx context.Context) (string, error) {
-	var username string
-	err := chromedp.Run(ctx, chromedp.Evaluate(
+	username, err := chromedp.Run(ctx, chromedp.Evaluate[string](
 		gogUserDataScript,
-		&username,
-		func(params *runtime.EvaluateParams) *runtime.EvaluateParams {
-			return params.WithAwaitPromise(true)
+		func(params *runtime.EvaluateParams) {
+			params.AwaitPromise = new(true)
 		},
 	))
 	if err != nil {
