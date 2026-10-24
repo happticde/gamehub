@@ -143,7 +143,7 @@ func captureEpicConnectPayload(parent context.Context, profileDir string, timeou
 	defer cancelAllocator()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
-	defer cancelBrowser()
+	defer closeConnectBrowser(browserCtx, cancelBrowser)
 
 	if _, err := chromedp.Call(browserCtx, network.Enable, network.EnableParams{}); err != nil {
 		return epicConnectPayload{}, fmt.Errorf("failed to prepare Epic Games browser session: %w", err)
@@ -188,18 +188,18 @@ func epicConnectStartURL() string {
 }
 
 func readEpicAuthorizationCode(ctx context.Context) (string, error) {
-	currentURL, err := chromedp.Run(ctx, chromedp.Location())
+	// Read URL and text together. Navigation can replace DOM nodes between separate queries.
+	page, err := chromedp.Run(ctx, chromedp.Evaluate[struct {
+		URL      string `json:"url"`
+		BodyText string `json:"bodyText"`
+	}](`({url: window.location.href, bodyText: document.body?.innerText ?? ""})`))
 	if err != nil {
 		return "", err
 	}
-	if !isEpicRedirectAPIURL(currentURL) {
+	if !isEpicRedirectAPIURL(page.URL) {
 		return "", nil
 	}
-	bodyText, err := chromedp.Run(ctx, chromedp.Text(chromedp.CSS("body")))
-	if err != nil {
-		return "", err
-	}
-	return readEpicAuthorizationCodeFromBody(bodyText)
+	return readEpicAuthorizationCodeFromBody(page.BodyText)
 }
 
 func isEpicRedirectAPIURL(value string) bool {

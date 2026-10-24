@@ -216,7 +216,7 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 	defer cancelAllocator()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
-	defer cancelBrowser()
+	defer closeConnectBrowser(browserCtx, cancelBrowser)
 
 	rateLimit := make(chan string, 1)
 	if _, err := chromedp.Call(browserCtx, network.Enable, network.EnableParams{}); err != nil {
