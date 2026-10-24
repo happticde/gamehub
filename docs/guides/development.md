@@ -4,6 +4,28 @@ Read the repository's `AGENTS.md` and relevant `docs/agents/` context before cha
 Agent context and session history are maintained in Git but deliberately excluded from this
 published handbook.
 
+## Build from source
+
+For a normal installation, use the ready-made images in [Installation](installation.md).
+Use a source build when developing GameHub or testing your own changes.
+
+```bash
+git clone https://github.com/happticde/gamehub.git
+cd gamehub
+```
+
+Check out a release tag if you want to build that version. Use `main` for current development.
+Supply the settings from [Configuration](configuration.md).
+The source-build file does not use `GAMEHUB_VERSION`; your checkout determines the code.
+Then run:
+
+```bash
+docker compose -f docker-compose.yml up -d --build
+```
+
+This file builds the application from your checkout. Keep it separate from an installed
+release's `compose.yaml` and its database volumes.
+
 ## Environment
 
 Use the project's development container for builds, tests, package operations, and migrations.

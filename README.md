@@ -25,14 +25,16 @@ See [Platform connections](docs/guides/platforms.md) for details.
 
 ## Get started
 
-You need Git and Docker with Docker Compose. You do not need .NET, Go, or Node on your host.
+You need Docker with Docker Compose. GameHub provides ready-made images.
+You do not need Git or local build tools.
 
-1. Clone this repository and choose a release tag. Follow [Installation](docs/guides/installation.md).
-2. Supply the required settings from [Configuration](docs/guides/configuration.md).
-3. Run this command from the repository root:
+1. Save the [release Compose template](docker-compose.images.yml) as `compose.yaml` in a new folder.
+2. Choose a release and supply the required settings. Follow [Installation](docs/guides/installation.md).
+3. Run these commands from that folder:
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build
 ```
 
 Then create the first local account as described in the installation guide.
@@ -47,15 +49,19 @@ Open the frontend and follow [Your first library](docs/guides/first-library.md).
 Both APIs expose `/health`. Ports bind to `127.0.0.1` by default.
 Core uses PostgreSQL by default. Ingest uses SQLite.
 
-Compose requires `GAMEHUB_API_KEY`, `GAMEHUB_JWT_SIGNING_KEY`, and `POSTGRES_PASSWORD`.
-Use strong, separate secrets. Frontend login is enabled by default.
-Platform connections also need an internal service key and a credential encryption key.
+Set `GAMEHUB_VERSION` to a published tag, such as `v0.1.0`.
+Compose also requires an API key, an internal service key, a signing key,
+a credential encryption key, and a PostgreSQL password.
+The installation guide lists their variable names. Use strong, separate secrets.
+Frontend login is enabled by default.
 IGDB metadata needs Twitch application credentials. The configuration guide lists these settings.
 
 Set `GAMEHUB_PUBLIC_ORIGIN` to the exact browser origin when using a hostname or HTTPS proxy.
 The default is `http://localhost:3000`.
 For an existing installation, read the [security upgrade guide](docs/security-hardening-2026-10-15.md)
 before updating GameHub and the installed connection helper.
+
+For source builds, use the [development guide](docs/guides/development.md).
 
 ## Documentation
 
