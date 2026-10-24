@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
     Dialog,
     DialogContent,
+    DialogTitle,
 } from "@/components/ui/dialog";
 
 interface ImageLightboxProps {
@@ -22,13 +23,14 @@ export function ImageLightbox({
     onOpenChange,
 }: ImageLightboxProps) {
     const [currentIndex, setCurrentIndex] = React.useState(initialIndex);
+    const [previousInput, setPreviousInput] = React.useState({ open, initialIndex });
 
-    // Sync current index when opening
-    React.useEffect(() => {
+    if (previousInput.open !== open || previousInput.initialIndex !== initialIndex) {
+        setPreviousInput({ open, initialIndex });
         if (open) {
             setCurrentIndex(initialIndex);
         }
-    }, [open, initialIndex]);
+    }
 
     const handlePrevious = React.useCallback((e?: React.MouseEvent) => {
         e?.stopPropagation();
@@ -60,9 +62,11 @@ export function ImageLightbox({
                 overlayClassName="bg-black/90 backdrop-blur-xl"
                 showCloseButton={false}
             >
+                <DialogTitle className="sr-only">Game screenshots</DialogTitle>
                 <div className="relative flex h-full w-full items-center justify-center">
                     {/* Close Button */}
                     <button
+                        aria-label="Close screenshots"
                         onClick={() => onOpenChange(false)}
                         className="fixed right-6 top-6 z-50 rounded-full bg-black/40 p-3 text-white/70 backdrop-blur-md transition-all hover:bg-black/60 hover:text-white hover:scale-110 active:scale-95 border border-white/10"
                     >
@@ -73,12 +77,14 @@ export function ImageLightbox({
                     {images.length > 1 && (
                         <>
                             <button
+                                aria-label="Previous screenshot"
                                 onClick={handlePrevious}
                                 className="fixed left-6 z-20 rounded-full bg-black/40 p-4 text-white/70 backdrop-blur-md transition-all hover:bg-black/60 hover:text-white hover:scale-110 active:scale-95 border border-white/10"
                             >
                                 <ChevronLeft className="h-8 w-8" />
                             </button>
                             <button
+                                aria-label="Next screenshot"
                                 onClick={handleNext}
                                 className="fixed right-6 z-20 rounded-full bg-black/40 p-4 text-white/70 backdrop-blur-md transition-all hover:bg-black/60 hover:text-white hover:scale-110 active:scale-95 border border-white/10"
                             >

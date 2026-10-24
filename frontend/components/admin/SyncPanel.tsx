@@ -77,30 +77,27 @@ export function SyncPanel() {
     const [status, setStatus] = useState<SyncSchedulerStatus | null>(null);
     const [statusError, setStatusError] = useState<string | null>(null);
 
-    const fetchLogs = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            // Client-side fetch goes through the Next.js proxy defined in next.config.ts
-            const res = await fetchAuthenticated("/api/core/library/sync-history?limit=100", {
-                cache: "no-store",
-            });
+    const fetchLogs = useCallback(() => {
+        // Client-side fetch goes through the authenticated same-origin BFF.
+        return fetchAuthenticated("/api/core/library/sync-history?limit=100", {
+            cache: "no-store",
+        }).then(async (res) => {
             if (!res.ok) {
                 setError(`Failed to fetch history (Status ${res.status})`);
             } else {
                 const syncLogs: SyncAuditLog[] = await res.json();
                 setLogs(syncLogs);
+                setError(null);
             }
-        } catch (caughtError: unknown) {
+        }).catch((caughtError: unknown) => {
             setError(getErrorMessage(caughtError, "Unknown error"));
-        } finally {
+        }).finally(() => {
             setIsLoading(false);
-        }
+        });
     }, []);
 
-    const fetchStatus = useCallback(async () => {
-        try {
-            const res = await fetchAuthenticated("/api/core/library/sync/status");
+    const fetchStatus = useCallback(() => {
+        return fetchAuthenticated("/api/core/library/sync/status").then(async (res) => {
             if (res.ok) {
                 const schedulerStatus: SyncSchedulerStatus = await res.json();
                 setStatus(schedulerStatus);
@@ -108,12 +105,14 @@ export function SyncPanel() {
             } else {
                 setStatusError(`Status ${res.status}`);
             }
-        } catch (caughtError: unknown) {
+        }).catch((caughtError: unknown) => {
             setStatusError(getErrorMessage(caughtError, "Unknown error"));
-        }
+        });
     }, []);
 
     const refreshAfterSync = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
         await Promise.all([fetchLogs(), fetchStatus()]);
     }, [fetchLogs, fetchStatus]);
 
@@ -267,6 +266,8 @@ export function SyncPanel() {
                             if (res.ok) {
                                 const data: RetroactiveIgnoreResponse = await res.json();
                                 alert(`Success: Found and hid ${data.newlyIgnoredCount} games.`);
+                                setIsLoading(true);
+                                setError(null);
                                 fetchLogs(); // just to refresh UI if needed
                             } else {
                                 alert("Failed to run retroactive ignore script.");

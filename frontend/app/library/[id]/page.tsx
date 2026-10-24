@@ -56,6 +56,7 @@ export default async function GameDetailPage({
     let game: ExpandedGame | null = null;
     let availableTags: TagSuggestion[] = [];
     let error: string | null = null;
+    let notFound = false;
 
     try {
         const [res, tagsRes] = await Promise.all([
@@ -64,27 +65,33 @@ export default async function GameDetailPage({
         ]);
         if (!res.ok) {
             if (res.status === 404) {
-                return (
-                    <div className="flex min-h-[50vh] flex-col items-center justify-center p-8 text-center">
-                        <h1 className="text-3xl font-bold">Game Not Found</h1>
-                        <p className="mt-2 text-muted-foreground">We couldn&apos;t find a game with ID {id}.</p>
-                        <Link href="/library" className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-                            <ArrowLeft className="h-4 w-4" /> Back to Library
-                        </Link>
-                    </div>
-                );
+                notFound = true;
+            } else {
+                throw new Error(`Failed to fetch game details: ${res.statusText}`);
             }
-            throw new Error(`Failed to fetch game details: ${res.statusText}`);
-        }
-        const gameDetails: ExpandedGame = await res.json();
-        game = gameDetails;
-        if (tagsRes.ok) {
-            availableTags = await tagsRes.json();
+        } else {
+            const gameDetails: ExpandedGame = await res.json();
+            game = gameDetails;
+            if (tagsRes.ok) {
+                availableTags = await tagsRes.json();
+            }
         }
     } catch (caughtError: unknown) {
         rethrowCoreApiNavigation(caughtError);
         error = getErrorMessage(caughtError, "An unexpected error occurred.");
         console.error("Fetch Game Detail Error:", error);
+    }
+
+    if (notFound) {
+        return (
+            <div className="flex min-h-[50vh] flex-col items-center justify-center p-8 text-center">
+                <h1 className="text-3xl font-bold">Game Not Found</h1>
+                <p className="mt-2 text-muted-foreground">We couldn&apos;t find a game with ID {id}.</p>
+                <Link href="/library" className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                    <ArrowLeft className="h-4 w-4" /> Back to Library
+                </Link>
+            </div>
+        );
     }
 
     if (error || !game) {
