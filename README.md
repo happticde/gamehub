@@ -1,51 +1,74 @@
 # GameHub
 
-GameHub application code and handbook content are licensed under **AGPL-3.0-only**.
-The independent website tooling in `docs/site` is **MIT**. Third-party components retain
-their own terms. See [LICENSE](LICENSE), [COPYRIGHT](COPYRIGHT),
-[licensing and source availability](licensing/README.md), and [contribution terms](CONTRIBUTING.md).
-
 ![CI](https://github.com/happticde/gamehub/actions/workflows/ci.yml/badge.svg)
 
-GameHub brings Steam, PlayStation, GOG, Epic, and physical games into one collection. It combines
-cross-platform ownership, IGDB metadata, personal tracking, custom tags, statistics, and portable
-library backups.
+GameHub brings your Steam, PlayStation, GOG, and Epic games into one collection.
+You can also add physical games for PS3, PS4, and PS5.
 
-Start with the [GameHub handbook](docs/index.md). The handbook source is available here before
-GitHub Pages is activated. Pages publication is deliberately manual; the website is not
-automatically published by a merge or product release.
+**Read the [GameHub handbook on GitHub Pages](https://happticde.github.io/gamehub/).**
+It covers setup, daily use, and server maintenance. Use the version menu to match your
+installed release. **Next (unreleased)** covers development changes on `main`.
+You can also read the [handbook source](docs/index.md) in this repository.
+
+## Features
+
+- See which platforms you own each game on.
+- Add covers and game details from the IGDB game database.
+- Track play status, personal ratings, and custom tags.
+- Search your collection and view statistics.
+- Fix metadata matches and merge or split game entries.
+- Export your library and restore it from a JSON backup.
+
+The guided connection helper is available for macOS Apple Silicon and Intel.
+Other systems can use the manual connection steps. Epic support is an early integration.
+See [Platform connections](docs/guides/platforms.md) for details.
 
 ## Get started
 
-1. Follow [Installation](docs/guides/installation.md) and supply your deployment configuration.
-2. Start the services with Docker Compose.
-3. Complete [Your first library](docs/guides/first-library.md).
+You need Git and Docker with Docker Compose. You do not need .NET, Go, or Node on your host.
+
+1. Clone this repository and choose a release tag. Follow [Installation](docs/guides/installation.md).
+2. Supply the required settings from [Configuration](docs/guides/configuration.md).
+3. Run this command from the repository root:
 
 ```bash
 docker compose up -d --build
 ```
 
-The baseline frontend is at `http://localhost:3000`, Core Swagger at
-`http://localhost:5001/swagger`, and Ingest Swagger at `http://localhost:5000/`.
-Both APIs expose `/health`. Use an actual release tag for a versioned deployment.
-All baseline ports bind to `127.0.0.1`. Compose requires independent API/JWT keys and a PostgreSQL
-password; frontend authentication defaults on. Set `GAMEHUB_PUBLIC_ORIGIN` to the browser-visible
-origin when using a hostname or HTTPS proxy (the local default is `http://localhost:3000`).
-Existing installations should review the [security hardening transition](docs/security-hardening-2026-10-15.md)
-before updating the deployment and installed connection helpers.
+Then create the first local account as described in the installation guide.
+Open the frontend and follow [Your first library](docs/guides/first-library.md).
+
+| Service | Default local address |
+| --- | --- |
+| Frontend | `http://localhost:3000` |
+| Core API and Swagger | `http://localhost:5001/swagger` |
+| Ingest API and Swagger | `http://localhost:5000/` |
+
+Both APIs expose `/health`. Ports bind to `127.0.0.1` by default.
+Core uses PostgreSQL by default. Ingest uses SQLite.
+
+Compose requires `GAMEHUB_API_KEY`, `GAMEHUB_JWT_SIGNING_KEY`, and `POSTGRES_PASSWORD`.
+Use strong, separate secrets. Frontend login is enabled by default.
+Platform connections also need an internal service key and a credential encryption key.
+IGDB metadata needs Twitch application credentials. The configuration guide lists these settings.
+
+Set `GAMEHUB_PUBLIC_ORIGIN` to the exact browser origin when using a hostname or HTTPS proxy.
+The default is `http://localhost:3000`.
+For an existing installation, read the [security upgrade guide](docs/security-hardening-2026-10-15.md)
+before updating GameHub and the installed connection helper.
 
 ## Documentation
 
 | Task | Guide |
 | --- | --- |
 | Connect accounts and import games | [Platform connections](docs/guides/platforms.md) |
-| Find games, correct matches, track progress, add physical copies | [Manage your collection](docs/guides/library.md) |
+| Search, fix matches, track progress, or add physical games | [Manage your collection](docs/guides/library.md) |
 | Export, validate, and restore a library | [Backup and restore](docs/guides/backup-restore.md) |
-| Self-host, upgrade, or recover | [Deployment](docs/guides/deployment.md), [configuration](docs/guides/configuration.md), [troubleshooting](docs/DEBUGGING.md) |
-| Configure production authentication | [Authentication](docs/authentication.md), [guarded activation](docs/guarded-multi-user-enablement.md), [Keycloak](docs/keycloak-oidc-setup.md) |
-| Integrate clients | [API overview](docs/guides/api.md), [CLI](docs/guides/cli.md), [MCP](docs/mcp.md) |
+| Run your own server, upgrade, or recover | [Deployment](docs/guides/deployment.md), [configuration](docs/guides/configuration.md), [troubleshooting](docs/DEBUGGING.md) |
+| Set up login for a public server | [Authentication](docs/authentication.md), [guarded activation](docs/guarded-multi-user-enablement.md), [Keycloak](docs/keycloak-oidc-setup.md) |
+| Connect other tools | [API overview](docs/guides/api.md), [CLI](docs/guides/cli.md), [MCP](docs/mcp.md) |
 | Understand or contribute to the code | [Architecture](docs/guides/architecture.md), [development](docs/guides/development.md), [roadmap](docs/ROADMAP.md) |
-| Report a vulnerability or maintain dependencies | [Security policy](SECURITY.md), [Dependabot setup](docs/dependabot.md) |
+| Report a security issue or keep dependencies current | [Security policy](SECURITY.md), [Dependabot setup](docs/dependabot.md) |
 | Publish a product release | [CI and release runbook](docs/ci-and-releases.md) |
 | Preview or manually publish the handbook | [Documentation runbook](docs/documentation.md) |
 
@@ -53,32 +76,47 @@ before updating the deployment and installed connection helpers.
 
 | Component | Responsibility |
 | --- | --- |
-| `services/core/` | ASP.NET Core unified library, accounts, matching, enrichment, and orchestration |
-| `services/ingest/` | ASP.NET Core raw platform storage, retrieval, and encrypted credentials |
-| `frontend/` | Next.js interface and authenticated BFF |
-| `services/cli/` | Go ingestion client and local connection helper |
-| `services/mcp/` | .NET stdio MCP server backed by Core |
-| `services/shared/` | Shared contracts and trust boundaries |
-| `docs/site/` | Independent Docusaurus handbook and version tooling |
+| `services/core/` | ASP.NET Core API for the library, accounts, game matching, and metadata |
+| `services/ingest/` | ASP.NET Core API for platform imports and encrypted credentials |
+| `frontend/` | Next.js web interface and server-side API proxy (BFF) |
+| `services/cli/` | Go command-line client and local connection helper |
+| `services/mcp/` | .NET MCP server that connects AI tools to Core |
+| `services/shared/` | Shared service contracts and security checks |
+| `docs/site/` | Docusaurus website with versioned handbooks |
 
-## Deployment boundaries
+## Local use and public servers
 
-The local compatibility deployment and guarded production mode have different authentication
-policies. Production multi-user admission defaults to disabled and must be explicitly enabled
-after readiness checks. OIDC configuration alone does not activate it. Personal-tenant JIT is
-a separate opt-in; public registration and shared tenants are not implied.
+Start with the local setup. Before exposing GameHub to the internet, follow the deployment
+and authentication guides. Use HTTPS and keep the backend APIs and databases private.
 
-Supply strong independent secrets through your deployment system and keep operator-owned
-environment files out of Git. Browser tokens stay in HttpOnly cookies; provider credentials
-remain encrypted in Ingest. Tenant ownership comes from trusted authentication, never client
-tenant headers or backup files.
+Production access for multiple users is off by default. An operator must check the setup
+and enable it. Login can use an external provider through OpenID Connect (OIDC).
+Configuring that provider alone does not enable this mode.
+Automatic creation of a personal library on first OIDC login is a separate option.
+Shared libraries, invitations, and public registration are not included.
+
+Keep secrets and local environment files out of Git. GameHub stores browser login tokens
+in HttpOnly cookies. It encrypts stored platform credentials in Ingest.
+The signed-in account determines library ownership. Client headers and backup files cannot
+select another account's library.
 
 ## Releases
 
-Core, Ingest, frontend, and CLI share one release version. Product publication is started through
-**Actions → Release → Run workflow** on **main** and produces verified GHCR images, CLI/helper
-archives, checksums, and SBOMs. Merging a PR does not publish a release.
+Find published versions and downloads on [GitHub Releases](https://github.com/happticde/gamehub/releases).
+Core, Ingest, frontend, and CLI share one release version.
 
-Documentation-only changes run documentation verification and the existing secret/aggregate
-checks without application or container builds. Documentation-only product release attempts
-are rejected. Publishing the handbook uses the separate manual Pages workflow.
+Maintainers publish through **Actions → Release → Run workflow** on **main**.
+Each release includes checked container images in GitHub Container Registry (GHCR).
+It also includes CLI and helper archives, checksums, and software component lists (SBOMs).
+Merging a PR does not publish a release.
+
+Handbook publication uses the separate **Publish documentation (manual)** workflow.
+A merge or product release does not update the live handbook.
+Documentation-only changes do not create a product release.
+
+## License
+
+GameHub application code and handbook content use **AGPL-3.0-only**.
+The website tooling in `docs/site` uses **MIT**. Third-party components keep their own licenses.
+See [LICENSE](LICENSE), [COPYRIGHT](COPYRIGHT), [licensing and source availability](licensing/README.md),
+and [contribution terms](CONTRIBUTING.md).
