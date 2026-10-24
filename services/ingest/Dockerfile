@@ -1,10 +1,11 @@
-FROM golang:1.26.9-bookworm AS notice-builder
+FROM golang:1.27.3-bookworm AS notice-builder
 COPY services/cli/tools/license-notices/main.go /license-notices.go
 RUN CGO_ENABLED=0 go build -o /license-notices /license-notices.go
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+COPY ["Directory.Packages.props", "./"]
 COPY ["services/ingest/GameHub.Ingest.csproj", "services/ingest/"]
 COPY ["services/shared/GameHub.Shared.csproj", "services/shared/"]
 RUN dotnet restore "services/ingest/GameHub.Ingest.csproj"

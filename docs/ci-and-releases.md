@@ -26,6 +26,12 @@ skipping application builds, Semgrep, application dependency restoration/scannin
 builds. Agent-context-only changes keep the secret scan and aggregate gate.
 Pages publication remains exclusively manual; see [Documentation](documentation.md).
 
+Image builds wait for all selected source checks to succeed.
+Failed lint, restore, test, or security checks stop the expensive image jobs.
+The final aggregate still rejects missing checks and unexpected skips.
+NuGet versions come from `Directory.Packages.props`, including test dependencies.
+An early check rejects local version overrides and a mismatched devcontainer EF tool.
+
 Both documentation workflows install the locked dependencies with `scripts/ci/npm-ci.sh`.
 Recognized npm connection errors retry the complete installation up to three times, waiting
 10 and 20 seconds between attempts. Persistent network failures retain npm's exit status;

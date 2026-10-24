@@ -7,7 +7,7 @@
 - CI and shared release workflows are documented in `docs/ci-and-releases.md`. The reusable
   checks include source/CLI/image security scans; release publication is manually dispatched
   from `main` and gated by every check. Keep versions, tool archive hashes, and Action/image pins
-  reviewed. Go remains on the 1.26 line with the patched 1.26.9 toolchain/helper builder.
+  reviewed. CLI, helper, notice, and devcontainer builders use the patched Go 1.27.3 toolchain.
 - PR and push CI select relevant jobs with `scripts/ci/select-checks.py`. Documentation-only
   changes keep Gitleaks and the aggregate gate but skip builds/images. Shared backend changes
   select both service images; CLI/helper inputs select the frontend image. Scheduled/manual CI

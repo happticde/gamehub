@@ -43,6 +43,8 @@ jobs:
           persist-credentials: false
       - name: Verify project license metadata
         run: python3 scripts/ci/check-licenses.py
+      - name: Verify shared dependency versions
+        run: python3 scripts/ci/check-dependencies.py
       - id: select
         env:
           SELECT_CHANGES: ${{ inputs.select-changes }}
@@ -137,7 +139,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('services/**/*.csproj', 'tests/**/*.csproj') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', 'services/**/*.csproj', 'tests/**/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-
       - name: Resolve transitive NuGet dependencies only in the scan snapshot
         run: |
@@ -220,6 +222,20 @@ jobs:
     if: needs.select.outputs.backend == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          # This database exists only for this job and contains synthetic test data.
+          POSTGRES_PASSWORD: gamehub-ci-only
+          POSTGRES_DB: gamehub_tests
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      GAMEHUB_TEST_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=gamehub_tests;Username=postgres;Password=gamehub-ci-only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -230,7 +246,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('services/**/*.csproj', 'tests/**/*.csproj') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', 'services/**/*.csproj', 'tests/**/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-
       - run: dotnet restore
       - run: dotnet build --no-restore --verbosity quiet
@@ -358,8 +374,10 @@ jobs:
 
   images:
     name: Image scan (${{ matrix.component }}, ${{ matrix.arch }})
-    needs: select
-    if: needs.select.outputs.images == 'true'
+    needs: [select, workflow, gitleaks, semgrep, dependencies, backend, frontend, cli, docs]
+    if: >-
+      ${{ always() && !cancelled() && needs.select.outputs.images == 'true'
+          && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
