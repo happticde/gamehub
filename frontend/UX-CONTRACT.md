@@ -2,15 +2,15 @@
 
 ## Canonical UI map
 
-| Capability | Owner | Rule |
-| --- | --- | --- |
-| Select/Listbox | `components/ui/select.tsx` | Reuse the authored selector and its keyboard behavior. |
-| Form | `components/ui/input.tsx`, `textarea.tsx`, `button.tsx` | Keep inline errors, input values, and duplicate-submit guards. |
-| Dialog | `components/ui/dialog.tsx` | Preserve focus, Escape, and focus restoration. |
-| Destructive confirmation | `components/ui/alert-dialog.tsx` | Name the consequence and require an explicit action. |
-| Search | `hooks/useDebouncedMetadataSearch.ts`, `lib/latest-request-gate.ts` | Debounce requests, cancel obsolete work, and reject stale responses. |
-| Authentication | `lib/authenticated-fetch.ts`, server BFF routes | Tokens stay in HttpOnly cookies. Only the BFF-confirmed final 401 ends a browser session. |
-| CRUD | Existing Core routes and their owning panels | Writes need server confirmation. Preserve errors and retry paths. |
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Select/Listbox | `components/ui/select.tsx` | Shared primitive | Authored selectors | Keyboard and popup checks |
+| Form | `components/ui/input.tsx`, `textarea.tsx`, `button.tsx` | Existing API contracts | Inline errors and duplicate-submit guards | Security tests and browser checks |
+| Dialog | `components/ui/dialog.tsx` | Shared primitive | Modal with focus restoration | Escape and keyboard checks |
+| Destructive confirmation | `components/ui/alert-dialog.tsx` | Existing mutation contracts | Explicit confirmation | Cancel and confirm checks |
+| Search | `hooks/useDebouncedMetadataSearch.ts`, `lib/latest-request-gate.ts` | Request gate | Debounced remote search | Slow, stale, cleared, and failed request checks |
+| Authentication | `lib/authenticated-fetch.ts`, server BFF routes | Server authentication policy | BFF-confirmed final 401 | Security tests |
+| CRUD | Existing Core routes and their owning panels | Server API policy | Server-confirmed writes with retry | Security and interaction tests |
 
 ## Requests and state
 
