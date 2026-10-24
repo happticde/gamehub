@@ -8,6 +8,8 @@ updates:
       time: "08:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
       include: scope
@@ -27,6 +29,8 @@ updates:
       time: "08:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
       include: scope
@@ -46,14 +50,32 @@ updates:
       time: "08:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
       include: scope
     groups:
-      nextjs-major:
+      framework-major:
         applies-to: version-updates
-        patterns: [next, eslint-config-next]
+        patterns: [next, react, react-dom]
         update-types: [major]
+      framework-minor-and-patch:
+        applies-to: version-updates
+        patterns: [next, react, react-dom]
+        update-types: [minor, patch]
+      lint-minor-and-patch:
+        applies-to: version-updates
+        patterns: ["eslint*", "@eslint/*", "@next/eslint-plugin-next", "@typescript-eslint/*", "typescript-eslint"]
+        update-types: [minor, patch]
+      tailwind-minor-and-patch:
+        applies-to: version-updates
+        patterns: [tailwindcss, "@tailwindcss/*", tailwind-merge, tw-animate-css]
+        update-types: [minor, patch]
+      ui-minor-and-patch:
+        applies-to: version-updates
+        patterns: [radix-ui, "@radix-ui/*", cmdk, lucide-react]
+        update-types: [minor, patch]
       npm-minor-and-patch:
         applies-to: version-updates
         patterns: ["*"]
@@ -69,10 +91,16 @@ updates:
       time: "08:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
       include: scope
     groups:
+      # v0 minor releases can change APIs. Review this group as a migration.
+      browser-helper:
+        applies-to: version-updates
+        patterns: ["github.com/chromedp/*"]
       go-minor-and-patch:
         applies-to: version-updates
         patterns: ["*"]
@@ -81,13 +109,16 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: nuget
-    directories: [/services/core, /services/ingest, /services/shared]
+    # The root manifest supplies versions to services, MCP, tools, and tests.
+    directory: /
     schedule:
       interval: weekly
       day: monday
       time: "08:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
       include: scope
@@ -98,7 +129,16 @@ updates:
           - "Microsoft.EntityFrameworkCore*"
           - "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"
           - "Npgsql.EntityFrameworkCore.PostgreSQL"
+          - "SQLitePCLRaw.*"
         update-types: [major]
+      ef-core-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "Microsoft.EntityFrameworkCore*"
+          - "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"
+          - "Npgsql.EntityFrameworkCore.PostgreSQL"
+          - "SQLitePCLRaw.*"
+        update-types: [minor, patch]
       nuget-minor-and-patch:
         applies-to: version-updates
         patterns: ["*"]

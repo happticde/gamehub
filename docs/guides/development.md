@@ -47,6 +47,11 @@ docker exec -w /workspaces/gamehub/services/cli gamehub_devcontainer-app-1 \
 
 For documentation commands, see [Maintaining documentation](../documentation.md).
 
+NuGet versions live in the root `Directory.Packages.props`.
+Keep service and test project references free of version overrides.
+When upgrading EF Core, also update `DOTNET_EF_VERSION` in `.devcontainer/Dockerfile`
+and rebuild the devcontainer. CI checks this match before building images.
+
 For an intentionally anonymous local service, explicitly set `ASPNETCORE_ENVIRONMENT=Development`
 and `Authentication__AllowAnonymousLocalDevelopment=true`, leave browser/JWT/OIDC/multi-user
 authentication disabled, and bind only to loopback. Missing keys alone never disable authentication.

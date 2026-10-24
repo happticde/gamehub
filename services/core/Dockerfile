@@ -5,6 +5,7 @@ RUN CGO_ENABLED=0 go build -o /license-notices /license-notices.go
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+COPY ["Directory.Packages.props", "./"]
 COPY ["services/core/GameHub.Core.csproj", "services/core/"]
 COPY ["services/shared/GameHub.Shared.csproj", "services/shared/"]
 RUN dotnet restore "services/core/GameHub.Core.csproj"

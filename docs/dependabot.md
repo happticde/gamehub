@@ -39,11 +39,16 @@ independently of that weekly version-update schedule.
 | Docker | `frontend`, `services/core`, `services/ingest` |
 | npm | `frontend`, `docs/site` |
 | Go modules | `services/cli` |
-| NuGet | `services/core`, `services/ingest`, `services/shared` |
+| NuGet | Root `Directory.Packages.props`; shared by services, MCP, tools, and tests |
 
-The YAML groups minor/patch updates and security updates. Related Next.js and EF
-Core major upgrades have dedicated groups. Each ecosystem entry limits open
-version-update PRs to two; this is not a global limit on security-update PRs.
+Normal version updates wait seven days after a release. Security updates do not wait.
+Each ecosystem entry limits open version-update PRs to two. Security-update PRs have a separate limit.
+
+The npm groups separate framework, lint, Tailwind, and UI packages.
+This keeps a new lint rule from blocking unrelated UI updates.
+Go browser-helper packages have their own group. Their `0.x` releases can change APIs,
+so review them as migrations. EF Core, its database providers, and native SQLite packages
+stay together. Major framework and database updates remain separate from minor and patch updates.
 
 ## 3. Verify that it works
 
@@ -67,6 +72,32 @@ for breaking changes, migrations and license compatibility.
 License notices and inventories are generated during builds. Inspect the CI
 license-evidence artifacts when relevant; there is no committed inventory or
 review-hash file to refresh manually. See [licensing](../licensing/README.md).
+
+Merge one update PR at a time. Update the remaining branches from `main` and run CI again.
+A green result from an older base does not verify the combined changes.
+
+## Keep .NET versions together
+
+Edit `Directory.Packages.props` to change a NuGet package version.
+Project files use package names without their own versions. Tests therefore receive
+the same EF Core and SQLite packages as the services.
+
+CI checks for project-level version overrides before running builds.
+It also checks that the devcontainer's `DOTNET_EF_VERSION` matches EF Core.
+Update that Dockerfile value when changing EF Core, then rebuild the devcontainer.
+The service Dockerfiles copy the central manifest before restoring packages.
+Backend CI starts a temporary PostgreSQL database. This runs the PostgreSQL migration
+and isolation tests as well as the SQLite tests when database packages change.
+
+## Read a failed update check
+
+Check the first failed source job before inspecting image builds.
+NuGet downgrade errors usually mean related projects use different versions.
+New lint errors need a code review. A compiler error after a Go update may need an API migration.
+Retrying the same code does not fix these failures.
+
+Image builds wait for the selected source checks to pass.
+The final CI gate still rejects failed checks and unexpected skips.
 
 An advisory without an available fix may remain open and produce no update PR.
 Record any accepted risk with scope, owner, reason and an expiry; the existing CI

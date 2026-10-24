@@ -3,7 +3,7 @@ FROM golang:1.26.9-bookworm AS go
 
 FROM mcr.microsoft.com/devcontainers/dotnet:10.0-preview-trixie-slim
 
-ARG DOTNET_EF_VERSION=10.0.2
+ARG DOTNET_EF_VERSION=10.0.13
 
 COPY --from=node /usr/local/bin/ /usr/local/bin/
 COPY --from=node /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
