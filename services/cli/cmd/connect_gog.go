@@ -165,7 +165,7 @@ func captureGogConnectPayload(parent context.Context, profileDir string, userOve
 	defer cancelAllocator()
 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
-	defer cancelBrowser()
+	defer closeConnectBrowser(browserCtx, cancelBrowser)
 
 	if _, err := chromedp.Call(browserCtx, network.Enable, network.EnableParams{}); err != nil {
 		return gogConnectPayload{}, fmt.Errorf("failed to prepare GOG browser session: %w", err)
@@ -204,6 +204,14 @@ func captureGogConnectPayload(parent context.Context, profileDir string, userOve
 		case <-ticker.C:
 		}
 	}
+}
+
+// Let Chrome flush its temporary profile before removal. Remote allocators close only our tab.
+func closeConnectBrowser(ctx context.Context, cancel context.CancelFunc) {
+	defer cancel()
+	shutdownCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+	defer stop()
+	_ = chromedp.Cancel(shutdownCtx)
 }
 
 func readGogAlCookie(ctx context.Context) (*network.Cookie, error) {

@@ -60,7 +60,7 @@ func TestBrowserConnectReaders(t *testing.T) {
 			allocator, stopAllocator := chromedp.NewExecAllocator(ctx, options...)
 			defer stopAllocator()
 			browser, stopBrowser := chromedp.NewContext(allocator)
-			defer stopBrowser()
+			defer closeConnectBrowser(browser, stopBrowser)
 			if _, err := chromedp.Call(browser, network.Enable, network.EnableParams{}); err != nil {
 				t.Fatal(err)
 			}
@@ -167,6 +167,10 @@ func TestBrowserConnectReaders(t *testing.T) {
 				defer stopRemoteBrowser()
 				if _, _, err := readPsnSessionCookies(remoteBrowser); err != nil {
 					t.Fatalf("remote browser: %v", err)
+				}
+				closeConnectBrowser(remoteBrowser, stopRemoteBrowser)
+				if _, err := readCurrentPsnBrowserURL(browser); err != nil {
+					t.Fatalf("remote cleanup closed the existing browser: %v", err)
 				}
 			}
 		})
