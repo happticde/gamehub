@@ -1,18 +1,20 @@
 # Configuration reference
 
-The table below describes the operator-facing variables wired by `docker-compose.yml`. Supply
-secrets yourself through your deployment system. This handbook contains names and requirements,
-never real deployment values. Changing configuration normally requires recreating the affected
-containers; restart alone does not update a container's environment.
+These settings apply to the standalone [release Compose template](../../docker-compose.images.yml).
+Save that file as `compose.yaml` for your installation. Supply secrets yourself.
+The source-build file `docker-compose.yml` uses most of the same settings.
+Changing settings usually requires recreating the affected containers.
+A restart alone does not update their environment.
 
 ## Service and database settings
 
 | Variable | Default / purpose |
 | --- | --- |
+| `GAMEHUB_VERSION` | Required by the release template; full release tag, such as `v0.1.0`. Used for all three GameHub images. |
 | `GAMEHUB_FRONTEND_BIND_IP` | `127.0.0.1`; host address for the published frontend port. Set to a reserved private/VPN interface address when the HTTPS proxy runs on another host. |
 | `CORE_DB_PROVIDER` | `Postgres`; Core supports `Postgres` or `Sqlite` |
 | `INGEST_DB_PROVIDER` | `Sqlite`; Ingest database provider |
-| `INGEST_DB_CONN` | `Data Source=/app/data/ingest.db` in the baseline |
+| `INGEST_DB_CONN` | `Data Source=/app/data/gamehub.db` in the release template; sets Ingest's SQLite connection |
 | `POSTGRES_DB` | `gamehub_core` |
 | `POSTGRES_USER` | `postgres` |
 | `POSTGRES_PASSWORD` | Required; no fallback password |
@@ -22,6 +24,8 @@ containers; restart alone does not update a container's environment.
 Core's Compose SQLite connection is `/app/data/core.db`. Its PostgreSQL connection is built from
 the PostgreSQL variables. Frontend `CORE_URL` and `INGEST_URL`, and Core's `Services__IngestUrl`,
 use internal Compose hostnames; keep those distinct from public browser URLs.
+The release template maps `INGEST_DB_CONN` to `ConnectionStrings__Sqlite`.
+For Ingest with PostgreSQL, also supply `ConnectionStrings__Postgres` in your Compose file.
 When the reverse proxy runs on another host, set `GAMEHUB_FRONTEND_BIND_IP` to the GameHub host's
 reserved private or VPN address and allow port 3000 only from that proxy. Core, Ingest, and
 PostgreSQL remain bound to loopback by default.
@@ -32,9 +36,9 @@ PostgreSQL remain bound to loopback by default.
 | --- | --- |
 | `GAMEHUB_API_KEY` | Required by Compose; 32–512 printable non-space ASCII characters outside Development |
 | `GAMEHUB_TENANT_ID` | Trusted compatibility tenant; defaults to the original default tenant |
-| `GAMEHUB_INGEST_SERVICE_KEY` | Independent Core-to-Ingest delegation key |
+| `GAMEHUB_INGEST_SERVICE_KEY` | Required by the release template; independent Core-to-Ingest delegation key |
 | `GAMEHUB_CREDENTIAL_KEY_VERSION` | Active vault key version; defaults to `1` |
-| `GAMEHUB_CREDENTIAL_KEY_1` | Base64-encoded 32-byte AES vault key |
+| `GAMEHUB_CREDENTIAL_KEY_1` | Required by the release template; Base64-encoded 32-byte AES vault key |
 | `GAMEHUB_JWT_SIGNING_KEY` | Required by Compose; independent secret of at least 32 UTF-8 bytes |
 | `GAMEHUB_JWT_REFRESH_TOKEN_DAYS` | `30`; supported range `1`–`90` |
 | `GAMEHUB_FRONTEND_AUTH_ENABLED` | `true` in Compose; enables the frontend authentication flow |

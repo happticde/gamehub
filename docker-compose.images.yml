@@ -1,0 +1,121 @@
+# Standalone installation with published images. No source checkout is needed.
+# Save as compose.yaml in your installation folder. See docs/guides/installation.md.
+
+services:
+  frontend:
+    image: ghcr.io/happticde/gamehub-frontend:${GAMEHUB_VERSION:?Set a published release tag, for example v0.1.0}
+    restart: unless-stopped
+    ports:
+      - "${GAMEHUB_FRONTEND_BIND_IP:-127.0.0.1}:3000:3000"
+    environment:
+      - CORE_URL=http://core:8080
+      - INGEST_URL=http://ingest:8080
+      - PUBLIC_ORIGIN=${GAMEHUB_PUBLIC_ORIGIN:-http://localhost:3000}
+      - AUTH_ENABLED=${GAMEHUB_FRONTEND_AUTH_ENABLED:-true}
+      - AUTH_COOKIE_SECURE=${GAMEHUB_AUTH_COOKIE_SECURE:-false}
+      - MULTI_USER_ENABLED=${GAMEHUB_MULTI_USER_ENABLED:-false}
+      - OIDC_ENABLED=${GAMEHUB_OIDC_ENABLED:-false}
+      - OIDC_ISSUER=${GAMEHUB_OIDC_ISSUER:-}
+      - OIDC_CLIENT_ID=${GAMEHUB_OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${GAMEHUB_OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URI=${GAMEHUB_OIDC_REDIRECT_URI:-}
+      - OIDC_SCOPES=${GAMEHUB_OIDC_SCOPES:-openid profile email}
+      - OIDC_COOKIE_KEY=${GAMEHUB_OIDC_COOKIE_KEY:-}
+      - OIDC_BFF_SERVICE_KEY=${GAMEHUB_OIDC_BFF_SERVICE_KEY:-}
+      - OIDC_PROVISIONING_MODE=${GAMEHUB_OIDC_PROVISIONING_MODE:-Disabled}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ingest:
+    image: ghcr.io/happticde/gamehub-ingest:${GAMEHUB_VERSION:?Set a published release tag, for example v0.1.0}
+    restart: unless-stopped
+    ports: [ "127.0.0.1:5000:8080" ]
+    volumes: [ "gamehub_data:/app/data" ]
+    environment:
+      - Database__Provider=${INGEST_DB_PROVIDER:-Sqlite}
+      - ConnectionStrings__Sqlite=${INGEST_DB_CONN:-Data Source=/app/data/gamehub.db}
+      - Authentication__ApiKey=${GAMEHUB_API_KEY:?Set a strong GameHub API key}
+      - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      - Authentication__ServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:?Set an independent internal service key}
+      - MultiUser__Enabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
+      - Credentials__ActiveKeyVersion=${GAMEHUB_CREDENTIAL_KEY_VERSION:-1}
+      - Credentials__Keys__1=${GAMEHUB_CREDENTIAL_KEY_1:?Set a Base64-encoded 32-byte vault key}
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  core:
+    image: ghcr.io/happticde/gamehub-core:${GAMEHUB_VERSION:?Set a published release tag, for example v0.1.0}
+    restart: unless-stopped
+    ports: [ "127.0.0.1:5001:8080" ]
+    volumes: [ "gamehub_data:/app/data" ]
+    environment:
+      - Database__Provider=${CORE_DB_PROVIDER:-Postgres}
+      - ConnectionStrings__Postgres=Host=db;Port=5432;Database=${POSTGRES_DB:-gamehub_core};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?Set a strong PostgreSQL password}
+      - ConnectionStrings__Sqlite=Data Source=/app/data/core.db
+      - Services__IngestUrl=http://ingest:8080
+      - Services__IngestServiceKey=${GAMEHUB_INGEST_SERVICE_KEY:?Set an independent internal service key}
+      - Authentication__ApiKey=${GAMEHUB_API_KEY:?Set a strong GameHub API key}
+      - Authentication__TenantId=${GAMEHUB_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      - Authentication__Jwt__SigningKey=${GAMEHUB_JWT_SIGNING_KEY:?Set an independent JWT signing key}
+      - Authentication__Jwt__RefreshTokenLifetimeDays=${GAMEHUB_JWT_REFRESH_TOKEN_DAYS:-30}
+      # Keep Core's view of frontend authentication in sync with the frontend.
+      - Authentication__Frontend__Enabled=${GAMEHUB_FRONTEND_AUTH_ENABLED:-true}
+      - Authentication__Frontend__SecureCookies=${GAMEHUB_AUTH_COOKIE_SECURE:-false}
+      - Authentication__Frontend__MultiUserEnabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
+      - Authentication__Oidc__Enabled=${GAMEHUB_OIDC_ENABLED:-false}
+      - Authentication__Oidc__Issuer=${GAMEHUB_OIDC_ISSUER:-}
+      - Authentication__Oidc__Audience=${GAMEHUB_OIDC_CLIENT_ID:-}
+      - Authentication__Oidc__MetadataAddress=${GAMEHUB_OIDC_METADATA_ADDRESS:-}
+      - Authentication__Oidc__AllowedAlgorithms=${GAMEHUB_OIDC_ALLOWED_ALGORITHMS:-RS256}
+      - Authentication__Oidc__BffServiceKey=${GAMEHUB_OIDC_BFF_SERVICE_KEY:-}
+      - Authentication__Oidc__ProvisioningMode=${GAMEHUB_OIDC_PROVISIONING_MODE:-Disabled}
+      - MultiUser__Enabled=${GAMEHUB_MULTI_USER_ENABLED:-false}
+      - Igdb__ClientId=${IGDB_CLIENT_ID:-}
+      - Igdb__ClientSecret=${IGDB_CLIENT_SECRET:-}
+      - Logging__LogLevel__GameHub.Core.Services.IgdbClient=Warning
+    depends_on:
+      ingest:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-gamehub_core}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set a strong PostgreSQL password}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  gamehub_data:
