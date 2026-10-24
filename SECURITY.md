@@ -9,7 +9,7 @@ Security maintenance and responses are provided on a best-effort basis.
 
 ## Report a vulnerability privately
 
-Open [GameHub security advisories](https://github.com/jfk1987/gamehub/security/advisories)
+Open [GameHub security advisories](https://github.com/happticde/gamehub/security/advisories)
 and choose **Report a vulnerability** to submit a private report to the maintainers.
 This requires GitHub's private vulnerability reporting to be enabled for the repository.
 

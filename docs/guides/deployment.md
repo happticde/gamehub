@@ -3,9 +3,11 @@
 ## Plan the deployment
 
 GameHub has a frontend/BFF, Core, Ingest, and persistent databases. The CLI and MCP server are
-clients rather than additional database owners. The repository's Compose file is a baseline:
-it builds from source, publishes local service ports, and uses PostgreSQL for Core plus SQLite
-for Ingest by default.
+clients rather than additional database owners.
+Use the standalone [release Compose template](../../docker-compose.images.yml).
+Save it as `compose.yaml` in your installation folder.
+It downloads published images and uses PostgreSQL for Core and SQLite for Ingest.
+Follow [Installation](installation.md) for the first setup.
 
 For a production installation:
 
@@ -57,25 +59,25 @@ the frontend's `PUBLIC_ORIGIN` matches the exact external HTTPS origin. Compose 
 can still render pages while writes are rejected. Keep the origin check enabled and correct the
 deployment setting before retrying the save.
 
-## Choose source builds or release images
+## Choose a release
 
-For source builds, check out a published tag and run the Compose build from that checkout.
-For prebuilt images, configure your deployment to use all three images from the same release:
+Set `GAMEHUB_VERSION` to a published release tag, such as `v0.1.0`.
+The release Compose file uses that tag for all three images:
 
 ```text
-ghcr.io/jfk1987/gamehub-core:vX.Y.Z
-ghcr.io/jfk1987/gamehub-ingest:vX.Y.Z
-ghcr.io/jfk1987/gamehub-frontend:vX.Y.Z
+ghcr.io/happticde/gamehub-core:vX.Y.Z
+ghcr.io/happticde/gamehub-ingest:vX.Y.Z
+ghcr.io/happticde/gamehub-frontend:vX.Y.Z
 ```
 
 Replace the example tag with an existing release. Release images support Linux AMD64 and ARM64.
 Keep numbered tags in deployment configuration; `latest` changes when another release is
 published. Private packages require authenticated registry access.
 
-The checked-in Compose file contains `build` entries, not these image references. To consume
-release images, supply an operator-maintained Compose override with `image` values and run
-`docker compose up -d --no-build` with that override, or use equivalent orchestration.
-Do not assume `docker compose pull` changes source-build entries into release images.
+Run `docker compose pull`, then `docker compose up -d --no-build`.
+The file is complete on its own. It needs no Compose override or source checkout.
+The repository's separate `docker-compose.yml` is for
+[source builds](development.md#build-from-source).
 
 ## Persistence and databases
 
@@ -95,6 +97,22 @@ Review provider-specific migrations before changing an existing deployment's dat
 4. Update all application components and helper downloads together to the selected release.
 5. Start the services and inspect startup/migration logs and health checks.
 6. Verify login, the intended account's library, credential status, and one retrieval/sync cycle.
+
+For the release Compose installation, change `GAMEHUB_VERSION` to the target tag.
+Then run these commands from the same installation folder:
+
+```bash
+docker compose pull
+docker compose up -d --no-build
+docker compose ps
+```
+
+If you move an existing installation to this template, keep its Compose project name.
+Use `docker compose -p YOUR_EXISTING_PROJECT_NAME` for each command when needed.
+Keep the existing volume names and database paths too.
+A different project name creates new volumes and can make the library appear empty.
+The release template defaults Ingest's SQLite path to `/app/data/gamehub.db`.
+Set `INGEST_DB_CONN` to your existing path if it differs.
 
 The frontend embeds the helper downloads from its own release. An old installed helper can
 disagree with a newer frontend's launch protocol; reinstall the matching package when release

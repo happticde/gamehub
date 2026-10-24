@@ -49,8 +49,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq 'add' > "$RUNNER_TEMP/docs-releases.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq 'add // []' > "$RUNNER_TEMP/docs-releases.json"
       - name: Verify licensing before publishing the website
         run: python3 scripts/ci/check-licenses.py
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -79,7 +79,7 @@ jobs:
         run: |
           python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
           python3 scripts/ci/export-source.py "$RUNNER_TEMP/docs-source"
-          trivy fs --scanners vuln --include-dev-deps --format json \
+          "$RUNNER_TEMP/tools/trivy" fs --scanners vuln --include-dev-deps --format json \
             --output "$RUNNER_TEMP/trivy-docs.json" "$RUNNER_TEMP/docs-source/docs/site"
           python3 scripts/ci/gate-trivy.py "$RUNNER_TEMP/trivy-docs.json" --target-prefix docs/site
       - name: Fingerprint documentation, renderer, and release versions

@@ -2,7 +2,7 @@ const {readFileSync} = require('node:fs');
 const path = require('node:path');
 
 const versions = JSON.parse(readFileSync(path.join(__dirname, 'versions.json'), 'utf8'));
-const repository = process.env.GITHUB_REPOSITORY || 'jfk1987/gamehub';
+const repository = process.env.GITHUB_REPOSITORY || 'happticde/gamehub';
 const [owner, project] = repository.split('/');
 const baseUrl = process.env.DOCS_BASE_URL || `/${project}/`;
 
