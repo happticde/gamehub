@@ -101,35 +101,31 @@ export function IngestionPanel() {
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchCredentialStatus = useCallback(async () => {
-        setLoadingStatus(true);
-        try {
-            const response = await fetchAuthenticated("/api/core/platform-credentials", { cache: "no-store" });
+    const fetchCredentialStatus = useCallback(() => {
+        return fetchAuthenticated("/api/core/platform-credentials", { cache: "no-store" }).then(async (response) => {
             if (!response.ok) throw new Error(await readError(response));
             setCredentials(await response.json());
-        } catch (caught) {
+        }).catch((caught: unknown) => {
             setError(errorMessage(caught));
-        } finally {
+        }).finally(() => {
             setLoadingStatus(false);
-        }
+        });
     }, []);
 
-    const fetchLogs = useCallback(async () => {
-        setLoadingLogs(true);
-        try {
-            const params = new URLSearchParams({ limit: "100" });
-            if (platformFilter !== "all") params.set("platform", platformFilter);
-            const response = await fetchAuthenticated(
-                `/api/core/platform-credentials/retrieval-history?${params}`,
-                { cache: "no-store" },
-            );
+    const fetchLogs = useCallback(() => {
+        const params = new URLSearchParams({ limit: "100" });
+        if (platformFilter !== "all") params.set("platform", platformFilter);
+        return fetchAuthenticated(
+            `/api/core/platform-credentials/retrieval-history?${params}`,
+            { cache: "no-store" },
+        ).then(async (response) => {
             if (!response.ok) throw new Error(await readError(response));
             setLogs(await response.json());
-        } catch (caught) {
+        }).catch((caught: unknown) => {
             setError(errorMessage(caught));
-        } finally {
+        }).finally(() => {
             setLoadingLogs(false);
-        }
+        });
     }, [platformFilter]);
 
     useEffect(() => {
@@ -151,6 +147,8 @@ export function IngestionPanel() {
             if (!response.ok) throw new Error(await readError(response));
             const result = await response.json() as { message?: string };
             setMessage(result.message ?? `${platformLabel(platform)} retrieval completed.`);
+            setLoadingStatus(true);
+            setLoadingLogs(true);
             await Promise.all([fetchCredentialStatus(), fetchLogs()]);
         } catch (caught) {
             setError(errorMessage(caught));
@@ -200,7 +198,11 @@ export function IngestionPanel() {
             <div className="space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h3 className="text-lg font-semibold tracking-tight">Ingest audit log</h3>
-                    <Select value={platformFilter} onValueChange={setPlatformFilter}>
+                    <Select value={platformFilter} onValueChange={(value) => {
+                        if (value === platformFilter) return;
+                        setLoadingLogs(true);
+                        setPlatformFilter(value);
+                    }}>
                         <SelectTrigger className="w-full sm:w-40">
                             <SelectValue placeholder="Filter platform" />
                         </SelectTrigger>

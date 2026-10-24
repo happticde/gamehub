@@ -1,10 +1,14 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { Loader2, Plus, Tags, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type {
@@ -28,14 +32,19 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
     const router = useRouter();
     const [tags, setTags] = useState(initialTags);
     const [suggestions, setSuggestions] = useState(availableTags);
+    const [previousAvailableTags, setPreviousAvailableTags] = useState(availableTags);
     const [input, setInput] = useState("");
     const [suggestionsOpen, setSuggestionsOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [deletingTagId, setDeletingTagId] = useState<number | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [hasError, setHasError] = useState(false);
+    const [tagToDelete, setTagToDelete] = useState<TagSuggestion | null>(null);
 
-    useEffect(() => setSuggestions(availableTags), [availableTags]);
+    if (previousAvailableTags !== availableTags) {
+        setPreviousAvailableTags(availableTags);
+        setSuggestions(availableTags);
+    }
 
     const visibleSuggestions = useMemo(() => {
         const search = normalizeTagName(input).toLocaleLowerCase();
@@ -118,12 +127,6 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
     };
 
     const deleteSuggestion = async (suggestion: TagSuggestion) => {
-        if (suggestion.usageCount > 0 && !window.confirm(
-            `Delete "${suggestion.name}" from ${suggestion.usageCount} game assignment${suggestion.usageCount === 1 ? "" : "s"}?`
-        )) {
-            return;
-        }
-
         setDeletingTagId(suggestion.id);
         setMessage(null);
         setHasError(false);
@@ -175,7 +178,10 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
                             {suggestion.isCustom && (
                                 <button
                                     type="button"
-                                    onClick={() => void deleteSuggestion(suggestion)}
+                                    onClick={() => {
+                                        if (suggestion.usageCount > 0) setTagToDelete(suggestion);
+                                        else void deleteSuggestion(suggestion);
+                                    }}
                                     disabled={isBusy}
                                     className="mr-1 rounded-md p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                                     aria-label={`Delete custom tag ${suggestion.name}`}
@@ -224,7 +230,7 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
                 ))}
             </div>
 
-            <form onSubmit={addTag} className="flex gap-2">
+            <form noValidate onSubmit={addTag} className="flex gap-2">
                 <Popover open={suggestionsOpen} onOpenChange={setSuggestionsOpen}>
                     <PopoverAnchor asChild>
                         <div className="min-w-0 flex-1">
@@ -276,6 +282,25 @@ export default function CustomTagEditor({ gameId, initialTags, availableTags }: 
             >
                 {isSaving ? "Saving…" : message}
             </p>
+            <AlertDialog open={tagToDelete !== null} onOpenChange={(open) => {
+                if (!open) setTagToDelete(null);
+            }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete custom tag?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Delete &ldquo;{tagToDelete?.name}&rdquo; from {tagToDelete?.usageCount} game assignments.
+                            This also removes the saved suggestion.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => {
+                            if (tagToDelete) void deleteSuggestion(tagToDelete);
+                        }}>Delete tag</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </section>
     );
 }

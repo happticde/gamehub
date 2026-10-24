@@ -68,36 +68,32 @@ export function EnrichmentPanel() {
     // Data fetching — useCallback keeps the functions stable
     // so they don't cause extra re-renders when passed to useEffect.
     // -------------------------------------------------------
-    const fetchStats = useCallback(async () => {
-        setIsLoadingStats(true);
-        try {
-            const res = await fetchAuthenticated("/api/core/library/enrichment-stats");
+    const fetchStats = useCallback(() => {
+        return fetchAuthenticated("/api/core/library/enrichment-stats").then(async (res) => {
             if (res.ok) {
                 const enrichmentStats: EnrichmentStats = await res.json();
                 setStats(enrichmentStats);
             }
-        } catch {
+        }).catch(() => {
             // Swallow — stats cards will show placeholders
-        } finally {
+        }).finally(() => {
             setIsLoadingStats(false);
-        }
+        });
     }, []);
 
-    const fetchLogs = useCallback(async () => {
-        setIsLoadingLogs(true);
-        try {
-            const params = new URLSearchParams({ limit: "100" });
-            if (statusFilter !== "all") params.set("status", statusFilter);
-            const res = await fetchAuthenticated(`/api/core/library/enrichment-history?${params}`);
+    const fetchLogs = useCallback(() => {
+        const params = new URLSearchParams({ limit: "100" });
+        if (statusFilter !== "all") params.set("status", statusFilter);
+        return fetchAuthenticated(`/api/core/library/enrichment-history?${params}`).then(async (res) => {
             if (res.ok) {
                 const enrichmentLogs: EnrichmentAuditLog[] = await res.json();
                 setLogs(enrichmentLogs);
             }
-        } catch {
+        }).catch(() => {
             // Swallow — table will show empty state
-        } finally {
+        }).finally(() => {
             setIsLoadingLogs(false);
-        }
+        });
     }, [statusFilter]);
 
     // useEffect runs *after* the component renders.
@@ -121,6 +117,8 @@ export function EnrichmentPanel() {
             const data: ApiMessageResponse = await res.json();
             setResultMsg(data.Message || data.message || "Done.");
             // Refresh data after action completes
+            setIsLoadingStats(true);
+            setIsLoadingLogs(true);
             fetchStats();
             fetchLogs();
         } catch (caughtError: unknown) {
@@ -141,6 +139,8 @@ export function EnrichmentPanel() {
             const data: ApiMessageResponse = await res.json();
             setResultMsg(data.Message || data.message || "Re-enriched.");
             // Refresh stats and logs to reflect the update
+            setIsLoadingStats(true);
+            setIsLoadingLogs(true);
             fetchStats();
             fetchLogs();
         } catch (caughtError: unknown) {
@@ -266,7 +266,11 @@ export function EnrichmentPanel() {
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold tracking-tight">Enrichment Audit Log</h3>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <Select value={statusFilter} onValueChange={(value) => {
+                        if (value === statusFilter) return;
+                        setIsLoadingLogs(true);
+                        setStatusFilter(value);
+                    }}>
                         <SelectTrigger className="w-36">
                             <SelectValue placeholder="Filter by status" />
                         </SelectTrigger>

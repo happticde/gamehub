@@ -31,20 +31,26 @@ export default function GlobalSearchBar() {
     const inputRef = useRef<HTMLInputElement>(null);
     const searchGate = useRef(createLatestRequestGate());
 
+    const changeQuery = (nextQuery: string) => {
+        if (nextQuery === query) return;
+        searchGate.current.invalidate();
+        setQuery(nextQuery);
+        setResults([]);
+        setTotalResults(0);
+        setLoading(Boolean(nextQuery.trim()));
+        setSelectedIndex(-1);
+    };
+
     // Reuse the metadata search guard so an older response cannot replace the current query.
     useEffect(() => {
         const gate = searchGate.current;
         gate.invalidate();
-        setResults([]);
-        setTotalResults(0);
         if (!query.trim()) {
-            setLoading(false);
             return;
         }
 
         const controller = new AbortController();
         const generation = gate.begin();
-        setLoading(true);
         const timer = setTimeout(async () => {
             try {
                 const res = await fetchAuthenticated(
@@ -56,6 +62,7 @@ export default function GlobalSearchBar() {
                     if (!gate.isLatest(generation)) return;
                     setResults(data.items || []);
                     setTotalResults(data.totalCount || 0);
+                    setSelectedIndex(-1);
                 }
             } catch (err) {
                 if (!controller.signal.aborted && gate.isLatest(generation)) {
@@ -109,11 +116,6 @@ export default function GlobalSearchBar() {
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, []);
-
-    // Reset selected index when results change
-    useEffect(() => {
-        setSelectedIndex(-1);
-    }, [results]);
 
     const handleSearchSubmit = (searchTerm: string) => {
         if (!searchTerm.trim()) return;
@@ -205,7 +207,7 @@ export default function GlobalSearchBar() {
                             href={`/library/${game.id}`}
                             onClick={() => {
                                 closeCallback();
-                                setQuery("");
+                                changeQuery("");
                             }}
                             className={cn(
                                 "flex items-center gap-3 p-2 rounded-lg transition-all",
@@ -304,7 +306,7 @@ export default function GlobalSearchBar() {
                         className="w-full text-sm bg-transparent border-0 outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0 h-full py-2"
                         value={query}
                         onChange={(e) => {
-                            setQuery(e.target.value);
+                            changeQuery(e.target.value);
                             setIsOpen(true);
                         }}
                         onFocus={() => setIsOpen(true)}
@@ -318,7 +320,7 @@ export default function GlobalSearchBar() {
                     {query ? (
                         <button
                             onClick={() => {
-                                setQuery("");
+                                changeQuery("");
                                 inputRef.current?.focus();
                             }}
                             className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors mr-1 shrink-0"
@@ -360,7 +362,7 @@ export default function GlobalSearchBar() {
                                 placeholder="Search games..."
                                 className="w-full text-sm bg-transparent border-0 outline-none placeholder:text-muted-foreground focus:outline-none"
                                 value={query}
-                                onChange={(e) => setQuery(e.target.value)}
+                                onChange={(e) => changeQuery(e.target.value)}
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter") {
                                         e.preventDefault();
@@ -374,7 +376,7 @@ export default function GlobalSearchBar() {
                             )}
                             {query && (
                                 <button
-                                    onClick={() => setQuery("")}
+                                    onClick={() => changeQuery("")}
                                     className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
                                 >
                                     <X className="h-3.5 w-3.5" />
