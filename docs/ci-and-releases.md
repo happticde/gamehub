@@ -365,6 +365,23 @@ and version; no separate release lookup is needed in the credential assistant.
 - SBOMs and checksums are provided; cryptographic provenance signing and macOS Developer ID
   signing/notarization are not implemented. Windows helper installation remains future scope.
 
+## Browser adapter checks
+
+The CLI job uses Chrome from the Ubuntu runner image. It runs the browser tests with
+`GAMEHUB_BROWSER_TESTS=1`. The job fails if no browser is installed.
+The tests cover the GOG pipe connection, the Epic and PSN WebSocket connections, and PSN remote attach.
+They check cookie reads, promise results, page text, network events, and clean shutdown.
+All page requests use local fixtures. No real provider login or credential is needed.
+
+To run these tests locally, install Chrome or Chromium in the development container. Then run:
+
+```powershell
+docker exec -e GAMEHUB_BROWSER_TESTS=1 -w /workspaces/gamehub/services/cli gamehub_devcontainer-app-1 go test -race ./...
+```
+
+The normal `go test` command skips browser tests. Real provider sign-in, MFA, and CAPTCHA still need
+a manual check when a provider changes its login flow.
+
 ## Initial security findings
 
 The first scan found fixable frontend vulnerabilities in Next.js, sharp, and source-map-js,

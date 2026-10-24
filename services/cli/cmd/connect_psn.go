@@ -19,6 +19,7 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 	"github.com/spf13/cobra"
 )
 
@@ -218,40 +219,13 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 	defer cancelBrowser()
 
 	rateLimit := make(chan string, 1)
-	chromedp.ListenTarget(browserCtx, func(event any) {
-		switch typedEvent := event.(type) {
-		case *network.EventRequestWillBeSent:
-			if diagnostics != nil {
-				diagnostics.recordRequest(typedEvent)
-			}
-		case *network.EventResponseReceived:
-			if typedEvent.Response == nil {
-				return
-			}
-			if diagnostics != nil {
-				diagnostics.recordResponse(typedEvent)
-			}
-			if !isPsnLoginRateLimit(typedEvent.Response.URL, int(typedEvent.Response.Status)) {
-				return
-			}
-			select {
-			case rateLimit <- typedEvent.Response.URL:
-			default:
-			}
-		case *network.EventLoadingFailed:
-			if diagnostics != nil {
-				diagnostics.recordLoadingFailed(typedEvent)
-			}
-		default:
-			return
-		}
-	})
-
-	if err := chromedp.Run(browserCtx, network.Enable()); err != nil {
+	if _, err := chromedp.Call(browserCtx, network.Enable, network.EnableParams{}); err != nil {
 		return psnConnectPayload{}, fmt.Errorf("failed to prepare PlayStation browser session: %w", err)
 	}
+	stopEvents := monitorPsnNetworkEvents(browserCtx, diagnostics, rateLimit)
+	defer stopEvents()
 	if shouldNavigate {
-		if err := chromedp.Run(browserCtx, chromedp.Navigate(psnConnectStartURL)); err != nil {
+		if err := chromedp.Do(browserCtx, chromedp.Navigate(psnConnectStartURL)); err != nil {
 			return psnConnectPayload{}, fmt.Errorf("failed to open PlayStation browser session: %w", err)
 		}
 	}
@@ -300,6 +274,58 @@ func capturePsnConnectPayload(parent context.Context, profileDir string, remoteD
 		case <-ticker.C:
 		}
 	}
+}
+
+// Subscribe before navigation and stop all readers before the diagnostics file closes.
+func monitorPsnNetworkEvents(parent context.Context, diagnostics *psnConnectDiagnostics, rateLimit chan<- string) func() {
+	ctx, cancel := context.WithCancel(parent)
+	var readers sync.WaitGroup
+	responses := chromedp.Events(ctx, network.ResponseReceived)
+	readers.Add(1)
+	go func() {
+		defer readers.Done()
+		for event, err := range responses {
+			if err != nil {
+				return
+			}
+			if event.Response == nil {
+				continue
+			}
+			if diagnostics != nil {
+				diagnostics.recordResponse(&event)
+			}
+			if isPsnLoginRateLimit(event.Response.URL, int(event.Response.Status)) {
+				select {
+				case rateLimit <- event.Response.URL:
+				default:
+				}
+			}
+		}
+	}()
+	if diagnostics != nil {
+		requests := chromedp.Events(ctx, network.RequestWillBeSent)
+		failures := chromedp.Events(ctx, network.LoadingFailed)
+		readers.Add(2)
+		go func() {
+			defer readers.Done()
+			for event, err := range requests {
+				if err != nil {
+					return
+				}
+				diagnostics.recordRequest(&event)
+			}
+		}()
+		go func() {
+			defer readers.Done()
+			for event, err := range failures {
+				if err != nil {
+					return
+				}
+				diagnostics.recordLoadingFailed(&event)
+			}
+		}()
+	}
+	return func() { cancel(); readers.Wait() }
 }
 
 type psnConnectDiagnostics struct {
@@ -459,7 +485,7 @@ func newPsnBrowserAllocator(parent context.Context, profileDir string, remoteDeb
 		if err != nil {
 			return nil, nil, false, err
 		}
-		allocatorCtx, cancelAllocator := chromedp.NewRemoteAllocator(parent, browserWSURL, chromedp.NoModifyURL)
+		allocatorCtx, cancelAllocator := remote.NewAllocator(parent, browserWSURL, remote.NoModifyURL)
 		return allocatorCtx, cancelAllocator, true, nil
 	}
 
@@ -565,7 +591,8 @@ func psnBrowserAllocatorOptions(profileDir string) ([]chromedp.ExecAllocatorOpti
 	}
 
 	flags := psnBrowserLaunchFlags(profileDir, debuggingPort)
-	options := make([]chromedp.ExecAllocatorOption, 0, len(flags))
+	options := make([]chromedp.ExecAllocatorOption, 0, len(flags)+1)
+	options = append(options, remote.WebSocket)
 	for _, flag := range flags {
 		options = append(options, chromedp.Flag(flag.Name, flag.Value))
 	}
@@ -602,27 +629,22 @@ func reserveLocalTCPPort() (int, error) {
 }
 
 func readPsnSessionCookies(ctx context.Context) (map[string]string, float64, error) {
-	var browserCookies []*network.Cookie
-	err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		var err error
-		browserCookies, err = network.GetCookies().
-			WithURLs([]string{
-				"https://store.playstation.com",
-				"https://www.playstation.com",
-				"https://my.account.sony.com",
-				"https://ca.account.sony.com",
-				"https://web.np.playstation.com",
-			}).
-			Do(ctx)
-		return err
-	}))
+	result, err := chromedp.Call(ctx, network.GetCookies, network.GetCookiesParams{
+		URLs: []string{
+			"https://store.playstation.com",
+			"https://www.playstation.com",
+			"https://my.account.sony.com",
+			"https://ca.account.sony.com",
+			"https://web.np.playstation.com",
+		},
+	})
 	if err != nil {
 		return nil, 0, err
 	}
 
 	captured := make(map[string]string)
 	var earliestPersistentExpiry float64
-	for _, cookie := range browserCookies {
+	for _, cookie := range result.Cookies {
 		if !slices.Contains(psnSessionCookieNames, cookie.Name) {
 			continue
 		}
@@ -641,11 +663,7 @@ func readPsnSessionCookies(ctx context.Context) (map[string]string, float64, err
 }
 
 func readCurrentPsnBrowserURL(ctx context.Context) (string, error) {
-	currentURL := ""
-	if err := chromedp.Run(ctx, chromedp.Location(&currentURL)); err != nil {
-		return "", err
-	}
-	return currentURL, nil
+	return chromedp.Run(ctx, chromedp.Location())
 }
 
 func isPsnCookieCaptureReady(currentURL string) bool {
