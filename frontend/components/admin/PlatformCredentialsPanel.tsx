@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchAuthenticated } from "@/lib/authenticated-fetch";
+import { useBrowserOrigin } from "@/hooks/useBrowserOrigin";
 import { getPlatformColor } from "@/lib/platform-colors";
 import {
     allocateHelperStatusPort,
@@ -71,19 +72,15 @@ export function PlatformCredentialsPanel() {
     const [error, setError] = useState<string | null>(null);
     const [errorPlatform, setErrorPlatform] = useState<Platform | null>(null);
 
-    const loadStatus = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        setErrorPlatform(null);
-        try {
-            const response = await fetchAuthenticated("/api/core/platform-credentials", { cache: "no-store" });
+    const loadStatus = useCallback(() => {
+        return fetchAuthenticated("/api/core/platform-credentials", { cache: "no-store" }).then(async (response) => {
             if (!response.ok) throw new Error(await readError(response));
             setState(await response.json());
-        } catch (caught) {
+        }).catch((caught: unknown) => {
             setError(errorMessage(caught));
-        } finally {
+        }).finally(() => {
             setLoading(false);
-        }
+        });
     }, []);
 
     useEffect(() => {
@@ -398,15 +395,11 @@ function GogCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
     const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
     const [handoffError, setHandoffError] = useState<string | null>(null);
     const [helperError, setHelperError] = useState<string | null>(null);
-    const [pageOrigin, setPageOrigin] = useState("http://localhost:3005");
+    const pageOrigin = useBrowserOrigin();
     const handoffAttemptRef = useRef(0);
 
     useEffect(() => () => {
         handoffAttemptRef.current += 1;
-    }, []);
-
-    useEffect(() => {
-        setPageOrigin(window.location.origin);
     }, []);
 
     const submit = async () => {
@@ -692,7 +685,7 @@ function PsnCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
     const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
     const [handoffError, setHandoffError] = useState<string | null>(null);
     const [helperError, setHelperError] = useState<string | null>(null);
-    const [pageOrigin, setPageOrigin] = useState("http://localhost:3005");
+    const pageOrigin = useBrowserOrigin();
     const [chromeDebugStatus, setChromeDebugStatus] = useState<string | null>(null);
     const [chromeDebugError, setChromeDebugError] = useState<string | null>(null);
     const [chromeDebugChecking, setChromeDebugChecking] = useState(false);
@@ -701,10 +694,6 @@ function PsnCredentialCard({ status, busy, saveError, onSave, onDelete }: FormPr
 
     useEffect(() => () => {
         handoffAttemptRef.current += 1;
-    }, []);
-
-    useEffect(() => {
-        setPageOrigin(window.location.origin);
     }, []);
 
     const submit = async () => {
@@ -1108,16 +1097,12 @@ function EpicCredentialCard({
     const [helperLaunching, setHelperLaunching] = useState(false);
     const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
     const [handoffError, setHandoffError] = useState<string | null>(null);
-    const [pageOrigin, setPageOrigin] = useState("http://localhost:3005");
+    const pageOrigin = useBrowserOrigin();
     const [localError, setLocalError] = useState<string | null>(null);
     const handoffAttemptRef = useRef(0);
 
     useEffect(() => () => {
         handoffAttemptRef.current += 1;
-    }, []);
-
-    useEffect(() => {
-        setPageOrigin(window.location.origin);
     }, []);
 
     const beginConnectTransaction = async (): Promise<EpicConnectStart | null> => {
