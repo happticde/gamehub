@@ -1,12 +1,12 @@
 FROM node:26-alpine AS base
 
 # Compile a dependency-free notice collector for the native build platform.
-FROM golang:1.27.2-bookworm AS notice-builder
+FROM golang:1.27.3-bookworm AS notice-builder
 COPY --from=helper-source tools/license-notices/main.go /license-notices.go
 RUN CGO_ENABLED=0 go build -o /license-notices /license-notices.go
 
 # The named context is restricted by services/cli/.dockerignore.
-FROM golang:1.27.2-bookworm AS helper-builder
+FROM golang:1.27.3-bookworm AS helper-builder
 WORKDIR /src
 COPY --from=helper-source go.mod go.sum ./
 RUN go mod download

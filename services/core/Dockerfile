@@ -1,4 +1,4 @@
-FROM golang:1.26.9-bookworm AS notice-builder
+FROM golang:1.27.3-bookworm AS notice-builder
 COPY services/cli/tools/license-notices/main.go /license-notices.go
 RUN CGO_ENABLED=0 go build -o /license-notices /license-notices.go
 
