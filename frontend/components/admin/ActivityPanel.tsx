@@ -109,9 +109,8 @@ export function ActivityPanel() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchActivity = useCallback(async () => {
-        try {
-            const res = await fetchAuthenticated("/api/core/activity");
+    const fetchActivity = useCallback(() => {
+        return fetchAuthenticated("/api/core/activity").then(async (res) => {
             if (!res.ok) {
                 setError(`Failed to fetch activity (Status ${res.status})`);
                 return;
@@ -119,11 +118,11 @@ export function ActivityPanel() {
             const activityEntries: ActivityEntry[] = await res.json();
             setEntries(activityEntries);
             setError(null);
-        } catch (caughtError: unknown) {
+        }).catch((caughtError: unknown) => {
             setError(getErrorMessage(caughtError, "Unknown error"));
-        } finally {
+        }).finally(() => {
             setIsLoading(false);
-        }
+        });
     }, []);
 
     useEffect(() => {

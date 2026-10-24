@@ -13,32 +13,37 @@ interface MetadataSearchState {
     completedQuery: string | null;
 }
 
+function emptySearch(inputKey: string): MetadataSearchState & { inputKey: string } {
+    return { inputKey, results: [], pending: false, error: null, completedQuery: null };
+}
+
 /** Reuses the Fix Match endpoint with debounce, cancellation, and stale-response protection. */
 export function useDebouncedMetadataSearch(query: string, enabled = true): MetadataSearchState {
     const gate = useRef(createLatestRequestGate());
-    const [results, setResults] = useState<MetadataSearchResult[]>([]);
-    const [pending, setPending] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [completedQuery, setCompletedQuery] = useState<string | null>(null);
+    const inputKey = JSON.stringify([query, enabled]);
+    const [state, setState] = useState(() => emptySearch(inputKey));
+
+    // Reset input-owned state before commit, so old results never flash for a new query.
+    if (state.inputKey !== inputKey) {
+        setState(emptySearch(inputKey));
+    }
 
     useEffect(() => {
         const normalizedQuery = query.trim();
         const requestGate = gate.current;
         requestGate.invalidate();
-        setResults([]);
-        setError(null);
-        setCompletedQuery(null);
-        setPending(false);
-
         if (!enabled || normalizedQuery.length < 2) {
             return;
         }
 
         const controller = new AbortController();
         const generation = requestGate.begin();
+        const update = (changes: Partial<MetadataSearchState>) => {
+            setState(current => current.inputKey === inputKey ? { ...current, ...changes } : current);
+        };
         const timer = setTimeout(async () => {
             if (!requestGate.isLatest(generation)) return;
-            setPending(true);
+            update({ pending: true });
 
             try {
                 const response = await fetchAuthenticated(
@@ -54,17 +59,18 @@ export function useDebouncedMetadataSearch(query: string, enabled = true): Metad
                 }
 
                 if (requestGate.isLatest(generation)) {
-                    setResults(data);
-                    setCompletedQuery(normalizedQuery);
+                    update({ results: data, completedQuery: normalizedQuery });
                 }
             } catch (caughtError: unknown) {
                 if (controller.signal.aborted || !requestGate.isLatest(generation)) return;
-                setError(caughtError instanceof Error
-                    ? caughtError.message
-                    : "IGDB search is temporarily unavailable.");
-                setCompletedQuery(normalizedQuery);
+                update({
+                    error: caughtError instanceof Error
+                        ? caughtError.message
+                        : "IGDB search is temporarily unavailable.",
+                    completedQuery: normalizedQuery,
+                });
             } finally {
-                if (requestGate.isLatest(generation)) setPending(false);
+                if (requestGate.isLatest(generation)) update({ pending: false });
             }
         }, 350);
 
@@ -73,9 +79,9 @@ export function useDebouncedMetadataSearch(query: string, enabled = true): Metad
             controller.abort();
             requestGate.invalidate();
         };
-    }, [enabled, query]);
+    }, [enabled, query, inputKey]);
 
-    return { results, pending, error, completedQuery };
+    return state;
 }
 
 function readApiMessage(data: unknown, fallback: string) {

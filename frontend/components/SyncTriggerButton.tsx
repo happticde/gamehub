@@ -37,9 +37,8 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
     const [providerStatuses, setProviderStatuses] = useState<ProviderSyncStatus[]>([]);
     const [readinessError, setReadinessError] = useState<string | null>(null);
 
-    const fetchRefreshReadiness = useCallback(async () => {
-        try {
-            const res = await fetchAuthenticated("/api/core/library/sync/providers", { cache: "no-store" });
+    const fetchRefreshReadiness = useCallback(() => {
+        return fetchAuthenticated("/api/core/library/sync/providers", { cache: "no-store" }).then(async (res) => {
             if (!res.ok) {
                 setReadinessError("Refresh availability could not be checked.");
                 return;
@@ -48,9 +47,9 @@ export function SyncTriggerButton({ onSyncComplete }: SyncTriggerButtonProps) {
             const response: ProviderSyncStatusResponse = await res.json();
             setProviderStatuses(response.providers);
             setReadinessError(null);
-        } catch {
+        }).catch(() => {
             setReadinessError("Refresh availability could not be checked.");
-        }
+        });
     }, []);
 
     useEffect(() => {

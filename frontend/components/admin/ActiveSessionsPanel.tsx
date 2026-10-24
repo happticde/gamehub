@@ -36,20 +36,17 @@ export function ActiveSessionsPanel() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
-    const loadSessions = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const response = await fetchAuthenticated("/api/core/auth/sessions", {
-                cache: "no-store",
-            });
+    const loadSessions = useCallback(() => {
+        return fetchAuthenticated("/api/core/auth/sessions", {
+            cache: "no-store",
+        }).then(async (response) => {
             if (!response.ok) throw new Error("session_list_failed");
             setSessions(parseAccountSessions(await response.json()));
-        } catch {
+        }).catch(() => {
             setError(loadErrorMessage);
-        } finally {
+        }).finally(() => {
             setIsLoading(false);
-        }
+        });
     }, []);
 
     useEffect(() => {
@@ -117,7 +114,11 @@ export function ActiveSessionsPanel() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => void loadSessions()}
+                            onClick={() => {
+                                setIsLoading(true);
+                                setError(null);
+                                void loadSessions();
+                            }}
                             disabled={isLoading || pendingAction !== null}
                         >
                             <RefreshCw className={isLoading ? "animate-spin" : undefined} />

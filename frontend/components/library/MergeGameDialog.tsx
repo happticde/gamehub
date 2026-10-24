@@ -60,20 +60,25 @@ export default function MergeGameDialog({
     const [isMerging, setIsMerging] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [mergeError, setMergeError] = useState<string | null>(null);
+    const searchEnabled = open && !selectedTarget && Boolean(query.trim());
+    const searchKey = JSON.stringify([searchEnabled, query, sourceGameId]);
+    const [previousSearchKey, setPreviousSearchKey] = useState(searchKey);
+
+    if (previousSearchKey !== searchKey) {
+        setPreviousSearchKey(searchKey);
+        setResults([]);
+        setTotalCount(0);
+        setSearchError(null);
+        setIsSearching(searchEnabled);
+    }
 
     useEffect(() => {
         const trimmedQuery = query.trim();
         if (!open || selectedTarget || !trimmedQuery) {
-            setResults([]);
-            setTotalCount(0);
-            setIsSearching(false);
             return;
         }
 
         const abortController = new AbortController();
-        setIsSearching(true);
-        setSearchError(null);
-        setResults([]);
 
         const timer = window.setTimeout(async () => {
             try {
@@ -86,6 +91,7 @@ export default function MergeGameDialog({
                 }
 
                 const data: MergeSearchResponse = await response.json();
+                if (abortController.signal.aborted) return;
                 setResults((data.items ?? []).filter((game) => game.id !== sourceGameId));
                 setTotalCount(data.totalCount ?? 0);
             } catch (caughtError: unknown) {
