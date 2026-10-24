@@ -319,8 +319,11 @@ jobs:
           path: reports/cli-licenses/
           if-no-files-found: error
           retention-days: 7
-      - run: go test -race ./... && go vet ./...
+      - name: Test CLI and browser connection adapters
+        run: go test -race ./... && go vet ./...
         working-directory: services/cli
+        env:
+          GAMEHUB_BROWSER_TESTS: '1'
       - run: python3 scripts/ci/install-tool.py trivy "$RUNNER_TEMP/tools"
       - name: Build and scan a versioned native CLI binary
         working-directory: services/cli
