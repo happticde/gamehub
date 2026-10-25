@@ -66,7 +66,7 @@ Paths below are relative to Core. `{id}` is a unified game identifier owned by t
 | DELETE | `/api/auth/account` | Guarded account deletion lifecycle |
 
 Bootstrap, operator provisioning, token issuance, refresh, OIDC linking, and logout have distinct
-policies. Follow [Authentication](../authentication.md) instead of treating all `/api/auth/*`
+policies. Follow [Authentication](authentication.md) instead of treating all `/api/auth/*`
 routes as interchangeable login endpoints.
 
 ## Ingest and integration clients
@@ -74,7 +74,7 @@ routes as interchangeable login endpoints.
 Ingest owns platform-specific raw data under `/api/ingest/{platform}` and export under
 `/api/export/{platform}`. Compatibility retrieval is under `/api/retrieve/*`; authenticated
 production users should use Core's credential and retrieval APIs. The CLI targets Ingest;
-the [MCP server](../mcp.md) targets Core.
+the [MCP server](mcp.md) targets Core.
 
 ## Handle failures
 

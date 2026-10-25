@@ -4,7 +4,7 @@ import {mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import os from 'node:os';
 import path from 'node:path';
 import {test} from 'node:test';
-import {prepare, publishedTags, rewriteSourceLinks, validateManifest} from '../scripts/prepare.mjs';
+import {prepare, publishedTags, rewriteSourceLinks, validateManifest, validatePublication} from '../scripts/prepare.mjs';
 
 const manifest = {schemaVersion: 1, sections: [{label: 'Start', items: ['index.md', 'guides/install.md']}]};
 const release = tag => ({tag_name: tag, draft: false, prerelease: false, published_at: '2026-10-15T10:00:00Z'});
@@ -69,6 +69,66 @@ test('a missing tag or historical page fails instead of falling back to current'
   f.git('rm', 'docs/guides/install.md'); f.git('commit', '-m', 'Broken historical manifest'); f.git('tag', 'v0.4.0');
   f.write('docs/guides/install.md', 'Current page cannot repair historical release');
   assert.throws(() => prepare({...f, releases: [release('v0.4.0')]}), /Missing or non-regular/);
+});
+
+test('a branch preview reads only the selected immutable Markdown snapshot with the trusted renderer', t => {
+  const f = fixture(t);
+  const result = prepare({...f, currentRef: f.releaseSha});
+  assert.deepEqual(result.snapshots.map(snapshot => snapshot.version), ['current']);
+  assert.equal(result.snapshots[0].commit, f.releaseSha);
+  assert.match(readFileSync(path.join(f.output, '.generated/current/index.md'), 'utf8'), /Original version/);
+  assert.doesNotMatch(readFileSync(path.join(f.output, '.generated/current/index.md'), 'utf8'), /Unreleased change/);
+  assert.throws(() => prepare({...f, currentRef: 'main'}), /immutable/);
+});
+
+test('withdrawn editions disappear and corrections use a pinned commit without moving product tags', t => {
+  const f = fixture(t);
+  const originalTag = f.git('rev-parse', 'v0.2.0^{commit}');
+  const correction = f.git('rev-parse', 'HEAD');
+  f.write('docs/site/publication.json', JSON.stringify({
+    schemaVersion: 1, withdrawnVersions: ['0.1.0'], sourceOverrides: {'0.2.0': correction},
+  }));
+  f.write('docs/index.md', '# New Next content after the correction');
+  const result = prepare({...f, releases: [release('v0.1.0'), release('v0.2.0')]});
+  assert.deepEqual(result.snapshots.map(snapshot => snapshot.version), ['current', '0.2.0']);
+  assert.equal(result.snapshots[1].commit, correction);
+  assert.equal(f.git('rev-parse', 'v0.2.0^{commit}'), originalTag);
+  assert.match(readFileSync(path.join(f.output, 'versioned_docs/version-0.2.0/index.md'), 'utf8'), /Unreleased change/);
+  assert.doesNotMatch(readFileSync(path.join(f.output, 'versioned_docs/version-0.2.0/index.md'), 'utf8'), /New Next content/);
+  assert.throws(() => readFileSync(path.join(f.output, 'versioned_docs/version-0.1.0/index.md')), /ENOENT/);
+  assert.throws(() => prepare({...f, candidate: '0.1.0'}), /withdrawn/);
+  f.write('docs/site/publication.json', JSON.stringify({
+    schemaVersion: 1, withdrawnVersions: [], sourceOverrides: {'0.2.0': 'a'.repeat(40)},
+  }));
+  assert.throws(() => prepare({...f, releases: [release('v0.2.0')]}));
+});
+
+test('publication policy requires explicit versions and immutable non-conflicting source commits', () => {
+  for (const policy of [
+    {schemaVersion: 2, withdrawnVersions: [], sourceOverrides: {}},
+    {schemaVersion: 1, withdrawnVersions: ['../private'], sourceOverrides: {}},
+    {schemaVersion: 1, withdrawnVersions: ['0.1.0', '0.1.0'], sourceOverrides: {}},
+    {schemaVersion: 1, withdrawnVersions: [], sourceOverrides: {'0.2.0': 'main'}},
+    {schemaVersion: 1, withdrawnVersions: ['0.2.0'], sourceOverrides: {'0.2.0': 'a'.repeat(40)}},
+  ]) assert.throws(() => validatePublication(policy));
+});
+
+test('the public handbook contains only user guides and no links to internal project documents', () => {
+  const root = path.resolve(import.meta.dirname, '../../..');
+  const manifest = JSON.parse(readFileSync(path.join(root, 'docs/site/content.json'), 'utf8'));
+  const included = validateManifest(manifest);
+  for (const name of included) {
+    assert.ok(name === 'index.md' || /^guides\//.test(name), name);
+    assert.doesNotMatch(name, /(?:architecture|development)/);
+    const markdown = readFileSync(path.join(root, 'docs', name), 'utf8');
+    for (const [, target] of markdown.matchAll(/\]\(([^\s)]+)\)/g)) {
+      if (/^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(target)) continue;
+      const destination = target.split(/[?#]/)[0];
+      if (!destination.endsWith('.md')) continue;
+      const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(name), destination));
+      assert.ok(included.has(resolved), `Link outside the public handbook in ${name}: ${target}`);
+    }
+  }
 });
 
 test('symlinked files and parent directories cannot publish files outside the public input tree', t => {

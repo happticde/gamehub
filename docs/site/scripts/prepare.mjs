@@ -1,6 +1,6 @@
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {copyFileSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {generateNotices} from '../../../licensing/generate.mjs';
@@ -45,6 +45,24 @@ export function publishedTags(releases) {
     for (let i = 0; i < 3; i++) if (left[i] !== right[i]) return left[i] > right[i] ? -1 : 1;
     return 0;
   });
+}
+
+export function validatePublication(policy) {
+  if (!policy || policy.schemaVersion !== 1 || !Array.isArray(policy.withdrawnVersions)
+      || !policy.sourceOverrides || typeof policy.sourceOverrides !== 'object'
+      || Array.isArray(policy.sourceOverrides)) throw new Error('Invalid documentation publication policy');
+  const withdrawn = new Set();
+  for (const version of policy.withdrawnVersions) {
+    if (typeof version !== 'string' || !stableTag.test(`v${version}`) || withdrawn.has(version)) {
+      throw new Error('Invalid or duplicate withdrawn documentation version');
+    }
+    withdrawn.add(version);
+  }
+  for (const [version, commit] of Object.entries(policy.sourceOverrides)) {
+    if (!stableTag.test(`v${version}`) || typeof commit !== 'string' || !/^[a-f0-9]{40}$/.test(commit)
+        || withdrawn.has(version)) throw new Error('Invalid pinned documentation correction');
+  }
+  return policy;
 }
 
 function readSource(root, ref, name) {
@@ -100,18 +118,31 @@ function writeJson(destination, value) {
   writeFileSync(destination, JSON.stringify(value, null, 2) + '\n');
 }
 
-export function prepare({root, output, releases = [], repository = 'happticde/gamehub', candidate = ''}) {
+export function prepare({root, output, releases = [], repository = 'happticde/gamehub', candidate = '', currentRef = null}) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Invalid GitHub repository');
   if (candidate && !stableTag.test(`v${candidate}`)) throw new Error('Invalid candidate version');
-  const currentManifest = JSON.parse(readSource(root, null, 'docs/site/content.json'));
+  if (currentRef && !/^[a-f0-9]{40}$/.test(currentRef)) throw new Error('Preview source must be an immutable commit');
+  const currentManifest = JSON.parse(readSource(root, currentRef, 'docs/site/content.json'));
   validateManifest(currentManifest);
+  const publicationPath = 'docs/site/publication.json';
+  const publication = validatePublication(existsSync(path.join(root, publicationPath))
+    ? JSON.parse(readSource(root, null, publicationPath))
+    : {schemaVersion: 1, withdrawnVersions: [], sourceOverrides: {}});
   const tags = publishedTags(releases);
   const snapshots = [];
   const skipped = [];
   for (const tag of tags) {
+    if (publication.withdrawnVersions.includes(tag.slice(1))) {
+      skipped.push(tag);
+      continue;
+    }
     // Resolve to the immutable commit once, including annotated tags. Never render old docs from main.
-    const sha = git(root, 'rev-parse', '--verify', `${tag}^{commit}`);
+    // A reviewed correction may pin a later source commit without moving a product release tag.
+    const source = publication.sourceOverrides[tag.slice(1)] || tag;
+    const sha = git(root, 'rev-parse', '--verify', `${source}^{commit}`);
+    if (source !== tag) git(root, 'merge-base', '--is-ancestor', sha, 'HEAD');
     if (!git(root, 'ls-tree', sha, '--', 'docs/site/content.json')) {
+      if (source !== tag) throw new Error('Pinned documentation correction has no content manifest');
       skipped.push(tag);
       continue;
     }
@@ -120,6 +151,7 @@ export function prepare({root, output, releases = [], repository = 'happticde/ga
     snapshots.push({version: tag.slice(1), ref: sha, manifest});
   }
   if (candidate) {
+    if (publication.withdrawnVersions.includes(candidate)) throw new Error('Candidate version is withdrawn');
     if (snapshots.some(snapshot => snapshot.version === candidate)) throw new Error('Candidate version already published');
     snapshots.unshift({version: candidate, ref: null, manifest: currentManifest});
   }
@@ -155,12 +187,12 @@ export function prepare({root, output, releases = [], repository = 'happticde/ga
     else writeJson(path.join(output, `versioned_sidebars/version-${version}-sidebars.json`), {handbook: sidebar});
     metadata.push({version, commit: ref || currentSha, pages: included.size});
   }
-  render({version: 'current', ref: null, manifest: currentManifest});
+  render({version: 'current', ref: currentRef, manifest: currentManifest});
   snapshots.forEach(render);
   writeJson(path.join(output, 'versions.json'), snapshots.map(snapshot => snapshot.version));
   const result = {schemaVersion: 1, repository, snapshots: metadata, skipped, contentHash: digest.digest('hex')};
   writeJson(path.join(output, '.generated/metadata.json'), result);
-  console.log(`Prepared ${metadata.length} documentation stand(s); ${skipped.length} older release(s) have no documentation manifest.`);
+  console.log(`Prepared ${metadata.length} documentation stand(s); ${skipped.length} release(s) withdrawn or predating the handbook.`);
   return result;
 }
 
@@ -168,7 +200,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const releases = process.env.DOCS_RELEASES_FILE ? JSON.parse(readFileSync(process.env.DOCS_RELEASES_FILE, 'utf8')) : [];
   prepare({root: path.resolve(site, '../..'), output: site, releases,
     repository: process.env.GITHUB_REPOSITORY || 'happticde/gamehub',
-    candidate: process.env.DOCS_CANDIDATE_VERSION || ''});
+    candidate: process.env.DOCS_CANDIDATE_VERSION || '', currentRef: process.env.DOCS_SOURCE_REF || null});
   const legal = path.join(site, 'static/legal');
   mkdirSync(legal, {recursive: true});
   const generated = path.join(site, '.generated/legal');

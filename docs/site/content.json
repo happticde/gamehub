@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "sections": [
     { "label": "Start here", "items": ["index.md", "guides/installation.md", "guides/first-library.md"] },
-    { "label": "Use GameHub", "items": ["guides/library.md", "guides/platforms.md", "guides/backup-restore.md", "platform-connect-helpers.md", "epic-stored-retrieval-operations.md"] },
-    { "label": "Operate GameHub", "items": ["guides/deployment.md", "guides/configuration.md", "authentication.md", "guarded-multi-user-enablement.md", "keycloak-oidc-setup.md", "DEBUGGING.md", "dependabot.md", "ci-and-releases.md", "documentation.md"] },
-    { "label": "Reference", "items": ["guides/api.md", "guides/cli.md", "mcp.md", "gog-connect-helper-contract.md"] },
-    { "label": "Develop GameHub", "items": ["guides/architecture.md", "guides/development.md", "oidc-authentication-architecture.md", "tenant-isolation-audit.md", "physical-product-catalog-evaluation.md", "ROADMAP.md"] },
-    { "label": "Architecture decisions", "items": ["adr/001-server-side-retrieval.md", "adr/002-api-authentication.md", "adr/003-metadata-enrichment.md", "adr/004-audit-logging.md", "adr/005-frontend-technology.md", "adr/006-frontend-ui-concepts.md", "adr/007-manual-metadata-override.md", "adr/008-data-portability-format.md", "adr/009-tenant-platform-credential-vault.md", "adr/010-account-lifecycle.md", "adr/011-production-oidc-authentication.md", "adr/012-guarded-multi-user-enablement.md", "adr/013-personal-tenant-oidc-jit-provisioning.md", "adr/014-human-confirmed-physical-game-capture.md", "adr/015-oidc-back-channel-logout.md"] }
+    { "label": "Use GameHub", "items": ["guides/library.md", "guides/platforms.md", "guides/steam.md", "guides/gog.md", "guides/playstation.md", "guides/epic.md", "guides/connection-helper.md", "guides/tracking.md", "guides/correct-matches.md", "guides/merge-split.md", "guides/physical-games.md"] },
+    { "label": "Backup and restore", "items": ["guides/backup-restore.md", "guides/disaster-recovery.md"] },
+    { "label": "Self-hosting", "items": ["guides/deployment.md", "guides/configuration.md", "guides/authentication.md", "guides/keycloak.md", "guides/upgrades.md"] },
+    { "label": "Solve problems", "items": ["guides/troubleshooting.md"] },
+    { "label": "Integrations", "items": ["guides/cli.md", "guides/api.md", "guides/mcp.md"] }
   ]
 }

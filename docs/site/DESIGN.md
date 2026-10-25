@@ -36,8 +36,8 @@ omitted:
 
 The visual reference is a well-organized game shelf and the practical handbook beside it.
 The homepage's blue book-spine rules organize four reader tasks. Article pages prioritize
-reading and predictable navigation. This is an English content site for self-hosters, players,
-and contributors; no specific geographic market is assumed. Typical use is a desktop beside
+reading and predictable navigation. This is an English content site for self-hosters and players;
+no specific geographic market is assumed. Typical use is a desktop beside
 a terminal or a phone while following setup instructions.
 
 Scope is `docs/site/` only. The authenticated Next.js application retains its existing design.
@@ -80,6 +80,9 @@ Keep Docusaurus's version dropdown, search, mobile drawer, theme toggle, breadcr
 copy controls. Links and buttons retain pointer, hover, active, and visible keyboard focus.
 Search uses the locally generated index; no remote search account or credentials are required.
 The Next banner communicates unreleased content; older-version banners communicate release age.
+The separate `/dev/` site has a persistent preview banner with its source commit and a link back
+to the published handbook. Its pages are excluded from indexing. Preview-only deployments retain
+the last successful stable artifact; they do not rebuild the published handbook from new sources.
 Reduced-motion preferences disable decorative transitions. There are no forms, account actions,
 or application data mutations on this surface.
 

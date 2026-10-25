@@ -1,40 +1,32 @@
 # GameHub handbook
 
-GameHub brings digital libraries from Steam, PlayStation, GOG, and Epic together with your physical
-collection. It matches games across platforms, enriches them with IGDB metadata, and lets you track
-what you own and play from one interface.
+Install GameHub, connect your game accounts, and manage your digital and physical collection.
+GameHub brings Steam, PlayStation, GOG, and Epic libraries together with covers and descriptions
+from IGDB, personal ratings, play status, tags, and backups.
 
-## Choose your starting point
+## Start here
 
-- **New installation:** follow [Installation](guides/installation.md), then [Your first library](guides/first-library.md).
-- **Everyday use:** learn about [your collection](guides/library.md), [platform connections](guides/platforms.md),
-  and [backup and restore](guides/backup-restore.md).
-- **Self-hosting:** start with [Deployment and upgrades](guides/deployment.md) and the
-  [configuration reference](guides/configuration.md).
-- **Contributing or integrating:** read the [architecture](guides/architecture.md),
-  [development guide](guides/development.md), [API overview](guides/api.md), and [CLI reference](guides/cli.md).
-- **Security and updates:** follow the [security policy](../SECURITY.md) and
-  [Dependabot setup and maintenance guide](dependabot.md).
+- **Installing for the first time?** Follow [Install GameHub](guides/installation.md) through your
+  first login, then [import your first library](guides/first-library.md).
+- **Already signed in?** [Connect a platform](guides/platforms.md), [manage your collection](guides/library.md),
+  or [add a physical game](guides/physical-games.md).
+- **Running your own server?** Set up [HTTPS and deployment](guides/deployment.md),
+  [authentication](guides/authentication.md), [updates](guides/upgrades.md), and
+  [installation backups](guides/disaster-recovery.md).
+- **Something is wrong?** Start with [Troubleshooting](guides/troubleshooting.md).
 
-## Match the handbook to your installation
+## Choose the matching version
 
-Use the version menu to select the version shown by your installed release or `gamehub-cli --version`.
-**Next (unreleased)** describes the current development branch and can include features absent from
-your installation. A numbered handbook uses documentation from the exact product release commit.
-The home page links to the newest documented stable release; before the first documented release,
-it links to Next.
+Use the version menu to select your installed GameHub release. The CLI also reports its version
+with `gamehub-cli --version`. **Next (unreleased)** may describe features that are not in your
+installation. Documentation can receive corrections independently of the application release.
 
-## Understand the deployment modes
+## What you need
 
-GameHub supports a local compatibility deployment and a guarded production mode. The production
-multi-user switch defaults to off. Configuring OIDC alone does not activate it. Follow
-[Guarded multi-user operations](guarded-multi-user-enablement.md) before enabling production access.
-Personal-tenant JIT is a separate opt-in feature; shared tenants, invitations, and public
-registration are not implied by it.
+For a new installation, you need Docker with Compose and configuration values you supply yourself.
+You do not need to install .NET, Go, or Node to run the application with Compose. Platform accounts
+are connected after setup. The guided connection helper for GOG, PlayStation, and Epic currently
+supports macOS with Google Chrome; Steam does not need that helper.
 
-## About this handbook
-
-The source lives alongside the application. Existing operator runbooks and architecture decisions
-are part of this handbook, so fixes have one source of truth. Documentation checks run automatically;
-publishing to GitHub Pages currently requires a manual workflow run. See
-[Maintaining and publishing documentation](documentation.md).
+If someone else hosts GameHub for you, ask them for the site address and sign-in method, then go
+straight to [Your first library](guides/first-library.md).

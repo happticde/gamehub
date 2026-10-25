@@ -10,7 +10,7 @@ A restart alone does not update their environment.
 
 | Variable | Default / purpose |
 | --- | --- |
-| `GAMEHUB_VERSION` | Required by the release template; full release tag, such as `v0.1.0`. Used for all three GameHub images. |
+| `GAMEHUB_VERSION` | Required by the release template; full release tag, such as `v0.2.0`. Used for all three GameHub images. |
 | `GAMEHUB_FRONTEND_BIND_IP` | `127.0.0.1`; host address for the published frontend port. Set to a reserved private/VPN interface address when the HTTPS proxy runs on another host. |
 | `CORE_DB_PROVIDER` | `Postgres`; Core supports `Postgres` or `Sqlite` |
 | `INGEST_DB_PROVIDER` | `Sqlite`; Ingest database provider |
@@ -66,9 +66,9 @@ Retain old keys while ciphertext or backups still require them.
 | `GAMEHUB_OIDC_COOKIE_KEY` | Independent Base64-encoded 32-byte transaction-cookie key |
 | `GAMEHUB_OIDC_BFF_SERVICE_KEY` | Independent BFF-to-Core OIDC key |
 
-Read [Authentication](../authentication.md) for complete prerequisites and session behavior.
-The [operator guide](../guarded-multi-user-enablement.md) defines readiness, account linking,
-activation, and rollback. Do not infer an account from an email or a provider role/tenant claim.
+Read [Authentication](authentication.md) for prerequisites, account linking, readiness,
+activation, and disabling admission. Use [Keycloak setup](keycloak.md) for provider configuration.
+Do not infer an account from an email or a provider role/tenant claim.
 
 ## Sync and service-native settings
 

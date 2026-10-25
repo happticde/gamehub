@@ -2,8 +2,11 @@
 
 GameHub's handbook uses Docusaurus. Its website is an independent npm project under `docs/site/`;
 the maintained Markdown pages remain in `docs/`. The explicit `docs/site/content.json` manifest
-defines the public pages and navigation. Agent context, session history, and source-review notes
-are excluded. Adding a file to Git does not automatically publish it.
+defines the public pages and navigation. The handbook covers installation, use, backup, self-hosting,
+troubleshooting, and optional client integrations. Architecture decisions, audits, developer setup,
+CI/release procedures, agent context, and this maintenance guide stay in the repository.
+Adding a file to Git does not automatically publish it. Public guides must not link to internal
+documents for information needed to complete a user task.
 
 ## Check or preview locally
 
@@ -22,7 +25,7 @@ preview rebuilds before serving so the search index and pages are current. Stop 
 To preview the version selector with a local candidate, use:
 
 ```bash
-make docs-preview DOCS_VERSION=0.1.0
+make docs-preview DOCS_VERSION=0.2.0
 ```
 
 This creates no Git tag or product release. Omit `DOCS_VERSION` on the next build to return to
@@ -51,7 +54,9 @@ Local search is indexed during the production build and must be tested in that p
 The default project base path is `/gamehub/`.
 
 `npm run check` runs the documentation tooling contracts and a complete static build. Missing
-pages, broken internal Markdown links, and broken internal site links fail the build. External
+pages, broken internal Markdown/site links, incomplete local search indexes, and search results
+escaping their version fail the build. Unreleased and dev pages remain searchable locally while
+retaining no-index metadata for external search engines. External
 websites are not exhaustively checked on each build. CommonMark `.md` is used for existing
 runbooks; `.mdx` is reserved for site components if explicitly introduced later.
 
@@ -101,7 +106,8 @@ changes repository visibility, billing, Pages settings, or a live deployment.
 3. In **Settings → Pages → Build and deployment**, choose **GitHub Actions** as the source.
 4. Allow the `github-pages` environment to deploy from `main`. Configure reviewers if desired.
 5. Merge the documentation implementation into `main`.
-6. Open **Actions → Publish documentation (manual) → Run workflow**, choose **main**, and run.
+6. Open **Actions → Publish documentation (manual) → Run workflow**, choose **main** and
+   **mode: publish**, leave **preview_ref: main**, and run.
 7. Confirm both build and deployment succeed, then open the reported Pages URL. Check the home
    page, search, a nested page, mobile navigation, and the version selector.
 
@@ -109,6 +115,37 @@ The default URL is `https://happticde.github.io/gamehub/`. Repository forks deri
 project from `GITHUB_REPOSITORY`. For a custom domain or project path, consistently configure
 `DOCS_URL` and `DOCS_BASE_URL` in the build environment and follow GitHub's domain setup guide.
 The workflow intentionally does not create a Pages site automatically.
+
+## Preview a branch before publishing it
+
+Merge and publication are human-operated. The agent prepares and pushes a PR; it does not merge
+or start publication. Once this workflow setup has been merged, the operator can use the same
+manual workflow for a separate preview at `https://happticde.github.io/gamehub/dev/`:
+
+1. Run **mode: publish** once to establish the stable-site archive. This publishes the reviewed
+   handbook and prepares the initial `/dev/` preview. Older deployments do not have that archive.
+2. Push a documentation branch and open its PR.
+3. Open **Actions → Publish documentation (manual) → Run workflow**. Keep the workflow branch
+   **main**, choose **mode: preview**, and set **preview_ref** to the same-repository branch name.
+4. After the run succeeds, inspect `/gamehub/dev/`. The persistent banner shows the exact commit.
+5. Review and merge the PR yourself when ready. Run **mode: publish** to update the stable handbook.
+
+Preview mode restores the stable site from the last successful publication archive and changes
+only `/dev/`. It does not publish newly merged stable content as a side effect. The trusted renderer
+and locked dependencies come from `main`; only allowlisted Markdown and the manifest are read
+from the selected branch commit. It does not install that branch's dependencies or run its scripts.
+Only repository branches are accepted; fork PR code is not executed.
+
+The dev site has its own asset paths, local search index, preview banner, and no-index metadata.
+It is publicly accessible, so do not put private content into a preview. It is a single shared
+preview slot: a later preview replaces an earlier preview. Product releases and deployments are
+unaffected. There is no automatic PR deployment.
+
+The stable archive and its successful-run pointer are retained for 90 days. If either expires,
+preview mode fails before deployment and asks for a new **publish** run. It never silently
+reconstructs a different stable site. A failed build, scan, baseline restore, or deployment cannot
+replace the successful baseline. A publish run refreshes the stable archive and the default
+main-branch dev preview together.
 
 Sources: [GitHub Pages availability](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages),
 [custom deployment workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
@@ -123,7 +160,8 @@ The manual publisher fetches all GitHub Release metadata and full tag history. O
 non-draft, non-prerelease `vMAJOR.MINOR.PATCH` releases are eligible. For each eligible release,
 it resolves the tag to a commit and reads that commit's own content manifest and Markdown pages.
 The latest renderer builds these frozen sources into Docusaurus's version directories. It never
-fills a missing old page with current content. Releases predating the manifest are explicitly
+fills a missing old page with current content. An explicit correction policy can pin a different
+reviewed documentation commit as described below. Releases predating the manifest are explicitly
 skipped; missing tags, unsupported manifests, and malformed snapshots fail rather than silently
 substituting another version.
 
@@ -148,10 +186,24 @@ The **force** input deliberately republishes unchanged inputs, for example after
 or domain recovery. A failed build/scan cannot deploy; a failed deployment does not become the
 baseline for future comparisons. Concurrent publication runs are serialized.
 
-Fix broken content through a normal PR and rerun manually. Existing numbered content is frozen
-to the product tag: a correction on `main` changes Next and subsequent releases. Updating an
-older handbook independently would require a separately reviewed correction mechanism; do not
-move release tags to change documentation.
+Fix broken content through a normal PR and rerun manually. By default, numbered content is frozen
+to the product tag. For an explicitly requested correction or withdrawal, use
+`docs/site/publication.json`:
+
+- `withdrawnVersions` removes the named handbook editions from pages, search, and the version menu.
+  It does not delete product releases, Git tags, images, or downloads.
+- `sourceOverrides` maps a published version to a full immutable 40-character documentation source
+  commit. The commit must remain an ancestor of the publisher's checkout. The correction uses that
+  commit's own manifest and pages, never a moving branch or a fallback to current content.
+
+Commit corrected pages first, then pin that commit in a second commit. Merge the PR with a merge
+commit so the pinned source stays in the main history; do not squash or rebase away the referenced
+commit. Existing product release tags must not move. After any later correction, update the pin
+explicitly and verify the full published-release build before publishing manually.
+
+The corrected 0.2.0 handbook replaces the 0.1.0 edition. A future change to Next does not silently
+modify that corrected snapshot. There is deliberately no redirect for withdrawn 0.1.0 pages:
+an old link must not silently present a different product version.
 
 ## Product release guard
 
