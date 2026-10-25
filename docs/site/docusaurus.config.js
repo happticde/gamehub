@@ -27,6 +27,7 @@ module.exports = {
   i18n: {defaultLocale: 'en', locales: ['en']},
   themes: ['@docusaurus/theme-mermaid', ['@easyops-cn/docusaurus-search-local', {
     hashed: true, language: 'en', indexBlog: false, indexPages: false, docsRouteBasePath: '/',
+    forceIgnoreNoIndex: true,
     docsDir: ['.generated/current', ...versions.map(version => `versioned_docs/version-${version}`)],
     highlightSearchTermsOnTargetPage: true, explicitSearchResultPath: true,
   }]],

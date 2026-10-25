@@ -7,7 +7,7 @@
   "scripts": {
     "prepare-docs": "node scripts/prepare.mjs",
     "start": "npm run prepare-docs && docusaurus start --host 0.0.0.0",
-    "build": "npm run prepare-docs && docusaurus build",
+    "build": "npm run prepare-docs && docusaurus build && node scripts/verify-build.mjs",
     "serve": "node scripts/serve.mjs",
     "test": "node --test tests/*.test.mjs",
     "check": "npm test && npm run build"

@@ -54,7 +54,9 @@ Local search is indexed during the production build and must be tested in that p
 The default project base path is `/gamehub/`.
 
 `npm run check` runs the documentation tooling contracts and a complete static build. Missing
-pages, broken internal Markdown links, and broken internal site links fail the build. External
+pages, broken internal Markdown/site links, incomplete local search indexes, and search results
+escaping their version fail the build. Unreleased and dev pages remain searchable locally while
+retaining no-index metadata for external search engines. External
 websites are not exhaustively checked on each build. CommonMark `.md` is used for existing
 runbooks; `.mdx` is reserved for site components if explicitly introduced later.
 
