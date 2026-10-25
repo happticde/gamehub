@@ -218,6 +218,7 @@ public class ExportControllerTests : IDisposable
         Assert.IsType<PagedResult<RawGameDto>>(valid.Value);
         var debug = Assert.Single(logger.Records, entry => entry.Level == LogLevel.Debug);
         Assert.Contains("Export: steam", debug.Message, StringComparison.Ordinal);
+        Assert.Contains(debug.Properties, property => property.Key == "Platform" && property.Value as string == "steam");
     }
 
     [Fact]

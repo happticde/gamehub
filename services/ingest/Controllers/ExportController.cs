@@ -55,10 +55,18 @@ public class ExportController : ControllerBase
         if (page < 1) page = 1;
 
         var normalizedPlatform = platform.ToLowerInvariant();
-        if (normalizedPlatform is "steam" or "psn" or "gog" or "epic")
+        var logPlatform = normalizedPlatform switch
+        {
+            "steam" => "steam",
+            "psn" => "psn",
+            "gog" => "gog",
+            "epic" => "epic",
+            _ => null
+        };
+        if (logPlatform is not null)
         {
             _logger.LogDebug("Export: {Platform} page {Page}, pageSize {PageSize}, updatedAfter {After}",
-                normalizedPlatform, page, pageSize, updatedAfter?.ToString("O") ?? "none");
+                logPlatform, page, pageSize, updatedAfter?.ToString("O") ?? "none");
         }
 
         if (normalizedPlatform == "epic")
