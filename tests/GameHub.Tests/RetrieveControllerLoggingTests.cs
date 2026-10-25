@@ -16,27 +16,31 @@ public sealed class RetrieveControllerLoggingTests
     private const string InjectedLogLine = "retrieval-user-7c9824\r\nCRITICAL forged log entry";
 
     [Theory]
-    [InlineData("steam", "network", 502)]
-    [InlineData("steam", "json", 502)]
-    [InlineData("steam", "unexpected", 500)]
-    [InlineData("gog", "network", 502)]
-    [InlineData("gog", "json", 502)]
-    [InlineData("gog", "unexpected", 500)]
+    [InlineData("steam", "network", 502, "Failed to fetch from Steam API.")]
+    [InlineData("steam", "json", 502, "Steam API returned unexpected data.")]
+    [InlineData("steam", "unexpected", 500, "Internal retrieval error.")]
+    [InlineData("gog", "network", 502, "Failed to fetch from GOG API.")]
+    [InlineData("gog", "json", 502, "GOG API returned unexpected data.")]
+    [InlineData("gog", "unexpected", 500, "Internal retrieval error.")]
     public async Task RetrieveFailure_UserControlledIdentifierAndException_AreNotLogged(
         string platform,
         string failure,
-        int expectedStatus)
+        int expectedStatus,
+        string expectedMessage)
     {
         var (db, connection) = DatabaseFixture.CreateIngestContext();
         await using var database = db;
         await using var openConnection = connection;
         var logger = new RecordingLogger<RetrieveController>();
+        var exceptionMessage = $"steam-api-secret gog-cookie-secret {InjectedLogLine}";
+        var innerException = new Exception("exception-inner-secret");
         Exception exception = failure switch
         {
-            "network" => new HttpRequestException(InjectedLogLine),
-            "json" => new JsonException(InjectedLogLine),
-            _ => new InvalidOperationException(InjectedLogLine)
+            "network" => new HttpRequestException(exceptionMessage, innerException),
+            "json" => new JsonException(exceptionMessage, innerException),
+            _ => new InvalidOperationException(exceptionMessage, innerException)
         };
+        exception.Data["credential"] = "exception-data-secret";
         var steam = new Mock<ISteamFetcher>(MockBehavior.Strict);
         var gog = new Mock<IGogFetcher>(MockBehavior.Strict);
 
@@ -75,6 +79,9 @@ public sealed class RetrieveControllerLoggingTests
 
         var response = Assert.IsType<ObjectResult>(result);
         Assert.Equal(expectedStatus, response.StatusCode);
+        var body = JsonSerializer.SerializeToElement(response.Value);
+        Assert.Equal(expectedMessage, body.GetProperty("Message").GetString());
+        Assert.Single(body.EnumerateObject());
         Assert.NotEmpty(logger.Records);
         Assert.All(logger.Records, entry =>
         {
@@ -82,6 +89,8 @@ public sealed class RetrieveControllerLoggingTests
             Assert.DoesNotContain("forged log entry", entry.Message, StringComparison.Ordinal);
             Assert.DoesNotContain("steam-api-secret", entry.Message, StringComparison.Ordinal);
             Assert.DoesNotContain("gog-cookie-secret", entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("exception-inner-secret", entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("exception-data-secret", entry.Message, StringComparison.Ordinal);
             Assert.Null(entry.Exception);
             Assert.DoesNotContain(entry.Properties, property =>
                 property.Value?.ToString()?.Contains("forged log entry", StringComparison.Ordinal) == true);

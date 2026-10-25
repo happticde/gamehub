@@ -100,7 +100,7 @@ public class SteamFetcher : ISteamFetcher
         }
         catch (Exception ex) when (ex is not HttpRequestException)
         {
-            await WriteAuditLogAsync("Steam", "Error", 0, ex.Message);
+            await WriteAuditLogAsync("Steam", "Error", 0, "Steam retrieval failed.");
             throw;
         }
     }
@@ -235,7 +235,7 @@ public class GogFetcher : IGogFetcher
         }
         catch (Exception ex) when (ex is not HttpRequestException and not GogProviderContractException)
         {
-            await WriteAuditLogAsync("GOG", "Error", 0, ex.Message);
+            await WriteAuditLogAsync("GOG", "Error", 0, "GOG retrieval failed.");
             throw;
         }
     }

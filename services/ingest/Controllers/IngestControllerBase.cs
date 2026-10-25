@@ -163,11 +163,7 @@ public abstract class IngestControllerBase<TEntity> : ControllerBase where TEnti
                 DbSet.Add(created);
                 knownItems[item.Id] = created;
                 added++;
-                Logger.LogDebug(
-                    "{Platform}: new game '{Name}' (ID: {Id})",
-                    PlatformName,
-                    item.Name,
-                    item.Id);
+                Logger.LogDebug("{Platform}: new game added", PlatformName);
             }
         }
 
