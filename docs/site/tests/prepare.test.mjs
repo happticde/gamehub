@@ -71,6 +71,16 @@ test('a missing tag or historical page fails instead of falling back to current'
   assert.throws(() => prepare({...f, releases: [release('v0.4.0')]}), /Missing or non-regular/);
 });
 
+test('a branch preview reads only the selected immutable Markdown snapshot with the trusted renderer', t => {
+  const f = fixture(t);
+  const result = prepare({...f, currentRef: f.releaseSha});
+  assert.deepEqual(result.snapshots.map(snapshot => snapshot.version), ['current']);
+  assert.equal(result.snapshots[0].commit, f.releaseSha);
+  assert.match(readFileSync(path.join(f.output, '.generated/current/index.md'), 'utf8'), /Original version/);
+  assert.doesNotMatch(readFileSync(path.join(f.output, '.generated/current/index.md'), 'utf8'), /Unreleased change/);
+  assert.throws(() => prepare({...f, currentRef: 'main'}), /immutable/);
+});
+
 test('withdrawn editions disappear and corrections use a pinned commit without moving product tags', t => {
   const f = fixture(t);
   const originalTag = f.git('rev-parse', 'v0.2.0^{commit}');

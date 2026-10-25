@@ -80,6 +80,9 @@ Keep Docusaurus's version dropdown, search, mobile drawer, theme toggle, breadcr
 copy controls. Links and buttons retain pointer, hover, active, and visible keyboard focus.
 Search uses the locally generated index; no remote search account or credentials are required.
 The Next banner communicates unreleased content; older-version banners communicate release age.
+The separate `/dev/` site has a persistent preview banner with its source commit and a link back
+to the published handbook. Its pages are excluded from indexing. Preview-only deployments retain
+the last successful stable artifact; they do not rebuild the published handbook from new sources.
 Reduced-motion preferences disable decorative transitions. There are no forms, account actions,
 or application data mutations on this surface.
 

@@ -5,13 +5,19 @@ const versions = JSON.parse(readFileSync(path.join(__dirname, 'versions.json'), 
 const repository = process.env.GITHUB_REPOSITORY || 'happticde/gamehub';
 const [owner, project] = repository.split('/');
 const baseUrl = process.env.DOCS_BASE_URL || `/${project}/`;
+const siteUrl = process.env.DOCS_URL || `https://${owner}.github.io`;
+const previewCommit = process.env.DOCS_PREVIEW_SHA || '';
+if (previewCommit && !/^[a-f0-9]{40}$/.test(previewCommit)) throw new Error('Invalid preview commit');
+if (previewCommit && !baseUrl.endsWith('/dev/')) throw new Error('Dev preview needs its own /dev/ base path');
 
 /** @type {import('@docusaurus/types').Config} */
 module.exports = {
   title: 'GameHub handbook',
   tagline: 'Connect your libraries. Understand your collection.',
-  url: process.env.DOCS_URL || `https://${owner}.github.io`,
+  url: siteUrl,
   baseUrl,
+  customFields: {previewCommit},
+  ...(previewCommit ? {headTags: [{tagName: 'meta', attributes: {name: 'robots', content: 'noindex, nofollow'}}]} : {}),
   favicon: 'img/gamehub.svg',
   organizationName: owner,
   projectName: project,
@@ -39,10 +45,15 @@ module.exports = {
     theme: {customCss: './src/css/custom.css'},
   }]],
   themeConfig: {
+    ...(previewCommit ? {announcementBar: {
+      id: 'dev-preview', isCloseable: false,
+      content: `Dev preview · ${previewCommit.slice(0, 7)} · Unreleased documentation`,
+    }} : {}),
     colorMode: {defaultMode: 'light', respectPrefersColorScheme: true},
     navbar: {
       title: 'GameHub', logo: {alt: '', src: 'img/gamehub.svg'},
       items: [
+        ...(previewCommit ? [{href: new URL(baseUrl.slice(0, -4), siteUrl).href, label: 'Published handbook', position: 'left'}] : []),
         {type: 'docSidebar', sidebarId: 'handbook', position: 'left', label: 'Handbook'},
         {type: 'docsVersionDropdown', position: 'right', dropdownActiveClassDisabled: true},
         {href: `https://github.com/${repository}`, label: 'GitHub', position: 'right'},

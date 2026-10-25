@@ -5,6 +5,15 @@ name: Publish documentation (manual)
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Publish the handbook, or update only /dev/ while retaining the last published handbook
+        type: choice
+        options: [publish, preview]
+        default: publish
+      preview_ref:
+        description: Same-repository branch to preview under /dev/ (defaults to main)
+        type: string
+        default: main
       force:
         description: Republish unchanged documentation (for recovery or Pages configuration changes)
         type: boolean
@@ -82,8 +91,71 @@ jobs:
           "$RUNNER_TEMP/tools/trivy" fs --scanners vuln --include-dev-deps --format json \
             --output "$RUNNER_TEMP/trivy-docs.json" "$RUNNER_TEMP/docs-source/docs/site"
           python3 scripts/ci/gate-trivy.py "$RUNNER_TEMP/trivy-docs.json" --target-prefix docs/site
-      - name: Fingerprint documentation, renderer, and release versions
-        run: node docs/site/scripts/fingerprint.mjs
+      - name: Prepare the stable handbook baseline
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [[ "$MODE" != preview ]]; then
+            node docs/site/scripts/fingerprint.mjs
+            mkdir -p "$RUNNER_TEMP/docs-stable"
+            cp -a docs/site/build "$RUNNER_TEMP/docs-stable/site"
+            cp docs/site/.generated/publish-state/fingerprint.txt "$RUNNER_TEMP/docs-stable/fingerprint.txt"
+            echo "$GITHUB_RUN_ID" > "$RUNNER_TEMP/docs-stable-run-id.txt"
+          else
+            previous=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/docs.yml/runs?event=workflow_dispatch&status=success&branch=main&per_page=1" \
+              --jq '.workflow_runs[0].id // empty')
+            [[ -n "$previous" ]] || { echo 'Publish a stable handbook baseline once before using preview mode.' >&2; exit 1; }
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous/artifacts" \
+              --jq '.artifacts[] | select(.name == "documentation-state" and .expired == false) | .id')
+            [[ -n "$state" ]] || { echo 'Stable baseline state expired; run publish mode first.' >&2; exit 1; }
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$state/zip" > "$RUNNER_TEMP/docs-state.zip"
+            if ! unzip -p "$RUNNER_TEMP/docs-state.zip" stable-run-id.txt > "$RUNNER_TEMP/docs-stable-run-id.txt"; then
+              echo 'This older deployment has no stable baseline archive; run publish mode once.' >&2
+              exit 1
+            fi
+            stable_run=$(cat "$RUNNER_TEMP/docs-stable-run-id.txt")
+            [[ "$stable_run" =~ ^[0-9]+$ ]] || exit 1
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$stable_run" --jq '.conclusion')" = success
+            artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$stable_run/artifacts" \
+              --jq '.artifacts[] | select(.name == "documentation-stable-site" and .expired == false) | .id')
+            [[ -n "$artifact" ]] || { echo 'Stable site archive expired; run publish mode before previewing.' >&2; exit 1; }
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$RUNNER_TEMP/docs-stable.zip"
+            unzip -q "$RUNNER_TEMP/docs-stable.zip" -d "$RUNNER_TEMP/docs-stable"
+            test -f "$RUNNER_TEMP/docs-stable/site/index.html"
+            test -f "$RUNNER_TEMP/docs-stable/fingerprint.txt"
+          fi
+      - name: Retain the stable site for future preview-only deployments
+        if: inputs.mode != 'preview'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: documentation-stable-site
+          path: ${{ runner.temp }}/docs-stable/
+          include-hidden-files: true
+          retention-days: 90
+          if-no-files-found: error
+      - name: Build the selected branch documentation under /dev/
+        env:
+          PREVIEW_BRANCH: ${{ inputs.preview_ref }}
+        run: |
+          requested=${PREVIEW_BRANCH:-main}
+          git check-ref-format --branch "$requested" > /dev/null
+          preview_sha=$(git rev-parse --verify "refs/remotes/origin/$requested^{commit}")
+          base=${DOCS_BASE_URL:-/${GITHUB_REPOSITORY#*/}/}
+          preview_base="${base}dev/"
+          printf '[]\n' > "$RUNNER_TEMP/docs-preview-releases.json"
+          DOCS_RELEASES_FILE="$RUNNER_TEMP/docs-preview-releases.json" DOCS_CANDIDATE_VERSION='' \
+            DOCS_SOURCE_REF="$preview_sha" DOCS_BASE_URL="$preview_base" DOCS_PREVIEW_SHA="$preview_sha" \
+            npm --prefix docs/site run build
+          DOCS_BASE_URL="$preview_base" DOCS_PREVIEW_SHA="$preview_sha" node docs/site/scripts/fingerprint.mjs
+          cat "$RUNNER_TEMP/docs-stable/fingerprint.txt" docs/site/.generated/publish-state/fingerprint.txt | \
+            sha256sum | cut -d' ' -f1 > "$RUNNER_TEMP/docs-composed-fingerprint.txt"
+          cp "$RUNNER_TEMP/docs-composed-fingerprint.txt" docs/site/.generated/publish-state/fingerprint.txt
+          cp "$RUNNER_TEMP/docs-stable-run-id.txt" docs/site/.generated/publish-state/stable-run-id.txt
+          mv docs/site/build "$RUNNER_TEMP/docs-dev-site"
+          cp -a "$RUNNER_TEMP/docs-stable/site" docs/site/build
+          mv "$RUNNER_TEMP/docs-dev-site" docs/site/build/dev
+          printf 'Dev preview source: %s\n\nPreview path: %s\n' "$preview_sha" "$preview_base" >> "$GITHUB_STEP_SUMMARY"
       - id: compare
         name: Skip publication when inputs match the previous successful manual run
         env:
@@ -113,7 +185,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: documentation-state
-          path: docs/site/.generated/publish-state/fingerprint.txt
+          path: docs/site/.generated/publish-state/
           retention-days: 90
           if-no-files-found: error
 

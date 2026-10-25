@@ -10,7 +10,8 @@ const metadata = JSON.parse(readFileSync(path.join(site, '.generated/metadata.js
 const hash = createHash('sha256');
 hash.update(JSON.stringify({content: metadata.contentHash,
   versions: metadata.snapshots.filter(snapshot => snapshot.version !== 'current'),
-  repository: metadata.repository, url: process.env.DOCS_URL || '', baseUrl: process.env.DOCS_BASE_URL || ''}));
+  repository: metadata.repository, url: process.env.DOCS_URL || '', baseUrl: process.env.DOCS_BASE_URL || '',
+  previewCommit: process.env.DOCS_PREVIEW_SHA || ''}));
 const inputs = execFileSync('git', ['ls-files', '-z', '--', 'docs/site', 'licensing', 'services/cli/tools/license-notices', 'LICENSE', 'COPYRIGHT', '.github/workflows/docs.yml'], {cwd: root, encoding: 'utf8'});
 for (const name of inputs.split('\0').filter(Boolean).sort()) {
   if (name.split('/').some(part => part === '.env' || part.startsWith('.env.'))) continue;

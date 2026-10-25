@@ -104,7 +104,8 @@ changes repository visibility, billing, Pages settings, or a live deployment.
 3. In **Settings → Pages → Build and deployment**, choose **GitHub Actions** as the source.
 4. Allow the `github-pages` environment to deploy from `main`. Configure reviewers if desired.
 5. Merge the documentation implementation into `main`.
-6. Open **Actions → Publish documentation (manual) → Run workflow**, choose **main**, and run.
+6. Open **Actions → Publish documentation (manual) → Run workflow**, choose **main** and
+   **mode: publish**, leave **preview_ref: main**, and run.
 7. Confirm both build and deployment succeed, then open the reported Pages URL. Check the home
    page, search, a nested page, mobile navigation, and the version selector.
 
@@ -112,6 +113,37 @@ The default URL is `https://happticde.github.io/gamehub/`. Repository forks deri
 project from `GITHUB_REPOSITORY`. For a custom domain or project path, consistently configure
 `DOCS_URL` and `DOCS_BASE_URL` in the build environment and follow GitHub's domain setup guide.
 The workflow intentionally does not create a Pages site automatically.
+
+## Preview a branch before publishing it
+
+Merge and publication are human-operated. The agent prepares and pushes a PR; it does not merge
+or start publication. Once this workflow setup has been merged, the operator can use the same
+manual workflow for a separate preview at `https://happticde.github.io/gamehub/dev/`:
+
+1. Run **mode: publish** once to establish the stable-site archive. This publishes the reviewed
+   handbook and prepares the initial `/dev/` preview. Older deployments do not have that archive.
+2. Push a documentation branch and open its PR.
+3. Open **Actions → Publish documentation (manual) → Run workflow**. Keep the workflow branch
+   **main**, choose **mode: preview**, and set **preview_ref** to the same-repository branch name.
+4. After the run succeeds, inspect `/gamehub/dev/`. The persistent banner shows the exact commit.
+5. Review and merge the PR yourself when ready. Run **mode: publish** to update the stable handbook.
+
+Preview mode restores the stable site from the last successful publication archive and changes
+only `/dev/`. It does not publish newly merged stable content as a side effect. The trusted renderer
+and locked dependencies come from `main`; only allowlisted Markdown and the manifest are read
+from the selected branch commit. It does not install that branch's dependencies or run its scripts.
+Only repository branches are accepted; fork PR code is not executed.
+
+The dev site has its own asset paths, local search index, preview banner, and no-index metadata.
+It is publicly accessible, so do not put private content into a preview. It is a single shared
+preview slot: a later preview replaces an earlier preview. Product releases and deployments are
+unaffected. There is no automatic PR deployment.
+
+The stable archive and its successful-run pointer are retained for 90 days. If either expires,
+preview mode fails before deployment and asks for a new **publish** run. It never silently
+reconstructs a different stable site. A failed build, scan, baseline restore, or deployment cannot
+replace the successful baseline. A publish run refreshes the stable archive and the default
+main-branch dev preview together.
 
 Sources: [GitHub Pages availability](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages),
 [custom deployment workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).

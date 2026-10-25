@@ -118,10 +118,11 @@ function writeJson(destination, value) {
   writeFileSync(destination, JSON.stringify(value, null, 2) + '\n');
 }
 
-export function prepare({root, output, releases = [], repository = 'happticde/gamehub', candidate = ''}) {
+export function prepare({root, output, releases = [], repository = 'happticde/gamehub', candidate = '', currentRef = null}) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Invalid GitHub repository');
   if (candidate && !stableTag.test(`v${candidate}`)) throw new Error('Invalid candidate version');
-  const currentManifest = JSON.parse(readSource(root, null, 'docs/site/content.json'));
+  if (currentRef && !/^[a-f0-9]{40}$/.test(currentRef)) throw new Error('Preview source must be an immutable commit');
+  const currentManifest = JSON.parse(readSource(root, currentRef, 'docs/site/content.json'));
   validateManifest(currentManifest);
   const publicationPath = 'docs/site/publication.json';
   const publication = validatePublication(existsSync(path.join(root, publicationPath))
@@ -186,7 +187,7 @@ export function prepare({root, output, releases = [], repository = 'happticde/ga
     else writeJson(path.join(output, `versioned_sidebars/version-${version}-sidebars.json`), {handbook: sidebar});
     metadata.push({version, commit: ref || currentSha, pages: included.size});
   }
-  render({version: 'current', ref: null, manifest: currentManifest});
+  render({version: 'current', ref: currentRef, manifest: currentManifest});
   snapshots.forEach(render);
   writeJson(path.join(output, 'versions.json'), snapshots.map(snapshot => snapshot.version));
   const result = {schemaVersion: 1, repository, snapshots: metadata, skipped, contentHash: digest.digest('hex')};
@@ -199,7 +200,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const releases = process.env.DOCS_RELEASES_FILE ? JSON.parse(readFileSync(process.env.DOCS_RELEASES_FILE, 'utf8')) : [];
   prepare({root: path.resolve(site, '../..'), output: site, releases,
     repository: process.env.GITHUB_REPOSITORY || 'happticde/gamehub',
-    candidate: process.env.DOCS_CANDIDATE_VERSION || ''});
+    candidate: process.env.DOCS_CANDIDATE_VERSION || '', currentRef: process.env.DOCS_SOURCE_REF || null});
   const legal = path.join(site, 'static/legal');
   mkdirSync(legal, {recursive: true});
   const generated = path.join(site, '.generated/legal');
