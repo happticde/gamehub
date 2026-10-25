@@ -49,15 +49,18 @@ public class ExportController : ControllerBase
         [FromQuery] int pageSize = 200,
         [FromQuery] DateTime? updatedAfter = null)
     {
-        _logger.LogDebug("Export: {Platform} page {Page}, pageSize {PageSize}, updatedAfter {After}",
-            platform, page, pageSize, updatedAfter?.ToString("O") ?? "none");
-
         // Enforce safe bounds
         if (pageSize < 1) pageSize = 200;
         if (pageSize > 500) pageSize = 500;
         if (page < 1) page = 1;
 
         var normalizedPlatform = platform.ToLowerInvariant();
+        if (normalizedPlatform is "steam" or "psn" or "gog" or "epic")
+        {
+            _logger.LogDebug("Export: {Platform} page {Page}, pageSize {PageSize}, updatedAfter {After}",
+                normalizedPlatform, page, pageSize, updatedAfter?.ToString("O") ?? "none");
+        }
+
         if (normalizedPlatform == "epic")
         {
             return await GetEpicPageAsync(page, pageSize, updatedAfter);
@@ -77,7 +80,7 @@ public class ExportController : ControllerBase
 
         if (query == null)
         {
-            _logger.LogWarning("Export: unknown platform '{Platform}' requested", platform);
+            _logger.LogWarning("Export request rejected for an unsupported platform");
             return BadRequest(new { Message = $"Unknown platform: {platform}. Use steam, psn, gog, or epic." });
         }
 

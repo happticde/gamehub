@@ -50,7 +50,7 @@ public class SteamFetcher : ISteamFetcher
     /// </summary>
     public async Task<List<JsonElement>> FetchGamesAsync(string apiKey, string steamId)
     {
-        _logger.LogInformation("Fetching Steam library for user {SteamId}", steamId);
+        _logger.LogInformation("Fetching Steam library");
 
         var url = $"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/" +
                   $"?steamid={Uri.EscapeDataString(steamId)}&format=json&include_appinfo=1";
@@ -130,11 +130,16 @@ public class GogFetcher : IGogFetcher
 {
     private readonly ILogger<GogFetcher> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly Func<string, HttpMessageHandler> _handlerFactory;
 
-    public GogFetcher(ILogger<GogFetcher> logger, IServiceScopeFactory scopeFactory)
+    public GogFetcher(
+        ILogger<GogFetcher> logger,
+        IServiceScopeFactory scopeFactory,
+        Func<string, HttpMessageHandler>? handlerFactory = null)
     {
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _handlerFactory = handlerFactory ?? CreateHttpHandler;
     }
 
     /// <summary>
@@ -148,11 +153,9 @@ public class GogFetcher : IGogFetcher
     /// </summary>
     public async Task<List<JsonElement>> FetchGamesAsync(string gogAlCookie, string username)
     {
-        _logger.LogInformation("Fetching GOG library for user {Username}", username);
+        _logger.LogInformation("Fetching GOG library");
 
-        // Create a client with the gog-al auth cookie
-        var handler = new HttpClientHandler();
-        handler.CookieContainer.Add(new Cookie("gog-al", gogAlCookie, "/", ".gog.com"));
+        var handler = _handlerFactory(gogAlCookie);
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
 
         var allGames = new List<JsonElement>();
@@ -163,7 +166,7 @@ public class GogFetcher : IGogFetcher
             while (true)
             {
                 var url = $"https://www.gog.com/u/{username}/games/stats?page={page}";
-                _logger.LogDebug("GOG: fetching page {Page} from {Url}", page, url);
+                _logger.LogDebug("GOG: fetching page {Page}", page);
 
                 using var resp = await client.GetAsync(url);
 
@@ -249,6 +252,13 @@ public class GogFetcher : IGogFetcher
             ErrorMessage = error
         });
         await db.SaveChangesAsync();
+    }
+
+    private static HttpMessageHandler CreateHttpHandler(string gogAlCookie)
+    {
+        var handler = new HttpClientHandler();
+        handler.CookieContainer.Add(new Cookie("gog-al", gogAlCookie, "/", ".gog.com"));
+        return handler;
     }
 }
 

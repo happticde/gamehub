@@ -1,6 +1,7 @@
 using System.Net;
 using GameHub.Ingest.Data;
 using GameHub.Ingest.Services;
+using GameHub.Tests.Helpers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,12 +32,14 @@ public sealed class SteamFetcherTests
             """);
         var handler = new StubHandler(status, content);
         using var http = new HttpClient(handler);
-        var fetcher = new SteamFetcher(http, NullLogger<SteamFetcher>.Instance,
+        var logger = new RecordingLogger<SteamFetcher>();
+        var fetcher = new SteamFetcher(http, logger,
             services.GetRequiredService<IServiceScopeFactory>());
+        const string steamId = "steam-user-5d86\r\nCRITICAL forged log entry";
 
         if (status == HttpStatusCode.OK)
         {
-            var games = await fetcher.FetchGamesAsync("test-key", "test-user");
+            var games = await fetcher.FetchGamesAsync("test-key", steamId);
             Assert.True(content.IsDisposed);
             var game = Assert.Single(games);
             Assert.Equal(42, game.GetProperty("appid").GetInt32());
@@ -46,11 +49,18 @@ public sealed class SteamFetcherTests
         }
         else
         {
-            await Assert.ThrowsAnyAsync<HttpRequestException>(() => fetcher.FetchGamesAsync("test-key", "test-user"));
+            await Assert.ThrowsAnyAsync<HttpRequestException>(() => fetcher.FetchGamesAsync("test-key", steamId));
             Assert.True(content.IsDisposed);
         }
 
         Assert.Equal(1, await db.IngestAuditLogs.CountAsync());
+        Assert.Contains(logger.Records, entry => entry.Message == "Fetching Steam library");
+        Assert.All(logger.Records, entry =>
+        {
+            Assert.DoesNotContain(steamId, entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("forged log entry", entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("test-key", entry.Message, StringComparison.Ordinal);
+        });
     }
 
     private sealed class StubHandler(HttpStatusCode status, HttpContent content) : HttpMessageHandler
