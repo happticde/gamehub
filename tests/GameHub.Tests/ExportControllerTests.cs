@@ -4,7 +4,9 @@ using GameHub.Shared;
 using GameHub.Tests.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using Xunit;
 
 namespace GameHub.Tests;
@@ -187,6 +189,36 @@ public class ExportControllerTests : IDisposable
         Assert.Equal("steam-hash", Assert.Single(steam.Items).ContentHash);
         Assert.Equal("psn-hash", Assert.Single(psn.Items).ContentHash);
         Assert.Equal("gog-hash", Assert.Single(gog.Items).ContentHash);
+    }
+
+    [Fact]
+    public async Task Export_UnknownPlatformContainingNewline_IsNotLoggedAndResponseIsPreserved()
+    {
+        const string untrustedPlatform = "unknown-platform-3ce1\r\nCRITICAL forged log entry";
+        var logger = new RecordingLogger<ExportController>();
+        var controller = new ExportController(_db, logger);
+
+        var invalid = Assert.IsType<BadRequestObjectResult>(
+            await controller.GetByPlatform(untrustedPlatform));
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(invalid.Value));
+
+        Assert.Equal(
+            $"Unknown platform: {untrustedPlatform}. Use steam, psn, gog, or epic.",
+            body.RootElement.GetProperty("Message").GetString());
+        var warning = Assert.Single(logger.Records);
+        Assert.Equal(LogLevel.Warning, warning.Level);
+        Assert.Equal("Export request rejected for an unsupported platform", warning.Message);
+        Assert.DoesNotContain(untrustedPlatform, warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("forged log entry", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(logger.Records, entry =>
+            entry.Properties.Any(property =>
+                property.Value?.ToString()?.Contains("forged log entry", StringComparison.Ordinal) == true));
+
+        var valid = Assert.IsType<OkObjectResult>(await controller.GetByPlatform("StEaM"));
+        Assert.IsType<PagedResult<RawGameDto>>(valid.Value);
+        var debug = Assert.Single(logger.Records, entry => entry.Level == LogLevel.Debug);
+        Assert.Contains("Export: steam", debug.Message, StringComparison.Ordinal);
+        Assert.Contains(debug.Properties, property => property.Key == "Platform" && property.Value as string == "steam");
     }
 
     [Fact]

@@ -220,7 +220,7 @@ public class RetrieveController : ControllerBase
 
         try
         {
-            _logger.LogInformation("Starting Steam retrieve for user {SteamId}", request.SteamId);
+            _logger.LogInformation("Starting Steam retrieve");
             var games = await _steamFetcher.FetchGamesAsync(request.ApiKey, request.SteamId);
             var result = await _steamIngest.IngestBatch(games);
             _logger.LogInformation("Steam retrieve completed: {Count} games processed", games.Count);
@@ -228,17 +228,17 @@ public class RetrieveController : ControllerBase
         }
         catch (HttpRequestException)
         {
-            _logger.LogWarning("Steam API request failed for user {SteamId}", request.SteamId);
+            _logger.LogWarning("Steam API request failed");
             return StatusCode(502, new { Message = "Failed to fetch from Steam API." });
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            _logger.LogError(ex, "Failed to parse Steam API response for user {SteamId}", request.SteamId);
+            _logger.LogError("Failed to parse Steam API response.");
             return StatusCode(502, new { Message = "Steam API returned unexpected data." });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "Unexpected error during Steam retrieve for user {SteamId}", request.SteamId);
+            _logger.LogError("Unexpected error during Steam retrieve.");
             return StatusCode(500, new { Message = "Internal retrieval error." });
         }
     }
@@ -257,7 +257,7 @@ public class RetrieveController : ControllerBase
 
         try
         {
-            _logger.LogInformation("Starting GOG retrieve for user {Username}", request.User);
+            _logger.LogInformation("Starting GOG retrieve");
             var games = await _gogFetcher.FetchGamesAsync(request.Cookie, request.User);
             var result = await _gogIngest.IngestBatch(games);
             _logger.LogInformation("GOG retrieve completed: {Count} games processed", games.Count);
@@ -265,17 +265,17 @@ public class RetrieveController : ControllerBase
         }
         catch (HttpRequestException)
         {
-            _logger.LogWarning("GOG API request failed for user {Username}", request.User);
+            _logger.LogWarning("GOG API request failed");
             return StatusCode(502, new { Message = "Failed to fetch from GOG API." });
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            _logger.LogError(ex, "Failed to parse GOG API response for user {Username}", request.User);
+            _logger.LogError("Failed to parse GOG API response.");
             return StatusCode(502, new { Message = "GOG API returned unexpected data." });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "Unexpected error during GOG retrieve for user {Username}", request.User);
+            _logger.LogError("Unexpected error during GOG retrieve.");
             return StatusCode(500, new { Message = "Internal retrieval error." });
         }
     }
