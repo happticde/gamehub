@@ -37,6 +37,33 @@ public class IngestControllerTests : IDisposable
     // =========================================================================
 
     [Fact]
+    public async Task Ingest_UntrustedTitleAndStringId_PreserveStoredDataWithoutLoggingIt()
+    {
+        const string titleId = "untrusted-id\r\nCRITICAL forged ID entry";
+        const string title = "untrusted-title\r\nCRITICAL forged title entry";
+        var logger = new RecordingLogger<PsnIngestController>();
+        var controller = new PsnIngestController(_db, logger);
+
+        var result = Assert.IsType<OkObjectResult>(await controller.IngestBatch(
+            [JsonSerializer.SerializeToElement(new { titleId, name = title })]));
+
+        Assert.Equal(1, JsonSerializer.SerializeToElement(result.Value).GetProperty("Added").GetInt32());
+        var stored = await _db.PsnRawItems.SingleAsync();
+        Assert.Equal(titleId, stored.TitleId);
+        Assert.Equal(title, stored.TitleName);
+        Assert.NotEmpty(logger.Records);
+        Assert.All(logger.Records, entry =>
+        {
+            Assert.Null(entry.Exception);
+            Assert.DoesNotContain("untrusted-", entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("\r", entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("\n", entry.Message, StringComparison.Ordinal);
+            Assert.All(entry.Properties, property =>
+                Assert.DoesNotContain("untrusted-", property.Value?.ToString() ?? "", StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
     public async Task ListItems_InvalidPagination_UsesSafeDefaultsAndKeepsHugePagesEmpty()
     {
         _db.SteamRawItems.Add(new SteamRawItem { AppId = 42, Name = "Example", RawJson = "{}" });

@@ -29,3 +29,14 @@ internal sealed class RecordingLogger<T> : ILogger<T>
         Records.Add(new RecordedLog(logLevel, formatter(state, exception), exception, properties));
     }
 }
+
+internal sealed class RecordingLoggerProvider : ILoggerProvider
+{
+    private readonly RecordingLogger<object> _logger = new();
+
+    public List<RecordedLog> Records => _logger.Records;
+
+    public ILogger CreateLogger(string categoryName) => _logger;
+
+    public void Dispose() { }
+}
