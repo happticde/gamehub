@@ -36,8 +36,8 @@ omitted:
 
 The visual reference is a well-organized game shelf and the practical handbook beside it.
 The homepage's blue book-spine rules organize four reader tasks. Article pages prioritize
-reading and predictable navigation. This is an English content site for self-hosters, players,
-and contributors; no specific geographic market is assumed. Typical use is a desktop beside
+reading and predictable navigation. This is an English content site for self-hosters and players;
+no specific geographic market is assumed. Typical use is a desktop beside
 a terminal or a phone while following setup instructions.
 
 Scope is `docs/site/` only. The authenticated Next.js application retains its existing design.

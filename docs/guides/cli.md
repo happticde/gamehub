@@ -11,7 +11,8 @@ gamehub-cli ingest --help
 gamehub-cli connect --help
 ```
 
-See [Release artifacts](../ci-and-releases.md#retrieve-artifacts) for archive names and checksums.
+Open [GameHub releases](https://github.com/happticde/gamehub/releases) for matching archives and
+`SHA256SUMS`. Verify the downloaded archive against that release's checksum file before extraction.
 Development builds explicitly report `dev`.
 
 ## Global options
@@ -56,4 +57,5 @@ The `helper` command installs/uninstalls the macOS protocol handler and handles
 `gamehub-helper://` launches. Prefer the installer embedded in your frontend release so the
 handler and frontend agree on the protocol and status-port behavior.
 
-For browser debugging and manual fallbacks, see [Platform connect helpers](../platform-connect-helpers.md).
+For installation and recovery, see [Connection helper](connection-helper.md) and
+[Troubleshooting](troubleshooting.md#the-connection-helper-does-not-finish).

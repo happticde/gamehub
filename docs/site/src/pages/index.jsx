@@ -26,7 +26,7 @@ export default function Home() {
             ['Your first library', 'Installation, account setup, and the first successful sync.', 'guides/first-library'],
             ['Your collection', 'Find games, fix matches, track progress, and protect your library.', 'guides/library'],
             ['Your installation', 'Deployment, authentication, backups, upgrades, and troubleshooting.', 'guides/deployment'],
-            ['Under the hood', 'Services, trust boundaries, APIs, CLI, and architectural decisions.', 'guides/architecture'],
+            ['Find help', 'Fix login, connection helpers, missing games, and import failures.', 'guides/troubleshooting'],
           ].map(([title, description, route]) => (
             <Link key={route} className="handbook-shelf" to={`${handbook}${route}/`}>
               <h2>{title}</h2><p>{description}</p><span aria-hidden="true">↗</span>

@@ -1,48 +1,48 @@
 # Your first library
 
-This walkthrough starts after [installation](installation.md). Sign in and open `/admin`.
-The account controls and platform assistant depend on your configured deployment mode.
+Start after [installation and first login](installation.md), or sign in to the instance your
+host provides. This walkthrough imports one platform and checks that its games appear.
 
-## Connect one platform
+## 1. Connect an account
 
-Start with Steam if you have a Steam Web API key and Steam ID, or use the account connection
-assistant for GOG, PlayStation, or Epic. Open the platform/account controls, follow the platform
-instructions, and save the credentials to GameHub. See [Connect platforms](platforms.md) for
-provider-specific details and helper requirements.
+1. Open **Admin** (`/admin`), then the **Accounts** tab.
+2. Pick [Steam](steam.md), [GOG](gog.md), [PlayStation](playstation.md), or [Epic Games](epic.md).
+3. Complete that platform's instructions and wait for confirmation that the connection is saved.
 
-Saving credentials confirms storage. It does not prove the provider has returned a complete
-library. A newly provisioned tenant starts with platform sync disabled; Core enables it only
-after fresh status verification finds supported credentials.
+Steam uses an API key and Steam ID. GOG, PlayStation, and Epic offer a local browser helper.
+Check the [supported setup](connection-helper.md) before installing it.
 
-## Retrieve, then synchronize
+**Saved** means GameHub stored your connection. You still need a successful import.
 
-GameHub performs two distinct operations:
+## 2. Import the games
 
-1. **Retrieval** contacts the platform and stores its raw library in Ingest.
-2. **Synchronization** merges stored platform records into the unified Core library.
+1. Open **Admin → Sync**.
+2. Select **Refresh Platforms + Sync**.
+3. Wait for the operation to finish, then inspect the provider status and sync history.
+4. Open **Library** (`/library`) and search for a game you know you own.
 
-Use the Admin sync controls to refresh stale provider data and synchronize it. Cached sync can
-be repeated without contacting providers. Force refresh is for deliberate recovery and still
-respects provider cooldowns. Check the provider status and retrieval history before repeatedly
-retrying an empty or failed import.
+**Refresh Platforms + Sync** asks connected platforms for fresh data when needed, then updates
+your collection. **Sync Cached Library** rebuilds it from data already downloaded.
+**Force Refresh** is for deliberate retries; provider cooldowns still apply.
 
-## Enrich and inspect
+If no games appear, check [missing games](troubleshooting.md#games-are-missing) before retrying.
 
-If IGDB is configured, run enrichment from Admin. Enrichment adds covers, descriptions, genres,
-and other metadata; it does not establish ownership of a game.
+## 3. Add covers and descriptions
 
-Open `/library`, search for a known title, and open its details. Check its platform ownership,
-metadata, and any duplicate editions. Use the match correction or merge/split tools only after
-checking the records. [Manage your collection](library.md) explains the differences.
+If your host configured IGDB, open **Admin → Enrichment** and run the normal enrichment action.
+Return to the game's details and check its cover, title, and description.
+Import establishes ownership; enrichment supplies metadata. One can succeed while the other fails.
 
-## Add the remaining platforms
+Use [Correct a match](correct-matches.md) for the wrong cover or description and
+[Merge and split](merge-split.md) for duplicate or incorrectly grouped ownership.
 
-Connect the next platform and repeat the retrieval/sync checks. Cross-platform matching uses
-normalized title slugs, so games with different editions or names may require manual review.
-Manual links survive later syncs.
+## 4. Organize your collection
 
-## Finish with a backup
+Open a game's details to set play status and a personal rating.
+Use [tags and tracking](tracking.md) to organize your backlog, or [add physical games](physical-games.md).
+Connect another platform and repeat the import check when the first works.
 
-Export a JSON backup from Admin and store it securely outside the deployment. A library backup
-does not contain provider credentials or the complete Ingest database. Read
-[Backup and restore](backup-restore.md) before treating it as disaster recovery.
+## 5. Save a backup
+
+Open **Admin → Backup → Download JSON**. Keep the file outside your GameHub installation.
+Read [Backup and restore](backup-restore.md) for what is included and how to restore it.

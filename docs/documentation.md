@@ -2,8 +2,11 @@
 
 GameHub's handbook uses Docusaurus. Its website is an independent npm project under `docs/site/`;
 the maintained Markdown pages remain in `docs/`. The explicit `docs/site/content.json` manifest
-defines the public pages and navigation. Agent context, session history, and source-review notes
-are excluded. Adding a file to Git does not automatically publish it.
+defines the public pages and navigation. The handbook covers installation, use, backup, self-hosting,
+troubleshooting, and optional client integrations. Architecture decisions, audits, developer setup,
+CI/release procedures, agent context, and this maintenance guide stay in the repository.
+Adding a file to Git does not automatically publish it. Public guides must not link to internal
+documents for information needed to complete a user task.
 
 ## Check or preview locally
 
@@ -22,7 +25,7 @@ preview rebuilds before serving so the search index and pages are current. Stop 
 To preview the version selector with a local candidate, use:
 
 ```bash
-make docs-preview DOCS_VERSION=0.1.0
+make docs-preview DOCS_VERSION=0.2.0
 ```
 
 This creates no Git tag or product release. Omit `DOCS_VERSION` on the next build to return to
@@ -123,7 +126,8 @@ The manual publisher fetches all GitHub Release metadata and full tag history. O
 non-draft, non-prerelease `vMAJOR.MINOR.PATCH` releases are eligible. For each eligible release,
 it resolves the tag to a commit and reads that commit's own content manifest and Markdown pages.
 The latest renderer builds these frozen sources into Docusaurus's version directories. It never
-fills a missing old page with current content. Releases predating the manifest are explicitly
+fills a missing old page with current content. An explicit correction policy can pin a different
+reviewed documentation commit as described below. Releases predating the manifest are explicitly
 skipped; missing tags, unsupported manifests, and malformed snapshots fail rather than silently
 substituting another version.
 
@@ -148,10 +152,24 @@ The **force** input deliberately republishes unchanged inputs, for example after
 or domain recovery. A failed build/scan cannot deploy; a failed deployment does not become the
 baseline for future comparisons. Concurrent publication runs are serialized.
 
-Fix broken content through a normal PR and rerun manually. Existing numbered content is frozen
-to the product tag: a correction on `main` changes Next and subsequent releases. Updating an
-older handbook independently would require a separately reviewed correction mechanism; do not
-move release tags to change documentation.
+Fix broken content through a normal PR and rerun manually. By default, numbered content is frozen
+to the product tag. For an explicitly requested correction or withdrawal, use
+`docs/site/publication.json`:
+
+- `withdrawnVersions` removes the named handbook editions from pages, search, and the version menu.
+  It does not delete product releases, Git tags, images, or downloads.
+- `sourceOverrides` maps a published version to a full immutable 40-character documentation source
+  commit. The commit must remain an ancestor of the publisher's checkout. The correction uses that
+  commit's own manifest and pages, never a moving branch or a fallback to current content.
+
+Commit corrected pages first, then pin that commit in a second commit. Merge the PR with a merge
+commit so the pinned source stays in the main history; do not squash or rebase away the referenced
+commit. Existing product release tags must not move. After any later correction, update the pin
+explicitly and verify the full published-release build before publishing manually.
+
+The corrected 0.2.0 handbook replaces the 0.1.0 edition. A future change to Next does not silently
+modify that corrected snapshot. There is deliberately no redirect for withdrawn 0.1.0 pages:
+an old link must not silently present a different product version.
 
 ## Product release guard
 

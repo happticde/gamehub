@@ -18,12 +18,12 @@ For a production installation:
 - Keep Core, Ingest, PostgreSQL, and internal service-key routes on private networks.
 - Supply strong independent secrets through your deployment system.
 - Keep databases and vault keys on persistent, backed-up storage.
-- Follow [authentication](../authentication.md) and the
-  [guarded activation procedure](../guarded-multi-user-enablement.md).
+- Follow [authentication](authentication.md) and the
+  [guarded activation procedure](authentication.md#check-and-activate-guarded-admission).
 
 OIDC configuration does not itself enable production multi-user operation. The default-off
 operator switch and readiness checks remain mandatory. For a self-hosted identity provider,
-use the detailed [Keycloak guide](../keycloak-oidc-setup.md).
+use the detailed [Keycloak guide](keycloak.md).
 
 ## Run the HTTPS proxy on another host
 
@@ -59,9 +59,9 @@ the frontend's `PUBLIC_ORIGIN` matches the exact external HTTPS origin. Compose 
 can still render pages while writes are rejected. Keep the origin check enabled and correct the
 deployment setting before retrying the save.
 
-## Choose a release
+## Use published release images
 
-Set `GAMEHUB_VERSION` to a published release tag, such as `v0.1.0`.
+Set `GAMEHUB_VERSION` to a published release tag, such as `v0.2.0`.
 The release Compose file uses that tag for all three images:
 
 ```text
@@ -76,61 +76,28 @@ published. Private packages require authenticated registry access.
 
 Run `docker compose pull`, then `docker compose up -d --no-build`.
 The file is complete on its own. It needs no Compose override or source checkout.
-The repository's separate `docker-compose.yml` is for
-[source builds](development.md#build-from-source).
+For a source build, clone the repository, check out your intended release tag, supply the same
+required configuration, and run `docker compose -f docker-compose.yml up -d --build` from that
+checkout. Keep a development checkout separate from your installed release and its volumes.
 
 ## Persistence and databases
 
 The baseline uses `postgres_data` for PostgreSQL and `gamehub_data` for Core/Ingest SQLite paths.
 Keep these volumes when recreating containers. A library JSON export is not a database backup.
-Review [Backup and restore](backup-restore.md) and test recovery before relying on the deployment.
+Review [Installation recovery](disaster-recovery.md) and test recovery before relying on the deployment.
 
 Database provider and connection settings are service-specific. SQLite is suitable for a local
 installation; PostgreSQL operations require the corresponding database and connection string.
 Review provider-specific migrations before changing an existing deployment's database provider.
 
-## Upgrade safely
+## Updates and recovery
 
-1. Read the target release notes and select the same handbook version.
-2. Back up both databases, configuration, and required key versions consistently.
-3. Stop or drain writes and background jobs according to your maintenance procedure.
-4. Update all application components and helper downloads together to the selected release.
-5. Start the services and inspect startup/migration logs and health checks.
-6. Verify login, the intended account's library, credential status, and one retrieval/sync cycle.
-
-For the release Compose installation, change `GAMEHUB_VERSION` to the target tag.
-Then run these commands from the same installation folder:
-
-```bash
-docker compose pull
-docker compose up -d --no-build
-docker compose ps
-```
-
-If you move an existing installation to this template, keep its Compose project name.
-Use `docker compose -p YOUR_EXISTING_PROJECT_NAME` for each command when needed.
-Keep the existing volume names and database paths too.
-A different project name creates new volumes and can make the library appear empty.
-The release template defaults Ingest's SQLite path to `/app/data/gamehub.db`.
-Set `INGEST_DB_CONN` to your existing path if it differs.
-
-The frontend embeds the helper downloads from its own release. An old installed helper can
-disagree with a newer frontend's launch protocol; reinstall the matching package when release
-notes require it.
-
-## Rollback and recovery
-
-Application images and database schema must remain compatible. If an upgrade changed the schema,
-reverting the image alone is not a verified rollback. Restore a matching, tested database backup
-when required by the migration/release notes.
-
-Disabling guarded multi-user admission preserves tenant data but changes which accounts and jobs
-may run. Use the documented [disable and recovery procedures](../guarded-multi-user-enablement.md)
-rather than weakening authentication to regain access.
+Follow [Update GameHub](upgrades.md) for source-build and release-image commands.
+Create a consistent [installation backup](disaster-recovery.md) before upgrades.
+A [library JSON export](backup-restore.md) alone does not recover provider credentials.
 
 ## Operational checks
 
-Check Core and Ingest `/health`, frontend availability, provider retrieval history, sync status,
-and storage growth. Keep logs sanitized and never include cookies, tokens, vault keys, or raw
-provider responses in support material. [Troubleshooting](../DEBUGGING.md) separates provider,
-network, and metadata failures.
+Check Core and Ingest `/health`, frontend login, provider status, sync history, and storage growth.
+After a configuration change, recreate the affected containers; a restart alone keeps their old
+environment. Use [Troubleshooting](troubleshooting.md) to diagnose failures without deleting data.
