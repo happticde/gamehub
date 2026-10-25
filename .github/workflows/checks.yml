@@ -66,7 +66,7 @@ jobs:
       - run: python3 scripts/ci/install-tool.py git-cliff "$RUNNER_TEMP/tools"
       - run: python3 scripts/ci/install-tool.py gitleaks "$RUNNER_TEMP/tools"
       - run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
-      - run: shellcheck scripts/ci/*.sh services/cli/scripts/package-*.sh
+      - run: shellcheck .githooks/pre-commit scripts/install-git-hooks.sh scripts/ci/*.sh services/cli/scripts/package-*.sh
 
   gitleaks:
     name: Secret history scan
