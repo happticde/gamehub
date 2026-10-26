@@ -5,6 +5,7 @@ using System.Text.Json;
 using GameHub.Ingest.Data;
 using GameHub.Ingest.Models;
 using GameHub.Ingest.Services;
+using GameHub.Tests.Helpers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -49,22 +50,34 @@ public sealed class EpicGamesClientTests
         Assert.Contains("token_type=eg1", handler.LastBody, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task ExchangeAuthorizationCodeAsync_BadRequest_RaisesCredentialValidation()
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task ExchangeAuthorizationCodeAsync_ProviderRejection_RaisesSecretFreeValidation(HttpStatusCode status)
     {
-        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        var logger = new RecordingLogger<EpicGamesClient>();
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(status)
         {
             Content = new StringContent(
-                "{\"errorCode\":\"errors.com.epicgames.oauth.invalid_grant\"}",
+                "{\"echo\":\"short-lived-code provider-response-secret\"}",
                 Encoding.UTF8,
                 "application/json")
         });
-        var client = CreateClient(handler);
+        var client = CreateClient(handler, logger: logger);
 
         var exception = await Assert.ThrowsAsync<PlatformCredentialValidationException>(
             () => client.ExchangeAuthorizationCodeAsync("short-lived-code"));
 
         Assert.Contains("invalid or expired", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("short-lived-code", exception.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("provider-response-secret", exception.ToString(), StringComparison.Ordinal);
+        Assert.All(logger.Records, entry =>
+        {
+            Assert.Null(entry.Exception);
+            Assert.DoesNotContain("short-lived-code", entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("provider-response-secret", entry.Message, StringComparison.Ordinal);
+        });
     }
 
     [Fact]
