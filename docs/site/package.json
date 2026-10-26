@@ -15,7 +15,7 @@
   "overrides": {
     "katex": "0.19.0",
     "postcss-selector-parser": "7.1.6",
-    "serialize-javascript": "7.0.5",
+    "serialize-javascript": "7.1.4",
     "tinypool": "2.1.2",
     "sockjs": { "uuid": "11.1.1" }
   },
