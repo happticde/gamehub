@@ -186,6 +186,16 @@ GitHub Actions updates and changes to `dependabot.yml` still select the full sui
 `.github/**` is a CI/security input. Grouping reduces PR and CI volume without skipping checks.
 The npm entry covers both `frontend` and `docs/site`; documentation package/lockfile changes
 select only documentation checks. A grouped PR touching both directories selects both.
+
+TypeScript 7.0.x is ignored because it has no compiler API for `typescript-eslint`.
+Keep the frontend's existing TypeScript 5.9.3 lockfile until a supported upgrade is verified.
+Close the incompatible [Dependabot PR #30](https://github.com/happticde/gamehub/pull/30)
+without merging it. The ignore rule prevents new 7.0.x proposals after it reaches `main`.
+TypeScript 6.x and 7.1+ remain eligible for proposals, but still need compatibility checks.
+Before a native compiler migration, check
+[Microsoft's compatibility guidance](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6-0)
+and [typescript-eslint's support tracker](https://github.com/typescript-eslint/typescript-eslint/issues/10940).
+
 See [GitHub's grouping guide](https://docs.github.com/en/code-security/tutorials/secure-your-dependencies/optimizing-pr-creation-version-updates)
 and [Dependabot's option reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
 
