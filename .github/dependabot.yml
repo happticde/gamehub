@@ -44,6 +44,11 @@ updates:
         patterns: ["*"]
   - package-ecosystem: npm
     directories: [/frontend, /docs/site]
+    ignore:
+      # TS 7.0 has no compiler API for typescript-eslint. Recheck support before upgrading.
+      # https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      - dependency-name: typescript
+        versions: [">=7.0.0 <7.1.0"]
     schedule:
       interval: weekly
       day: monday
