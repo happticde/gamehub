@@ -10,14 +10,18 @@ internal static class PlatformCredentialPayloadCodec
     private const int CurrentSchemaVersion = 1;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public static void Validate(Platform platform, int schemaVersion, ReadOnlySpan<byte> plaintext)
+    public static void ValidateSchemaVersion(Platform platform, int schemaVersion)
     {
         if (schemaVersion != CurrentSchemaVersion)
         {
             throw new PlatformCredentialValidationException(
                 $"SchemaVersion {schemaVersion} is unsupported for {platform}.");
         }
+    }
 
+    public static void Validate(Platform platform, int schemaVersion, ReadOnlySpan<byte> plaintext)
+    {
+        ValidateSchemaVersion(platform, schemaVersion);
         switch (platform)
         {
             case Platform.Steam:
@@ -94,6 +98,10 @@ internal static class PlatformCredentialPayloadCodec
         if (!credentials.TryGetProperty("authorizationCode", out var codeProperty))
         {
             return null;
+        }
+        if (codeProperty.ValueKind is not JsonValueKind.String and not JsonValueKind.Null)
+        {
+            throw new PlatformCredentialValidationException("authorizationCode must be a string.");
         }
 
         var code = codeProperty.GetString();

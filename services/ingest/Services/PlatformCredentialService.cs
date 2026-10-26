@@ -31,7 +31,7 @@ public sealed class PlatformCredentialService(
         CancellationToken cancellationToken = default)
     {
         Validate(platform, schemaVersion, credentials);
-        var plaintext = await BuildPlaintextAsync(platform, schemaVersion, credentials, cancellationToken);
+        var plaintext = await BuildPlaintextAsync(platform, credentials, cancellationToken);
         try
         {
             if (plaintext.Length > MaximumPayloadSizeBytes)
@@ -185,20 +185,15 @@ public sealed class PlatformCredentialService(
             throw new PlatformCredentialValidationException(
                 "Credentials must be a non-empty JSON object.");
         }
+        PlatformCredentialPayloadCodec.ValidateSchemaVersion(platform, schemaVersion);
     }
 
     private async Task<byte[]> BuildPlaintextAsync(
         Platform platform,
-        int schemaVersion,
         JsonElement credentials,
         CancellationToken cancellationToken)
     {
         if (platform != Platform.Epic)
-        {
-            return JsonSerializer.SerializeToUtf8Bytes(credentials);
-        }
-
-        if (schemaVersion != 1)
         {
             return JsonSerializer.SerializeToUtf8Bytes(credentials);
         }

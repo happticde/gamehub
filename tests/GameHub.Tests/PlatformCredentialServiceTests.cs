@@ -318,18 +318,78 @@ public sealed class PlatformCredentialServiceTests : IDisposable
         Assert.DoesNotContain("manually-replaced-refresh", exception.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Upsert_UnsupportedSchemaVersion_RejectsWithoutWriting()
+    public static IEnumerable<object[]> UnsupportedSchemas()
+    {
+        (Platform Platform, string Json)[] payloads =
+        [
+            (Platform.Steam, "{\"apiKey\":\"secret\",\"steamId\":\"123\"}"),
+            (Platform.Gog, "{\"cookie\":\"secret\",\"user\":\"player\"}"),
+            (Platform.Psn, "{\"cookies\":{\"session\":\"secret\"}}"),
+            (Platform.Epic, "{\"refreshToken\":\"epic-refresh\"}"),
+            (Platform.Epic, "{\"authorizationCode\":\"short-lived-code\"}")
+        ];
+        foreach (var payload in payloads)
+        foreach (var version in new[] { int.MinValue, -1, 0, 2, 100, 101, int.MaxValue })
+            yield return [payload.Platform, version, payload.Json];
+    }
+
+    [Theory]
+    [MemberData(nameof(UnsupportedSchemas))]
+    public async Task Upsert_UnsupportedSchema_RejectsNewAndExistingRowsWithoutExchange(
+        Platform platform, int schemaVersion, string json)
+    {
+        var storedPayload = platform == Platform.Epic
+            ? ParseCredentials("{\"refreshToken\":\"existing-refresh\"}")
+            : ParseCredentials(json);
+        await using (var other = CreateContext(TenantB))
+            await CreateService(other, TenantB).UpsertAsync(platform, 1, storedPayload);
+        var epic = new FakeEpicAuthenticationClient(new EpicPlatformCredential("exchanged-refresh"));
+
+        foreach (var existing in new[] { false, true })
+        {
+            await using var db = CreateContext(TenantA);
+            var service = CreateService(db, TenantA, epic);
+            if (existing)
+                await service.UpsertAsync(platform, 1, storedPayload);
+            db.ChangeTracker.Clear();
+            var before = JsonSerializer.Serialize(await db.PlatformCredentials.IgnoreQueryFilters()
+                .AsNoTracking().OrderBy(row => row.Id).ToListAsync());
+
+            var exception = await Assert.ThrowsAsync<PlatformCredentialValidationException>(
+                () => service.UpsertAsync(platform, schemaVersion, ParseCredentials(json)));
+
+            Assert.Contains("SchemaVersion", exception.Message, StringComparison.Ordinal);
+            if (schemaVersion is > 0 and <= PlatformCredentialService.MaximumSchemaVersion)
+                Assert.Equal($"SchemaVersion {schemaVersion} is unsupported for {platform}.", exception.Message);
+            Assert.Empty(epic.AuthorizationCodes);
+            Assert.Equal(before, JsonSerializer.Serialize(await db.PlatformCredentials.IgnoreQueryFilters()
+                .AsNoTracking().OrderBy(row => row.Id).ToListAsync()));
+            Assert.Equal(existing ? 1 : 0, await db.PlatformCredentials.CountAsync());
+        }
+    }
+
+    [Theory]
+    [InlineData("123", "authorizationCode must be a string.")]
+    [InlineData("true", "authorizationCode must be a string.")]
+    [InlineData("{\"private\":\"payload-secret\"}", "authorizationCode must be a string.")]
+    [InlineData("[]", "authorizationCode must be a string.")]
+    [InlineData("null", "authorizationCode is required.")]
+    [InlineData("\"\"", "authorizationCode is required.")]
+    public async Task Upsert_InvalidEpicCodeShape_ReturnsSafeBadRequestWithoutExchange(string codeJson, string expectedMessage)
     {
         await using var db = CreateContext(TenantA);
-        var service = CreateService(db, TenantA);
+        var epic = new FakeEpicAuthenticationClient(new EpicPlatformCredential("unused-refresh"));
+        var controller = new PlatformCredentialsController(CreateService(db, TenantA, epic),
+            NullLogger<PlatformCredentialsController>.Instance);
 
-        await Assert.ThrowsAsync<PlatformCredentialValidationException>(
-            () => service.UpsertAsync(
-                Platform.Steam,
-                2,
-                ParseCredentials("{\"apiKey\":\"secret\",\"steamId\":\"123\"}")));
+        var action = await controller.Upsert(Platform.Epic, new UpsertPlatformCredentialRequest
+        {
+            Credentials = ParseCredentials("{\"authorizationCode\":" + codeJson + ",\"refreshToken\":\"fallback-secret\"}")
+        }, CancellationToken.None);
 
+        var response = Assert.IsType<BadRequestObjectResult>(action.Result);
+        Assert.Equal(expectedMessage, Assert.IsType<PlatformCredentialErrorResponse>(response.Value).Message);
+        Assert.Empty(epic.AuthorizationCodes);
         Assert.Empty(await db.PlatformCredentials.ToListAsync());
     }
 
@@ -524,11 +584,14 @@ public sealed class PlatformCredentialServiceTests : IDisposable
     private sealed class FakeEpicAuthenticationClient(EpicPlatformCredential credential)
         : IEpicAuthenticationClient
     {
+        public List<string> AuthorizationCodes { get; } = [];
+
         public Task<EpicPlatformCredential> ExchangeAuthorizationCodeAsync(
             string authorizationCode,
             CancellationToken cancellationToken = default)
         {
             Assert.Equal("short-lived-code", authorizationCode);
+            AuthorizationCodes.Add(authorizationCode);
             return Task.FromResult(credential);
         }
     }

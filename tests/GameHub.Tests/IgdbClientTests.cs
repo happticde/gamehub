@@ -397,6 +397,44 @@ public class IgdbClientTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Search_HtmlAndQuerySyntax_UsesFixedPlainTextProviderRequest(bool searchMany)
+    {
+        const string title = """<script>alert("probe")</script> \"; limit 500; // <img src=x onerror=alert(1)>""";
+        var providerRequests = 0;
+        using var http = CreateMockHttpClient(async request =>
+        {
+            if (request.RequestUri!.Host == "id.twitch.tv")
+                return JsonResponse("{\"access_token\":\"mock-token\",\"expires_in\":3600}");
+
+            providerRequests++;
+            Assert.Equal(new Uri("https://api.igdb.com/v4/games"), request.RequestUri);
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("text/plain", request.Content!.Headers.ContentType?.MediaType);
+            Assert.Equal("utf-8", request.Content.Headers.ContentType?.CharSet);
+            var query = await request.Content.ReadAsStringAsync();
+            var endOfLiteral = query.LastIndexOf("; fields ", StringComparison.Ordinal);
+            Assert.StartsWith("search ", query);
+            Assert.True(endOfLiteral > "search ".Length);
+            Assert.Equal(title, JsonSerializer.Deserialize<string>(query["search ".Length..endOfLiteral]));
+            Assert.Contains("<script>", query, StringComparison.Ordinal);
+            Assert.DoesNotContain("&lt;script&gt;", query, StringComparison.Ordinal);
+            Assert.EndsWith(searchMany ? "; limit 7;" : "; limit 5;", query);
+            return JsonResponse("[{\"id\":42,\"name\":\"Example\"}]");
+        });
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var client = new IgdbClient(http, _config, NullLogger<IgdbClient>.Instance, cache);
+
+        if (searchMany)
+            Assert.Single(await client.SearchManyAsync(title, 7));
+        else
+            Assert.NotNull(await client.SearchAsync(title));
+
+        Assert.Equal(1, providerRequests);
+    }
+
     private static HttpResponseMessage JsonResponse(string body) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(body)
