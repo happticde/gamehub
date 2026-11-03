@@ -1,4 +1,4 @@
-"""Reject per-project NuGet version drift and a stale EF migration tool."""
+"""Reject NuGet version drift and keep the EF tool tied to central versions."""
 
 from pathlib import Path
 import re
@@ -34,9 +34,12 @@ def check(root):
             if version != ef_version:
                 raise ValueError(f"{name} must match EF Core {ef_version}")
     dockerfile = (root / ".devcontainer/Dockerfile").read_text()
-    tool_version = re.search(r"^ARG DOTNET_EF_VERSION=([^\s]+)$", dockerfile, re.MULTILINE)
-    if not tool_version or tool_version.group(1) != ef_version:
-        raise ValueError(f"The devcontainer dotnet-ef version must match EF Core {ef_version}")
+    if ("COPY Directory.Packages.props /tmp/Directory.Packages.props" not in dockerfile
+            or "dotnet msbuild /tmp/Directory.Packages.props -getItem:PackageVersion" not in dockerfile
+            or 'p.Identity === "Microsoft.EntityFrameworkCore.Design"' not in dockerfile
+            or 'dotnet-ef --version "${DOTNET_EF_VERSION}"' not in dockerfile
+            or re.search(r"^ARG DOTNET_EF_VERSION=", dockerfile, re.MULTILINE)):
+        raise ValueError("The devcontainer dotnet-ef version must come from Directory.Packages.props")
     check_go_toolchain(root)
 
 

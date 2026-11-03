@@ -2,6 +2,8 @@
 
 import importlib.util
 from pathlib import Path
+import re
+import subprocess
 import tempfile
 import unittest
 
@@ -25,7 +27,7 @@ class DependencyTests(unittest.TestCase):
             '</ItemGroup></Project>')
         (root / ".devcontainer").mkdir()
         (root / ".devcontainer/Dockerfile").write_text(
-            'FROM golang:1.27.3-bookworm AS go\nARG DOTNET_EF_VERSION=10.0.13\n')
+            (Path(__file__).resolve().parents[2] / '.devcontainer/Dockerfile').read_text())
         (root / "services/cli").mkdir(parents=True)
         (root / "services/cli/go.mod").write_text('module example.test/cli\n\ngo 1.26.0\ntoolchain go1.27.3\n')
         for path in ("frontend/Dockerfile", "services/core/Dockerfile", "services/ingest/Dockerfile"):
@@ -53,15 +55,38 @@ class DependencyTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     dependencies.check(root)
 
-    def test_ef_design_package_and_tool_cannot_drift(self):
-        for path in ("Directory.Packages.props", ".devcontainer/Dockerfile"):
-            with self.subTest(path=path), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                self.fixture(root)
-                file = root / path
-                file.write_text(file.read_text().replace('10.0.13', '10.0.2', 1))
-                with self.assertRaises(ValueError):
-                    dependencies.check(root)
+    def test_ef_packages_cannot_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            file = root / 'Directory.Packages.props'
+            file.write_text(file.read_text().replace('10.0.13', '10.0.2', 1))
+            with self.assertRaisesRegex(ValueError, 'must match EF Core'):
+                dependencies.check(root)
+
+    def test_devcontainer_tool_follows_a_bot_update_without_a_second_version_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            file = root / 'Directory.Packages.props'
+            dockerfile = (root / '.devcontainer/Dockerfile').read_text()
+            command = re.search(r'RUN DOTNET_EF_VERSION="\$\((.*?)\)"', dockerfile, re.DOTALL).group(1)
+            command = command.replace('/tmp/Directory.Packages.props', str(file))
+            for version in ('10.0.13', '10.0.14'):
+                file.write_text(file.read_text().replace('10.0.13', version))
+                dependencies.check(root)
+                result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', command],
+                                        check=True, text=True, capture_output=True)
+                self.assertEqual(result.stdout.strip(), version)
+
+    def test_a_static_ef_tool_pin_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            file = root / '.devcontainer/Dockerfile'
+            file.write_text(file.read_text() + '\nARG DOTNET_EF_VERSION=10.0.13\n')
+            with self.assertRaisesRegex(ValueError, 'must come from Directory.Packages.props'):
+                dependencies.check(root)
 
     def test_images_wait_for_all_source_checks(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/checks.yml').read_text()

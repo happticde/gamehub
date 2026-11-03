@@ -30,7 +30,9 @@ Image builds wait for all selected source checks to succeed.
 Failed lint, restore, test, or security checks stop the expensive image jobs.
 The final aggregate still rejects missing checks and unexpected skips.
 NuGet versions come from `Directory.Packages.props`, including test dependencies.
-An early check rejects local version overrides and a mismatched devcontainer EF tool.
+An early check rejects local version overrides and separate devcontainer EF tool pins.
+The devcontainer reads its `dotnet-ef` version from the central EF Core Design package at build
+time. Rebuild the devcontainer after EF Core updates.
 
 Both documentation workflows install the locked dependencies with `scripts/ci/npm-ci.sh`.
 Recognized npm connection errors retry the complete installation up to three times, waiting

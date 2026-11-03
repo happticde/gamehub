@@ -15,8 +15,8 @@
 - Image CI uses native Ubuntu 26.04 AMD64/ARM64 runners, with no QEMU build emulation.
   Keep the frontend helper build independent from Next.js by copying downloads only into
   the runtime stage. Docker cache export is best-effort; build/scan/release gates are mandatory.
-- `dotnet-ef` is installed system-wide by the devcontainer image and pinned to the EF Core version
-  used by the service projects. Rebuild the devcontainer after changing that version.
+- `dotnet-ef` is installed system-wide by the devcontainer image. Its version is read from
+  `Directory.Packages.props` at image build time. Rebuild the devcontainer after EF Core updates.
 
 ## Git Workflow
 - The `main` branch is protected. **Never commit or push directly to `main`.**
