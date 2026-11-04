@@ -1,5 +1,26 @@
 # Session History
 
+## Current Session Summary (2026-11-04)
+
+### What Changed
+
+**Less Dependabot CI Repetition:**
+- Disable automatic rebases for all five Dependabot ecosystems. Refresh branches when needed;
+  actual updates still run checks. Existing PRs can continue rebasing until 30 days old.
+- Select only consuming jobs for pure Action SHA/comment updates in the shared workflow.
+  Always retain workflow validation, Gitleaks, selection, and the aggregate gate.
+- Keep full verification for selector/aggregate pins, non-pin workflow edits, unknown inputs,
+  unavailable comparisons, releases, and scheduled/manual runs. Combine mixed code changes.
+- Limit Dependabot and Actionlint configuration changes to workflow validation and baseline gates.
+
+### Verification
+
+- All 64 CI tooling tests pass in Docker, with no skips. Coverage includes real PR/push ranges,
+  a rebase onto an advanced base, missing workflow revisions, and unexpected-skip rejection.
+- Actionlint, all 16 documentation contracts, and the documentation production build pass.
+- Application builds and image scans were not repeated locally for this CI-only change.
+  Hosted selective runs and actual Dependabot behavior remain to be observed after merging.
+
 ## Current Session Summary (2026-10-11)
 
 ### What Changed

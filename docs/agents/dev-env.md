@@ -12,6 +12,10 @@
   changes keep Gitleaks and the aggregate gate but skip builds/images. Shared backend changes
   select both service images; CLI/helper inputs select the frontend image. Scheduled/manual CI
   and releases always run all checks. Never accept unexpected skips in the aggregate gate.
+- Pure Action SHA/comment updates in `checks.yml` select their consuming jobs and workflow
+  validation. Selector/aggregate changes and non-pin edits still select all checks. Dependabot
+  and Actionlint configuration select workflow validation. Dependabot automatic rebases are
+  disabled; refresh a PR when needed and wait for checks on the new commit.
 - Image CI uses native Ubuntu 26.04 AMD64/ARM64 runners, with no QEMU build emulation.
   Keep the frontend helper build independent from Next.js by copying downloads only into
   the runtime stage. Docker cache export is best-effort; build/scan/release gates are mandatory.
