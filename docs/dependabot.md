@@ -107,6 +107,41 @@ process uses [`.ci/security-exceptions.json`](../.ci/security-exceptions.json).
 That CI file does not dismiss or suppress GitHub's Dependabot alerts. Reassess
 exceptions when a fix becomes available or before they expire.
 
+## Alert review: 2026-11-04
+
+### Frontend minimatch (alert #11)
+
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+affects minimatch versions from 7.0.0 through versions below 11.0.1.
+The frontend lockfile previously resolved 10.2.6 through ESLint and its configuration.
+The frontend override now selects 11.0.4 for those affected version ranges.
+This was the latest stable release in the npm registry, published on 2026-11-02.
+It supports the Node 24 used in CI. Older minimatch 3.x consumers retain their existing API.
+Remove the override when the parent packages resolve patched versions themselves.
+The alert can close after the corrected lockfile reaches `main` and GitHub scans it.
+
+### Documentation deepmerge (alert #8, still open)
+
+[GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)
+affects deepmerge 4.2.0 through 4.3.1. Both the advisory and the npm registry show no
+published patched version as of this review. Do not treat a downgrade as a security fix.
+
+The declared dependency path is `@docusaurus/preset-classic` → `@docusaurus/plugin-svgr` →
+`@svgr/webpack` → `@svgr/plugin-svgo` → `deepmerge`.
+The installed `@svgr/plugin-svgo` 8.1.0 compiled entry point imports `svgo` and `cosmiconfig`;
+it contains no deepmerge reference. The dependency remains in the package manifest and lockfile.
+This limits the observed use but does not establish that the package itself is fixed.
+
+These packages build the static handbook. The published site contains static assets;
+it does not run Docusaurus or deepmerge as a Node server. The preview command also serves
+only generated files. This scope is separate from GitHub's npm runtime-dependency label.
+Do not expose a documentation development server or build untrusted SVG/configuration input.
+
+Keep the Dependabot alert open. No scanner exception or dismissal was added.
+GameHub maintainers should review this again by 2026-11-18, or sooner if a patched release
+or a parent-package update removes deepmerge. Recheck the dependency path after SVG tooling
+changes. This is an unresolved upstream dependency finding, not an approved risk exception.
+
 ## Private vulnerability reports
 
 Once the repository is public, enable **Private vulnerability reporting** on the
