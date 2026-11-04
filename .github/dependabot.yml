@@ -1,6 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
+    rebase-strategy: disabled
     directory: /
     schedule:
       interval: weekly
@@ -22,6 +23,7 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: docker
+    rebase-strategy: disabled
     directories: [/frontend, /services/core, /services/ingest]
     schedule:
       interval: weekly
@@ -43,6 +45,7 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: npm
+    rebase-strategy: disabled
     directories: [/frontend, /docs/site]
     ignore:
       # TS 7.0 has no compiler API for typescript-eslint. Recheck support before upgrading.
@@ -89,6 +92,7 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: gomod
+    rebase-strategy: disabled
     directory: /services/cli
     schedule:
       interval: weekly
@@ -114,6 +118,7 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: nuget
+    rebase-strategy: disabled
     # The root manifest supplies versions to services, MCP, tools, and tests.
     directory: /
     schedule:

@@ -45,6 +45,8 @@ contracts, builds, and vulnerability scans must still succeed after installation
 | `docs/**` except agent context, or the documentation-only root `Makefile` | Docusaurus build/contracts and targeted documentation dependency scan | None |
 | Markdown outside CI/tooling directories, `docs/agents/**`, `.agents/**`, or `LICENSE` only | None | None |
 | `.github/workflows/docs.yml` | Workflow/tooling and documentation checks | None |
+| `.github/dependabot.yml` or `.github/actionlint.yaml` | Workflow/tooling | None |
+| Only existing Action SHA pins and their version comments in `checks.yml` | Workflow/tooling and every job using the changed pins | All six only when image-job pins change |
 | Frontend application, assets, or build configuration | Frontend lint/contracts/build and Semgrep | Frontend, AMD64 and ARM64 |
 | Frontend tests only | Frontend lint/contracts/build | None |
 | Core or Ingest implementation/configuration | Full backend build/tests and Semgrep | The changed service, AMD64 and ARM64 |
@@ -72,6 +74,15 @@ previous and new commit across the whole push. Git returns the complete changed-
 including deleted files and both sides of renames; the selector does not use GitHub's limited
 workflow path-filter list. A missing comparison or unavailable history selects all checks.
 The selection job writes its plan to the workflow run's job summary.
+
+The Action-pin exception compares committed workflow content using the same Git range.
+It accepts only SHA and version-comment replacements for the same Action in existing steps.
+For example, `setup-dotnet` updates run dependency and backend checks without rebuilding images.
+`setup-node` updates run frontend, CLI, and documentation checks. Image-builder Action updates
+build and scan all six images. Checkout updates that affect the selector or aggregate keep
+the full suite. Changes to commands, inputs, permissions, job structure, unknown jobs, or any
+unrecognized diff keep full verification. Mixed application changes add their normal checks
+and images. No result from an older commit is reused to mark a new commit as passing.
 
 Scheduled checks, manual CI runs, and releases always run the complete suite. The reusable
 workflow defaults to full verification; selective checks require an explicit `select-changes`
@@ -169,6 +180,7 @@ restored from the merged PR. These GitHub settings are separate from repository 
 | Minor and patch updates | One wildcard group per ecosystem: GitHub Actions, Docker, npm, Go, and NuGet. Docker and NuGet groups cover their configured service directories. |
 | Major updates | Individual PRs, except one Next.js family group (`next`, `eslint-config-next`) and one EF Core family group (Microsoft EF Core packages, EF health checks, and the Npgsql EF provider). Review compatibility across the whole family. |
 | Open version-update PRs | At most two per ecosystem, ten across the five entries. Existing backlog can occupy these slots; this is not a weekly PR quota. |
+| Automatic rebases | Disabled for all five ecosystems. Update a PR branch when conflicts or required branch freshness demand it. Every actual branch update still runs the selected checks. |
 | Security updates | Separate groups per ecosystem, including major fixes. When Dependabot security updates are enabled, they are independent of the weekly version schedule and version-update PR limit. |
 | Commit messages | Explicit `chore` prefix with dependency scope (`deps` or `deps-dev`) for consistent squash titles and release notes. |
 
@@ -184,10 +196,18 @@ the explicit `security-updates` groups in `dependabot.yml` define grouping after
 reaches `main`.
 
 Groups stay within ecosystems so the CI selector can run the affected component checks.
-GitHub Actions updates and changes to `dependabot.yml` still select the full suite because
-`.github/**` is a CI/security input. Grouping reduces PR and CI volume without skipping checks.
+Pure Action-pin updates in the shared checks workflow run only their consuming jobs and
+workflow validation. Dependabot configuration changes run workflow validation. Other CI/security
+changes keep the full suite, except the documentation workflow's existing targeted checks.
 The npm entry covers both `frontend` and `docs/site`; documentation package/lockfile changes
 select only documentation checks. A grouped PR touching both directories selects both.
+
+Disabling automatic rebases takes effect after this configuration reaches `main`.
+Already-open PRs can continue to rebase until 30 days after their creation, as described in
+[Dependabot's rebase reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#rebase-strategy).
+For a needed update, update the branch manually or request `@dependabot rebase` on that PR.
+If branch protection requires an up-to-date branch, refresh it before merging and wait for
+the new checks. Disabling rebases does not prove compatibility with later changes on `main`.
 
 TypeScript 7.0.x is ignored because it has no compiler API for `typescript-eslint`.
 Keep the frontend's existing TypeScript 5.9.3 lockfile until a supported upgrade is verified.
