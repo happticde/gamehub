@@ -4,6 +4,31 @@
 
 ### What Changed
 
+**Dependabot Alert Review:**
+- Fix frontend alert #11 (CVE-2026-118764) with a targeted minimatch 11.0.4 override.
+  This is the latest stable release checked on 2026-11-04. Keep legacy 3.x consumers unchanged.
+- Review documentation alert #8 (CVE-2026-93753). No patched deepmerge release or stable
+  parent-package update is available. Its declared path is the Docusaurus SVG build tooling;
+  the installed SVG plugin entry point does not import it. The lockfile finding remains open.
+- Record scope and a 2026-11-18 review date in `docs/dependabot.md`. No alert was dismissed
+  and no scanner exception was added.
+
+### Verification
+
+- Docker: clean npm install, frontend lint, 81 security/contracts, seven capture tests, and
+  the production build pass in a source snapshot without environment files.
+- The frontend npm audit reports zero vulnerabilities. All affected ESLint consumers resolve
+  minimatch 11.0.4; older consumers retain 3.1.5. Existing ESLint plugin peer warnings remain.
+- Documentation contracts (16), its production build, dependency consistency, and license
+  metadata checks pass. Documentation npm audit still reports the one deepmerge advisory
+  across five packages in its dependency chain.
+- Hosted CI and GitHub's alert closure after merge remain pending. No runtime image build,
+  deployment, or documentation publication was performed.
+
+## Current Session Summary (2026-11-04)
+
+### What Changed
+
 **Less Dependabot CI Repetition:**
 - Disable automatic rebases for all five Dependabot ecosystems. Refresh branches when needed;
   actual updates still run checks. Existing PRs can continue rebasing until 30 days old.
