@@ -34,6 +34,12 @@ An early check rejects local version overrides and separate devcontainer EF tool
 The devcontainer reads its `dotnet-ef` version from the central EF Core Design package at build
 time. Rebuild the devcontainer after EF Core updates.
 
+The root `global.json` selects a stable .NET 10 SDK. It accepts newer 10.0 feature bands and
+patches, but never selects .NET 11 or a preview SDK. Installing 10.0 with `setup-dotnet` alone
+does not control SDK selection when a runner also has newer SDKs. Run `dotnet --version` from
+the checkout to check the selected version. See Microsoft's
+[SDK selection rules](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json).
+
 Both documentation workflows install the locked dependencies with `scripts/ci/npm-ci.sh`.
 Recognized npm connection errors retry the complete installation up to three times, waiting
 10 and 20 seconds between attempts. Persistent network failures retain npm's exit status;
