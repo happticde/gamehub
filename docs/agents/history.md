@@ -4,6 +4,29 @@
 
 ### What Changed
 
+**Deepmerge Advisory Recheck:**
+- Check the remaining documentation alert #8 against the official CVE record. CVE-2026-93753
+  was rejected on 2026-11-02 because it does not describe a security vulnerability.
+- Correct the earlier assessment in `docs/dependabot.md`. GitHub/npm still list the older
+  low-severity advisory. Record the official evidence and a narrow maintainer dismissal note.
+- Confirm that deepmerge 4.3.1, Docusaurus 3.10.2, and SVGR's SVG optimizer plugin 8.1.0 remain
+  the latest stable releases. No dependency update, downgrade, scanner exception, or alert
+  dismissal was applied.
+
+### Verification
+
+- A clean Docker npm install confirms the dependency chain through Docusaurus's SVG tooling.
+  The installed SVG optimizer plugin entry point contains no deepmerge reference.
+- npm audit still reports the same advisory across five packages in that chain.
+  All 16 documentation contracts, the documentation production build, and license metadata
+  checks pass.
+- Application builds and runtime image scans are outside this documentation-only change.
+  Hosted CI remains pending. No deployment or documentation publication was performed.
+
+## Current Session Summary (2026-11-12)
+
+### What Changed
+
 **Stable .NET 10 SDK Selection:**
 - Diagnose PR #51: the runner has SDKs 10.0.404 and 11.0.100. Without `global.json`, the
   build selects SDK 11 and fails on the benchmark project's static web assets.

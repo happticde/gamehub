@@ -120,27 +120,44 @@ It supports the Node 24 used in CI. Older minimatch 3.x consumers retain their e
 Remove the override when the parent packages resolve patched versions themselves.
 The alert can close after the corrected lockfile reaches `main` and GitHub scans it.
 
-### Documentation deepmerge (alert #8, still open)
+## Alert recheck: 2026-11-12
+
+### Documentation deepmerge (alert #8, CVE rejected)
+
+The [official CVE record](https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93753.json)
+marks CVE-2026-93753 as `REJECTED` on 2026-11-02. The stated reason is:
+"This CVE ID has been rejected because it does not describe a security vulnerability."
+This corrects the earlier review, which did not account for the rejection.
 
 [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)
-affects deepmerge 4.2.0 through 4.3.1. Both the advisory and the npm registry show no
-published patched version as of this review. Do not treat a downgrade as a security fix.
+still lists deepmerge 4.2.0 through 4.3.1 as affected, with low severity and no patched version.
+The npm registry still lists deepmerge 4.3.1, Docusaurus 3.10.2, and `@svgr/plugin-svgo` 8.1.0
+as their latest stable releases. A fresh `npm audit` still reports this advisory across five
+packages in the same dependency chain. These are not five independent findings.
+Its proposed Docusaurus 3.6.3 downgrade is not a patched deepmerge release.
 
 The declared dependency path is `@docusaurus/preset-classic` → `@docusaurus/plugin-svgr` →
 `@svgr/webpack` → `@svgr/plugin-svgo` → `deepmerge`.
 The installed `@svgr/plugin-svgo` 8.1.0 compiled entry point imports `svgo` and `cosmiconfig`;
 it contains no deepmerge reference. The dependency remains in the package manifest and lockfile.
-This limits the observed use but does not establish that the package itself is fixed.
+This observation is separate from the CVE rejection; no package patch was applied.
 
 These packages build the static handbook. The published site contains static assets;
 it does not run Docusaurus or deepmerge as a Node server. The preview command also serves
 only generated files. This scope is separate from GitHub's npm runtime-dependency label.
 Do not expose a documentation development server or build untrusted SVG/configuration input.
 
-Keep the Dependabot alert open. No scanner exception or dismissal was added.
-GameHub maintainers should review this again by 2026-11-18, or sooner if a patched release
-or a parent-package update removes deepmerge. Recheck the dependency path after SVG tooling
-changes. This is an unresolved upstream dependency finding, not an approved risk exception.
+The maintainer can dismiss this specific alert as a false positive, citing the official CVE
+record and its rejection date. Suggested dismissal note:
+
+> CVE-2026-93753 was rejected by its CNA on 2026-11-02 because it does not describe a security
+> vulnerability. See the [official CVE record](https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/2026/93xxx/CVE-2026-93753.json).
+> GitHub/npm still carry the older advisory metadata. This dismissal applies only to
+> GHSA-gcqx-w48m-w2h4.
+
+No alert was dismissed and no scanner exception was added by the agent. Keep dependency
+updates and security scans enabled. Reassess if the advisory changes or a different finding
+affects this package. This review supersedes the earlier 2026-11-18 recheck deadline for this CVE.
 
 ## Private vulnerability reports
 
