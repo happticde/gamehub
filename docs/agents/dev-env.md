@@ -4,6 +4,10 @@
 - **dotnet is NOT installed on the host machine.** 
 - **npm / npx are NOT installed on the host machine.**
 - Use **Docker Exec** for all building, testing, and dependency management.
+- The root `global.json` requires a stable .NET 10 SDK and allows newer 10.0 feature bands
+  and patches. The devcontainer uses Microsoft's stable `10.0-noble` image. Rebuild an older
+  preview-only container before building this checkout. Check `dotnet --version` from
+  `/workspaces/gamehub`.
 - CI and shared release workflows are documented in `docs/ci-and-releases.md`. The reusable
   checks include source/CLI/image security scans; release publication is manually dispatched
   from `main` and gated by every check. Keep versions, tool archive hashes, and Action/image pins

@@ -1,5 +1,27 @@
 # Session History
 
+## Current Session Summary (2026-11-12)
+
+### What Changed
+
+**Stable .NET 10 SDK Selection:**
+- Diagnose PR #51: the runner has SDKs 10.0.404 and 11.0.100. Without `global.json`, the
+  build selects SDK 11 and fails on the benchmark project's static web assets.
+- Add `global.json` to select stable .NET 10 feature bands and patches. Exclude previews and
+  later major versions. Keep the existing target frameworks, NuGet packages, and runtimes.
+- Use the official stable `10.0-noble` devcontainer image. Older preview-only containers need
+  rebuilding. Document why installing an SDK in CI does not also select it.
+
+### Verification
+
+- Reproduce the exact hosted build error in a source snapshot with SDKs 10.0.404 and 11.0.100
+  installed side by side. A fresh snapshot with the fix selects 10.0.404 and builds all projects
+  with zero warnings and errors. All 591 .NET tests pass. Live PostgreSQL checks were not configured.
+- CI selection tests (24), dependency tests (7), and dependency/license metadata checks pass.
+- Documentation contracts (16) and the documentation production build pass.
+  Hosted CI and complete container image builds remain pending.
+  No environment files, deployment, or publication were changed.
+
 ## Current Session Summary (2026-11-04)
 
 ### What Changed

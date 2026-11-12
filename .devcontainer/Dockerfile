@@ -1,7 +1,7 @@
 FROM node:24.15.0-bookworm-slim AS node
 FROM golang:1.27.3-bookworm AS go
 
-FROM mcr.microsoft.com/devcontainers/dotnet:10.0-preview-trixie-slim
+FROM mcr.microsoft.com/devcontainers/dotnet:10.0-noble
 
 COPY --from=node /usr/local/bin/ /usr/local/bin/
 COPY --from=node /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
