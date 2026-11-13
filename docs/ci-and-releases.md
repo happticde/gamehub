@@ -199,6 +199,7 @@ restored from the merged PR. These GitHub settings are separate from repository 
 | Regular version checks | Monday at 08:00, `Europe/Berlin` (including daylight saving time). This is the requested check time, not a guarantee of PR creation time. |
 | Minor and patch updates | One wildcard group per ecosystem: GitHub Actions, Docker, npm, Go, and NuGet. Docker and NuGet groups cover their configured service directories. |
 | Major updates | Individual PRs, except one Next.js family group (`next`, `eslint-config-next`) and one EF Core family group (Microsoft EF Core packages, EF health checks, and the Npgsql EF provider). Review compatibility across the whole family. |
+| .NET Docker major updates | Ignored for regular version updates. Migrate SDK selection, target frameworks, packages, and runtime images together. Minor/patch and security-update proposals remain enabled. |
 | Open version-update PRs | At most two per ecosystem, ten across the five entries. Existing backlog can occupy these slots; this is not a weekly PR quota. |
 | Automatic rebases | Disabled for all five ecosystems. Update a PR branch when conflicts or required branch freshness demand it. Every actual branch update still runs the selected checks. |
 | Security updates | Separate groups per ecosystem, including major fixes. When Dependabot security updates are enabled, they are independent of the weekly version schedule and version-update PR limit. |

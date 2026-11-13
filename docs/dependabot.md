@@ -78,13 +78,27 @@ A green result from an older base does not verify the combined changes.
 
 ## Keep .NET versions together
 
+Docker version updates ignore major upgrades for `dotnet/*` images. Minor and patch
+updates remain enabled. A .NET major upgrade needs one reviewed migration of
+`global.json`, target frameworks, NuGet packages, SDK images, and runtime images.
+Do not remove the SDK selection guard to make an isolated image update pass.
+The rule uses [`ignore.update-types`](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#update-types-ignore),
+which applies to version updates; it does not disable security-update proposals.
+
+PRs [#59](https://github.com/happticde/gamehub/pull/59),
+[#61](https://github.com/happticde/gamehub/pull/61), and
+[#63](https://github.com/happticde/gamehub/pull/63) propose .NET 11 Docker images.
+Their image builds fail because only SDK 11 is installed while `global.json`
+requires SDK 10. Close these PRs without merging. The new policy takes effect
+after it reaches `main`; it does not repair existing update branches.
+
 Edit `Directory.Packages.props` to change a NuGet package version.
 Project files use package names without their own versions. Tests therefore receive
 the same EF Core and SQLite packages as the services.
 
 CI checks for project-level version overrides before running builds.
-It also checks that the devcontainer's `DOTNET_EF_VERSION` matches EF Core.
-Update that Dockerfile value when changing EF Core, then rebuild the devcontainer.
+It also checks that the devcontainer reads `DOTNET_EF_VERSION` from the central manifest.
+Rebuild the devcontainer after changing EF Core so its migration tool follows the package version.
 The service Dockerfiles copy the central manifest before restoring packages.
 Backend CI starts a temporary PostgreSQL database. This runs the PostgreSQL migration
 and isolation tests as well as the SQLite tests when database packages change.

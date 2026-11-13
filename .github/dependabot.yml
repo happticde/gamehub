@@ -25,6 +25,11 @@ updates:
   - package-ecosystem: docker
     rebase-strategy: disabled
     directories: [/frontend, /services/core, /services/ingest, /services/mcp]
+    ignore:
+      # Migrate .NET SDK, target frameworks, packages, and runtime images together.
+      # global.json deliberately selects .NET 10; an SDK-only major update cannot build.
+      - dependency-name: "dotnet/*"
+        update-types: ["version-update:semver-major"]
     schedule:
       interval: weekly
       day: monday
