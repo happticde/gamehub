@@ -59,6 +59,7 @@ contracts, builds, and vulnerability scans must still succeed after installation
 | Shared backend implementation | Full backend build/tests and Semgrep | Core and Ingest, both architectures |
 | Backend tests only | Full backend build/tests | None |
 | MCP source | Full backend build/tests and Semgrep | MCP |
+| `scripts/ci/smoke-mcp-image.py` | Workflow/tooling | MCP, both architectures |
 | Backend benchmark tooling | Full backend build/tests and Semgrep | None |
 | CLI implementation or helper installer inputs | CLI race tests/vet, installer contracts, compiled binary scan, and Semgrep | Frontend, both architectures, because it embeds the helper |
 | Shared license-notice collector | CLI tests and Semgrep | All four components, both architectures |
@@ -76,6 +77,11 @@ is a packaged helper input and rebuilds the frontend image despite containing do
 CLI packaging script changes also run workflow/tooling checks. Backend builds/tests remain
 solution-wide because Core, Ingest, Shared, MCP, and test projects share references. Semgrep and
 the Trivy source scan retain their repository-wide scope whenever selected.
+
+MCP follows the same changed-input selection as the other images. Ordinary Core, Ingest,
+Frontend, CLI, documentation, or test changes do not select the MCP image. MCP source, its
+Dockerfile, its image smoke check, and shared inputs used by that image do select it. Release,
+scheduled, manual, and CI-policy verification retain the complete suite described below.
 
 PR selection compares the base and head through their merge base. Push selection compares the
 previous and new commit across the whole push. Git returns the complete changed-path list,

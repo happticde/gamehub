@@ -113,6 +113,28 @@ class SelectionTests(unittest.TestCase):
                 self.assertTrue(plan["jobs"]["semgrep"])
                 self.assertEqual(plan["components"], images)
 
+    def test_unrelated_changes_never_select_the_mcp_image(self):
+        for path in ("services/core/Program.cs", "services/ingest/Program.cs",
+                     "services/shared/Example.cs", "frontend/app/page.tsx",
+                     "services/cli/cmd/helper.go", "tests/GameHub.Tests/McpTests.cs",
+                     "docs/guides/mcp.md", "services/mcp/README.md", ".github/dependabot.yml"):
+            with self.subTest(path=path):
+                plan = selection.select_checks([path])
+                self.assertNotIn("mcp", plan["components"])
+                self.assertFalse(any(entry["component"] == "mcp"
+                                     for entry in selection.image_matrix(plan)["include"]))
+
+    def test_mcp_smoke_changes_select_only_workflow_checks_and_mcp_image(self):
+        plan = selection.select_checks(["scripts/ci/smoke-mcp-image.py"])
+        self.assertEqual(plan, selection.make_plan(["workflow"], ["mcp"]))
+        matrix = selection.image_matrix(plan)["include"]
+        self.assertEqual({(entry["component"], entry["arch"]) for entry in matrix},
+                         {("mcp", "amd64"), ("mcp", "arm64")})
+        mixed = selection.select_checks(["scripts/ci/smoke-mcp-image.py", "services/core/Program.cs"])
+        self.assertTrue(mixed["jobs"]["workflow"])
+        self.assertTrue(mixed["jobs"]["backend"])
+        self.assertEqual(mixed["components"], ["core", "mcp"])
+
     def test_docker_changes_select_only_affected_images_and_configuration_scan(self):
         for path, images in (("frontend/Dockerfile", ["frontend"]),
                              ("services/core/Dockerfile", ["core"]),

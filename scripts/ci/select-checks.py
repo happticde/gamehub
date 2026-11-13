@@ -74,6 +74,10 @@ def select_checks(paths, full=False, action_plan=None):
         if path in {".github/dependabot.yml", ".github/actionlint.yaml"}:
             jobs.add("workflow")
             continue
+        if path == "scripts/ci/smoke-mcp-image.py":
+            jobs.add("workflow")
+            components.add("mcp")
+            continue
         if path == CHECKS_WORKFLOW and action_plan is not None:
             jobs.update(job for job, selected in action_plan["jobs"].items() if selected)
             components.update(action_plan["components"])
