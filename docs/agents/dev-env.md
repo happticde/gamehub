@@ -13,8 +13,9 @@
   from `main` and gated by every check. Keep versions, tool archive hashes, and Action/image pins
   reviewed. CLI, helper, notice, and devcontainer builders use the patched Go 1.27.3 toolchain.
 - PR and push CI select relevant jobs with `scripts/ci/select-checks.py`. Documentation-only
-  changes keep Gitleaks and the aggregate gate but skip builds/images. Shared backend changes
-  select both service images; CLI/helper inputs select the frontend image. Scheduled/manual CI
+  changes keep Gitleaks and the aggregate gate but skip builds/images. Shared library changes
+  select Core/Ingest; shared build inputs also select MCP. MCP source changes select its image.
+  CLI/helper inputs select the frontend image. Scheduled/manual CI
   and releases always run all checks. Never accept unexpected skips in the aggregate gate.
 - Pure Action SHA/comment updates in `checks.yml` select their consuming jobs and workflow
   validation. Selector/aggregate changes and non-pin edits still select all checks. Dependabot

@@ -9,7 +9,7 @@ import sys
 
 
 JOBS = ("workflow", "semgrep", "dependencies", "backend", "frontend", "cli", "docs")
-COMPONENTS = ("core", "ingest", "frontend")
+COMPONENTS = ("core", "ingest", "frontend", "mcp")
 CHECKS_WORKFLOW = ".github/workflows/checks.yml"
 
 
@@ -106,13 +106,17 @@ def select_checks(paths, full=False, action_plan=None):
             jobs.add("cli")
             if not name.endswith("_test.go") and not path.endswith("/test-macos-installer.mjs"):
                 jobs.add("semgrep")
-                # The frontend image embeds the CLI and its macOS installer inputs.
-                components.add("frontend")
+                # Every image embeds legal evidence from the shared notice collector.
+                if path.startswith("services/cli/tools/license-notices/"):
+                    components.update(COMPONENTS)
+                else:
+                    # The frontend image embeds the CLI and its macOS installer inputs.
+                    components.add("frontend")
             if is_dependency_file(name) or name == ".dockerignore":
                 jobs.add("dependencies")
             if path.startswith("services/cli/scripts/") or path == "services/cli/.dockerignore":
                 jobs.add("workflow")
-        elif path.startswith(("services/core/", "services/ingest/", "services/shared/")):
+        elif path.startswith(("services/core/", "services/ingest/", "services/shared/", "services/mcp/")):
             service = path.split("/")[1]
             components.update(("core", "ingest") if service == "shared" else (service,))
             if name == "Dockerfile":
@@ -125,17 +129,17 @@ def select_checks(paths, full=False, action_plan=None):
             jobs.add("backend")
             if is_dependency_file(name):
                 jobs.add("dependencies")
-        elif path.startswith(("tools/", "services/mcp/")):
+        elif path.startswith("tools/"):
             jobs.update(("backend", "semgrep"))
             if is_dependency_file(name):
                 jobs.add("dependencies")
         elif path == ".dockerignore":
             jobs.add("dependencies")
-            components.update(("core", "ingest"))
+            components.update(("core", "ingest", "mcp"))
         elif (name in {"global.json", "NuGet.Config", "nuget.config"}
               or name.startswith("Directory.") or name.endswith((".sln", ".slnx"))):
             jobs.update(("backend", "semgrep", "dependencies"))
-            components.update(("core", "ingest"))
+            components.update(("core", "ingest", "mcp"))
         elif name.startswith("docker-compose") and name.endswith((".yml", ".yaml")):
             jobs.add("dependencies")
         else:

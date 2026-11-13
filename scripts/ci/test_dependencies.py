@@ -30,7 +30,7 @@ class DependencyTests(unittest.TestCase):
             (Path(__file__).resolve().parents[2] / '.devcontainer/Dockerfile').read_text())
         (root / "services/cli").mkdir(parents=True)
         (root / "services/cli/go.mod").write_text('module example.test/cli\n\ngo 1.26.0\ntoolchain go1.27.3\n')
-        for path in ("frontend/Dockerfile", "services/core/Dockerfile", "services/ingest/Dockerfile"):
+        for path in ("frontend/Dockerfile", "services/core/Dockerfile", "services/ingest/Dockerfile", "services/mcp/Dockerfile"):
             file = root / path
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text('FROM golang:1.27.3-bookworm AS builder\n')

@@ -1,5 +1,32 @@
 # Session History
 
+## Current Session Summary (2026-11-13)
+
+### What Changed
+
+**Docker MCP Distribution:**
+- Add a standalone .NET 10 runtime image for the existing stdio MCP. It runs as a non-root user
+  and contains generated license notices. It needs no published port, SDK, or database volume.
+- Extend native AMD64/ARM64 CI image selection, scans, SBOMs, and the manual shared release
+  workflow to MCP. Track its Docker bases and Go notice builder in the existing dependency checks.
+- Add an image smoke check for initialization, all seven tools, local validation, clean stdout,
+  and shutdown, with networking disabled and a read-only filesystem.
+- Document Docker-based Codex/client setup, local builds, container-to-Core network addresses,
+  and the existing API-key restriction. Record user authentication and Streamable HTTP as later
+  Roadmap #11 phases. Guarded multi-user authentication is unchanged.
+
+### Verification
+
+- In an isolated Docker source snapshot, stable SDK 10.0.404 builds the full solution with no
+  warnings or errors. All 591 .NET tests pass. Live PostgreSQL checks were not configured.
+- The ARM64 runtime image builds, passes the stdio smoke check, and passes the existing Trivy
+  vulnerability gate. It includes 33 generated package notices.
+- All 67 CI tooling tests, Actionlint, dependency/license metadata checks, all 16 documentation
+  contracts, and the documentation production build pass.
+- Native AMD64 image verification and the full hosted CI suite remain pending. Frontend/CLI
+  application builds were not repeated for this packaging change. No environment files,
+  deployment, image publication, or documentation publication were changed.
+
 ## Current Session Summary (2026-11-12)
 
 ### What Changed

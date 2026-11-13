@@ -36,7 +36,7 @@ independently of that weekly version-update schedule.
 | Ecosystem | Configured locations |
 | --- | --- |
 | GitHub Actions | Repository workflows |
-| Docker | `frontend`, `services/core`, `services/ingest` |
+| Docker | `frontend`, `services/core`, `services/ingest`, `services/mcp` |
 | npm | `frontend`, `docs/site` |
 | Go modules | `services/cli` |
 | NuGet | Root `Directory.Packages.props`; shared by services, MCP, tools, and tests |

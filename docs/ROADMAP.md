@@ -83,7 +83,7 @@ GitHub Actions: build → test → Docker build → push to registry.
 ### 8. User Accounts & Multi-Tenancy ✅
 Per-user game libraries with encrypted credential storage. App authentication uses local/JWT/OIDC
 boundaries; platform connector credentials are stored separately in the Ingest vault.
-- **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, rotating/revocable refresh sessions, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN/Epic retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. Multi-user operation is not enabled by default.
+- **Foundation (2026-06-21)**: Default-tenant migrations, claim-based tenant contexts, tenant-scoped Core and Ingest storage/queries/uniqueness constraints, tenant-isolated background jobs, local account bootstrap, optional JWT token issuance, refresh sessions that rotate and can be revoked, API-key-controlled tenant provisioning, a frontend HttpOnly-cookie login/BFF flow, service-key-authenticated Core→Ingest tenant delegation, an AES-256-GCM tenant platform credential vault, vault-backed Steam/GOG/PSN/Epic retrieval, authenticated Core/frontend credential management, and a fail-closed credential-derived sync activation policy are implemented. Multi-user operation is not enabled by default.
 - **Epic MVP boundary**: Epic now has a Legendary-inspired stored-retrieval MVP. Ingest can exchange
   an Epic authorization code for a vault-stored refresh token, refresh an access token in-memory,
   retrieve library records, and map them to the existing Epic raw-ingest shape. The Admin UI can use
@@ -155,7 +155,21 @@ Comprehensive dashboard with charts for platform distribution, genre breakdown, 
 
 ### 11. MCP Server (Model Context Protocol) ✅
 AI agent integration layer — let assistants interact with the library via natural language.
-See [docs/mcp.md](mcp.md) for client setup (VS Code, Claude Desktop, Cursor).
+See the [MCP guide](guides/mcp.md) for client setup, including Codex.
+
+- **Phase 1 — Docker distribution (implemented 2026-11-13):** A standalone, non-root stdio image.
+  Clients launch it with `docker run --rm -i`; no source checkout, SDK, devcontainer, or published
+  MCP port is required. CI builds and scans native AMD64/ARM64 images, tests the stdio handshake
+  and tool catalog, and passes the verified images to the existing manual release workflow.
+  The shared release version, license notices, and SBOMs also cover MCP. Image publication remains
+  a manual release step; source support does not mean a GHCR tag already exists.
+- **Phase 2 — User authentication (planned):** Add a supported user login and token lifecycle for
+  OIDC-backed accounts. Preserve Core's tenant and session checks. Include cross-tenant isolation
+  and revoked-session tests before claiming support for guarded multi-user deployments. Phase 1
+  retains the existing Core API-key compatibility path.
+- **Phase 3 — Remote transport (planned):** Add Streamable HTTP for centrally hosted MCP access.
+  Define authentication, connection lifecycle, and deployment requirements before exposing it.
+  The stdio image remains available for local clients.
 
 ---
 

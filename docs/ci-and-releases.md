@@ -1,6 +1,6 @@
 # CI security and shared releases
 
-GameHub uses one version for Core, Ingest, Frontend, and the CLI. A release produces three
+GameHub uses one version for Core, Ingest, Frontend, MCP, and the CLI. A release produces four
 multi-platform GHCR images, CLI/helper archives, SHA-256 checksums, and CycloneDX SBOMs.
 Moving source to a new repository does not transfer GitHub Releases or GHCR packages. Publish
 a verified release from this repository before using its image names in a deployment; existing
@@ -52,22 +52,24 @@ contracts, builds, and vulnerability scans must still succeed after installation
 | Markdown outside CI/tooling directories, `docs/agents/**`, `.agents/**`, or `LICENSE` only | None | None |
 | `.github/workflows/docs.yml` | Workflow/tooling and documentation checks | None |
 | `.github/dependabot.yml` or `.github/actionlint.yaml` | Workflow/tooling | None |
-| Only existing Action SHA pins and their version comments in `checks.yml` | Workflow/tooling and every job using the changed pins | All six only when image-job pins change |
+| Only existing Action SHA pins and their version comments in `checks.yml` | Workflow/tooling and every job using the changed pins | All eight only when image-job pins change |
 | Frontend application, assets, or build configuration | Frontend lint/contracts/build and Semgrep | Frontend, AMD64 and ARM64 |
 | Frontend tests only | Frontend lint/contracts/build | None |
 | Core or Ingest implementation/configuration | Full backend build/tests and Semgrep | The changed service, AMD64 and ARM64 |
 | Shared backend implementation | Full backend build/tests and Semgrep | Core and Ingest, both architectures |
 | Backend tests only | Full backend build/tests | None |
-| MCP or backend benchmark tooling | Full backend build/tests and Semgrep | None |
+| MCP source | Full backend build/tests and Semgrep | MCP |
+| Backend benchmark tooling | Full backend build/tests and Semgrep | None |
 | CLI implementation or helper installer inputs | CLI race tests/vet, installer contracts, compiled binary scan, and Semgrep | Frontend, both architectures, because it embeds the helper |
+| Shared license-notice collector | CLI tests and Semgrep | All four components, both architectures |
 | Go tests or installer contract tests only | CLI tests/contracts and compiled binary scan; CI tooling for CLI script changes | None |
 | Dependency manifests, lockfiles, or dependency configuration | Add the repository-wide Trivy source/dependency scan to the affected component checks | As selected for the component |
 | Service Dockerfile or frontend `.dockerignore` | Trivy source/production-configuration scan | The affected service, both architectures |
-| Root `.dockerignore` | Trivy source/production-configuration scan | Core and Ingest, both architectures |
-| Root .NET solution/SDK/build configuration | Backend build/tests, Semgrep, and Trivy source/dependency scan | Core and Ingest, both architectures |
+| Root `.dockerignore` | Trivy source/production-configuration scan | Core, Ingest, and MCP, both architectures |
+| Root .NET solution/SDK/build configuration | Backend build/tests, Semgrep, and Trivy source/dependency scan | Core, Ingest, and MCP, both architectures |
 | Docker Compose configuration | Trivy source/production-configuration scan | None |
-| Other `.github/**`, `.ci/**`, `scripts/ci/**`, scanner policy, or `cliff.toml` | All checks | All six images |
-| Unrecognized paths | All checks, conservatively | All six images |
+| Other `.github/**`, `.ci/**`, `scripts/ci/**`, scanner policy, or `cliff.toml` | All checks | All eight images |
+| Unrecognized paths | All checks, conservatively | All eight images |
 
 Selections are combined when several components change. `services/cli/helper-distribution/README.txt`
 is a packaged helper input and rebuilds the frontend image despite containing documentation.
@@ -85,7 +87,7 @@ The Action-pin exception compares committed workflow content using the same Git 
 It accepts only SHA and version-comment replacements for the same Action in existing steps.
 For example, `setup-dotnet` updates run dependency and backend checks without rebuilding images.
 `setup-node` updates run frontend, CLI, and documentation checks. Image-builder Action updates
-build and scan all six images. Checkout updates that affect the selector or aggregate keep
+build and scan all eight images. Checkout updates that affect the selector or aggregate keep
 the full suite. Changes to commands, inputs, permissions, job structure, unknown jobs, or any
 unrecognized diff keep full verification. Mixed application changes add their normal checks
 and images. No result from an older commit is reused to mark a new commit as passing.
@@ -110,6 +112,12 @@ The explicit OS labels avoid automatic distribution changes through `ubuntu-late
 GitHub continues updating the runner images. Runtime container bases are configured separately
 in their Dockerfiles.
 
+The optional MCP image uses the .NET runtime and runs without root privileges. It exposes stdio,
+with no published port or database. Each architecture runs `scripts/ci/smoke-mcp-image.py` against
+the built image before scanning or saving it for publication. The test disables container
+networking, uses a read-only filesystem, checks initialization and all seven tools, invokes local
+input validation, and verifies clean stdout and shutdown. It needs no Core credentials or service.
+
 The frontend's standalone server starts directly with Node. npm and Yarn remain available
 in the build stages but are removed, together with their bundled dependencies, from the
 runtime stage. Runtime image scans still cover Alpine, Node, and the shipped application
@@ -120,8 +128,8 @@ dependencies; no package paths or CVEs are excluded from the gate.
 | Gitleaks | Full fetched Git history, with complete secret redaction. Only individually reviewed historical documentation fingerprints are ignored. A synthetic secret in a new README is tested to remain blocking. Git subprocess failures fail the scan. |
 | Semgrep | Five local, tested rules cover disabled TLS validation in Go/C#/TypeScript, interpolated raw SQL in C#, and dynamic JavaScript evaluation. The pinned scanner runs without network access; metrics and version checks are disabled. These focused rules are not a comprehensive application security audit. |
 | Trivy source | npm, Go modules, resolved transitive NuGet dependencies, and production Docker configuration. NuGet locks are generated only in an isolated snapshot. Development dependencies are included. |
-| Trivy binaries/images | A built Linux CLI plus the six runtime images: Core, Ingest, Frontend, each for AMD64 and ARM64. Full JSON reports retain lower-severity and unfixed findings. |
-| Build/contracts | .NET build/tests, Go race tests and vet, frontend lint/security/capture tests/build, and macOS installer contracts. |
+| Trivy binaries/images | A built Linux CLI plus the eight runtime images: Core, Ingest, Frontend, MCP, each for AMD64 and ARM64. Full JSON reports retain lower-severity and unfixed findings. |
+| Build/contracts | .NET build/tests, Go race tests and vet, frontend lint/security/capture tests/build, macOS installer contracts, and MCP image stdio smoke checks. |
 | Workflow/tooling | Actionlint, ShellCheck, checksum rejection, source export boundaries, actual secret detection, Trivy gating, and real git-cliff version decisions. |
 
 Trivy blocks `HIGH`/`CRITICAL` vulnerabilities and failed `HIGH`/`CRITICAL` misconfiguration checks.
@@ -146,7 +154,7 @@ and NuGet. The vulnerability database and Trivy configuration checks remain curr
 
 ## Build performance
 
-Independent checks and the six image matrix jobs run in parallel within the account's
+Independent checks and the eight image matrix jobs run in parallel within the account's
 available runner concurrency. ARM64 image builds use native runners, eliminating QEMU
 emulation of npm, Next.js, Go, and .NET. GitHub lists standard ARM64 Linux runners for both
 [public and private repositories](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
@@ -269,7 +277,7 @@ release tag or a GitHub Release manually before starting the workflow.
 
 ### Choose the version
 
-[git-cliff](../cliff.toml) calculates one version for Core, Ingest, Frontend, and the CLI.
+[git-cliff](../cliff.toml) calculates one version for Core, Ingest, Frontend, MCP, and the CLI.
 It reads commits since the last matching `vMAJOR.MINOR.PATCH` tag. Without an existing matching
 tag, the configured initial version is **v0.1.0**.
 
@@ -301,8 +309,8 @@ application builds or publication jobs start. Use the separate manual documentat
 | Stage | What happens | Publication state |
 | --- | --- | --- |
 | `prepare` | Calculates the tag and generates `RELEASE_NOTES.md` with git-cliff. Uploads these as the `release-metadata` workflow artifact. | No new Git tag, container, or GitHub Release is published. |
-| `verify` | Runs the reusable source, build, test, CLI, and six image checks for the selected commit and version. Saves the scanned images and CLI archives. | Publication remains blocked until every required check succeeds. |
-| `publish-images` | Six parallel jobs upload the verified Core, Ingest, and Frontend images for AMD64 and ARM64. Images are loaded from artifacts, without rebuilding. | Architecture-specific tags such as `v0.1.0-arm64` become available on GHCR. |
+| `verify` | Runs the reusable source, build, test, CLI, and eight image checks for the selected commit and version. Saves the scanned images and CLI archives. | Publication remains blocked until every required check succeeds. |
+| `publish-images` | Eight parallel jobs upload the verified Core, Ingest, Frontend, and MCP images for AMD64 and ARM64. Images are loaded from artifacts, without rebuilding. | Architecture-specific tags such as `v0.1.0-arm64` become available on GHCR. |
 | `publish-release` | Creates multi-platform version manifests, verifies checksums, adds image SBOMs, creates a draft release/tag, and uploads all assets. Then promotes container `latest` tags and publishes the GitHub Release. | The published release and its downloads are ready after this job succeeds. |
 
 Every successfully published release includes generated notes. They group commits into
@@ -323,7 +331,7 @@ publication jobs. The first runs should be reviewed before relying on this proce
    alone or successful architecture uploads do not confirm a complete release.
 2. Open [GitHub Releases](https://github.com/happticde/gamehub/releases) and check the published
    **GameHub vX.Y.Z** release, its notes, and the downloads listed below. A draft is incomplete.
-3. Check all three GHCR version tags contain Linux AMD64 and ARM64 manifests. For example,
+3. Check all four GHCR version tags contain Linux AMD64 and ARM64 manifests. For example,
    inspect a published frontend release with:
 
    ```bash
@@ -349,6 +357,11 @@ ghcr.io/happticde/gamehub-ingest:v0.1.0
 ghcr.io/happticde/gamehub-frontend:v0.1.0
 ```
 
+Releases that include Docker MCP support also publish `ghcr.io/happticde/gamehub-mcp:<release-tag>`.
+Do not assume this image exists for older tags. Use a successful release that lists MCP, or
+build locally as described in the [MCP guide](guides/mcp.md). It is an optional stdio client image,
+started by an assistant with `docker run --rm -i`, and is not a persistent Compose service.
+
 Each manifest supports Linux AMD64 and ARM64. Release tags are preferred for deployments;
 `latest` follows the most recently published release. Image labels contain the version, source
 repository, and commit. These are runtime application images; databases are not bundled.
@@ -366,11 +379,12 @@ cli.cdx.json
 core-amd64.cdx.json / core-arm64.cdx.json
 ingest-amd64.cdx.json / ingest-arm64.cdx.json
 frontend-amd64.cdx.json / frontend-arm64.cdx.json
+mcp-amd64.cdx.json / mcp-arm64.cdx.json (releases with Docker MCP support)
 ```
 
 Download `SHA256SUMS` with the assets and run `sha256sum --check SHA256SUMS` on Linux or
 `shasum -a 256 -c SHA256SUMS` on macOS after downloading all files listed in it. The manifest
-covers the four binary archives, the corresponding GameHub source archive, and six image SBOMs; the separately uploaded `cli.cdx.json`
+covers the four binary archives, the corresponding GameHub source archive, and eight image SBOMs; the separately uploaded `cli.cdx.json`
 is not included in it. To verify a single archive, calculate its SHA-256 with
 `sha256sum <archive>` or `shasum -a 256 <archive>` and compare it with that archive's entry.
 The macOS archives contain the existing guided installer,
