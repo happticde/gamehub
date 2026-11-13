@@ -166,10 +166,13 @@ See the [MCP guide](guides/mcp.md) for client setup, including Codex.
 - **Phase 2 — User authentication (planned):** Add a supported user login and token lifecycle for
   OIDC-backed accounts. Preserve Core's tenant and session checks. Include cross-tenant isolation
   and revoked-session tests before claiming support for guarded multi-user deployments. Phase 1
-  retains the existing Core API-key compatibility path.
+  retains the existing Core API-key compatibility path. [ADR-016](adr/016-mcp-user-authorization.md)
+  proposes Device Authorization Grant with OpenIddict in Core. It remains under review and adds
+  no runtime support. [Issue #67](https://github.com/happticde/gamehub/issues/67) is the design gate.
 - **Phase 3 — Remote transport (planned):** Add Streamable HTTP for centrally hosted MCP access.
   Define authentication, connection lifecycle, and deployment requirements before exposing it.
-  The stdio image remains available for local clients.
+  ADR-016 proposes a Core-hosted HTTP adapter, Authorization Code with PKCE, separate resource
+  audiences, and initially pre-registered clients. The stdio image remains available for local clients.
 
 ---
 
