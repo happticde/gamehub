@@ -2,7 +2,7 @@ FROM golang:1.27.3-bookworm AS notice-builder
 COPY services/cli/tools/license-notices/main.go /license-notices.go
 RUN CGO_ENABLED=0 go build -o /license-notices /license-notices.go
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 COPY ["global.json", "Directory.Packages.props", "./"]
 COPY ["services/mcp/GameHub.Mcp.csproj", "services/mcp/"]
