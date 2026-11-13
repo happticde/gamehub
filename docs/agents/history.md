@@ -4,6 +4,29 @@
 
 ### What Changed
 
+**MCP Authentication Architecture Proposal (#67):**
+- Add proposed ADR-016 for Docker Device Authorization Grant and later remote Authorization Code
+  with PKCE. Recommend OpenIddict in Core and a Core-hosted HTTP MCP adapter.
+- Define separate resource audiences, minimal scopes, live account/session checks, provider-logout
+  provenance, token rotation, consent, HTTPS routing, and the plain credential-volume boundary.
+- Record the checked stable OpenIddict baseline and its automatic-registration/metadata gaps.
+  Require a bounded compatibility proof before implementation and map changes to packages #68–#80.
+- Link the proposal from Roadmap #11. The design remains under review. Downstream issues stay
+  Backlog until acceptance and scope/dependency updates are recorded.
+
+### Verification
+
+- Docker: all 16 documentation contracts and the documentation production build pass.
+- The ADR's seven relative links and its Mermaid sequence parse successfully in Docker. Internal
+  ADRs are not included in the public handbook build, so these checks run separately.
+- No application code, dependencies, runtime configuration, environment files, deployment, or
+  publication changed. Backend/frontend application builds and runtime tests are outside this
+  documentation-only proposal.
+
+## Current Session Summary (2026-11-13)
+
+### What Changed
+
 **Docker MCP Distribution:**
 - Add a standalone .NET 10 runtime image for the existing stdio MCP. It runs as a non-root user
   and contains generated license notices. It needs no published port, SDK, or database volume.
