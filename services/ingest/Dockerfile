@@ -19,7 +19,7 @@ RUN license-notices -kind nuget -input obj/project.assets.json -legal /src/licen
 
 # aspnet:alpine is ~100-115 MB (vs ~220 MB full aspnet) and has wget + sh built in.
 # Avoids all chiseled-image ABI/shell compatibility issues.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-alpine
 ARG VERSION=0.0.0
 ARG REVISION=unknown
 LABEL org.opencontainers.image.version=$VERSION \
