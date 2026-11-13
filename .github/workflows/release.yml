@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [core, ingest, frontend]
+        component: [core, ingest, frontend, mcp]
         arch: [amd64, arm64]
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -138,7 +138,7 @@ jobs:
           cp image-reports/*.cdx.json release/
           (cd release && sha256sum ./gamehub-source-*.tar.gz ./*.cdx.json >> SHA256SUMS)
           printf '\n## License and source\n\nGameHub is AGPL-3.0-only; docs/site tooling is MIT. The corresponding GameHub source archive is included with these downloads. Third-party components retain their own licenses and notices.\n' >> metadata/RELEASE_NOTES.md
-          for component in core ingest frontend; do
+          for component in core ingest frontend mcp; do
             image="ghcr.io/${GITHUB_REPOSITORY,,}-$component"
             docker buildx imagetools create -t "$image:$TAG" "$image:$TAG-amd64" "$image:$TAG-arm64"
             printf '\n- %s:%s (Linux amd64/arm64)\n' "$image" "$TAG" >> metadata/RELEASE_NOTES.md
@@ -149,7 +149,7 @@ jobs:
               --title "GameHub $TAG" --notes-file metadata/RELEASE_NOTES.md --draft
           fi
           gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
-          for component in core ingest frontend; do
+          for component in core ingest frontend mcp; do
             image="ghcr.io/${GITHUB_REPOSITORY,,}-$component"
             docker buildx imagetools create -t "$image:latest" "$image:$TAG"
           done

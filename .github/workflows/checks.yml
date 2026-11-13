@@ -258,7 +258,7 @@ jobs:
       - name: Generate service dependency license evidence
         run: |
           go build -o "$RUNNER_TEMP/license-notices" services/cli/tools/license-notices/main.go
-          for component in core ingest; do
+          for component in core ingest mcp; do
             "$RUNNER_TEMP/license-notices" -kind nuget -input "services/$component/obj/project.assets.json" \
               -legal licensing -output "reports/licenses/$component"
           done
@@ -415,6 +415,9 @@ jobs:
             SOURCE_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,version=2,scope=${{ matrix.component }}-${{ matrix.arch }}
           cache-to: type=gha,version=2,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }},timeout=3m,ignore-error=true
+      - name: Test MCP stdio transport in the runtime image
+        if: matrix.component == 'mcp'
+        run: python3 scripts/ci/smoke-mcp-image.py gamehub-mcp:verified
       - name: Export generated image license evidence
         env:
           COMPONENT: ${{ matrix.component }}

@@ -1,5 +1,5 @@
-# Root .dockerignore — applies to services/core and services/ingest builds
-# (docker-compose uses repo root as build context for both .NET services)
+# Root .dockerignore — applies to Core, Ingest, and MCP image builds
+# (.NET images use the repo root as their build context)
 
 # Version control
 .git

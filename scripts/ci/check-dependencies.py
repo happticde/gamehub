@@ -49,7 +49,7 @@ def check_go_toolchain(root):
     if not toolchain:
         raise ValueError("The CLI must declare its verified Go toolchain")
     for path in ("frontend/Dockerfile", "services/core/Dockerfile",
-                 "services/ingest/Dockerfile", ".devcontainer/Dockerfile"):
+                 "services/ingest/Dockerfile", "services/mcp/Dockerfile", ".devcontainer/Dockerfile"):
         versions = re.findall(r"^FROM golang:([^\s-]+)-", (root / path).read_text(), re.MULTILINE)
         if not versions or any(version != toolchain.group(1) for version in versions):
             raise ValueError(f"{path}: Go builders must match toolchain go{toolchain.group(1)}")

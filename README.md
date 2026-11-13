@@ -40,7 +40,7 @@ Production account admission defaults to disabled and needs the explicit
 ## Releases
 
 Download matching images and CLI/helper packages from
-[GitHub Releases](https://github.com/happticde/gamehub/releases). Core, Ingest, frontend, and CLI
+[GitHub Releases](https://github.com/happticde/gamehub/releases). Core, Ingest, frontend, MCP, and CLI
 share a release version. Use the corresponding handbook version when installing or updating.
 Documentation corrections can be published independently of application releases.
 

@@ -88,19 +88,59 @@ class SelectionTests(unittest.TestCase):
                 self.assertFalse(plan["jobs"]["semgrep"])
                 self.assertEqual(plan["components"], [])
 
+    def test_shared_notice_collector_rebuilds_every_image(self):
+        plan = selection.select_checks(["services/cli/tools/license-notices/main.go"])
+        self.assertTrue(plan["jobs"]["cli"])
+        self.assertTrue(plan["jobs"]["semgrep"])
+        self.assertEqual(plan["components"], list(selection.COMPONENTS))
+
+    def test_release_publishes_every_verified_component(self):
+        release = (SCRIPT.parents[2] / ".github/workflows/release.yml").read_text()
+        components = re.search(r"component: \[([^\]]+)\]", release)[1]
+        self.assertEqual([item.strip() for item in components.split(",")], list(selection.COMPONENTS))
+        self.assertIn("arch: [amd64, arm64]", release)
+        loops = re.findall(r"for component in ([\w ]+); do", release)
+        self.assertEqual(len(loops), 2)
+        for components in loops:
+            self.assertEqual(components.split(), list(selection.COMPONENTS))
+
     def test_mcp_and_backend_tool_changes_do_not_rebuild_unrelated_images(self):
-        for path in ("services/mcp/Program.cs", "tools/product-catalog-benchmark/Program.cs"):
+        for path, images in (("services/mcp/Program.cs", ["mcp"]),
+                             ("tools/product-catalog-benchmark/Program.cs", [])):
             with self.subTest(path=path):
                 plan = selection.select_checks([path])
                 self.assertTrue(plan["jobs"]["backend"])
                 self.assertTrue(plan["jobs"]["semgrep"])
-                self.assertEqual(plan["components"], [])
+                self.assertEqual(plan["components"], images)
+
+    def test_unrelated_changes_never_select_the_mcp_image(self):
+        for path in ("services/core/Program.cs", "services/ingest/Program.cs",
+                     "services/shared/Example.cs", "frontend/app/page.tsx",
+                     "services/cli/cmd/helper.go", "tests/GameHub.Tests/McpTests.cs",
+                     "docs/guides/mcp.md", "services/mcp/README.md", ".github/dependabot.yml"):
+            with self.subTest(path=path):
+                plan = selection.select_checks([path])
+                self.assertNotIn("mcp", plan["components"])
+                self.assertFalse(any(entry["component"] == "mcp"
+                                     for entry in selection.image_matrix(plan)["include"]))
+
+    def test_mcp_smoke_changes_select_only_workflow_checks_and_mcp_image(self):
+        plan = selection.select_checks(["scripts/ci/smoke-mcp-image.py"])
+        self.assertEqual(plan, selection.make_plan(["workflow"], ["mcp"]))
+        matrix = selection.image_matrix(plan)["include"]
+        self.assertEqual({(entry["component"], entry["arch"]) for entry in matrix},
+                         {("mcp", "amd64"), ("mcp", "arm64")})
+        mixed = selection.select_checks(["scripts/ci/smoke-mcp-image.py", "services/core/Program.cs"])
+        self.assertTrue(mixed["jobs"]["workflow"])
+        self.assertTrue(mixed["jobs"]["backend"])
+        self.assertEqual(mixed["components"], ["core", "mcp"])
 
     def test_docker_changes_select_only_affected_images_and_configuration_scan(self):
         for path, images in (("frontend/Dockerfile", ["frontend"]),
                              ("services/core/Dockerfile", ["core"]),
                              ("services/ingest/Dockerfile", ["ingest"]),
-                             (".dockerignore", ["core", "ingest"]),
+                             ("services/mcp/Dockerfile", ["mcp"]),
+                             (".dockerignore", ["core", "ingest", "mcp"]),
                              ("docker-compose.yml", [])):
             with self.subTest(path=path):
                 plan = selection.select_checks([path])
@@ -116,10 +156,20 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 plan = selection.select_checks([path])
                 self.assertTrue(all(plan["jobs"].values()))
-                self.assertEqual(plan["components"], ["core", "ingest", "frontend"])
+                self.assertEqual(plan["components"], ["core", "ingest", "frontend", "mcp"])
         plan = selection.select_checks(["README.md"], full=True)
         self.assertTrue(all(plan["jobs"].values()))
-        self.assertEqual(len(selection.image_matrix(plan)["include"]), 6)
+        self.assertEqual(len(selection.image_matrix(plan)["include"]), 8)
+
+    def test_shared_build_inputs_rebuild_mcp_on_both_architectures(self):
+        for path in ("global.json", "Directory.Packages.props", "NuGet.Config", ".dockerignore",
+                     "services/mcp/GameHub.Mcp.csproj"):
+            with self.subTest(path=path):
+                plan = selection.select_checks([path])
+                self.assertTrue(plan["jobs"]["dependencies"])
+                entries = selection.image_matrix(plan)["include"]
+                self.assertEqual({entry["arch"] for entry in entries if entry["component"] == "mcp"},
+                                 {"amd64", "arm64"})
 
     def test_maintenance_configuration_does_not_rebuild_products(self):
         for path in (".github/dependabot.yml", ".github/actionlint.yaml"):
@@ -166,7 +216,7 @@ class ActionPinTests(unittest.TestCase):
         self.assertIsNone(selection.action_pin_plan(self.workflow, self.update_action("actions/checkout")))
         plan = selection.action_pin_plan(self.workflow, self.update_action("actions/upload-artifact"))
         self.assertTrue(all(plan["jobs"].values()))
-        self.assertEqual(len(selection.image_matrix(plan)["include"]), 6)
+        self.assertEqual(len(selection.image_matrix(plan)["include"]), 8)
 
     def test_non_pin_edits_and_unknown_context_fall_back_to_full_checks(self):
         updated = self.update_action("actions/setup-node")
@@ -201,7 +251,7 @@ class ActionPinTests(unittest.TestCase):
                             ([selection.CHECKS_WORKFLOW, ".github/workflows/release.yml"], False)):
             plan = selection.select_checks(paths, full=full, action_plan=action_plan)
             self.assertTrue(all(plan["jobs"].values()))
-            self.assertEqual(len(selection.image_matrix(plan)["include"]), 6)
+            self.assertEqual(len(selection.image_matrix(plan)["include"]), 8)
 
 
 class RequiredCheckTests(unittest.TestCase):
@@ -391,7 +441,7 @@ class GitComparisonTests(unittest.TestCase):
                 subprocess.check_call([sys.executable, str(SCRIPT), "select"], env=environment, stdout=subprocess.DEVNULL)
                 outputs = dict(line.split("=", 1) for line in (root / "outputs").read_text().splitlines())
                 self.assertTrue(all(json.loads(outputs["plan"])["jobs"].values()))
-                self.assertEqual(len(json.loads(outputs["image-matrix"])["include"]), 6)
+                self.assertEqual(len(json.loads(outputs["image-matrix"])["include"]), 8)
 
 
 if __name__ == "__main__":

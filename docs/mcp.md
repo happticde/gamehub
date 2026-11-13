@@ -1,5 +1,10 @@
 # GameHub MCP Server
 
+For the Docker image and current Codex setup, use the maintained [MCP guide](guides/mcp.md).
+The source-based examples below require a stable .NET 10 SDK and a matching checkout.
+The current MCP uses Core API-key authentication. It does not implement an OIDC user login
+for guarded multi-user deployments.
+
 The GameHub MCP server exposes your game library to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io/). This lets you query and manage your library using natural language.
 
 ## Available Tools
@@ -28,9 +33,7 @@ The GameHub MCP server exposes your game library to any AI assistant that suppor
 
 ### VS Code / GitHub Copilot
 
-A `.vscode/mcp.json` file is included in the repo. VS Code will auto-detect it.
-
-If you need to customize it (e.g. set an API key):
+Create a private `.vscode/mcp.json` using this stdio configuration:
 
 ```json
 {
