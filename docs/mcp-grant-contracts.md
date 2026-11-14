@@ -6,7 +6,9 @@ This describes persistence [#68](https://github.com/happticde/gamehub/issues/68)
 [Architecture Decision Record (ADR) 016](adr/016-mcp-user-authorization.md).
 The merged [OpenIddict proof](../tools/openiddict-proof/README.md) was repeated successfully
 before schema adoption. Storage and the default-closed authorization boundary do not enable
-user-token issuance, consent, device login or remote transport.
+user-token issuance, consent, device login or remote transport. The staged
+[#70 device adapter](mcp-device-protocol.md) now provides bounded protocol processing with a
+closed approval gate; production startup still does not register a protocol server.
 
 ## Ownership and consent
 
@@ -119,7 +121,7 @@ repository environment files; this change introduces no required runtime setting
 
 On 2026-11-14, [OpenIddict 7.8.0](https://github.com/openiddict/openiddict-core/releases/tag/7.8.0),
 released 2026-11-03, remains the latest stable version. Core references its database and validation
-packages; server packages are test-only until #70. Its Apache-2.0 license and
+packages; #70 adds the server and encrypted-format packages for its staged adapter. Its Apache-2.0 license and
 transitive package review follow the proof's resolved graph. Product builds generate notices from
 the resolved production inputs; repeat advisory/license checks before rollout.
 

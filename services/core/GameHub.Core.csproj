@@ -24,6 +24,8 @@
     <PackageReference Include="OpenIddict.EntityFrameworkCore" />
     <PackageReference Include="OpenIddict.Validation.AspNetCore" />
     <PackageReference Include="OpenIddict.Validation.DataProtection" />
+    <PackageReference Include="OpenIddict.Server.AspNetCore" />
+    <PackageReference Include="OpenIddict.Server.DataProtection" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <!-- Adds retry, timeout, and circuit-breaker policies to HttpClient -->
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
