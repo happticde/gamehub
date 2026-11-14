@@ -35,6 +35,11 @@ the relevant project item, linked issue, comments, and pull request. For MCP wor
 [GameHub MCP Evolution](https://github.com/orgs/happticde/projects/2) and its
 [tracking issue #66](https://github.com/happticde/gamehub/issues/66).
 
+Use the configured `github-projects` [Model Context Protocol (MCP)](https://github.com/github/github-mcp-server)
+tools for GitHub Projects. Use the GitHub connector for repository, issue, and pull-request
+operations. Prefer these tools over browser automation. Check tool availability at task start;
+if a required tool is unavailable, report the connection problem before using a browser fallback.
+
 Follow the project's dependency order and keep one implementation issue In Progress. Record the
 branch/PR, checked commit, completed and remaining work, verification, blockers, and concrete next
 step in the issue or linked PR. Review means a verified PR awaits human review. Mark Done only
