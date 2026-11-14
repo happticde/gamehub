@@ -47,6 +47,15 @@ through tools must use the same sections. Keep project status and priority in pr
 Use the form's handoff format when updating progress. Keep entries short and link existing
 decisions instead of copying them.
 
+## Release Planning
+
+At task start, read its native GitHub milestone and linked release-acceptance issue. Assign every
+delivery task to a release milestone; cross-release trackers link their child milestones instead.
+For task selection and every handoff, follow [Release planning](docs/ci-and-releases.md#release-planning):
+report the release target, readiness, blocking issues/checks, and concrete next step in both the
+issue/pull request and the user reply. Announce readiness proactively when the acceptance gate is
+merged and verified. Task completion follows merge; milestone closure follows verified publication.
+
 ## Modular Context Files
 
 Before starting work, read the relevant file(s) below. Resolve these paths from the current repository root:
