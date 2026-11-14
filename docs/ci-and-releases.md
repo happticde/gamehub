@@ -261,6 +261,54 @@ enforce it at GitHub's merge boundary. No billing, plan, or visibility change wa
 Once plan support is available, activate the `main` ruleset and require the aggregate
 **CI passed** check as described below.
 
+## Release planning
+
+Use native [GitHub milestones](https://docs.github.com/en/issues/using-labels-and-milestones-to-track-work/about-milestones)
+for planned product releases. Keep task status and priority in project fields and show the native
+Milestone field in the project work plan. Milestone membership defines the planned release scope;
+avoid a duplicate custom release field. Titles describe the release goal until the existing
+workflow calculates the version. Dates are optional commitments, not inferred deadlines.
+
+The current Model Context Protocol (MCP) release goals are:
+
+| Release goal | Final acceptance issue |
+| --- | --- |
+| [MCP: Docker user authentication](https://github.com/happticde/gamehub/milestone/1) | [#75](https://github.com/happticde/gamehub/issues/75) |
+| [MCP: Remote access](https://github.com/happticde/gamehub/milestone/2) | [#80](https://github.com/happticde/gamehub/issues/80), after the local gate #75 |
+
+Each delivery task has one milestone and links its final acceptance issue. The cross-release
+tracker [#66](https://github.com/happticde/gamehub/issues/66) links both milestones without joining
+either, so remote work cannot keep the local release open. New required work joins the appropriate
+milestone and is reflected in its acceptance issue. Record explicit scope changes there rather
+than silently moving unfinished work to make a release look complete. Urgent fixes may use a
+separate patch milestone with a bounded verification/acceptance issue.
+
+At task start, read the milestone's open/closed tasks, acceptance issue, relevant linked pull
+requests and their checks. Confirm merged tasks against their actual merge, not only a closed
+issue or progress percentage. At every handoff, update the issue or linked pull request and tell
+the user the release target, one readiness state below, concrete blockers, and next release step.
+
+| Readiness | Required evidence and next step |
+| --- | --- |
+| Not ready | Name unmerged required tasks, unmet acceptance criteria, failed/missing checks or unreviewed changes; identify the next task/check. |
+| Ready for manual release | Every required milestone task and the final acceptance change are merged and verified; the gate records green required checks for the exact candidate commit on `main`, relevant limitations, and operator steps. Proactively tell the user to run the manual Release workflow; its full verification still gates publication. |
+| Published | The Release run including `publish-release` succeeded, and the published release URL, tag and matching source commit are recorded in the acceptance issue. Only then close the milestone. Documentation publication and deployment/enablement retain their own manual handoffs. |
+
+Task Done still means the user merged its verified change. A fully closed issue list does not
+close the milestone or prove a publication. Readiness evidence belongs in the final acceptance
+issue, not a manually synchronized project status field. A typical intermediate handoff is:
+`Release: MCP: Docker user authentication — Not ready; #69–#75 remain; next: #69.`
+
+Milestones plan work; the Release workflow publishes the entire selected `main` commit, including
+changes from other milestones since the previous release. Review that complete candidate before
+declaring readiness. A patch milestone does not exclude unfinished features already merged into
+`main`. Reassess the gate if the candidate changes; record any accepted disabled/incomplete scope
+explicitly. Never treat milestone membership as a packaging filter or skip a release check.
+
+Agents maintain readiness at task boundaries and announce a verified release gate without
+waiting for a user question. Publication,
+documentation deployment and operator enablement remain human-owned through the existing workflows.
+
 ## Release a version
 
 ### Start the release

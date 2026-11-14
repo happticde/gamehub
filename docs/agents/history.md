@@ -4,6 +4,29 @@
 
 ### What Changed
 
+**Release Milestone Planning (#89):**
+- Create native GitHub milestones for Model Context Protocol (MCP) Docker authentication and
+  remote access. Assign delivery issues to their milestone and link acceptance gates #75/#80.
+  Keep the cross-release tracker #66 outside milestone membership and link both release goals.
+- Show the native Milestone field in the project work plan. Add a release-target field to the
+  task form and a mandatory readiness/blockers/next-step handoff rule in AGENTS.md.
+- Keep the release process in `docs/ci-and-releases.md`: proactively announce readiness for an
+  exact candidate on main, inspect its complete scope, and close milestones only after verified
+  publication. Existing version calculation and human-owned publication remain unchanged.
+
+### Verification
+
+- All 16 documentation contracts and the documentation production build pass in Docker. The task
+  form parses successfully, release-planning pointers agree, and whitespace checks pass. The saved
+  Milestone column survives navigation back to the project root. Runtime builds and product image
+  tests are outside this planning/documentation-only scope.
+- Docker authentication is not ready for release: #69–#75 and planning #89 remain. Remote access
+  depends on the local gate and #76–#80. No release, deployment or enablement was performed.
+
+## Current Session Summary (2026-11-14)
+
+### What Changed
+
 **MCP Connection Data Contracts (#68):**
 - Adopt OpenIddict 7.8.0 database integration after merged proof #85 passes again (55 checks).
   Add one tenant/account-owned consent grant per independent family and protocol authorization,

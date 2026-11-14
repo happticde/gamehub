@@ -27,6 +27,13 @@ body:
       description: State what is included and any important exclusions. Keep the task small enough for one review.
     validations:
       required: true
+  - type: input
+    id: release_target
+    attributes:
+      label: Release target and acceptance gate
+      description: Link the release milestone and its final acceptance issue. Set the native Milestone field after creation. Cross-release trackers link all child milestones.
+    validations:
+      required: true
   - type: textarea
     id: acceptance
     attributes:
@@ -67,5 +74,6 @@ body:
         - Checks and results, including skipped checks:
         - Blockers:
         - Next step:
+        - Release target / readiness / blocking issues or checks / next release step:
     validations:
       required: false
