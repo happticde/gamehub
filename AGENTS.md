@@ -27,6 +27,26 @@ Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 └───────────────┘
 ```
 
+## Task Source of Truth
+
+GitHub Projects and their linked issues are the source of truth for task requirements, priority,
+dependencies, acceptance criteria, decisions, and handoffs. Before starting or resuming work, read
+the relevant project item, linked issue, comments, and pull request. For MCP work, use
+[GameHub MCP Evolution](https://github.com/orgs/happticde/projects/2) and its
+[tracking issue #66](https://github.com/happticde/gamehub/issues/66).
+
+Follow the project's dependency order and keep one implementation issue In Progress. Record the
+branch/PR, checked commit, completed and remaining work, verification, blockers, and concrete next
+step in the issue or linked PR. Review means a verified PR awaits human review. Mark Done only
+after the user merges it. Repository context, roadmap, and session history explain the code but
+do not replace current task information in GitHub. If project access is unavailable, report the
+blocker instead of inferring the next task from local history.
+
+Create every new project task with the [task form](.github/ISSUE_TEMPLATE/task.yml). Tasks created
+through tools must use the same sections. Keep project status and priority in project fields.
+Use the form's handoff format when updating progress. Keep entries short and link existing
+decisions instead of copying them.
+
 ## Modular Context Files
 
 Before starting work, read the relevant file(s) below. Resolve these paths from the current repository root:
@@ -60,5 +80,5 @@ Before starting work, read the relevant file(s) below. Resolve these paths from 
 7. **Tenant isolation awareness.** GameHub is currently single-user, but multi-tenancy is planned in Roadmap item #8. Do not enable or claim multi-user support until all user-owned reads, writes, background jobs, and unique constraints are scoped to the authenticated tenant. Changes involving library data, sync, tags, manual links, authentication, or backup/restore must review the multi-tenancy requirements in ADR-008 and include cross-tenant isolation tests when tenant support is introduced.
 8. **Environment files are user-owned.** NEVER read, inspect, print, create, edit, or delete `.env` files. Tell the user which variables are required, but leave all secret configuration to the user.
 9. **Prefilled pull request links.** When providing a link to create a pull request, always include a meaningful prefilled title and a structured description covering the summary, verification performed, and important limitations or follow-up work. The PR description in the `body` query parameter MUST be fully URL-encoded; Markdown headers such as `## Summary` MUST be encoded as `%23%23%20Summary`, otherwise GitHub treats `#` as a URL fragment and drops the description.
-10. **Simple language.** Use simple language in documentation and replies. Write short, direct sentences. Keep one main idea per sentence. Explain necessary technical terms in plain words. Avoid nested clauses and overly complex wording. Keep repository documentation in English.
+10. **Clear communication.** Prefer quality over quantity in replies, progress updates, issues, pull requests, and documentation. Lead with the result or required action. Use short, plain sentences. Omit repetition and unnecessary detail. On first use in each standalone message or document, expand acronyms, briefly explain technology-specific terms, and link directly to an authoritative source. Prefer official documentation or specifications. Use plain words when a technical term adds no value. Keep repository documentation in English.
 11. **Human-owned merge and publication.** Agents implement, verify, push task branches, and create pull requests. The user handles PR merges and all product releases and documentation deployments. Hand off the PR and any required manual publication steps.

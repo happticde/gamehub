@@ -1,7 +1,7 @@
 # ADR-016: MCP User Authorization and Core-Hosted Remote Access
 
 **Date:** 2026-11-13
-**Status:** Proposed
+**Status:** Accepted (2026-11-14)
 **Decision owner:** @jankahnt
 **Tracking:** [#67](https://github.com/happticde/gamehub/issues/67),
 [MCP Evolution](https://github.com/happticde/gamehub/issues/66)
@@ -11,9 +11,12 @@ with PKCE for remote MCP clients. Core should host a small OAuth authorization s
 OpenIddict. The future HTTP MCP should run inside Core so it can call tenant-scoped application
 operations without forwarding tokens to another service.
 
-This is a recommendation for review. No OAuth endpoints, dependencies, migrations, configuration,
-or transport changes are implemented by this ADR. Acceptance must be recorded before the next
-implementation package becomes Ready. Merge, release, and publication remain human-owned.
+The decision owner accepted this design on 2026-11-14 in
+[#67](https://github.com/happticde/gamehub/issues/67#issuecomment-6875608201).
+This includes the permission-protected, unencrypted credential volume, pre-registered remote
+clients, and Core-hosted HTTP topology. This ADR implements no OAuth endpoints, dependencies,
+migrations, configuration, or transport changes. The bounded feasibility proof remains a
+prerequisite for schema adoption. Merge, release, and publication remain human-owned.
 
 ## Context and verified starting point
 
@@ -38,7 +41,7 @@ applies to HTTP transports. Its OAuth handshake is not a stdio handshake. The lo
 authenticates to Core independently and gets its credential-store location from process
 configuration. Its stdio connection remains JSON-RPC only.
 
-## Proposed decision
+## Decision
 
 ### 1. Separate primary login from delegated access
 
@@ -336,11 +339,13 @@ one local authorization authority and reuse of the existing tenant/session bound
 ## Work-package changes after acceptance
 
 Keep the [project](https://github.com/orgs/happticde/projects/2) order, with the following refinements.
-These are proposed changes; downstream issues remain Backlog while this ADR is under review.
+Apply these changes to the linked issues before implementation. Downstream packages remain
+Backlog until their dependencies are merged and verified.
 
 | Issue | Concrete scope and prerequisite |
 | --- | --- |
-| [#68](https://github.com/happticde/gamehub/issues/68) | Split out the bounded OpenIddict feasibility PR before the grant/schema PR. Recheck dependencies, then model one connection family, protocol authorization, resource, and owner-constrained provider provenance. |
+| [#85](https://github.com/happticde/gamehub/issues/85) | Bounded OpenIddict feasibility PR, split from #68. Prove device approval, refresh/replay, exact resource restriction, live protocol revocation, and bearer-scheme coexistence before schema adoption. |
+| [#68](https://github.com/happticde/gamehub/issues/68) | Depends on #85. Recheck dependencies, then model one connection family, protocol authorization, resource, and owner-constrained provider provenance. |
 | [#69](https://github.com/happticde/gamehub/issues/69) | Depends on #68. Add the explicit integration scheme, live grant/session/provider checks, exact REST allowlist, and status/rating field restriction. Ordinary account policies exclude integration credentials. |
 | [#70](https://github.com/happticde/gamehub/issues/70) | Depends on #68/#69. Configure the library's device request/polling machinery, resource binding, and bounded abuse controls. Approval is still required before issuance. |
 | [#71](https://github.com/happticde/gamehub/issues/71) | Depends on #69/#70. Add BFF consent and atomic approval/redemption. Include the provider-logout/epoch race barrier before any grant can be used. |
@@ -361,8 +366,8 @@ next step in its issue/PR when pausing. A size label is not a subscription-windo
 
 ## Review and implementation gates
 
-1. Review and record acceptance of this proposed design, including the plain permission-protected
-   credential volume, pre-registered remote-client limit, and Core-hosted HTTP topology.
+1. Acceptance is recorded above, including the plain permission-protected credential volume,
+   pre-registered remote-client limit, and Core-hosted HTTP topology.
 2. Revise and split the downstream issues as above. Complete the stable-library feasibility proof
    before a schema or production dependency commitment. Failure reopens the architecture choice.
 3. Verify the local gate before claiming OIDC-backed Docker MCP support. Verify the remote gate
