@@ -1,0 +1,71 @@
+name: Project task
+description: Define one clear, verifiable work package.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep entries short. Explain acronyms and technical terms on first use and link their official sources.
+        Link existing decisions instead of copying them. Keep secrets and personal data out of tasks.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What problem should this task solve, and what should change?
+    validations:
+      required: true
+  - type: input
+    id: planning
+    attributes:
+      label: Project and parent task
+      description: Link the project and any parent task. Keep status and priority in project fields.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: State what is included and any important exclusions. Keep the task small enough for one review.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use checkboxes for observable results that define completion.
+      placeholder: '- [ ] A specific result can be verified.'
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link required tasks or decisions. State None if there are no dependencies.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: List the checks and evidence needed to confirm the result.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources and context
+      description: Link relevant files, accepted decisions, and official technical references. State None if not applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: handoff
+    attributes:
+      label: Handoff
+      description: Use this format for progress updates and review. Fill it when work starts.
+      placeholder: |
+        - Review link and checked code version:
+        - Completed / remaining:
+        - Checks and results, including skipped checks:
+        - Blockers:
+        - Next step:
+    validations:
+      required: false
