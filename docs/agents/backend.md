@@ -119,6 +119,10 @@ Two ASP.NET Core microservices:
   `account_deletion_only` token accepted on `DELETE /api/auth/account`.
 
 ## Conventions
+- MCP connection persistence follows `docs/mcp-grant-contracts.md`: one owner-bound grant,
+  independent family and OpenIddict authorization, with shared verified provider provenance.
+  Its provider-composite foreign key and immutable-consent/family guards are migration constraints;
+  preserve them during scaffolding/rebuilds. Storage alone enables no user-token endpoints.
 - All controllers have `ILogger` injection with structured logging (`{Platform}`, `{Count}`, etc.).
 - XML doc comments (`/// <summary>`) on all public members.
 - Comments explain *why*, not *what*.

@@ -215,6 +215,10 @@ public sealed class OidcBackChannelLogoutService(
             return OidcBackChannelLogoutResult.NoLiveMapping;
         }
 
+        await McpGrantLifecycle.RevokeProviderAsync(
+            db, providerSession.Id, claimedMapping.UserAccountId.Value,
+            claimedMapping.TenantId.Value, nowUtc, cancellationToken);
+
         if (!await AccountSessionRevocation.RevokeFamilyAsync(
                 db,
                 claimedMapping.AccountSessionId.Value,

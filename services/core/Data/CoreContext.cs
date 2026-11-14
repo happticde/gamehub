@@ -23,6 +23,9 @@ public class CoreContext : DbContext
     /// <summary>Durable local session families shared by access and rotating refresh tokens.</summary>
     public DbSet<AccountSession> AccountSessions => Set<AccountSession>();
 
+    /// <summary>Owner-bound consent grants; identity lookups require explicit account/tenant predicates.</summary>
+    public DbSet<McpGrant> McpGrants => Set<McpGrant>();
+
     /// <summary>Stable OIDC issuer/subject mappings to existing account and tenant pairs.</summary>
     public DbSet<ExternalIdentity> ExternalIdentities => Set<ExternalIdentity>();
 
@@ -62,6 +65,12 @@ public class CoreContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Storage only. No protocol endpoint, issuer, client registration or bearer scheme is
+        // enabled by this schema package. Keep the model identical for app and test contexts.
+        modelBuilder.UseOpenIddict<McpProtocolApplication, McpProtocolAuthorization,
+            McpProtocolScope, McpProtocolToken, string>();
+        McpModelConfiguration.Configure(modelBuilder);
 
         modelBuilder.Entity<Tenant>(entity =>
         {
