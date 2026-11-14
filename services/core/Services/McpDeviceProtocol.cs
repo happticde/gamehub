@@ -26,7 +26,7 @@ public sealed class McpProtocolKeys
         if (!directory.Exists || directory.LinkTarget is not null)
             throw new ArgumentException("An existing dedicated protocol key directory is required.");
         var certificates = new[] { signing, encryption, protection };
-        if (certificates.Select(certificate => certificate.Thumbprint).Distinct().Count() != 3
+        if (certificates.Select(certificate => Convert.ToHexString(certificate.GetPublicKey())).Distinct().Count() != 3
             || certificates.Any(certificate => !ValidCertificate(certificate)))
             throw new ArgumentException("Independent valid RSA protocol certificates are required.");
         Signing = signing;

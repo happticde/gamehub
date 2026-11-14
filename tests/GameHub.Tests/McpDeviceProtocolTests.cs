@@ -276,7 +276,15 @@ public sealed class McpDeviceProtocolTests
             .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
         Assert.Throws<ArgumentException>(() => new McpProtocolKeys(new DirectoryInfo(path), certificate, certificate, certificate));
         Directory.CreateDirectory(path);
-        try { Assert.Throws<ArgumentException>(() => new McpProtocolKeys(new DirectoryInfo(path), certificate, certificate, certificate)); }
+        try
+        {
+            Assert.Throws<ArgumentException>(() => new McpProtocolKeys(new DirectoryInfo(path), certificate, certificate, certificate));
+            using var differentCertificate = new CertificateRequest("CN=other", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+                .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+            using var thirdCertificate = new CertificateRequest("CN=third", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+                .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+            Assert.Throws<ArgumentException>(() => new McpProtocolKeys(new DirectoryInfo(path), certificate, differentCertificate, thirdCertificate));
+        }
         finally { Directory.Delete(path); }
     }
 
