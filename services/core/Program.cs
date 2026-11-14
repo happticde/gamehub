@@ -382,6 +382,8 @@ if (multiUserSettings.Mode.IsEnabled)
     });
 }
 
+builder.Services.AddMcpLibraryAuthorization(jwtSettings.IsEnabled, multiUserSettings.Mode.IsEnabled);
+
 // --- Database ---
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
 
