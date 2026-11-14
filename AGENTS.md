@@ -27,6 +27,21 @@ Two ASP.NET Core microservices + Go CLI, orchestrated via Docker Compose:
 └───────────────┘
 ```
 
+## Task Source of Truth
+
+GitHub Projects and their linked issues are the source of truth for task requirements, priority,
+dependencies, acceptance criteria, decisions, and handoffs. Before starting or resuming work, read
+the relevant project item, linked issue, comments, and pull request. For MCP work, use
+[GameHub MCP Evolution](https://github.com/orgs/happticde/projects/2) and its
+[tracking issue #66](https://github.com/happticde/gamehub/issues/66).
+
+Follow the project's dependency order and keep one implementation issue In Progress. Record the
+branch/PR, checked commit, completed and remaining work, verification, blockers, and concrete next
+step in the issue or linked PR. Review means a verified PR awaits human review. Mark Done only
+after the user merges it. Repository context, roadmap, and session history explain the code but
+do not replace current task information in GitHub. If project access is unavailable, report the
+blocker instead of inferring the next task from local history.
+
 ## Modular Context Files
 
 Before starting work, read the relevant file(s) below. Resolve these paths from the current repository root:
