@@ -20,6 +20,9 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Moq" />
+    <PackageReference Include="OpenIddict.Server.AspNetCore" />
+    <PackageReference Include="OpenIddict.Server.DataProtection" />
+    <PackageReference Include="OpenIddict.Validation.ServerIntegration" />
   </ItemGroup>
 
   <ItemGroup>

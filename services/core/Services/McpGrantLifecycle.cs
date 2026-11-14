@@ -6,7 +6,7 @@ namespace GameHub.Core.Services;
 
 /// <summary>
 /// Shared grant/protocol mutations. Call only inside the surrounding lifecycle transaction.
-/// Issuance, live validation, race barriers and the protocol manager's cache policy are later gates.
+/// Live validation uses McpSessionValidationService; issuance race barriers remain a later gate.
 /// </summary>
 public static class McpGrantLifecycle
 {

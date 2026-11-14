@@ -17,7 +17,7 @@ namespace GameHub.Core.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/library")]
-[Authorize]
+[Authorize(Policy = McpAuthorization.LibraryPolicy)]
 public class LibraryController : ControllerBase
 {
     private const int MaxCustomTagsPerGame = 50;
@@ -160,6 +160,7 @@ public class LibraryController : ControllerBase
     /// Supports sorting by title (default), rating, or releasedate.
     /// </summary>
     [HttpGet]
+    [McpOperation(McpPermissions.LibraryRead)]
     public async Task<IActionResult> GetLibrary(
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
@@ -269,6 +270,7 @@ public class LibraryController : ControllerBase
     /// Used for the "Surprise Me" functionality.
     /// </summary>
     [HttpGet("random")]
+    [McpOperation(McpPermissions.LibraryRead)]
     public async Task<IActionResult> GetRandom(
         [FromQuery] string? search,
         [FromQuery] string[]? tags,
@@ -290,7 +292,7 @@ public class LibraryController : ControllerBase
             includeIgnored);
 
         var randomGameId = await query
-            .OrderBy(g => Guid.NewGuid())
+            .OrderBy(g => EF.Functions.Random())
             .Select(g => g.Id)
             .FirstOrDefaultAsync();
 
@@ -384,6 +386,7 @@ public class LibraryController : ControllerBase
     /// and immersive media arrays (artworks, screenshots) mapped from the comma-separated strings.
     /// </summary>
     [HttpGet("{id}")]
+    [McpOperation(McpPermissions.LibraryRead)]
     public async Task<IActionResult> GetById(int id)
     {
         var game = await _db.UnifiedGames
@@ -762,6 +765,7 @@ public class LibraryController : ControllerBase
     /// Returns the authenticated tenant's saved tag names for library filters.
     /// </summary>
     [HttpGet("tags")]
+    [McpOperation(McpPermissions.LibraryRead)]
     public async Task<IActionResult> GetTags()
     {
         var tags = await _db.Tags
@@ -1339,6 +1343,7 @@ public class LibraryController : ControllerBase
     /// top-rated games, recently added games, and summary metrics.
     /// </summary>
     [HttpGet("stats")]
+    [McpOperation(McpPermissions.LibraryRead)]
     public async Task<IActionResult> GetStats()
     {
         // --- Summary counts ---
@@ -1704,8 +1709,13 @@ public class LibraryController : ControllerBase
     /// This also sets `IsPlayStatusManual = true` so future syncs don't override the user's decision.
     /// </summary>
     [HttpPatch("{id}/personal")]
+    [McpOperation(McpPermissions.TrackingWrite)]
     public async Task<IActionResult> UpdatePersonalTracking(int id, [FromBody] PersonalUpdateRequest request)
     {
+        if (User?.Identity?.AuthenticationType == McpAuthorization.IntegrationScheme
+            && (request.IsIgnoredSpecified || request.AdditionalFields?.Count > 0))
+            return BadRequest(new { Message = "Integration tracking accepts only playStatus and userRating." });
+
         var game = await _db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == id);
 
         if (game == null)
@@ -1814,7 +1824,18 @@ public class PersonalUpdateRequest
 {
     public PlayStatus PlayStatus { get; set; }
     public int? UserRating { get; set; }
-    public bool? IsIgnored { get; set; }
+    private bool? _isIgnored;
+    public bool? IsIgnored
+    {
+        get => _isIgnored;
+        set { _isIgnored = value; IsIgnoredSpecified = true; }
+    }
+    /// <summary>Presence matters even when an unsupported field explicitly contains null.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsIgnoredSpecified { get; private set; }
+    /// <summary>Unknown fields must not be silently accepted by narrowly scoped integrations.</summary>
+    [System.Text.Json.Serialization.JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalFields { get; set; }
 }
 
 /// <summary>Request body for replacing one game's custom tags.</summary>
