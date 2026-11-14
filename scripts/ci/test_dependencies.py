@@ -64,6 +64,46 @@ class DependencyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'must match EF Core'):
                 dependencies.check(root)
 
+    def test_isolated_proof_uses_nearest_manifest_without_changing_production(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            proof = root / "tools/proof"
+            proof.mkdir(parents=True)
+            manifest = proof / "Directory.Packages.props"
+            manifest.write_text('<Project><PropertyGroup><ManagePackageVersionsCentrally>true'
+                                '</ManagePackageVersionsCentrally></PropertyGroup><ItemGroup>'
+                                '<PackageVersion Include="Proof.Package" Version="1.0.0" />'
+                                '</ItemGroup></Project>')
+            project = proof / "Proof.csproj"
+            project.write_text('<Project><ItemGroup><PackageReference Include="Proof.Package" />'
+                               '</ItemGroup></Project>')
+            dependencies.check(root)
+            # Production cannot consume the proof-only dependency via the root manifest.
+            (root / "tests/Test.csproj").write_text(project.read_text())
+            with self.assertRaisesRegex(ValueError, 'missing central version for Proof.Package'):
+                dependencies.check(root)
+
+    def test_isolated_proof_cannot_bypass_dependency_rules(self):
+        for invalid_manifest in (
+            '<Project><PropertyGroup><ManagePackageVersionsCentrally>false'
+            '</ManagePackageVersionsCentrally></PropertyGroup></Project>',
+            '<Project><PropertyGroup><ManagePackageVersionsCentrally>true'
+            '</ManagePackageVersionsCentrally></PropertyGroup><ItemGroup>'
+            '<PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />'
+            '<PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.2" />'
+            '</ItemGroup></Project>',
+        ):
+            with self.subTest(manifest=invalid_manifest), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.fixture(root)
+                proof = root / "tools/proof"
+                proof.mkdir(parents=True)
+                (proof / "Directory.Packages.props").write_text(invalid_manifest)
+                (proof / "Proof.csproj").write_text('<Project />')
+                with self.assertRaises(ValueError):
+                    dependencies.check(root)
+
     def test_devcontainer_tool_follows_a_bot_update_without_a_second_version_pin(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

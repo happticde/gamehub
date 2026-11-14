@@ -5,8 +5,8 @@ import re
 import xml.etree.ElementTree as ET
 
 
-def check(root):
-    central = ET.parse(root / "Directory.Packages.props").getroot()
+def package_versions(path):
+    central = ET.parse(path).getroot()
     if central.findtext(".//ManagePackageVersionsCentrally") != "true":
         raise ValueError("Central NuGet package management must be enabled")
     versions = {}
@@ -15,24 +15,33 @@ def check(root):
         if not name or not version or name in versions:
             raise ValueError("Central package versions must have unique names and explicit versions")
         versions[name] = version
+    ef_version = versions.get("Microsoft.EntityFrameworkCore.Sqlite")
+    for name, version in versions.items():
+        if ef_version and (name.startswith("Microsoft.EntityFrameworkCore.")
+                or name == "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"):
+            if version != ef_version:
+                raise ValueError(f"{name} must match EF Core {ef_version}")
+    return versions
+
+
+def check(root):
+    versions = package_versions(root / "Directory.Packages.props")
     for area in ("services", "tests", "tools"):
         for project in (root / area).rglob("*.csproj"):
             if any(part in {"bin", "obj"} for part in project.relative_to(root).parts):
                 continue
+            # NuGet uses the closest manifest. Isolated proofs must not alter production versions.
+            manifest = next(parent / "Directory.Packages.props" for parent in project.parents
+                            if (parent / "Directory.Packages.props").is_file())
+            project_versions = package_versions(manifest)
             for reference in ET.parse(project).findall(".//PackageReference"):
                 name = reference.get("Include")
                 if (reference.get("Version") or reference.get("VersionOverride")
                         or reference.find("Version") is not None
                         or reference.find("VersionOverride") is not None):
                     raise ValueError(f"{project.relative_to(root)}: keep {name} in Directory.Packages.props")
-                if name not in versions:
+                if name not in project_versions:
                     raise ValueError(f"{project.relative_to(root)}: missing central version for {name}")
-    ef_version = versions["Microsoft.EntityFrameworkCore.Sqlite"]
-    for name, version in versions.items():
-        if (name.startswith("Microsoft.EntityFrameworkCore.")
-                or name == "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"):
-            if version != ef_version:
-                raise ValueError(f"{name} must match EF Core {ef_version}")
     dockerfile = (root / ".devcontainer/Dockerfile").read_text()
     if ("COPY Directory.Packages.props /tmp/Directory.Packages.props" not in dockerfile
             or "dotnet msbuild /tmp/Directory.Packages.props -getItem:PackageVersion" not in dockerfile
