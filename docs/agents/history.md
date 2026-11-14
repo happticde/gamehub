@@ -1,5 +1,33 @@
 # Session History
 
+## Current Session Summary (2026-11-14)
+
+### What Changed
+
+**MCP Connection Data Contracts (#68):**
+- Adopt OpenIddict 7.8.0 database integration after merged proof #85 passes again (55 checks).
+  Add one tenant/account-owned consent grant per independent family and protocol authorization,
+  with shared verified provider provenance and the original 64-bit account epoch.
+- Add conditional SQLite/PostgreSQL migrations with composite ownership, immutable consent and
+  absolute expiry, and browser/integration family separation. Preserve existing browser credentials,
+  provider mappings and unowned logout tombstones. Keep migration-only constraints during rebuilds.
+- Extend central revocation, verified provider logout and deletion cleanup to protocol state.
+  Record secret-free response contracts and the persistent-key/encrypted-payload requirements in
+  `docs/mcp-grant-contracts.md`. No protocol server, keys, clients or user-token endpoints are enabled.
+
+### Verification
+
+- Stable Docker SDK 10.0.404: Core builds without warnings/errors; all 609 .NET tests pass,
+  including 18 new cases and configured real PostgreSQL checks. New cases cover fresh/upgrade
+  preservation, rollback/reapply, ownership rejection, consent/expiry, family separation,
+  transactional revocation and deletion ordering on both database engines.
+- SQLite scaffolding matches the current model. All nine dependency checks, license metadata,
+  16 documentation contracts and local guide links pass. Resolved Core graph has no known NuGet
+  advisory; its notice generator produces 67 package notices.
+- Frontend/application image builds, protocol issuance/rotation, live permission and race gates,
+  encrypted-key restart tests and client interoperability remain downstream or hosted checks.
+  No environment files, deployment, release or documentation publication changed.
+
 ## Current Session Summary (2026-11-13)
 
 ### What Changed

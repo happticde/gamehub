@@ -15,7 +15,7 @@ namespace GameHub.Core.Migrations.sqlite
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.2");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
             modelBuilder.Entity("GameHub.Core.Data.AccountSession", b =>
                 {
@@ -254,6 +254,305 @@ namespace GameHub.Core.Migrations.sqlite
                     b.ToTable("ManualLinks");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.McpGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccountSessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ApprovedSessionVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OidcProviderSessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProtocolAuthorizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Resource")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scopes")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountSessionId")
+                        .IsUnique();
+
+                    b.HasIndex("OidcProviderSessionId");
+
+                    b.HasIndex("ProtocolAuthorizationId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "UserAccountId");
+
+                    b.HasIndex("AccountSessionId", "TenantId", "UserAccountId");
+
+                    b.HasIndex("ProtocolAuthorizationId", "TenantId", "UserAccountId", "AccountSessionId")
+                        .IsUnique();
+
+                    b.ToTable("McpGrants", t =>
+                        {
+                            t.HasCheckConstraint("CK_McpGrants_ClientResource", "length(\"ClientId\") BETWEEN 1 AND 100 AND length(\"Resource\") BETWEEN 1 AND 2048 AND \"Resource\" LIKE 'https://%' AND \"Resource\" NOT LIKE '% %' AND \"Resource\" NOT LIKE '%#%'");
+
+                            t.HasCheckConstraint("CK_McpGrants_Lifetime", "\"ExpiresAtUtc\" > \"CreatedAtUtc\" AND \"ApprovedSessionVersion\" >= 0 AND (\"RevokedAtUtc\" IS NULL OR \"RevokedAtUtc\" >= \"CreatedAtUtc\")");
+
+                            t.HasCheckConstraint("CK_McpGrants_Scopes", "\"Scopes\" IN ('library:read', 'library:read tracking:write')");
+                        });
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolApplication", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ApplicationType")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientSecret")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientType")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConsentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayNames")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("JsonWebKeySet")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Permissions")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PostLogoutRedirectUris")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RedirectUris")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Requirements")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Settings")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.ToTable("OpenIddictApplications", (string)null);
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolAuthorization", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccountSessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CreationDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scopes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountSessionId")
+                        .IsUnique();
+
+                    b.HasIndex("AccountSessionId", "TenantId", "UserAccountId");
+
+                    b.HasIndex("ApplicationId", "Status", "Subject", "Type");
+
+                    b.ToTable("OpenIddictAuthorizations", (string)null);
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolScope", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Descriptions")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayNames")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Resources")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("OpenIddictScopes", (string)null);
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolToken", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AuthorizationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CreationDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ExpirationDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RedemptionDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReferenceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(150)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorizationId");
+
+                    b.HasIndex("ReferenceId")
+                        .IsUnique();
+
+                    b.HasIndex("ApplicationId", "Status", "Subject", "Type");
+
+                    b.ToTable("OpenIddictTokens", (string)null);
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.OidcProviderSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -298,6 +597,9 @@ namespace GameHub.Core.Migrations.sqlite
                         .IsUnique();
 
                     b.HasIndex("ExternalIdentityId", "TenantId", "UserAccountId");
+
+                    b.HasIndex("Id", "TenantId", "UserAccountId")
+                        .IsUnique();
 
                     b.ToTable("OidcProviderSessions", t =>
                         {
@@ -777,6 +1079,66 @@ namespace GameHub.Core.Migrations.sqlite
                     b.Navigation("UnifiedGame");
                 });
 
+            modelBuilder.Entity("GameHub.Core.Data.McpGrant", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.OidcProviderSession", "OidcProviderSession")
+                        .WithMany()
+                        .HasForeignKey("OidcProviderSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GameHub.Core.Data.AccountSession", "AccountSession")
+                        .WithMany()
+                        .HasForeignKey("AccountSessionId", "TenantId", "UserAccountId")
+                        .HasPrincipalKey("Id", "TenantId", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GameHub.Core.Data.McpProtocolAuthorization", "ProtocolAuthorization")
+                        .WithOne()
+                        .HasForeignKey("GameHub.Core.Data.McpGrant", "ProtocolAuthorizationId", "TenantId", "UserAccountId", "AccountSessionId")
+                        .HasPrincipalKey("GameHub.Core.Data.McpProtocolAuthorization", "Id", "TenantId", "UserAccountId", "AccountSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AccountSession");
+
+                    b.Navigation("OidcProviderSession");
+
+                    b.Navigation("ProtocolAuthorization");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolAuthorization", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.McpProtocolApplication", "Application")
+                        .WithMany("Authorizations")
+                        .HasForeignKey("ApplicationId");
+
+                    b.HasOne("GameHub.Core.Data.AccountSession", null)
+                        .WithMany()
+                        .HasForeignKey("AccountSessionId", "TenantId", "UserAccountId")
+                        .HasPrincipalKey("Id", "TenantId", "UserAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Application");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolToken", b =>
+                {
+                    b.HasOne("GameHub.Core.Data.McpProtocolApplication", "Application")
+                        .WithMany("Tokens")
+                        .HasForeignKey("ApplicationId");
+
+                    b.HasOne("GameHub.Core.Data.McpProtocolAuthorization", "Authorization")
+                        .WithMany("Tokens")
+                        .HasForeignKey("AuthorizationId");
+
+                    b.Navigation("Application");
+
+                    b.Navigation("Authorization");
+                });
+
             modelBuilder.Entity("GameHub.Core.Data.OidcProviderSession", b =>
                 {
                     b.HasOne("GameHub.Core.Data.AccountSession", "AccountSession")
@@ -916,6 +1278,18 @@ namespace GameHub.Core.Migrations.sqlite
             modelBuilder.Entity("GameHub.Core.Data.ExternalIdentity", b =>
                 {
                     b.Navigation("OidcProviderSessions");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolApplication", b =>
+                {
+                    b.Navigation("Authorizations");
+
+                    b.Navigation("Tokens");
+                });
+
+            modelBuilder.Entity("GameHub.Core.Data.McpProtocolAuthorization", b =>
+                {
+                    b.Navigation("Tokens");
                 });
 
             modelBuilder.Entity("GameHub.Core.Data.UnifiedGame", b =>

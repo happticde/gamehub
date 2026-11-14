@@ -142,6 +142,8 @@ public sealed class AccountDeletionService(
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        await McpGrantLifecycle.DeleteOwnedAsync(db, accountId, tenantId, cancellationToken);
+
         // Keep only the issuer-bound one-way sid tombstone. Removing every account, tenant, and
         // external-identity reference prevents stale provider-session state from retaining
         // ownership data while still blocking a replayed ID token from reopening that session.

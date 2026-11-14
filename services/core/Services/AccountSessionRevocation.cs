@@ -32,6 +32,8 @@ public static class AccountSessionRevocation
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
                 cancellationToken);
+        await McpGrantLifecycle.RevokeEndedFamiliesAsync(
+            db, accountId, tenantId, revokedAtUtc, cancellationToken);
         if (revokedFamilies != 1)
         {
             return false;
@@ -91,6 +93,8 @@ public static class AccountSessionRevocation
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
                 cancellationToken);
+        await McpGrantLifecycle.RevokeEndedFamiliesAsync(
+            db, accountId, tenantId, revokedAtUtc, cancellationToken);
         return revokedFamilies;
     }
 
@@ -125,5 +129,7 @@ public static class AccountSessionRevocation
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(session => session.RevokedAtUtc, revokedAtUtc),
                 cancellationToken);
+        await McpGrantLifecycle.RevokeEndedFamiliesAsync(
+            db, accountId, tenantId, revokedAtUtc, cancellationToken);
     }
 }
