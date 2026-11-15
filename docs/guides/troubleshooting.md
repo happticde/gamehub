@@ -19,6 +19,20 @@ sanitized error code, timestamp, and affected platform.
 Run from the folder containing your `compose.yaml`, or include your custom Compose file options.
 Do not delete databases or use `down -v` to fix health checks.
 
+## Container reports a missing .NET 10 framework
+
+The published Core and Ingest images in **v0.4.0** contain only .NET 11, although their applications
+require .NET 10. The message `You must install or update .NET to run this application` together
+with required `10.0.0` and installed `11.0.0` identifies this image defect. Installing .NET on the
+Docker host does not repair the container. See [runtime version selection](https://learn.microsoft.com/en-us/dotnet/core/versions/selection).
+
+Upgrade both services to the next published patch release containing
+[the runtime fix](https://github.com/happticde/gamehub/issues/107), after its image-start checks and
+publication succeed. Use the normal [upgrade procedure](upgrades.md); keep existing volumes and
+secret configuration. Re-pulling v0.4.0 will not repair it, and published version tags must not be
+overwritten. Do not force a major-version runtime fallback or delete the database to bypass this
+failure. A local build of the corrected source is an alternative while awaiting publication.
+
 ## The site is unreachable or the proxy returns 502
 
 Open `http://localhost:3000/login` on the Docker host.

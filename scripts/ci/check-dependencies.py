@@ -50,6 +50,26 @@ def check(root):
             or re.search(r"^ARG DOTNET_EF_VERSION=", dockerfile, re.MULTILINE)):
         raise ValueError("The devcontainer dotnet-ef version must come from Directory.Packages.props")
     check_go_toolchain(root)
+    check_dotnet_images(root)
+
+
+def check_dotnet_images(root):
+    """A successful publish does not prove the final image can host its target framework."""
+    for service, name, runtime in (("core", "Core", "aspnet"), ("ingest", "Ingest", "aspnet"), ("mcp", "Mcp", "runtime")):
+        project = root / f"services/{service}/GameHub.{name}.csproj"
+        target = ET.parse(project).findtext(".//TargetFramework") or ""
+        version = re.fullmatch(r"net(\d+\.\d+)", target)
+        if not version:
+            raise ValueError(f"{project.relative_to(root)}: declare one explicit .NET target framework")
+        path = root / f"services/{service}/Dockerfile"
+        images = re.findall(r"^FROM\s+mcr\.microsoft\.com/dotnet/(sdk|aspnet|runtime):([^\s@]+)",
+                            path.read_text(), re.MULTILINE | re.IGNORECASE)
+        if sorted(kind.lower() for kind, _ in images) != sorted(("sdk", runtime)):
+            raise ValueError(f"{path.relative_to(root)}: require explicit SDK and {runtime} images")
+        for kind, tag in images:
+            declared = re.match(r"(\d+\.\d+)(?:[.-]|$)", tag)
+            if not declared or declared.group(1) != version.group(1):
+                raise ValueError(f"{path.relative_to(root)}: {kind} image must match target {target}, found {tag}")
 
 
 def check_go_toolchain(root):
@@ -66,4 +86,4 @@ def check_go_toolchain(root):
 
 if __name__ == "__main__":
     check(Path(__file__).resolve().parents[2])
-    print("Central NuGet versions, the EF migration tool, and Go builders are consistent.")
+    print("Central NuGet versions, EF migration tool, Go builders and .NET image targets are consistent.")

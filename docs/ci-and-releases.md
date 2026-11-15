@@ -118,6 +118,13 @@ The explicit OS labels avoid automatic distribution changes through `ubuntu-late
 GitHub continues updating the runner images. Runtime container bases are configured separately
 in their Dockerfiles.
 
+Core and Ingest image jobs start the actual non-root production entry point before scanning or
+saving an image. `scripts/ci/smoke-service-image.py` requires a healthy HTTP response after SQLite
+migrations, using disposable memory-backed storage, synthetic keys, no external network and no
+published port. Both native architectures run this check. The shared dependency guard also
+requires each .NET SDK and runtime image version to match its application's target framework.
+A successful build or vulnerability scan alone cannot establish runtime compatibility.
+
 The optional MCP image uses the .NET runtime and runs without root privileges. It exposes stdio,
 with no published port or database. Each architecture runs `scripts/ci/smoke-mcp-image.py` against
 the built image before scanning or saving it for publication. The test disables container

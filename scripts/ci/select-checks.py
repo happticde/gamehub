@@ -74,6 +74,10 @@ def select_checks(paths, full=False, action_plan=None):
         if path in {".github/dependabot.yml", ".github/actionlint.yaml"}:
             jobs.add("workflow")
             continue
+        if path == "scripts/ci/smoke-service-image.py":
+            jobs.add("workflow")
+            components.update(("core", "ingest"))
+            continue
         if path in {"scripts/ci/smoke-mcp-image.py", "scripts/ci/smoke-mcp-auth.py", "tests/GameHub.Tests/McpDockerGateTests.cs"}:
             jobs.add("workflow")
             if path != "scripts/ci/smoke-mcp-image.py":

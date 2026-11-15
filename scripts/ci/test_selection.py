@@ -142,6 +142,12 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(plan, selection.make_plan(["workflow", "backend"], ["mcp"]))
                 self.assertEqual({entry["arch"] for entry in selection.image_matrix(plan)["include"]}, {"amd64", "arm64"})
 
+    def test_service_startup_smoke_selects_both_services_on_both_architectures(self):
+        plan = selection.select_checks(["scripts/ci/smoke-service-image.py"])
+        self.assertEqual(plan, selection.make_plan(["workflow"], ["core", "ingest"]))
+        self.assertEqual({(row["component"], row["arch"]) for row in selection.image_matrix(plan)["include"]},
+                         {("core", "amd64"), ("core", "arm64"), ("ingest", "amd64"), ("ingest", "arm64")})
+
     def test_docker_changes_select_only_affected_images_and_configuration_scan(self):
         for path, images in (("frontend/Dockerfile", ["frontend"]),
                              ("services/core/Dockerfile", ["core"]),
