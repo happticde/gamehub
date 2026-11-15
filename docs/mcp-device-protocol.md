@@ -95,6 +95,11 @@ Serialize approval/redemption/refresh against provider reissue blocking, account
 deletion. Recheck the live consent through #69, preserve absolute expiry, and revoke the entire
 connection on confirmed refresh reuse. Do not expose a merely protocol-valid credential early.
 
+The split prerequisite [#94 grant admission barrier](mcp-grant-admission.md) now supplies
+transactional owner/provider admission and independent grant creation. It consumes no pending
+code and enables no endpoint. #71 must integrate it with the library's one-time verification,
+buffered redemption, refresh policy and sensitive writes before replacing either closed gate.
+
 ## Verification
 
 `McpDeviceProtocolTests` use real OpenIddict 7.8.0 (latest stable checked on 2026-11-14,
