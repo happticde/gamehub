@@ -105,12 +105,16 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
         CancellationToken cancellationToken = default)
     {
         RequireTransaction();
+        // Access validation exposes the token's audience; device/refresh principals carry the
+        // authorization request's resource metadata. Both must identify exactly this resource.
+        var resources = tokenType == TokenTypeIdentifiers.AccessToken
+            ? principal.GetAudiences() : principal.GetResources();
         if (tokenType is not (TokenTypeIdentifiers.Private.DeviceCode or TokenTypeIdentifiers.RefreshToken
                 or TokenTypeIdentifiers.AccessToken)
             || !TryOwner(principal, Claims.Subject, out var owner)
             || principal.GetAuthorizationId() is not { Length: > 0 } authorizationId
             || principal.GetTokenId() is not { Length: > 0 } tokenId
-            || !principal.GetResources().SequenceEqual([resource.Resource.AbsoluteUri])
+            || !resources.SequenceEqual([resource.Resource.AbsoluteUri])
             || !principal.GetPresenters().SequenceEqual([McpDeviceProtocol.ClientId])) return null;
 
         var grant = await db.McpGrants.AsNoTracking().SingleOrDefaultAsync(row =>

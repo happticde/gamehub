@@ -16,7 +16,6 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -34,7 +33,7 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace GameHub.Tests;
 
 /// <summary>Exercises real reference tokens, entry validation and MVC tenant/operation boundaries.</summary>
-public sealed class McpAuthorizationTests
+public sealed partial class McpAuthorizationTests
 {
     [Theory]
     [InlineData(false)]
@@ -197,14 +196,15 @@ public sealed class McpAuthorizationTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await host.SendAsync(HttpMethod.Get, "/api/library", token)).Status);
     }
 
-    private sealed class IntegrationHost : IAsyncDisposable
+    private sealed partial class IntegrationHost : IAsyncDisposable
     {
         public const string OperatorKey = "test-operator-key-for-mcp-authorization-boundary";
         private const string Resource = "https://core.example/api";
         private const string Issuer = "https://issuer.example/";
         private const string ClientId = "gamehub-mcp-stdio";
         private const string Protocol = OpenIddictServerAspNetCoreDefaults.AuthenticationScheme;
-        private readonly SqliteConnection connection = new("Data Source=:memory:");
+        private readonly string sqliteConnection = "Data Source=" + Path.Combine(Path.GetTempPath(),
+            "mcp_authorization_" + Guid.NewGuid().ToString("N") + ".db") + ";Pooling=False;Default Timeout=15";
         private readonly SymmetricSecurityKey browserKey = new(RandomNumberGenerator.GetBytes(32));
         private WebApplication app = null!;
         private ClaimsPrincipal issuance = null!;
@@ -234,7 +234,6 @@ public sealed class McpAuthorizationTests
 
         private async Task StartAsync(bool expired, bool validation, bool wrongIssuer)
         {
-            await connection.OpenAsync();
             var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production", Args = [] });
             builder.Configuration.Sources.Clear();
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Authentication:ApiKey"] = OperatorKey });
@@ -245,8 +244,9 @@ public sealed class McpAuthorizationTests
             builder.Services.AddScoped<ITenantContext, AuthenticatedTenantContext>();
             builder.Services.AddDbContext<CoreContext>(options =>
             {
-                if (postgresConnection is null) options.UseSqlite(connection);
+                if (postgresConnection is null) options.UseSqlite(sqliteConnection);
                 else options.UseNpgsql(postgresConnection);
+                options.AddInterceptors(new WriteSaveInterceptor(this), new WriteTransactionInterceptor(this));
                 options.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
             });
             builder.Services.AddApiKeyAuthentication(builder.Configuration, builder.Environment);
@@ -303,6 +303,20 @@ public sealed class McpAuthorizationTests
             app = builder.Build();
             app.UseAuthentication();
             app.UseAuthorization();
+            app.Use(async (http, next) =>
+            {
+                if (!http.Request.Path.Value!.EndsWith("/personal", StringComparison.Ordinal))
+                {
+                    await next(http);
+                    return;
+                }
+                try
+                {
+                    if (BeforeWrite is not null) await BeforeWrite(http);
+                    await next(http);
+                }
+                finally { WriteCompleted?.TrySetResult(); }
+            });
             app.MapControllers();
             app.MapGet("/web", () => Results.Ok()).RequireAuthorization(new Microsoft.AspNetCore.Authorization.AuthorizeAttribute
                 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme });
@@ -326,7 +340,7 @@ public sealed class McpAuthorizationTests
                     TenantId = TenantDefaults.DefaultTenantId, Issuer = "https://provider.example", Subject = "synthetic", CreatedAtUtc = now });
                 db.OidcProviderSessions.Add(new OidcProviderSession { Id = providerId, ExternalIdentityId = identityId,
                     AccountSessionId = browserId, UserAccountId = accountId, TenantId = TenantDefaults.DefaultTenantId,
-                    SessionKeyHash = new string('A', 64), CreatedAtUtc = now });
+                    SessionKeyHash = OidcProviderSessionKey.Hash("https://provider.example", "tracking-test-sid"), CreatedAtUtc = now });
                 var applicationId = "test-application";
                 db.Set<McpProtocolApplication>().Add(new McpProtocolApplication { Id = applicationId,
                     ClientId = ClientId, ClientType = ClientTypes.Public, ConsentType = ConsentTypes.Explicit,
@@ -394,12 +408,13 @@ public sealed class McpAuthorizationTests
             [new Claim(ClaimTypes.NameIdentifier, accountId.ToString()), new Claim(GameHubClaimTypes.TenantId, TenantDefaults.DefaultTenantId.ToString())],
             expires: DateTime.UtcNow.AddMinutes(5), signingCredentials: new SigningCredentials(browserKey, SecurityAlgorithms.HmacSha256)));
 
-        public async Task<(HttpStatusCode Status, string Body)> SendAsync(HttpMethod method, string path, string? token, string? json = null)
+        public async Task<(HttpStatusCode Status, string Body)> SendAsync(HttpMethod method, string path, string? token,
+            string? json = null, CancellationToken cancellationToken = default)
         {
             using var request = new HttpRequestMessage(method, path);
             if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             if (json is not null) request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-            using var response = await Client.SendAsync(request);
+            using var response = await Client.SendAsync(request, cancellationToken);
             return (response.StatusCode, await response.Content.ReadAsStringAsync());
         }
 
@@ -445,13 +460,12 @@ public sealed class McpAuthorizationTests
         public async ValueTask DisposeAsync()
         {
             Client?.Dispose();
-            if (postgresConnection is not null && app is not null)
+            if (app is not null)
             {
                 await using var scope = app.Services.CreateAsyncScope();
                 await scope.ServiceProvider.GetRequiredService<CoreContext>().Database.EnsureDeletedAsync();
             }
             if (app is not null) await app.DisposeAsync();
-            await connection.DisposeAsync();
         }
     }
 }

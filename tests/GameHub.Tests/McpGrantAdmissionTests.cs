@@ -147,7 +147,8 @@ public sealed class McpGrantAdmissionTests
         var grant = await fixture.GrantAsync();
         foreach (var defect in new[] { "provider", "epoch", "deletion", "family", "grant", "authorization",
             "token", "token-expiry", "grant-expiry", "future-grant", "foreign-tenant", "foreign-family",
-            "foreign-authorization", "foreign-token", "resource", "presenter", "scope", "permission", "token-type" })
+            "foreign-authorization", "foreign-token", "resource", "missing-audience", "multiple-audiences",
+            "presenter", "scope", "permission", "token-type" })
         {
             await using var db = fixture.Context();
             await using var transaction = await db.Database.BeginTransactionAsync();
@@ -166,7 +167,9 @@ public sealed class McpGrantAdmissionTests
                 case "foreign-family": Replace(identity, GameHubClaimTypes.AccountSessionId, fixture.ForeignBrowser.ToString()); break;
                 case "foreign-authorization": principal.SetAuthorizationId(Guid.NewGuid().ToString()); break;
                 case "foreign-token": principal.SetTokenId(Guid.NewGuid().ToString()); break;
-                case "resource": principal.SetResources("https://issuer.example/mcp"); break;
+                case "resource": principal.SetResources("https://issuer.example/mcp").SetAudiences("https://issuer.example/mcp"); break;
+                case "missing-audience": principal.SetAudiences([]); break;
+                case "multiple-audiences": principal.SetAudiences(Fixture.Resource.Resource.AbsoluteUri, "https://issuer.example/mcp"); break;
                 case "presenter": principal.SetPresenters("another-client"); break;
                 case "scope": principal.SetScopes(McpPermissions.LibraryRead, "admin"); break;
             }
@@ -419,7 +422,7 @@ public sealed class McpGrantAdmissionTests
             principal.SetClaim(GameHubClaimTypes.AccountSessionId, grant.FamilyId.ToString());
             principal.SetClaim(GameHubClaimTypes.SessionVersion, Epoch.ToString(CultureInfo.InvariantCulture));
             principal.SetAuthorizationId(grant.AuthorizationId).SetTokenId(grant.GrantId.ToString());
-            principal.SetResources(Resource.Resource.AbsoluteUri).SetScopes(McpPermissions.LibraryRead)
+            principal.SetResources(Resource.Resource.AbsoluteUri).SetAudiences(Resource.Resource.AbsoluteUri).SetScopes(McpPermissions.LibraryRead)
                 .SetPresenters(McpDeviceProtocol.ClientId);
             return principal;
         }
