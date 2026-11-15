@@ -95,9 +95,9 @@ startup activation, migration, dependency or deployment setting. It does not ena
 - Bind the pending device token's stored authorization using the supported OpenIddict manager,
   and finish one-time verification inside the approval transaction. This service does not consume
   a pending request and cannot itself prevent two approvals of the same code.
-- Wire redemption/refresh admission into the existing serializable, buffered protocol boundary;
-  preserve original resources/scopes and clamp issued lifetimes to the returned absolute expiry.
-  Implement connection-wide revocation on confirmed refresh reuse before issuing usable tokens.
+- Preserve [#98's integrated token lifecycle](mcp-token-lifecycle.md): serializable buffered
+  redemption/refresh admission, original resources/scopes/epoch, absolute-expiry clamping and
+  connection-wide revocation on confirmed refresh reuse. These handlers do not activate startup.
 - Preserve #96's validated access-token identity and final personal-tracking admission transaction.
   The authorization handler's earlier read alone is insufficient. Future sensitive operations
   need the same boundary before they can be permitted.
