@@ -299,7 +299,10 @@ public sealed partial class McpAuthorizationTests
             builder.Services.AddScoped(services => new LibraryController(null!, null!, null!,
                 services.GetRequiredService<CoreContext>(), NullLogger<LibraryController>.Instance,
                 new SyncSchedulerStatus(), services.GetRequiredService<ITenantContext>(), null!, null!));
-            builder.Services.AddControllers().AddApplicationPart(typeof(LibraryController).Assembly).AddControllersAsServices();
+            builder.Services.AddControllers()
+                .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(
+                    new System.Text.Json.Serialization.JsonStringEnumConverter()))
+                .AddApplicationPart(typeof(LibraryController).Assembly).AddControllersAsServices();
             app = builder.Build();
             app.UseAuthentication();
             app.UseAuthorization();

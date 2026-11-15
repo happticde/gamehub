@@ -13,10 +13,11 @@ helper and is not needed to use the web application.
 - A published MCP image matching your Core release, or a locally built MCP image.
 - Authentication accepted by the target Core deployment.
 
-Library tools currently use a Core API key as an explicit compatibility integration. The staged
-device-login commands below persist user authorization; using it for tools and rotating renewal
-remains [#73](https://github.com/happticde/gamehub/issues/73). Do not treat login storage alone as
-completed OpenID Connect (OIDC) support for provisioned accounts. End-user rollout waits for
+Library tools can use a selected user connection with rotating renewal, or a Core API key in
+the separate compatibility mode. Select `Mcp__AuthenticationMode=User` for user authorization;
+`ApiKey` retains the earlier compatibility behavior and is the default for existing configurations.
+User mode ignores `Core__ApiKey` and `Core__BaseUrl`, including after an authorization failure.
+End-user rollout with OpenID Connect (OIDC) still waits for
 the [local release gate #75](https://github.com/happticde/gamehub/issues/75).
 
 ## Staged device login and credential volume
@@ -33,6 +34,7 @@ Set these non-secret process variables in your terminal or private assistant con
 
 | Variable | Meaning |
 | --- | --- |
+| `Mcp__AuthenticationMode` | `User` for normal tool startup with the selected user connection; terminal setup/login/status/logout always use the device connection |
 | `Mcp__Issuer` | Exact root HTTPS GameHub URL with trailing `/`, for example `https://gamehub.example.com/` |
 | `Mcp__Resource` | Exactly the issuer followed by `api`, for example `https://gamehub.example.com/api` |
 | `Mcp__Connection` | Stable local name, 1–64 ASCII letters/digits, `-` or `_`; use a different name per assistant installation |
@@ -108,8 +110,40 @@ private keys into this client volume.
 
 Normal stdio startup never prompts, starts device login or opens a browser. Setup/login/status/logout
 write nothing to stdout, preserving the assistant's JSON-RPC transport. Do not add `-t` to an
-assistant's normal stdio launch. Token use/refresh in that launch remains #73; the existing API-key
-examples below retain their compatibility meaning until that delivery and #75 pass.
+assistant's normal stdio launch. To launch tools with the stored connection, pass the same volume
+and variables, plus the explicit mode:
+
+```bash
+docker run --rm -i --mount type=volume,src=gamehub-mcp-credentials,dst=/var/lib/gamehub-mcp \
+  -e Mcp__AuthenticationMode=User -e Mcp__Issuer -e Mcp__Resource -e Mcp__Connection gamehub-mcp:local
+```
+
+For an assistant's process configuration, use `docker` as the command and the individual arguments
+above as its argument array, with no terminal command after the image. Supply the non-secret
+issuer/resource/connection variables through that assistant's private process environment. The
+API-key examples below describe the separate compatibility mode.
+
+Each tool rereads the selected credential under the cross-process lock. Access expiring within
+30 seconds is renewed at the fixed issuer's `/connect/token`, using only the original resource
+and scope set. A successful response must rotate both credentials and retain that scope set;
+the replacement is flushed and atomically saved before any tool request. Core independently
+preserves the original approval epoch and thirty-day absolute grant expiry. Reads use only the
+five allowed library routes; writes require explicit `tracking:write` consent and use only the
+personal-status/rating route. The lock spans both the read and update in a tracking tool, so a
+concurrent logout/login cannot switch its owner between those requests.
+
+A private `refresh.pending` marker is flushed before sending the one-time refresh credential.
+Timeouts, cancellation, invalid or rejected responses, save failures and a process exit leave that
+marker in place. Fresh processes then require **logout followed by login**; they never replay the
+possibly consumed credential. Status reports this recovery state without exposing tokens. Logout
+attempts remote revocation using the retained credential and removes the selected local state;
+if remote logout cannot be confirmed, revoke that connection in GameHub. Core can revoke the
+whole connection using its cryptographically validated, retained predecessor even after rotation.
+That credential is presented only for revocation, never replayed at the refresh endpoint. Never delete a marker
+to force an automatic retry. Even a rejected or lost tool response causes no automatic refresh,
+operator-key fallback or write replay. A later explicit tool call can retry a service outage when
+the credential itself is still usable. Contention on the local lock is bounded and can fail with
+a sanitized storage error; retry after the other process finishes.
 
 ## Use the Docker image
 

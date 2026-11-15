@@ -23,11 +23,20 @@ public sealed class McpLoginCommands(McpLoginSettings settings, HttpClient http,
                     await terminal.WriteLineAsync("Credential storage ready (0700 directories, 0600 files). The volume is not encrypted. Run login in an interactive terminal.");
                     return 0;
                 case "status":
-                    await terminal.WriteLineAsync(current is null ? "No stored authorization. Run login in an interactive terminal."
+                    await terminal.WriteLineAsync(selected.RequiresRecovery ? "Authorization renewal requires recovery. Run logout, then login in an interactive terminal."
+                        : current is null ? "No stored authorization. Run login in an interactive terminal."
                         : "Authorization stored. Credentials are never shown by status.");
                     return 0;
                 case "logout":
-                    if (current is null) { await terminal.WriteLineAsync("No local authorization to remove."); return 0; }
+                    if (current is null)
+                    {
+                        var uncertain = selected.RequiresRecovery;
+                        selected.Delete();
+                        await terminal.WriteLineAsync(uncertain
+                            ? "Local renewal state removed. Remote revocation could not be confirmed. Revoke the connection in GameHub; it may still be active."
+                            : "No local authorization to remove.");
+                        return uncertain ? 2 : 0;
+                    }
                     var remote = false;
                     try { remote = await RevokeAsync(current.RefreshToken, cancellationToken); }
                     catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException or McpLoginException or JsonException)
@@ -37,6 +46,8 @@ public sealed class McpLoginCommands(McpLoginSettings settings, HttpClient http,
                         : "Local credential removed. Remote revocation could not be confirmed. Revoke this connection in GameHub; it may still be active.");
                     return remote ? 0 : 2;
                 case "login":
+                    if (selected.RequiresRecovery)
+                        throw new McpLoginException("Authorization renewal requires recovery. Run logout, then login in an interactive terminal.");
                     if (current is not null)
                         throw new McpLoginException("This connection already has stored authorization. Use logout before a fresh login, or configure another Mcp__Connection.");
                     await LoginAsync(selected, requestTrackingWrite, cancellationToken);
@@ -123,39 +134,12 @@ public sealed class McpLoginCommands(McpLoginSettings settings, HttpClient http,
         return result.Status == HttpStatusCode.OK && !result.Body.TryGetProperty("error", out _);
     }
 
-    private async Task<(HttpStatusCode Status, JsonElement Body)> PostAsync(string path,
+    private Task<(HttpStatusCode Status, JsonElement Body)> PostAsync(string path,
         List<KeyValuePair<string, string>> fields, CancellationToken cancellationToken)
-    {
-        fields.Add(new("client_id", McpLoginSettings.ClientId));
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(15));
-        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(settings.Issuer, path))
-        { Content = new FormUrlEncodedContent(fields) };
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-        if ((int)response.StatusCode is >= 300 and < 400)
-            throw new McpLoginException("GameHub redirected a credential request. Configure direct HTTPS protocol routing; redirects are not followed.");
-        await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-        var bytes = new byte[8193];
-        var length = 0;
-        while (length < bytes.Length)
-        {
-            var read = await stream.ReadAsync(bytes.AsMemory(length), deadline.Token);
-            if (read == 0) break;
-            length += read;
-        }
-        if (length > 8192) throw new McpLoginException("GameHub protocol response exceeded its size limit.");
-        if (length == 0 && path == "connect/revoke")
-            return (response.StatusCode, JsonSerializer.SerializeToElement(new { }));
-        using var document = JsonDocument.Parse(bytes.AsMemory(0, length), new JsonDocumentOptions { MaxDepth = 4 });
-        if (document.RootElement.ValueKind != JsonValueKind.Object
-            || document.RootElement.EnumerateObject().Select(property => property.Name).Distinct().Count()
-                != document.RootElement.EnumerateObject().Count())
-            throw new McpLoginException("GameHub returned an invalid protocol response.");
-        return (response.StatusCode, document.RootElement.Clone());
-    }
+        => new McpProtocolClient(settings, http).PostAsync(path, fields, cancellationToken);
 
     private static string? String(JsonElement value, string name) =>
-        value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
+        McpProtocolClient.String(value, name);
     private static bool Integer(JsonElement value, string name, out int number)
-    { number = 0; return value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out number); }
+        => McpProtocolClient.Integer(value, name, out number);
 }

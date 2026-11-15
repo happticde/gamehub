@@ -125,15 +125,18 @@ public sealed class LibraryTools
                    "Valid values are: Unplayed, Played, Playing, Completed, Abandoned.";
         }
 
-        var current = await ReadPersonalTrackingAsync(gameId);
-        if (current is null)
+        return await _api.WithTrackingConnectionAsync(async () =>
         {
-            return $"Error: Could not read personal tracking for game {gameId}. No changes were made.";
-        }
+            var current = await ReadPersonalTrackingAsync(gameId);
+            if (current is null)
+            {
+                return $"Error: Could not read personal tracking for game {gameId}. No changes were made.";
+            }
 
-        var body = new { PlayStatus = parsedStatus.ToString(), current.UserRating };
-        var result = await _api.UpdatePersonalTrackingAsync(gameId, body);
-        return result ?? $"Error: Could not update game {gameId}. Is the Core service running?";
+            var body = new { PlayStatus = parsedStatus.ToString(), current.UserRating };
+            var result = await _api.UpdatePersonalTrackingAsync(gameId, body);
+            return result ?? $"Error: Could not update game {gameId}. Is the Core service running?";
+        });
     }
 
     [McpServerTool]
@@ -151,15 +154,18 @@ public sealed class LibraryTools
             return "Error: Rating must be between 1 and 5 (or null to clear).";
         }
 
-        var current = await ReadPersonalTrackingAsync(gameId);
-        if (current is null)
+        return await _api.WithTrackingConnectionAsync(async () =>
         {
-            return $"Error: Could not read personal tracking for game {gameId}. No changes were made.";
-        }
+            var current = await ReadPersonalTrackingAsync(gameId);
+            if (current is null)
+            {
+                return $"Error: Could not read personal tracking for game {gameId}. No changes were made.";
+            }
 
-        var body = new { PlayStatus = current.PlayStatus.ToString(), UserRating = rating };
-        var result = await _api.UpdatePersonalTrackingAsync(gameId, body);
-        return result ?? $"Error: Could not update rating for game {gameId}. Is the Core service running?";
+            var body = new { PlayStatus = current.PlayStatus.ToString(), UserRating = rating };
+            var result = await _api.UpdatePersonalTrackingAsync(gameId, body);
+            return result ?? $"Error: Could not update rating for game {gameId}. Is the Core service running?";
+        });
     }
 
     // Core currently replaces both tracking fields. Preserve the field the tool is not changing

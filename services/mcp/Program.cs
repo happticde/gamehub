@@ -63,7 +63,8 @@ builder.Services.AddHttpClient<CoreApiClient>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
         // Keep normal TLS validation and never forward the API key to a redirect destination.
-        AllowAutoRedirect = false
+        AllowAutoRedirect = false,
+        UseCookies = false
     });
 
 // --- MCP server: stdio transport + auto-discover tools in this assembly ---

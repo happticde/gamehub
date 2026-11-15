@@ -59,6 +59,27 @@ provider provenance. Previously completed responses are not retroactively recall
 
 ## Verification
 
+The stdio client in [#73](https://github.com/happticde/gamehub/issues/73) uses
+`McpTokenProvider` and the shared bounded `McpProtocolClient`. Its operating and recovery contract
+is in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume). It holds the
+credential-store lock across reread, renewal, atomic save and the tool operation. Tracking tools
+hold the same connection through their read and update; request-specific bearer headers never
+become shared default headers. Only explicit `User` mode uses this path, without an operator-key
+fallback. A durable pre-send marker prevents automatic refresh-token reuse after a lost response
+or process exit. Recovery always requires explicit logout/login; no tool write is replayed.
+The refresh request explicitly repeats the original scopes. An absent response `scope` therefore
+retains that requested set, as allowed by [OAuth 2.0 section 5.1](https://www.rfc-editor.org/rfc/rfc6749#section-5.1);
+an explicit changed, null or invalid scope fails closed.
+
+`McpTokenClientTests.cs` covers selected destinations, all seven tool routes, read-only consent,
+parallel renewal, restart, interrupted/save-failed renewal, rejected and invalid responses,
+permission failures, outages and tracking-owner stability. `McpRefreshProcessTests.cs` runs two
+actual stdio subprocesses against a local HTTPS fixture with a temporary test-only trusted root,
+then a third process after rotation. `McpUserToolsIntegrationTests.cs` uses actual Core library
+controllers and protocol endpoints to check tool isolation, renewal and confirmed replay on
+SQLite and PostgreSQL. These controlled fixtures do not replace real-provider/client/deployment
+release acceptance in #75.
+
 `McpTokenLifecycleTests.cs` extends the real device-protocol host with synthetic test-only consent.
 It exercises endpoint redemption/rotation/replay, protected restart, 64-bit epochs, absolute expiry,
 two-tenant and independent-connection isolation, late rejection/commit rollback, and both race
