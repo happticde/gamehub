@@ -34,6 +34,32 @@ class DependencyTests(unittest.TestCase):
             file = root / path
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text('FROM golang:1.27.3-bookworm AS builder\n')
+        for service, name, runtime in (("core", "Core", "aspnet"), ("ingest", "Ingest", "aspnet"), ("mcp", "Mcp", "runtime")):
+            (root / f"services/{service}/GameHub.{name}.csproj").write_text(
+                '<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>')
+            with (root / f"services/{service}/Dockerfile").open('a') as output:
+                output.write(f'FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build\nFROM mcr.microsoft.com/dotnet/{runtime}:10.0-alpine\n')
+
+    def test_runtime_or_sdk_major_drift_and_unversioned_images_are_rejected(self):
+        for service, kind, tag in (("core", "aspnet", "11.0-alpine"), ("ingest", "aspnet", "11.0-alpine"),
+                                   ("mcp", "runtime", "11.0-alpine"), ("core", "sdk", "11.0"),
+                                   ("ingest", "aspnet", "alpine"), ("ingest", "aspnet", "latest")):
+            with self.subTest(service=service, kind=kind, tag=tag), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.fixture(root)
+                path = root / f"services/{service}/Dockerfile"
+                path.write_text(re.sub(rf'dotnet/{kind}:10\.0[^\s]*', f'dotnet/{kind}:{tag}', path.read_text()))
+                with self.assertRaisesRegex(ValueError, 'image must match target net10.0'):
+                    dependencies.check(root)
+
+    def test_runtime_image_must_match_an_explicit_target_framework(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            project = root / 'services/core/GameHub.Core.csproj'
+            project.write_text(project.read_text().replace('net10.0', 'net11.0'))
+            with self.assertRaisesRegex(ValueError, 'image must match target net11.0'):
+                dependencies.check(root)
 
     def test_shared_versions_apply_to_test_projects(self):
         with tempfile.TemporaryDirectory() as directory:

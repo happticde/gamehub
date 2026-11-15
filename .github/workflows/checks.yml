@@ -415,6 +415,9 @@ jobs:
             SOURCE_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,version=2,scope=${{ matrix.component }}-${{ matrix.arch }}
           cache-to: type=gha,version=2,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }},timeout=3m,ignore-error=true
+      - name: Test production service startup in the runtime image
+        if: matrix.component == 'core' || matrix.component == 'ingest'
+        run: python3 scripts/ci/smoke-service-image.py gamehub-${{ matrix.component }}:verified
       - name: Test MCP stdio transport in the runtime image
         if: matrix.component == 'mcp'
         run: python3 scripts/ci/smoke-mcp-image.py gamehub-mcp:verified
