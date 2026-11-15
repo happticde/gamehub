@@ -5,6 +5,7 @@ using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
@@ -35,6 +36,7 @@ public static class McpAuthorization
         this IServiceCollection services, bool jwtEnabled, bool multiUserEnabled)
     {
         services.AddScoped<McpSessionValidationService>();
+        services.AddScoped<McpTrackingWriteFilter>();
         services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, McpIntegrationAuthenticationHandler>(IntegrationScheme, null)
             .AddPolicyScheme(LibraryPolicy, null, options =>
@@ -81,6 +83,7 @@ public static class McpAuthorization
                 || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
                 throw new ArgumentException("MCP trust requires exact absolute HTTPS identifiers.", nameof(resource));
         services.AddSingleton(resource);
+        services.TryAddScoped<McpGrantAdmission>();
         services.AddOpenIddict()
             .AddCore(options =>
             {
@@ -140,6 +143,9 @@ public sealed class McpIntegrationAuthenticationHandler(
             identity.AddClaim(new Claim(ClaimTypes.NameIdentifier,
                 principal.GetClaim(OpenIddictConstants.Claims.Subject)!));
             new ClaimsPrincipal(identity).SetScopes(principal.GetScopes());
+            // Keep protocol metadata server-side for the final mutation admission. The public
+            // request identity intentionally exposes only the narrow library claim contract.
+            Context.Features.Set(new McpValidatedIdentityFeature(principal));
             return AuthenticateResult.Success(new AuthenticationTicket(
                 new ClaimsPrincipal(identity), Scheme.Name));
         }

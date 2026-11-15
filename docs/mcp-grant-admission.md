@@ -33,6 +33,9 @@ A password family with an external link elsewhere cannot approve. No provider id
 `AdmitAsync` accepts the original, already protocol-validated principal and the token type selected
 by the server operation. It checks exact resource/presenter, original consent, optional required
 permission, owner/epoch, absolute expiry, provider marker, family, authorization and live token.
+Access-token validation expresses the resource as an audience; device and refresh principals
+retain resource metadata. Admission requires exactly the configured resource in that token type's
+native representation, with no missing-resource fallback.
 Device redemption, rotating refresh and access-backed sensitive writes use this same boundary.
 The returned immutable snapshot contains no credential and is internal server data, not a browser
 response contract. It never extends expiry or upgrades an epoch.
@@ -58,6 +61,33 @@ admission therefore checks `ReissueBlockedAtUtc`, not the browser's local revoca
 The real provider-logout path still revokes the derived families and authorizations after local
 browser logout. Unrelated owners remain unchanged.
 
+## Personal-tracking write integration
+
+[#96](https://github.com/happticde/gamehub/issues/96) integrates this barrier with the actual
+`PATCH /api/library/{id}/personal` action. The integration authentication handler retains a clone
+of the successfully validated protocol principal in a server-only request feature. The narrowed
+library principal still contains no protocol token identifier. Request fields or reconstructed
+library claims alone cannot supply the validated feature.
+
+`McpTrackingWriteFilter` runs after authorization, verifies that the current request identity
+matches that feature, and opens the action's database transaction. It calls `AdmitAsync` for the
+original access token and `tracking:write` before the tenant-scoped game lookup or mutation.
+The existing action still rejects unsupported fields and foreign identifiers. The filter commits
+only a successful action result, before the result executes; error results and exceptions roll
+back. Commit/storage failure returns a bodyless 503, cancellation propagates, and neither exposes
+a success response. Rolled-back tracked entities are cleared. An uncertain response never causes
+an automatic write retry.
+
+Browser and explicitly selected operator requests retain their existing action behavior without
+the integration transaction. Local browser logout preserves independent integration writes;
+provider logout, epoch/deletion and family revocation order against admission. A write admitted
+first can commit before the waiting revocation; a winning revocation prevents the write.
+
+Real HTTP/reference-token tests cover both orderings on SQLite and PostgreSQL, actual provider
+logout after local browser logout, foreign data, missing/mismatched server identity, storage and
+commit failures, request cancellation, and browser/operator compatibility. This adds no endpoint,
+startup activation, migration, dependency or deployment setting. It does not enable user login.
+
 ## Remaining #71 integration gate
 
 - Add bounded, cross-site-request-forgery-protected browser consent and account-switch/replay
@@ -68,8 +98,9 @@ browser logout. Unrelated owners remain unchanged.
 - Wire redemption/refresh admission into the existing serializable, buffered protocol boundary;
   preserve original resources/scopes and clamp issued lifetimes to the returned absolute expiry.
   Implement connection-wide revocation on confirmed refresh reuse before issuing usable tokens.
-- Carry the validated protocol identity into the personal tracking write transaction and perform
-  final admission there. The authorization handler's earlier read alone is insufficient.
+- Preserve #96's validated access-token identity and final personal-tracking admission transaction.
+  The authorization handler's earlier read alone is insufficient. Future sensitive operations
+  need the same boundary before they can be permitted.
 - Validate deployment origin/proxy, external identity provider, independent persistent keys and
   existing trust before startup activation. Run browser and full protocol lifecycle tests on both
   database providers. Final Docker/client and operator release acceptance remains #75.

@@ -1710,13 +1710,15 @@ public class LibraryController : ControllerBase
     /// </summary>
     [HttpPatch("{id}/personal")]
     [McpOperation(McpPermissions.TrackingWrite)]
-    public async Task<IActionResult> UpdatePersonalTracking(int id, [FromBody] PersonalUpdateRequest request)
+    [ServiceFilter(typeof(McpTrackingWriteFilter))]
+    public async Task<IActionResult> UpdatePersonalTracking(int id, [FromBody] PersonalUpdateRequest request,
+        CancellationToken cancellationToken = default)
     {
         if (User?.Identity?.AuthenticationType == McpAuthorization.IntegrationScheme
             && (request.IsIgnoredSpecified || request.AdditionalFields?.Count > 0))
             return BadRequest(new { Message = "Integration tracking accepts only playStatus and userRating." });
 
-        var game = await _db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == id);
+        var game = await _db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
 
         if (game == null)
             return NotFound(new { Message = $"Game with ID {id} not found" });
@@ -1726,7 +1728,7 @@ public class LibraryController : ControllerBase
         if (request.IsIgnored.HasValue) game.IsIgnored = request.IsIgnored.Value;
         game.IsPlayStatusManual = true; // Lock it so syncs don't overwrite
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Updated personal tracking for game {Id}: Status={Status}, Rating={Rating}, IsIgnored={IsIgnored}",
             id, request.PlayStatus, request.UserRating?.ToString() ?? "none", game.IsIgnored);
