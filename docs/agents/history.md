@@ -1,5 +1,29 @@
 # Session History
 
+## Current Session Summary (2026-11-15)
+
+### What Changed
+
+**One-time MCP Device Consent (#100, split from #71):**
+- Add a staged Core decision transaction around native OpenIddict user-code verification.
+  Derive the owner/provider from explicit signed browser authentication, bind the stored device
+  authorization through the supported manager, and retain original narrowed consent and epoch.
+- Commit approval or denial before returning a bodyless outcome. Roll back incomplete binding,
+  code consumption and family creation on rejection, expiry, cancellation or commit failure.
+- Keep production consent/issuance closed. Browser forms, session/code-bound confirmation,
+  same-origin protection and validated deployment/startup activation remain #71.
+
+### Verification
+
+- Docker stable .NET 10.0.404 Release solution build has zero warnings/errors. The full suite
+  passes 883/883 tests, including 66 new consent cases on SQLite and real disposable PostgreSQL
+  and both lifecycle race orderings. Documentation contracts 16/16 and the production
+  documentation build pass.
+- Hosted verification is recorded in #100 and its linked pull request.
+  No frontend application, dependency, migration, production setting or environment file changed.
+- Docker authentication is not ready for release: #100 and #71–#75 remain. Human merge,
+  release publication, documentation deployment and operator enablement remain separate steps.
+
 ## Current Session Summary (2026-11-14)
 
 ### What Changed

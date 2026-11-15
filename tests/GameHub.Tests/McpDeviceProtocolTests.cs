@@ -311,6 +311,7 @@ public sealed partial class McpDeviceProtocolTests
         private Guid tenant = TenantDefaults.DefaultTenantId;
         private WebApplication app = null!;
         private bool fixture;
+        private bool realConsent;
         private bool closedToken;
         private string connection = "";
         private bool postgres;
@@ -324,9 +325,11 @@ public sealed partial class McpDeviceProtocolTests
 
         internal static bool CanRun(bool postgres) => !postgres || !string.IsNullOrWhiteSpace(PostgresConnection);
 
-        internal static async Task<DeviceHost> CreateAsync(bool fixture = false, bool closedToken = false, bool postgres = false)
+        internal static async Task<DeviceHost> CreateAsync(bool fixture = false, bool closedToken = false, bool postgres = false,
+            bool realConsent = false)
         {
-            var host = new DeviceHost { fixture = fixture, closedToken = closedToken, postgres = postgres };
+            var host = new DeviceHost { fixture = fixture || realConsent, closedToken = closedToken,
+                postgres = postgres, realConsent = realConsent };
             Directory.CreateDirectory(host.KeysPath);
             host.connection = postgres ? new NpgsqlConnectionStringBuilder(PostgresConnection)
                 { Database = "mcp_device_" + Guid.NewGuid().ToString("N") }.ConnectionString
@@ -352,6 +355,7 @@ public sealed partial class McpDeviceProtocolTests
                 options.AddInterceptors(new TokenCommitInterceptor(this));
             });
             builder.Services.AddAuthentication();
+            if (realConsent) ConfigureBrowserConsent(builder);
             builder.Services.AddSingleton<TimeProvider>(Clock);
             builder.Services.AddMcpDeviceProtocol(new(new Uri(Issuer), new Uri(Resource)),
                 new McpProtocolKeys(new DirectoryInfo(KeysPath), signing, encryption, protection));
@@ -381,12 +385,15 @@ public sealed partial class McpDeviceProtocolTests
             app = builder.Build();
             app.Use(async (http, next) =>
             {
+                if (http.Request.Path == McpDeviceProtocol.VerifyPath && BeforeConsentRequest is not null)
+                    await BeforeConsentRequest();
                 if (http.Request.Path == McpDeviceProtocol.TokenPath && BeforeTokenRequest is not null)
                     await BeforeTokenRequest();
                 try { await next(http); }
                 finally
                 {
                     if (http.Request.Path == McpDeviceProtocol.TokenPath) TokenRequestCompleted?.TrySetResult();
+                    if (http.Request.Path == McpDeviceProtocol.VerifyPath) ConsentRequestCompleted?.TrySetResult();
                 }
             });
             if (fixture)
@@ -413,7 +420,12 @@ public sealed partial class McpDeviceProtocolTests
                 app.Use(async (http, next) =>
                 {
                     if (http.Request.Path == McpDeviceProtocol.VerifyPath)
-                        await (await ApproveFixtureAsync(http)).ExecuteAsync(http);
+                    {
+                        if (realConsent)
+                            await http.RequestServices.GetRequiredService<McpDeviceConsent>().ExecuteAsync(http,
+                                http.Request.Headers["X-Test-Consent-Decision"] != "deny", ConsentTrackingWrite);
+                        else await (await ApproveFixtureAsync(http)).ExecuteAsync(http);
+                    }
                     else await next(http);
                 });
                 if (!closedToken) app.MapPost(McpDeviceProtocol.TokenPath, async (HttpContext http) =>

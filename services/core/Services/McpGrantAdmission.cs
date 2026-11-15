@@ -34,29 +34,19 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
         CancellationToken cancellationToken = default)
     {
         RequireTransaction();
-        if (!browser.Succeeded || browser.Ticket?.AuthenticationScheme != JwtBearerDefaults.AuthenticationScheme
-            || browser.Principal is not { } principal
-            || principal.Identities.ToArray() is not [ { IsAuthenticated: true } ]
-            || principal.HasClaim(claim => claim.Type == GameHubClaimTypes.SessionPurpose)
-            || !TryOwner(principal, ClaimTypes.NameIdentifier, out var owner)
-            || One(principal, Claims.Subject) != owner.AccountId.ToString("D")
-            || !requestedScopes.Contains(McpPermissions.LibraryRead)
+        if (!requestedScopes.Contains(McpPermissions.LibraryRead)
             || requestedScopes.Count != requestedScopes.Distinct(StringComparer.Ordinal).Count()
             || requestedScopes.Any(scope => scope is not (McpPermissions.LibraryRead
                 or McpPermissions.TrackingWrite or Scopes.OfflineAccess))
             || (allowTrackingWrite && !requestedScopes.Contains(McpPermissions.TrackingWrite)))
             return null;
 
-        if (!await LockOwnerAsync(owner, cancellationToken)) return null;
-        // Provider provenance is derived solely from the signed browser family, never supplied
-        // by a client. An external link on a password-created family cannot satisfy this query.
+        var admitted = await AdmitBrowserAsync(browser, cancellationToken);
+        if (admitted is not { } owner) return null;
         var providerId = await db.OidcProviderSessions.AsNoTracking()
             .Where(row => row.AccountSessionId == owner.FamilyId && row.UserAccountId == owner.AccountId
                 && row.TenantId == owner.TenantId)
-            .Select(row => (Guid?)row.Id).SingleOrDefaultAsync(cancellationToken);
-        if (providerId is null
-            || !await LockProviderAsync(owner, providerId.Value, browserConsent: true, cancellationToken)
-            || !await LockFamilyAsync(owner, cancellationToken)) return null;
+            .Select(row => row.Id).SingleAsync(cancellationToken);
 
         var application = await db.Set<McpProtocolApplication>().AsNoTracking()
             .SingleOrDefaultAsync(row => row.ClientId == McpDeviceProtocol.ClientId, cancellationToken);
@@ -86,13 +76,40 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
         {
             Id = Guid.NewGuid(), UserAccountId = owner.AccountId, TenantId = owner.TenantId,
             AccountSessionId = familyId, ProtocolAuthorizationId = authorizationId,
-            OidcProviderSessionId = providerId.Value, ClientId = McpDeviceProtocol.ClientId,
+            OidcProviderSessionId = providerId, ClientId = McpDeviceProtocol.ClientId,
             Resource = resource.Resource.AbsoluteUri, Scopes = scopes,
             ApprovedSessionVersion = owner.Epoch, CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(30)
         };
         db.McpGrants.Add(grant);
         await db.SaveChangesAsync(cancellationToken);
         return Snapshot(grant);
+    }
+
+    /// <summary>Admits approval or denial without creating any connection. Retain the caller's transaction.</summary>
+    public async Task<bool> CanConsentAsync(AuthenticateResult browser, CancellationToken cancellationToken = default) =>
+        await AdmitBrowserAsync(browser, cancellationToken) is not null;
+
+    private async Task<Owner?> AdmitBrowserAsync(AuthenticateResult browser, CancellationToken cancellationToken)
+    {
+        RequireTransaction();
+        if (!browser.Succeeded || browser.Ticket?.AuthenticationScheme != JwtBearerDefaults.AuthenticationScheme
+            || browser.Principal is not { } principal
+            || principal.Identities.ToArray() is not [ { IsAuthenticated: true } ]
+            || principal.HasClaim(claim => claim.Type == GameHubClaimTypes.SessionPurpose)
+            || !TryOwner(principal, ClaimTypes.NameIdentifier, out var owner)
+            || One(principal, Claims.Subject) != owner.AccountId.ToString("D")
+            || !await LockOwnerAsync(owner, cancellationToken)) return null;
+        // Provider provenance is derived solely from the signed browser family, never supplied
+        // by a client. An external link on a password-created family cannot satisfy this query.
+        var providerId = await db.OidcProviderSessions.AsNoTracking()
+            .Where(row => row.AccountSessionId == owner.FamilyId && row.UserAccountId == owner.AccountId
+                && row.TenantId == owner.TenantId)
+            .Select(row => (Guid?)row.Id).SingleOrDefaultAsync(cancellationToken);
+        if (providerId is null
+            || !await LockProviderAsync(owner, providerId.Value, browserConsent: true, cancellationToken)
+            || !await LockFamilyAsync(owner, cancellationToken)) return null;
+
+        return owner;
     }
 
     /// <summary>
