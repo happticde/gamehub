@@ -312,6 +312,7 @@ public sealed partial class McpDeviceProtocolTests
         private WebApplication app = null!;
         private bool fixture;
         private bool realConsent;
+        private bool productionConsent;
         private bool closedToken;
         private string connection = "";
         private bool postgres;
@@ -326,10 +327,10 @@ public sealed partial class McpDeviceProtocolTests
         internal static bool CanRun(bool postgres) => !postgres || !string.IsNullOrWhiteSpace(PostgresConnection);
 
         internal static async Task<DeviceHost> CreateAsync(bool fixture = false, bool closedToken = false, bool postgres = false,
-            bool realConsent = false)
+            bool realConsent = false, bool productionConsent = false)
         {
-            var host = new DeviceHost { fixture = fixture || realConsent, closedToken = closedToken,
-                postgres = postgres, realConsent = realConsent };
+            var host = new DeviceHost { fixture = (fixture || realConsent) && !productionConsent, closedToken = closedToken,
+                postgres = postgres, realConsent = realConsent || productionConsent, productionConsent = productionConsent };
             Directory.CreateDirectory(host.KeysPath);
             host.connection = postgres ? new NpgsqlConnectionStringBuilder(PostgresConnection)
                 { Database = "mcp_device_" + Guid.NewGuid().ToString("N") }.ConnectionString
@@ -357,8 +358,13 @@ public sealed partial class McpDeviceProtocolTests
             builder.Services.AddAuthentication();
             if (realConsent) ConfigureBrowserConsent(builder);
             builder.Services.AddSingleton<TimeProvider>(Clock);
+            if (productionConsent)
+            {
+                builder.Services.AddSingleton(new McpDeviceSettings(true, new(new Uri(Issuer), new Uri(Resource)), ConsentServiceKey, []));
+                builder.Services.AddScoped<McpBrowserConsent>();
+            }
             builder.Services.AddMcpDeviceProtocol(new(new Uri(Issuer), new Uri(Resource)),
-                new McpProtocolKeys(new DirectoryInfo(KeysPath), signing, encryption, protection));
+                new McpProtocolKeys(new DirectoryInfo(KeysPath), signing, encryption, protection), productionConsent);
             builder.Services.AddMcpRestTokenValidation(new(new Uri(Issuer), new Uri(Resource)), options =>
             {
                 options.UseLocalServer();
@@ -413,7 +419,8 @@ public sealed partial class McpDeviceProtocolTests
                     scopes = result.Principal.GetScopes(), audiences = result.Principal.GetAudiences()
                 }) : Results.Unauthorized();
             });
-            if (!fixture || closedToken) app.MapClosedMcpConsent();
+            if (productionConsent) app.MapMcpDeviceEndpoints();
+            else if (!fixture || closedToken) app.MapClosedMcpConsent();
             if (fixture)
             {
                 // Synthetic test consent only. Production has no such approval path or policy.

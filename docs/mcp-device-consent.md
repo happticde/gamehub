@@ -5,17 +5,18 @@ transaction for [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 It follows [Architecture Decision Record 016](adr/016-mcp-user-authorization.md) and builds on
 the [grant admission](mcp-grant-admission.md) and [token lifecycle](mcp-token-lifecycle.md) barriers.
 It adds no production route, startup registration, deployment setting, dependency or migration.
-Production verification and token issuance remain closed. Browser consent and validated activation
-remain [#71](https://github.com/happticde/gamehub/issues/71); release acceptance remains
+The transaction itself enables no endpoints. [Browser consent and validated default-off activation](mcp-browser-consent.md)
+are integrated by [#71](https://github.com/happticde/gamehub/issues/71); release acceptance remains
 [#75](https://github.com/happticde/gamehub/issues/75).
 
 ## Caller and transaction
 
-The future verification endpoint calls `McpDeviceConsent.ExecuteAsync` only after enforcing its
+The verification endpoint calls `McpDeviceConsent.ExecuteAsync` only after enforcing its
 trusted backend-for-frontend boundary, bounded input and guessing budget, cross-site request
 forgery protection, and a displayed decision bound to the same live browser family and code.
 Those browser safeguards are not supplied by this transaction service. Do not map it directly
-to an anonymous or browser-controlled endpoint, or remove the current closed middleware gate.
+to an anonymous or browser-controlled endpoint. `McpBrowserConsent` and the production middleware
+supply those caller safeguards only after validated opt-in.
 Never put device/user codes or credentials in request logging, analytics or error details.
 
 The service owns a serializable transaction on the request's scoped `CoreContext`. It explicitly
@@ -75,12 +76,11 @@ alone bypasses the closed verification middleware and supplies decisions; it pro
 form or production registration. Use the disposable-server
 `GAMEHUB_TEST_MCP_POSTGRES_CONNECTION` setting; each case removes its own database.
 
-## Remaining browser and activation gate
+## Integrated browser and activation boundary
 
-#71 must supply the session/code-bound preview and form decision, same-origin request protection,
+#71 supplies the session/code-bound preview and form decision, same-origin request protection,
 explicit displayed account/instance/code and permissions, and the independent trusted service
 boundary. It must preserve input/guess budgets and ensure native rejections outside this service
 also receive safe browser responses. Validate proxy/origin, external provider trust and independent
-persistent keys before wiring startup and removing either closed gate. Browser accessibility,
-account switching, stale forms and full deployment lifecycle checks remain required there.
+persistent keys before wiring startup. See [the integrated boundary and verification](mcp-browser-consent.md).
 Client login/storage and the final Docker/operator release gate remain #72–#75.

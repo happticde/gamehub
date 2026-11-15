@@ -74,6 +74,7 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
     private static readonly HashSet<string> DeviceFields = [Parameters.ClientId, Parameters.Scope, Parameters.Resource];
     private static readonly HashSet<string> TokenFields = [Parameters.ClientId, Parameters.Scope, Parameters.Resource,
         Parameters.GrantType, Parameters.DeviceCode, Parameters.RefreshToken];
+    private static readonly HashSet<string> VerificationFields = [Parameters.UserCode, "action", "confirmation", "allow_tracking_write"];
 
     /// <summary>Runs before authentication. Errors expose only stable protocol error names.</summary>
     public async Task InvokeAsync(HttpContext http, McpProtocolBudget budget, McpRestResource resource)
@@ -93,13 +94,16 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
             await Error(http, Errors.TemporarilyUnavailable, 429);
             return;
         }
-        // The staged verification route has no code oracle and cannot approve through any scheme.
-        // #71 must replace this gate with bounded, authenticated BFF consent and its race barrier.
-        if (path == McpDeviceProtocol.VerifyPath)
+        // Unconfigured test/staged hosts stay closed. Enabled hosts additionally require the
+        // independent BFF transport proof before parsing any code or authenticating a browser.
+        var verification = path == McpDeviceProtocol.VerifyPath;
+        if (verification && http.RequestServices.GetService<McpDeviceSettings>() is not { Enabled: true })
         {
             http.Response.StatusCode = 403;
             return;
         }
+        if (verification && !http.RequestServices.GetRequiredService<McpDeviceSettings>().IsTrustedBff(http))
+        { http.Response.StatusCode = 403; return; }
         var expected = resource.Issuer;
         if (!http.Request.IsHttps
             || !string.Equals(http.Request.Host.Host, expected.IdnHost, StringComparison.OrdinalIgnoreCase)
@@ -142,10 +146,14 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
             await Error(http, Errors.InvalidRequest);
             return;
         }
-        var allowed = path == McpDeviceProtocol.DevicePath ? DeviceFields : TokenFields;
+        var allowed = verification ? VerificationFields : path == McpDeviceProtocol.DevicePath ? DeviceFields : TokenFields;
         if (form.Any(field => !allowed.Contains(field.Key) || field.Value.Count != 1
                 || StringValues.IsNullOrEmpty(field.Value))
-            || form[Parameters.ClientId] != McpDeviceProtocol.ClientId)
+            || (!verification && form[Parameters.ClientId] != McpDeviceProtocol.ClientId)
+            || (verification && (form[Parameters.UserCode].Count != 1 || form[Parameters.UserCode].ToString().Length > 32
+                || form["action"].ToString() is not ("preview" or "approve" or "deny")
+                || (form["action"] != "preview" && form["confirmation"].Count != 1)
+                || (form.ContainsKey("allow_tracking_write") && form["allow_tracking_write"].ToString() is not ("true" or "false")))))
         {
             await Error(http, Errors.InvalidRequest);
             return;
@@ -158,7 +166,21 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
         try
         {
             var db = http.RequestServices.GetRequiredService<CoreContext>();
-            if (path == McpDeviceProtocol.DevicePath)
+            if (verification)
+            {
+                await next(http);
+                if (http.Features.Get<McpConsentPreviewFeature>() is null || http.Response.StatusCode != 200)
+                {
+                    buffered.SetLength(0);
+                    http.Response.Headers.Remove("Content-Type");
+                    http.Response.Headers.Remove("Content-Length");
+                    http.Response.Headers.Remove("Location");
+                    if (http.Response.StatusCode is >= 200 and < 300 && http.Response.StatusCode != 204)
+                        http.Response.StatusCode = 400;
+                    else if (http.Response.StatusCode is >= 300 and < 400) http.Response.StatusCode = 400;
+                }
+            }
+            else if (path == McpDeviceProtocol.DevicePath)
             {
                 await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, http.RequestAborted);
                 var now = DateTime.UtcNow;
@@ -235,7 +257,8 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
             buffered.SetLength(0);
             http.RequestServices.GetRequiredService<CoreContext>().ChangeTracker.Clear();
             http.Response.Headers.Remove("Content-Length");
-            await Error(http, Errors.TemporarilyUnavailable, 503);
+            if (verification) http.Response.StatusCode = 503;
+            else await Error(http, Errors.TemporarilyUnavailable, 503);
         }
         finally { http.Response.Body = output; }
         buffered.Position = 0;

@@ -65,4 +65,5 @@ two-tenant and independent-connection isolation, late rejection/commit rollback,
 orderings against provider logout, account epoch, deletion and family revocation. Both SQLite and
 real PostgreSQL are required. Use a disposable server through
 `GAMEHUB_TEST_MCP_POSTGRES_CONNECTION`; every PostgreSQL case removes its own database.
-Production browser consent and operator/client acceptance are still downstream work.
+Production browser consent is integrated behind [validated default-off activation](mcp-browser-consent.md).
+Operator/client release acceptance remains #75.

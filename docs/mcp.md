@@ -5,6 +5,9 @@ The source-based examples below require a stable .NET 10 SDK and a matching chec
 The current MCP uses Core API-key authentication. It does not implement an OIDC user login
 for guarded multi-user deployments.
 
+The separate Core [browser consent boundary](mcp-browser-consent.md) is default-off and staged
+for the upcoming user-authenticated client. Do not enable it for end users before release gate #75.
+
 The GameHub MCP server exposes your game library to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io/). This lets you query and manage your library using natural language.
 
 ## Available Tools

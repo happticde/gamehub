@@ -5,8 +5,9 @@
 following [ADR-016](adr/016-mcp-user-authorization.md) and the
 [connection contracts](mcp-grant-contracts.md). OpenIddict implements
 [Device Authorization Grant, RFC 8628](https://www.rfc-editor.org/rfc/rfc8628).
-This package enables no endpoint in `Program.cs`, introduces no deployment setting, and cannot
-approve consent. Production activation belongs to #71 after its browser/session and race gates.
+The original protocol package alone enables no endpoint and cannot approve consent.
+[#71 browser integration](mcp-browser-consent.md) adds validated default-off startup registration,
+the internal consent endpoint and public verification-page routing.
 Docker user login remains gated by #75; operators do not need to configure anything for #70.
 
 ## Registration and protocol
@@ -32,7 +33,7 @@ the approved scopes and rejects widening. Reference access/refresh tokens use en
 ten-minute access and thirty-day refresh defaults, rotating refresh and no reuse grace.
 The [#98 token lifecycle](mcp-token-lifecycle.md) adds live transactional admission, absolute
 expiry clamping and connection-wide confirmed refresh-reuse revocation. Production activation
-remains closed pending #71.
+is opt-in through the validated [#71 deployment boundary](mcp-browser-consent.md).
 
 `MapClosedMcpConsent` denies verification and approved redemption. The middleware also denies
 verification before parsing any user code. No browser, operator or local password credential can

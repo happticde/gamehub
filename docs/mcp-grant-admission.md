@@ -4,7 +4,8 @@
 [#71](https://github.com/happticde/gamehub/issues/71), following
 [Architecture Decision Record (ADR) 016](adr/016-mcp-user-authorization.md).
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) consent and usable production
-issuance remain closed. This package adds no startup registration, endpoint, configuration,
+issuance require the separately validated [browser integration](mcp-browser-consent.md).
+This package adds no startup registration, endpoint, configuration,
 dependency or migration. It does not complete browser consent or enable Docker user login.
 
 ## Caller contract
