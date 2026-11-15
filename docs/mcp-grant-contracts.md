@@ -58,6 +58,8 @@ account/tenant deletion state, original epoch, live grant/family, absolute expir
 issuer/resource/scopes and provider `ReissueBlockedAtUtc` on every use.
 [#71](https://github.com/happticde/gamehub/issues/71) must
 serialize approval/redemption/refresh against those same markers on both database providers.
+The split [#94 admission barrier](mcp-grant-admission.md) supplies the reusable database locks and
+owned consent creation; #71 still owns protocol/UI integration and activation.
 The migration triggers enforce durable invariants; they do not replace transaction race tests.
 The validation adapter disables protocol manager entity caching: central database mutations
 must invalidate access on the next request, including after an earlier successful validation.
