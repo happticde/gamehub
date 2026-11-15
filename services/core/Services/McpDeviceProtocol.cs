@@ -46,7 +46,7 @@ public sealed class McpProtocolKeys
     }
 }
 
-/// <summary>Staged RFC 8628 machinery. Production activation and live consent belong to #71.</summary>
+/// <summary>RFC 8628 machinery behind independently validated default-off deployment trust.</summary>
 public static class McpDeviceProtocol
 {
     /// <summary>Public software identifier; it conveys no account, tenant or device trust.</summary>
@@ -55,7 +55,7 @@ public static class McpDeviceProtocol
     public const string DevicePath = "/connect/device";
     /// <summary>Device redemption and integration refresh endpoint.</summary>
     public const string TokenPath = "/connect/token";
-    /// <summary>Reserved consent endpoint. This package always denies browser verification.</summary>
+    /// <summary>Internal BFF consent endpoint; never a public browser page.</summary>
     public const string VerifyPath = "/connect/verify";
     /// <summary>Short absolute pending lifetime, independent of eventual grant lifetime.</summary>
     public const int LifetimeSeconds = 600;
@@ -64,10 +64,10 @@ public static class McpDeviceProtocol
 
     /// <summary>
     /// Registers unmodified OpenIddict processing and GameHub admission policy. Call only with
-    /// independently validated deployment trust; Core startup deliberately does not call it yet.
+    /// independently validated deployment trust; Core startup calls it only when explicitly enabled.
     /// </summary>
     public static IServiceCollection AddMcpDeviceProtocol(this IServiceCollection services,
-        McpRestResource resource, McpProtocolKeys keys)
+        McpRestResource resource, McpProtocolKeys keys, bool browserConsent = false)
     {
         foreach (var uri in new[] { resource.Issuer, resource.Resource })
             if (!uri.IsAbsoluteUri || uri.Scheme != "https" || uri.UserInfo.Length != 0
@@ -76,6 +76,7 @@ public static class McpDeviceProtocol
         if (resource.Issuer.AbsolutePath != "/")
             throw new ArgumentException("The staged device protocol requires a root HTTPS issuer.");
         services.AddSingleton(resource);
+        services.AddSingleton(keys);
         services.AddSingleton<McpProtocolBudget>();
         services.AddScoped<McpPollingAdmission>();
         services.AddHttpContextAccessor();
@@ -171,7 +172,16 @@ public static class McpDeviceProtocol
                 options.AddEventHandler<OpenIddictServerEvents.ApplyDeviceAuthorizationResponseContext>(builder =>
                     builder.UseInlineHandler(context =>
                     {
-                        if (context.Response.Error is null) context.Response["interval"] = 5;
+                        if (context.Response.Error is null)
+                        {
+                            context.Response["interval"] = 5;
+                            // Manual entry keeps the human code out of browser URLs and logs.
+                            if (browserConsent)
+                            {
+                                context.Response.VerificationUri = new Uri(resource.Issuer, "/mcp/verify").AbsoluteUri;
+                                context.Response.VerificationUriComplete = null;
+                            }
+                        }
                         Sanitize(context.Response);
                         return default;
                     }).SetOrder(int.MinValue + 100));

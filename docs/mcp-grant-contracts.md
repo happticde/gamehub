@@ -8,7 +8,8 @@ The merged [OpenIddict proof](../tools/openiddict-proof/README.md) was repeated 
 before schema adoption. Storage and the default-closed authorization boundary do not enable
 user-token issuance, consent, device login or remote transport. The staged
 [#70 device adapter](mcp-device-protocol.md) now provides bounded protocol processing with a
-closed approval gate; production startup still does not register a protocol server.
+closed approval gate by itself. [Browser integration](mcp-browser-consent.md) now registers the
+protocol server only after explicit deployment trust and persistent-key validation.
 
 ## Ownership and consent
 

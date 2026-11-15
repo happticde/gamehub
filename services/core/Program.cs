@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using OpenIddict.Abstractions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -383,6 +384,22 @@ if (multiUserSettings.Mode.IsEnabled)
 }
 
 builder.Services.AddMcpLibraryAuthorization(jwtSettings.IsEnabled, multiUserSettings.Mode.IsEnabled);
+// Independent, default-off integration trust never changes guarded multi-user mode.
+var mcpDeviceSettings = McpDeviceSettings.FromConfiguration(builder.Configuration, jwtSettings, oidcSettings);
+builder.Services.AddSingleton(mcpDeviceSettings);
+if (mcpDeviceSettings.Enabled)
+{
+    var protocolKeys = McpDeviceSettings.LoadKeys(builder.Configuration);
+    builder.Services.AddMcpDeviceProtocol(mcpDeviceSettings.Resource!, protocolKeys, browserConsent: true);
+    builder.Services.AddMcpRestTokenValidation(mcpDeviceSettings.Resource!, options =>
+    {
+        options.UseLocalServer();
+        options.UseDataProtection().Configure(settings => settings.DataProtectionProvider = protocolKeys.Provider);
+    });
+    builder.Services.AddScoped<McpDeviceConsent>();
+    builder.Services.AddScoped<McpBrowserConsent>();
+    builder.Services.Configure<ForwardedHeadersOptions>(mcpDeviceSettings.ConfigureForwarding);
+}
 
 // --- Database ---
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
@@ -412,6 +429,8 @@ builder.Services.AddDbContext<CoreContext>(o =>
 });
 
 var app = builder.Build();
+if (mcpDeviceSettings.Enabled && mcpDeviceSettings.KnownProxies.Count > 0) app.UseForwardedHeaders();
+if (mcpDeviceSettings.Enabled) app.UseMcpDeviceProtocol();
 
 app.Logger.LogInformation(
     "Guarded multi-user mode is {MultiUserMode}; OIDC is {OidcMode}; OIDC provisioning is {ProvisioningMode}; configuration blockers: {Blockers}",
@@ -440,6 +459,7 @@ using (var scope = app.Services.CreateScope())
     // accounts. This validation is read-only and never provisions, links, deletes, or rewrites.
     var multiUserEnablement = scope.ServiceProvider.GetRequiredService<MultiUserEnablementService>();
     await multiUserEnablement.ValidateStartupAsync();
+    if (mcpDeviceSettings.Enabled) await scope.ServiceProvider.RegisterMcpDeviceClientAsync();
 }
 
 // --- Error Handling ---
@@ -457,4 +477,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+if (mcpDeviceSettings.Enabled) app.MapMcpDeviceEndpoints();
 app.Run();

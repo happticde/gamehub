@@ -72,7 +72,7 @@ public static class McpAuthorization
     /// <summary>
     /// Installs local protocol validation with mandatory live entry checks. The device/consent
     /// package must supply persistent independent keys and validated operator settings before use.
-    /// This method is deliberately not called by production startup in the storage/authorization stage.
+    /// Production startup calls it only after explicit device-deployment trust and key validation.
     /// </summary>
     public static IServiceCollection AddMcpRestTokenValidation(
         this IServiceCollection services, McpRestResource resource,

@@ -13,10 +13,10 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace GameHub.Core.Services;
 
 /// <summary>
-/// Staged one-time device decision. The future browser endpoint must first enforce the trusted
+/// One-time device decision. The browser endpoint must first enforce the trusted
 /// backend-for-frontend boundary, bounded input, cross-site request forgery protection and
-/// session-bound displayed consent. This registers no route
-/// and does not replace the production closed verification gate.
+/// session-bound displayed consent. McpBrowserConsent supplies these caller safeguards;
+/// this service alone registers no route.
 /// </summary>
 public sealed class McpDeviceConsent(CoreContext db, McpGrantAdmission admission,
     IOpenIddictTokenManager tokens, McpRestResource resource, TimeProvider clock,
@@ -29,7 +29,8 @@ public sealed class McpDeviceConsent(CoreContext db, McpGrantAdmission admission
     /// comes only from explicit bearer authentication, never HttpContext.User or request fields.
     /// No library response, code, token or owner identifier is returned to the browser.
     /// </summary>
-    public async Task ExecuteAsync(HttpContext http, bool approve, bool allowTrackingWrite = false)
+    public async Task ExecuteAsync(HttpContext http, bool approve, bool allowTrackingWrite = false,
+        DateTime? confirmationExpiresAtUtc = null)
     {
         if (db.Database.CurrentTransaction is not null)
             throw new InvalidOperationException("Device consent must own its complete transaction.");
@@ -41,7 +42,9 @@ public sealed class McpDeviceConsent(CoreContext db, McpGrantAdmission admission
         try
         {
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, http.RequestAborted);
-            if (await DecideAsync(http, approve, allowTrackingWrite))
+            if ((confirmationExpiresAtUtc is null || confirmationExpiresAtUtc > clock.GetUtcNow().UtcDateTime)
+                && await DecideAsync(http, approve, allowTrackingWrite)
+                && (confirmationExpiresAtUtc is null || confirmationExpiresAtUtc > clock.GetUtcNow().UtcDateTime))
             {
                 await transaction.CommitAsync(http.RequestAborted);
                 committed = true;
