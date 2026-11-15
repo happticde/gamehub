@@ -109,8 +109,43 @@ public sealed class McpCredentialStore(McpLoginSettings settings)
         private readonly FileStream stream;
         private bool disposed;
         private string PathName => Path.Combine(store.ConnectionDirectory, "credential.json");
+        private string RefreshMarker => Path.Combine(store.ConnectionDirectory, "refresh.pending");
         internal LockedCredential(McpCredentialStore store, FileStream stream)
         { this.store = store; this.stream = stream; }
+
+        /// <summary>A previous refresh may have consumed its credential. Never retry it automatically.</summary>
+        public bool RequiresRecovery
+        {
+            get
+            {
+                ObjectDisposedException.ThrowIf(disposed, this);
+                CheckFile(RefreshMarker);
+                return File.Exists(RefreshMarker);
+            }
+        }
+
+        /// <summary>Persists uncertainty before sending any one-time refresh credential.</summary>
+        public void BeginRefresh()
+        {
+            if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException();
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (RequiresRecovery) throw new McpLoginException("Authorization renewal requires recovery. Run logout, then login in an interactive terminal.");
+            using var marker = new FileStream(RefreshMarker, new FileStreamOptions
+            {
+                Mode = System.IO.FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None,
+                UnixCreateMode = FileMode
+            });
+            marker.WriteByte(1);
+            marker.Flush(flushToDisk: true);
+        }
+
+        /// <summary>Clears uncertainty only after the replacement credential was committed.</summary>
+        public void CompleteRefresh()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            CheckFile(RefreshMarker);
+            File.Delete(RefreshMarker);
+        }
 
         /// <summary>Reads only the selected bounded, correctly permissioned credential.</summary>
         public async Task<McpCredential?> ReadAsync(CancellationToken cancellationToken = default)
@@ -172,6 +207,7 @@ public sealed class McpCredentialStore(McpLoginSettings settings)
             ObjectDisposedException.ThrowIf(disposed, this);
             CheckFile(PathName);
             File.Delete(PathName);
+            CompleteRefresh();
         }
 
         /// <inheritdoc/>

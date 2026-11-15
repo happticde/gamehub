@@ -2,9 +2,10 @@
 
 For the Docker image and current Codex setup, use the maintained [MCP guide](guides/mcp.md).
 The source-based examples below require a stable .NET 10 SDK and a matching checkout.
-Library tools currently use Core API-key authentication. Explicit staged device-login commands
-and protected-volume storage are described in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume).
-Tool user-token use/renewal remains #73; guarded end-user rollout waits for #75.
+Library tools support user authorization and rotating renewal with `Mcp__AuthenticationMode=User`.
+Explicit device login, protected-volume storage, launch configuration and failure recovery are
+described in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume).
+The examples below retain the separate API-key compatibility mode; guarded end-user rollout waits for #75.
 
 The separate Core [browser consent boundary](mcp-browser-consent.md) is default-off and staged
 for the upcoming user-authenticated client. Do not enable it for end users before release gate #75.
@@ -115,6 +116,7 @@ The MCP server reads these values from environment variables or `appsettings.jso
 
 | Key | Default | Description |
 |---|---|---|
+| `Mcp:AuthenticationMode` | `ApiKey` | `User` uses only the selected HTTPS issuer/resource/connection and credential volume; never falls back to an operator key |
 | `Core:BaseUrl` | `http://localhost:5001` | URL of the GameHub Core service |
 | `Core:ApiKey` | *(empty)* | API key — must match Core's `Authentication:ApiKey` |
 
