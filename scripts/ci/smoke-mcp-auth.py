@@ -48,6 +48,11 @@ def gate(image, container=None, postgres=False):
     def wait_file(name, timeout=90):
         expires = time.monotonic() + timeout
         while time.monotonic() < expires:
+            result = remote_python("import pathlib,sys; p=pathlib.Path(sys.argv[1])/" + repr(name)
+                                   + "; print(p.read_text() if p.exists() else '')")
+            if result.strip():
+                return json.loads(result)
+            # The final receipt can outlive a successfully exited fixture. Read it first.
             if fixture.poll() is not None:
                 # Status/stack lines identify a failed assertion without printing values,
                 # HTTP payloads, codes, tokens or full framework diagnostics.
@@ -55,10 +60,6 @@ def gate(image, container=None, postgres=False):
                     if "McpDockerGateTests.cs:line" in line:
                         print(line.strip())
                 raise RuntimeError("Production Core fixture exited before completing the gate.")
-            result = remote_python("import pathlib,sys; p=pathlib.Path(sys.argv[1])/" + repr(name)
-                                   + "; print(p.read_text() if p.exists() else '')")
-            if result.strip():
-                return json.loads(result)
             time.sleep(0.2)
         raise RuntimeError("Production Core fixture did not complete its gate step.")
 
