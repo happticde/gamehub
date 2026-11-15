@@ -52,17 +52,16 @@ public sealed class McpDeviceStartupTests
         Assert.Equal(HttpStatusCode.OK, library.StatusCode);
         using var account = await BearerGetAsync(client, "/api/auth/sessions", access);
         Assert.Equal(HttpStatusCode.Unauthorized, account.StatusCode);
-        using (var scope = factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
-            var grant = await db.McpGrants.SingleAsync();
-            await using var transaction = await db.Database.BeginTransactionAsync();
-            await AccountSessionRevocation.RevokeFamilyAsync(db, grant.AccountSessionId, grant.UserAccountId,
-                grant.TenantId, DateTime.UtcNow, default);
-            await transaction.CommitAsync();
-        }
+        using var logout = await client.PostAsync(McpDeviceProtocol.RevocationPath,
+            Form(("client_id", McpDeviceProtocol.ClientId), ("token", token.GetProperty("refresh_token").GetString()!)));
+        Assert.Equal(HttpStatusCode.OK, logout.StatusCode);
+        Assert.Empty(await logout.Content.ReadAsStringAsync());
         using var revoked = await BearerGetAsync(client, "/api/library", access);
         Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+        using var renewal = await client.PostAsync(McpDeviceProtocol.TokenPath,
+            Form(("client_id", McpDeviceProtocol.ClientId), ("grant_type", "refresh_token"),
+                ("refresh_token", token.GetProperty("refresh_token").GetString()!), ("resource", StartupFixture.Resource)));
+        Assert.Equal(HttpStatusCode.BadRequest, renewal.StatusCode);
         Assert.False(factory.Services.GetRequiredService<GameHub.Shared.Authentication.MultiUserMode>().IsEnabled);
     }
 

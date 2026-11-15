@@ -1,14 +1,70 @@
-"""Exercise the shipped MCP process over stdio without credentials or a running Core."""
+"""Exercise the shipped MCP process and volume without live credentials or a running Core."""
 
 import json
+import hashlib
 import queue
+import secrets
 import subprocess
 import sys
 import threading
+import uuid
+from datetime import datetime, timedelta, timezone
 
 
 TOOLS = {"search_library", "get_game", "get_random_game", "get_statistics", "list_tags",
          "set_play_status", "set_rating"}
+
+
+def smoke_credentials(image):
+    """Exercise real disposable containers and volume metadata, without live user credentials."""
+    volume = "gamehub-mcp-smoke-" + uuid.uuid4().hex
+    subprocess.run(["docker", "volume", "create", volume], check=True, stdout=subprocess.DEVNULL)
+    mount = ["--mount", f"type=volume,src={volume},dst=/var/lib/gamehub-mcp"]
+    trust = ["-e", "Mcp__Issuer=https://127.0.0.1/", "-e", "Mcp__Resource=https://127.0.0.1/api"]
+    base = ["docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges", *mount, *trust]
+
+    def command(connection, *arguments):
+        result = subprocess.run([*base, "-e", f"Mcp__Connection={connection}", image, *arguments],
+                                text=True, capture_output=True, timeout=30)
+        if result.stdout:
+            raise ValueError("A setup command wrote to stdout")
+        return result
+
+    try:
+        if command("primary", "setup").returncode != 0:
+            raise ValueError("Non-root setup failed on the new named volume")
+        if command("primary", "login").returncode != 1:
+            raise ValueError("Noninteractive login did not fail closed")
+        for connection in ("primary", "other"):
+            selected = hashlib.sha256(("https://127.0.0.1/\nhttps://127.0.0.1/api\n" + connection).encode()).hexdigest()
+            # Unissued fixture values travel only on stdin, never arguments, logs or image layers.
+            credential = {"Version": 1, "Issuer": "https://127.0.0.1/", "Resource": "https://127.0.0.1/api",
+                          "Connection": connection, "AccessToken": secrets.token_urlsafe(32),
+                          "RefreshToken": secrets.token_urlsafe(32), "Scope": "library:read offline_access",
+                          "AccessExpiresAt": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
+            subprocess.run([*base, "-i", "-e", f"SELECTED={selected}", "--entrypoint", "sh", image, "-ec",
+                            'umask 077; mkdir -p "/var/lib/gamehub-mcp/$SELECTED"; '
+                            'cat > "/var/lib/gamehub-mcp/$SELECTED/credential.json"; '
+                            'test "$(stat -c %a /var/lib/gamehub-mcp)" = 700; '
+                            'test "$(stat -c %a /var/lib/gamehub-mcp/$SELECTED)" = 700; '
+                            'test "$(stat -c %a /var/lib/gamehub-mcp/$SELECTED/credential.json)" = 600'],
+                           input=json.dumps(credential), text=True, capture_output=True, check=True, timeout=30)
+            stored = command(connection, "status")
+            if stored.returncode != 0 or "Authorization stored" not in stored.stderr:
+                raise ValueError("A fresh container did not retain its selected credential")
+            if any(credential[key] in stored.stderr for key in ("AccessToken", "RefreshToken")):
+                raise ValueError("Status exposed a fixture credential")
+        unavailable = command("primary", "logout")
+        if unavailable.returncode != 2 or "Remote revocation could not be confirmed" not in unavailable.stderr:
+            raise ValueError("Unavailable remote logout was not reported")
+        if "No stored authorization" not in command("primary", "status").stderr:
+            raise ValueError("Logout retained its selected local credential")
+        if "Authorization stored" not in command("other", "status").stderr:
+            raise ValueError("Logout removed an unrelated local connection")
+        print("MCP credentials passed: non-root volume permissions, restart, isolated logout, and empty stdout.")
+    finally:
+        subprocess.run(["docker", "volume", "rm", volume], check=True, stdout=subprocess.DEVNULL)
 
 
 def smoke(image):
@@ -16,6 +72,7 @@ def smoke(image):
         ["docker", "image", "inspect", "--format", "{{.Config.User}}", image], text=True).strip()
     if user in {"", "0", "root", "0:0"}:
         raise ValueError("The MCP image must run as a non-root user")
+    smoke_credentials(image)
 
     process = subprocess.Popen([
         "docker", "run", "--rm", "-i", "--network", "none", "--read-only",

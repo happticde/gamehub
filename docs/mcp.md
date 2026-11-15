@@ -2,8 +2,9 @@
 
 For the Docker image and current Codex setup, use the maintained [MCP guide](guides/mcp.md).
 The source-based examples below require a stable .NET 10 SDK and a matching checkout.
-The current MCP uses Core API-key authentication. It does not implement an OIDC user login
-for guarded multi-user deployments.
+Library tools currently use Core API-key authentication. Explicit staged device-login commands
+and protected-volume storage are described in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume).
+Tool user-token use/renewal remains #73; guarded end-user rollout waits for #75.
 
 The separate Core [browser consent boundary](mcp-browser-consent.md) is default-off and staged
 for the upcoming user-authenticated client. Do not enable it for end users before release gate #75.

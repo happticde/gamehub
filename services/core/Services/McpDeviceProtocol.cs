@@ -55,6 +55,8 @@ public static class McpDeviceProtocol
     public const string DevicePath = "/connect/device";
     /// <summary>Device redemption and integration refresh endpoint.</summary>
     public const string TokenPath = "/connect/token";
+    /// <summary>Client credential revocation, closing only its exact connection.</summary>
+    public const string RevocationPath = "/connect/revoke";
     /// <summary>Internal BFF consent endpoint; never a public browser page.</summary>
     public const string VerifyPath = "/connect/verify";
     /// <summary>Short absolute pending lifetime, independent of eventual grant lifetime.</summary>
@@ -102,6 +104,7 @@ public static class McpDeviceProtocol
                 options.SetIssuer(resource.Issuer);
                 options.SetDeviceAuthorizationEndpointUris(DevicePath);
                 options.SetTokenEndpointUris(TokenPath);
+                options.SetRevocationEndpointUris(RevocationPath);
                 options.SetEndUserVerificationEndpointUris(VerifyPath);
                 options.AllowDeviceAuthorizationFlow().AllowRefreshTokenFlow();
                 options.RegisterScopes(McpPermissions.LibraryRead, McpPermissions.TrackingWrite);
@@ -116,6 +119,15 @@ public static class McpDeviceProtocol
                 options.AddSigningCertificate(keys.Signing).AddEncryptionCertificate(keys.Encryption);
                 options.UseDataProtection().Configure(configuration => configuration.DataProtectionProvider = keys.Provider);
                 options.UseAspNetCore().EnableTokenEndpointPassthrough().EnableEndUserVerificationEndpointPassthrough();
+                // Keep native credential/client validation; replace only the single-token mutation
+                // with GameHub's connection-wide transaction and ownership admission.
+                options.RemoveEventHandler(OpenIddictServerHandlers.Revocation.RevokeToken.Descriptor);
+                options.AddEventHandler<OpenIddictServerEvents.HandleRevocationRequestContext>(builder => builder
+                    .UseScopedHandler<McpClientRevocation>()
+                    .SetOrder(OpenIddictServerHandlers.Revocation.RevokeToken.Descriptor.Order));
+                options.AddEventHandler<OpenIddictServerEvents.ApplyRevocationResponseContext>(builder => builder
+                    .UseInlineHandler(context => { Sanitize(context.Response); return default; })
+                    .SetOrder(int.MinValue + 100));
                 options.AddEventHandler<OpenIddictServerEvents.ProcessSignInContext>(builder => builder
                     .UseScopedHandler<McpTokenIssuance>()
                     .SetOrder(OpenIddictServerHandlers.RedeemTokenEntry.Descriptor.Order - 500));
@@ -218,7 +230,7 @@ public static class McpDeviceProtocol
             ClientId = ClientId, ClientType = ClientTypes.Public, ConsentType = ConsentTypes.Explicit,
             Permissions =
             {
-                Permissions.Endpoints.DeviceAuthorization, Permissions.Endpoints.Token,
+                Permissions.Endpoints.DeviceAuthorization, Permissions.Endpoints.Token, Permissions.Endpoints.Revocation,
                 Permissions.GrantTypes.DeviceCode, Permissions.GrantTypes.RefreshToken,
                 Permissions.Prefixes.Scope + McpPermissions.LibraryRead,
                 Permissions.Prefixes.Scope + McpPermissions.TrackingWrite,
@@ -231,12 +243,19 @@ public static class McpDeviceProtocol
         {
             var current = new OpenIddictApplicationDescriptor();
             await manager.PopulateAsync(current, existing, cancellationToken);
+            var previousPermissions = descriptor.Permissions.Where(permission => permission != Permissions.Endpoints.Revocation);
+            var upgrade = current.Permissions.SetEquals(previousPermissions);
             if (current.ClientType != descriptor.ClientType || current.ConsentType != descriptor.ConsentType
                 || current.ClientSecret is not null || current.RedirectUris.Count != 0
                 || current.PostLogoutRedirectUris.Count != 0 || current.Requirements.Count != 0
                 || current.Settings.Count != 0 || current.JsonWebKeySet is not null
-                || !current.Permissions.SetEquals(descriptor.Permissions))
+                || (!upgrade && !current.Permissions.SetEquals(descriptor.Permissions)))
                 throw new InvalidOperationException("The stored MCP client registration is incompatible.");
+            if (upgrade)
+            {
+                current.Permissions.Add(Permissions.Endpoints.Revocation);
+                await manager.UpdateAsync(existing, current, cancellationToken);
+            }
         }
     }
 
