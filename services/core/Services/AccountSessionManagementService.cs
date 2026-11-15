@@ -26,7 +26,8 @@ public sealed class AccountSessionManagementService(
             .AsNoTracking()
             .Where(session => session.UserAccountId == accountId
                 && session.TenantId == tenantId
-                && session.RevokedAtUtc == null)
+                && session.RevokedAtUtc == null
+                && !db.McpGrants.Any(grant => grant.AccountSessionId == session.Id))
             .OrderByDescending(session => session.Id == currentAccountSessionId)
             .ThenByDescending(session => session.CreatedAtUtc)
             .Select(session => new

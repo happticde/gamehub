@@ -7,6 +7,9 @@ Explicit device login, protected-volume storage, launch configuration and failur
 described in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume).
 The examples below retain the separate API-key compatibility mode; guarded end-user rollout waits for #75.
 
+Use Admin **Security** to inspect and individually revoke owned assistant connections.
+See [connection management](mcp-connections.md) for the browser boundary and lifecycle behavior.
+
 The separate Core [browser consent boundary](mcp-browser-consent.md) is default-off and staged
 for the upcoming user-authenticated client. Do not enable it for end users before release gate #75.
 
