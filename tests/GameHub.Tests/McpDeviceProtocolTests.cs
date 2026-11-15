@@ -9,6 +9,7 @@ using GameHub.Core.Services;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -19,13 +20,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using OpenIddict.Abstractions;
+using OpenIddict.Server;
 using OpenIddict.Server.AspNetCore;
+using OpenIddict.Validation.AspNetCore;
 using Xunit;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace GameHub.Tests;
 
-public sealed class McpDeviceProtocolTests
+public sealed partial class McpDeviceProtocolTests
 {
     [Theory]
     [InlineData(false)]
@@ -293,7 +296,7 @@ public sealed class McpDeviceProtocolTests
         public override bool CanSeek => false;
     }
 
-    private sealed class DeviceHost : IAsyncDisposable
+    private sealed partial class DeviceHost : IAsyncDisposable
     {
         internal const string Issuer = "https://issuer.example/";
         internal const string Resource = "https://issuer.example/api";
@@ -302,9 +305,10 @@ public sealed class McpDeviceProtocolTests
         private readonly X509Certificate2 signing = Certificate("signing");
         private readonly X509Certificate2 encryption = Certificate("encryption");
         private readonly X509Certificate2 protection = Certificate("protection");
-        private readonly Guid account = Guid.NewGuid();
-        private readonly Guid browser = Guid.NewGuid();
-        private readonly Guid provider = Guid.NewGuid();
+        private Guid account = Guid.NewGuid();
+        private Guid browser = Guid.NewGuid();
+        private Guid provider = Guid.NewGuid();
+        private Guid tenant = TenantDefaults.DefaultTenantId;
         private WebApplication app = null!;
         private bool fixture;
         private bool closedToken;
@@ -314,15 +318,17 @@ public sealed class McpDeviceProtocolTests
         internal List<string> Logs { get; } = [];
         internal HttpClient Client { get; private set; } = null!;
 
-        internal static bool CanRun(bool postgres) => !postgres || !string.IsNullOrWhiteSpace(
-            Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION"));
+        private static string? PostgresConnection =>
+            Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+
+        internal static bool CanRun(bool postgres) => !postgres || !string.IsNullOrWhiteSpace(PostgresConnection);
 
         internal static async Task<DeviceHost> CreateAsync(bool fixture = false, bool closedToken = false, bool postgres = false)
         {
             var host = new DeviceHost { fixture = fixture, closedToken = closedToken, postgres = postgres };
             Directory.CreateDirectory(host.KeysPath);
-            host.connection = postgres ? new NpgsqlConnectionStringBuilder(
-                Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION"))
+            host.connection = postgres ? new NpgsqlConnectionStringBuilder(PostgresConnection)
                 { Database = "mcp_device_" + Guid.NewGuid().ToString("N") }.ConnectionString
                 : "Data Source=" + Path.Combine(host.directory, "protocol.db");
             await host.StartAsync();
@@ -343,16 +349,63 @@ public sealed class McpDeviceProtocolTests
             {
                 if (postgres) options.UseNpgsql(connection); else options.UseSqlite(connection);
                 options.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
+                options.AddInterceptors(new TokenCommitInterceptor(this));
             });
             builder.Services.AddAuthentication();
+            builder.Services.AddSingleton<TimeProvider>(Clock);
             builder.Services.AddMcpDeviceProtocol(new(new Uri(Issuer), new Uri(Resource)),
                 new McpProtocolKeys(new DirectoryInfo(KeysPath), signing, encryption, protection));
+            builder.Services.AddMcpRestTokenValidation(new(new Uri(Issuer), new Uri(Resource)), options =>
+            {
+                options.UseLocalServer();
+                options.UseDataProtection().Configure(configuration => configuration.DataProtectionProvider =
+                    DataProtectionProvider.Create(new DirectoryInfo(KeysPath), settings => settings
+                        .SetApplicationName("GameHub.Mcp.Protocol.v1").ProtectKeysWithCertificate(protection)));
+            });
+            builder.Services.AddOpenIddict().AddServer(options =>
+            {
+                options.AddEventHandler<OpenIddictServerEvents.ProcessSignInContext>(handler => handler
+                    .UseInlineHandler(async context =>
+                    {
+                        if (context.EndpointType == OpenIddictServerEndpointType.Token && AfterAdmission is not null)
+                            await AfterAdmission();
+                    }).SetOrder(OpenIddictServerHandlers.RedeemTokenEntry.Descriptor.Order - 400));
+                options.AddEventHandler<OpenIddictServerEvents.ProcessSignInContext>(handler => handler
+                    .UseInlineHandler(context =>
+                    {
+                        if (RejectAfterGeneration && context.EndpointType == OpenIddictServerEndpointType.Token)
+                            context.Reject(Errors.InvalidGrant);
+                        return default;
+                    }).SetOrder(OpenIddictServerHandlers.GenerateRefreshToken.Descriptor.Order + 500));
+            });
             app = builder.Build();
+            app.Use(async (http, next) =>
+            {
+                if (http.Request.Path == McpDeviceProtocol.TokenPath && BeforeTokenRequest is not null)
+                    await BeforeTokenRequest();
+                try { await next(http); }
+                finally
+                {
+                    if (http.Request.Path == McpDeviceProtocol.TokenPath) TokenRequestCompleted?.TrySetResult();
+                }
+            });
             if (fixture)
                 app.UseWhen(context => context.Request.Path != McpDeviceProtocol.VerifyPath,
                     branch => branch.UseMcpDeviceProtocol());
             else app.UseMcpDeviceProtocol();
             app.UseAuthentication();
+            app.MapGet("/test/access", async (HttpContext http) =>
+            {
+                var result = await http.AuthenticateAsync(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+                return result.Succeeded ? Results.Json(new
+                {
+                    account = result.Principal!.GetClaim(Claims.Subject),
+                    tenant = result.Principal.GetClaim(GameHubClaimTypes.TenantId),
+                    family = result.Principal.GetClaim(GameHubClaimTypes.AccountSessionId),
+                    epoch = result.Principal.GetClaim(GameHubClaimTypes.SessionVersion),
+                    scopes = result.Principal.GetScopes(), audiences = result.Principal.GetAudiences()
+                }) : Results.Unauthorized();
+            });
             if (!fixture || closedToken) app.MapClosedMcpConsent();
             if (fixture)
             {
@@ -385,31 +438,34 @@ public sealed class McpDeviceProtocolTests
             var now = DateTime.UtcNow.AddSeconds(-1);
             if (!await db.UserAccounts.AnyAsync(row => row.Id == account))
             {
-                db.UserAccounts.Add(new() { Id = account, TenantId = TenantDefaults.DefaultTenantId,
-                    Email = "fixture@example.test", NormalizedEmail = "FIXTURE@EXAMPLE.TEST", PasswordHash = "synthetic", CreatedAtUtc = now });
-                db.AccountSessions.Add(new() { Id = browser, TenantId = TenantDefaults.DefaultTenantId, UserAccountId = account, CreatedAtUtc = now });
+                if (!await db.Tenants.AnyAsync(row => row.Id == tenant))
+                    db.Tenants.Add(new() { Id = tenant, Name = "Fixture", CreatedAtUtc = now });
+                db.UserAccounts.Add(new() { Id = account, TenantId = tenant, SessionVersion = Epoch,
+                    Email = account + "@example.test", NormalizedEmail = account + "@EXAMPLE.TEST", PasswordHash = "synthetic", CreatedAtUtc = now });
+                db.AccountSessions.Add(new() { Id = browser, TenantId = tenant, UserAccountId = account, CreatedAtUtc = now });
                 var identity = Guid.NewGuid();
-                db.ExternalIdentities.Add(new() { Id = identity, TenantId = TenantDefaults.DefaultTenantId, UserAccountId = account,
-                    Issuer = "https://provider.example", Subject = "synthetic", CreatedAtUtc = now });
-                db.OidcProviderSessions.Add(new() { Id = provider, TenantId = TenantDefaults.DefaultTenantId, UserAccountId = account,
-                    ExternalIdentityId = identity, AccountSessionId = browser, SessionKeyHash = new string('A', 64), CreatedAtUtc = now });
+                db.ExternalIdentities.Add(new() { Id = identity, TenantId = tenant, UserAccountId = account,
+                    Issuer = "https://provider.example", Subject = account.ToString(), CreatedAtUtc = now });
+                db.OidcProviderSessions.Add(new() { Id = provider, TenantId = tenant, UserAccountId = account,
+                    ExternalIdentityId = identity, AccountSessionId = browser,
+                    SessionKeyHash = OidcProviderSessionKey.Hash("https://provider.example", provider.ToString()), CreatedAtUtc = now });
                 await db.SaveChangesAsync();
             }
             var family = Guid.NewGuid();
-            db.AccountSessions.Add(new() { Id = family, TenantId = TenantDefaults.DefaultTenantId, UserAccountId = account, CreatedAtUtc = now });
+            db.AccountSessions.Add(new() { Id = family, TenantId = tenant, UserAccountId = account, CreatedAtUtc = now });
             var authorization = new McpProtocolAuthorization
             {
                 Id = Guid.NewGuid().ToString(), Application = await db.Set<McpProtocolApplication>().SingleAsync(),
-                Subject = account.ToString(), TenantId = TenantDefaults.DefaultTenantId, UserAccountId = account,
+                Subject = account.ToString(), TenantId = tenant, UserAccountId = account,
                 AccountSessionId = family, Status = Statuses.Valid, Type = AuthorizationTypes.Permanent,
                 Scopes = JsonSerializer.Serialize(result.Principal!.GetScopes()), CreationDate = now
             };
             db.Add(authorization);
             await db.SaveChangesAsync();
-            db.McpGrants.Add(new() { Id = Guid.NewGuid(), TenantId = TenantDefaults.DefaultTenantId, UserAccountId = account,
+            db.McpGrants.Add(new() { Id = Guid.NewGuid(), TenantId = tenant, UserAccountId = account,
                 AccountSessionId = family, ProtocolAuthorizationId = authorization.Id, OidcProviderSessionId = provider,
                 ClientId = McpDeviceProtocol.ClientId, Resource = Resource, Scopes = McpPermissions.LibraryRead,
-                CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(30) });
+                ApprovedSessionVersion = Epoch, CreatedAtUtc = now, ExpiresAtUtc = DateTime.UtcNow.Add(GrantLifetime) });
             await db.SaveChangesAsync();
             var principal = new ClaimsPrincipal(new ClaimsIdentity("synthetic-consent"));
             // The supported verification update retains the existing storage authorization ID.
@@ -422,9 +478,9 @@ public sealed class McpDeviceProtocolTests
             descriptor.AuthorizationId = authorization.Id;
             await tokens.UpdateAsync(pending, descriptor);
             principal.SetClaim(Claims.Subject, account.ToString());
-            principal.SetClaim(GameHubClaimTypes.TenantId, TenantDefaults.DefaultTenantId.ToString());
+            principal.SetClaim(GameHubClaimTypes.TenantId, tenant.ToString());
             principal.SetClaim(GameHubClaimTypes.AccountSessionId, family.ToString());
-            principal.SetClaim(GameHubClaimTypes.SessionVersion, "0");
+            principal.SetClaim(GameHubClaimTypes.SessionVersion, Epoch.ToString(System.Globalization.CultureInfo.InvariantCulture));
             principal.SetScopes(result.Principal.GetScopes()).SetResources(result.Principal.GetResources()).SetAuthorizationId(authorization.Id);
             return Results.SignIn(principal, authenticationScheme: Protocol);
         }

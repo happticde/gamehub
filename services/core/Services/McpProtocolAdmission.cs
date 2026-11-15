@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.RateLimiting;
 using GameHub.Core.Data;
@@ -178,20 +179,61 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
                 // Keep poll admission and OpenIddict's single-consumption update in one
                 // serializable transaction. A competing poll cannot invalidate its CAS midway.
                 await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, http.RequestAborted);
+                var state = new McpTokenTransaction();
+                http.Features.Set(state);
                 if (form[Parameters.GrantType] == GrantTypes.DeviceCode
                     && !StringValues.IsNullOrEmpty(form[Parameters.DeviceCode])
                     && !await http.RequestServices.GetRequiredService<McpPollingAdmission>()
                         .AdmitAsync(form[Parameters.DeviceCode].ToString(), http.RequestAborted))
                     await Error(http, Errors.SlowDown);
-                else await next(http);
+                else
+                {
+                    // Keep durable polling backoff even on protocol rejection, but roll back
+                    // token consumption/creation when later validation or response handling fails.
+                    await transaction.CreateSavepointAsync("mcp_issuance", http.RequestAborted);
+                    await next(http);
+                    using var response = JsonDocument.Parse(buffered.ToArray());
+                    var success = http.Response.StatusCode is >= 200 and < 300
+                        && !response.RootElement.TryGetProperty("error", out _)
+                        && response.RootElement.TryGetProperty("access_token", out var accessToken)
+                        && accessToken.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrEmpty(accessToken.GetString());
+                    if (success && (state.Grant is null
+                        || state.Grant.ExpiresAtUtc <= http.RequestServices.GetRequiredService<TimeProvider>()
+                            .GetUtcNow().UtcDateTime))
+                    {
+                        http.Response.StatusCode = 400;
+                        success = false;
+                    }
+                    if (!success && !state.RefreshReuseRevoked)
+                    {
+                        await transaction.RollbackToSavepointAsync("mcp_issuance", http.RequestAborted);
+                        db.ChangeTracker.Clear();
+                    }
+                    if (!success)
+                    {
+                        var error = response.RootElement.TryGetProperty("error", out var value)
+                            ? value.GetString() ?? Errors.InvalidGrant : Errors.InvalidGrant;
+                        var status = http.Response.StatusCode;
+                        buffered.SetLength(0);
+                        http.Response.Headers.Remove("Content-Length");
+                        await Error(http, error, status is >= 400 and < 600 ? status : 400);
+                    }
+                }
                 await transaction.CommitAsync(http.RequestAborted);
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            http.RequestServices.GetRequiredService<CoreContext>().ChangeTracker.Clear();
+            throw;
+        }
+        catch (Exception exception)
         {
             http.RequestServices.GetRequiredService<ILogger<McpProtocolMiddleware>>()
                 .LogWarning("MCP protocol work unavailable ({FailureType}).", exception.GetType().Name);
             buffered.SetLength(0);
+            http.RequestServices.GetRequiredService<CoreContext>().ChangeTracker.Clear();
             http.Response.Headers.Remove("Content-Length");
             await Error(http, Errors.TemporarilyUnavailable, 503);
         }

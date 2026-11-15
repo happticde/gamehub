@@ -30,7 +30,9 @@ Pending principals have no account, tenant or grant. Duplicate/unknown fields, i
 selectors, are rejected. The token endpoint requires the same exact resource; OpenIddict retains
 the approved scopes and rejects widening. Reference access/refresh tokens use encrypted payloads,
 ten-minute access and thirty-day refresh defaults, rotating refresh and no reuse grace.
-Application absolute expiry and connection-wide replay revocation remain mandatory #71 policy.
+The [#98 token lifecycle](mcp-token-lifecycle.md) adds live transactional admission, absolute
+expiry clamping and connection-wide confirmed refresh-reuse revocation. Production activation
+remains closed pending #71.
 
 `MapClosedMcpConsent` denies verification and approved redemption. The middleware also denies
 verification before parsing any user code. No browser, operator or local password credential can
@@ -91,9 +93,9 @@ preserve body/guess limits when replacing the verification middleware gate. Atom
 owned family, authorization and immutable grant, and explicitly bind the pending device token's
 authorization through the OpenIddict manager before completing verification. OpenIddict's
 verification update retains that storage binding; an encrypted principal alone is insufficient.
-Serialize approval/redemption/refresh against provider reissue blocking, account epochs and
-deletion. Recheck the live consent through #69, preserve absolute expiry, and revoke the entire
-connection on confirmed refresh reuse. Do not expose a merely protocol-valid credential early.
+Serialize approval against provider reissue blocking, account epochs and deletion. Preserve
+[#98's redemption/refresh admission, expiry and reuse handlers](mcp-token-lifecycle.md), as well
+as #69's live access validation. Do not expose a merely protocol-valid credential early.
 
 The split prerequisite [#94 grant admission barrier](mcp-grant-admission.md) now supplies
 transactional owner/provider admission and independent grant creation. It consumes no pending

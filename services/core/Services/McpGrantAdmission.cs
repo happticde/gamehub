@@ -102,7 +102,27 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
     /// </summary>
     public async Task<McpGrantAdmissionResult?> AdmitAsync(
         ClaimsPrincipal principal, string tokenType, string? requiredPermission = null,
+        CancellationToken cancellationToken = default) =>
+        await AdmitTokenAsync(principal, tokenType, Statuses.Valid, requiredPermission, cancellationToken);
+
+    /// <summary>
+    /// Ends exactly the connection identified by a cryptographically validated, already consumed
+    /// refresh token. The caller must commit this revocation despite the rejected token response.
+    /// </summary>
+    public async Task<bool> RevokeReusedRefreshAsync(ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
+    {
+        var grant = await AdmitTokenAsync(principal, TokenTypeIdentifiers.RefreshToken,
+            Statuses.Redeemed, null, cancellationToken);
+        if (grant is null) return false;
+        await AccountSessionRevocation.RevokeFamilyAsync(db, grant.FamilyId, grant.AccountId,
+            grant.TenantId, timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+        return true;
+    }
+
+    private async Task<McpGrantAdmissionResult?> AdmitTokenAsync(
+        ClaimsPrincipal principal, string tokenType, string tokenStatus, string? requiredPermission,
+        CancellationToken cancellationToken)
     {
         RequireTransaction();
         // Access validation exposes the token's audience; device/refresh principals carry the
@@ -144,7 +164,7 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
                 && row.Application != null && row.Application.ClientId == grant.ClientId)
             .ExecuteUpdateAsync(update => update.SetProperty(row => row.Status, row => row.Status),
                 cancellationToken) != 1) return null;
-        if (await db.Set<McpProtocolToken>().Where(row => row.Id == tokenId && row.Status == Statuses.Valid
+        if (await db.Set<McpProtocolToken>().Where(row => row.Id == tokenId && row.Status == tokenStatus
                 && row.Type == tokenType && row.Subject == subject && row.ExpirationDate > now
                 && row.Authorization != null && row.Authorization.Id == authorizationId
                 && row.Application != null && row.Application.ClientId == grant.ClientId)

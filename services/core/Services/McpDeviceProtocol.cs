@@ -5,6 +5,7 @@ using GameHub.Core.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 using OpenIddict.Server.AspNetCore;
@@ -77,6 +78,9 @@ public static class McpDeviceProtocol
         services.AddSingleton(resource);
         services.AddSingleton<McpProtocolBudget>();
         services.AddScoped<McpPollingAdmission>();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddScoped<McpGrantAdmission>();
         // Framework request logging can print query strings; protocol logging can print payloads.
         // Application-owned structured diagnostics remain available, without protocol values.
         services.AddLogging(logging =>
@@ -106,10 +110,20 @@ public static class McpDeviceProtocol
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
                 options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
                 options.SetRefreshTokenReuseLeeway(null);
+                options.DisableSlidingRefreshTokenExpiration();
                 options.UseReferenceAccessTokens().UseReferenceRefreshTokens();
                 options.AddSigningCertificate(keys.Signing).AddEncryptionCertificate(keys.Encryption);
                 options.UseDataProtection().Configure(configuration => configuration.DataProtectionProvider = keys.Provider);
                 options.UseAspNetCore().EnableTokenEndpointPassthrough().EnableEndUserVerificationEndpointPassthrough();
+                options.AddEventHandler<OpenIddictServerEvents.ProcessSignInContext>(builder => builder
+                    .UseScopedHandler<McpTokenIssuance>()
+                    .SetOrder(OpenIddictServerHandlers.RedeemTokenEntry.Descriptor.Order - 500));
+                options.AddEventHandler<OpenIddictServerEvents.ProcessSignInContext>(builder => builder
+                    .UseScopedHandler<McpTokenExpiry>()
+                    .SetOrder(OpenIddictServerHandlers.PrepareRefreshTokenPrincipal.Descriptor.Order + 500));
+                options.AddEventHandler<OpenIddictServerEvents.ValidateTokenContext>(builder => builder
+                    .UseScopedHandler<McpRefreshReuse>()
+                    .SetOrder(OpenIddictServerHandlers.Protection.ValidateTokenEntry.Descriptor.Order - 500));
                 // GameHub authorizations require an owned independent family. Pending requests
                 // have no owner; consent must explicitly persist their authorization in #71.
                 // Replace only automatic ad-hoc creation, never token/authorization validation.
