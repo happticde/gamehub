@@ -5,6 +5,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using GameHub.Core.Data;
 using GameHub.Core.Services;
+using GameHub.Shared.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -210,7 +212,7 @@ public sealed partial class McpDeviceProtocolTests
         from postgres in new[] { false, true }
         from refresh in new[] { false, true }
         from issuanceWins in new[] { false, true }
-        from change in new[] { "provider", "epoch", "deletion", "family" }
+        from change in new[] { "provider", "epoch", "deletion", "family", "connection" }
         select new object[] { postgres, refresh, issuanceWins, change };
 
     [Theory]
@@ -364,6 +366,27 @@ public sealed partial class McpDeviceProtocolTests
 
         internal Task RevokeAsync(string change) => WithDbAsync(async db =>
         {
+            if (change == "connection")
+            {
+                var controller = new GameHub.Core.Controllers.McpConnectionsController(db,
+                    new DefaultTenantContext(), TimeProvider.System,
+                    NullLogger<GameHub.Core.Controllers.McpConnectionsController>.Instance)
+                {
+                    ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+                    {
+                        HttpContext = new DefaultHttpContext
+                        {
+                            User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([
+                                new(System.Security.Claims.ClaimTypes.NameIdentifier, account.ToString()),
+                                new(GameHubClaimTypes.TenantId, tenant.ToString()),
+                                new(GameHubClaimTypes.AccountSessionId, browser.ToString())], "Bearer"))
+                        }
+                    }
+                };
+                Assert.IsType<Microsoft.AspNetCore.Mvc.NoContentResult>(await controller.Revoke(
+                    await db.McpGrants.Select(row => row.Id).SingleAsync(), default));
+                return;
+            }
             if (change == "provider")
             {
                 var service = new OidcBackChannelLogoutService(db, new TenantExecutionContext(), TimeProvider.System,

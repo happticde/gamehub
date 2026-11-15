@@ -11,6 +11,7 @@
 | Search | `hooks/useDebouncedMetadataSearch.ts`, `lib/latest-request-gate.ts` | Request gate | Debounced remote search | Slow, stale, cleared, and failed request checks |
 | Authentication | `lib/authenticated-fetch.ts`, server BFF routes | Server authentication policy | BFF-confirmed final 401 | Security tests |
 | Assistant consent | `components/McpConsentForm.tsx`, `lib/mcp-consent.ts`, `/api/mcp/consent` | [ADR-016](../docs/adr/016-mcp-user-authorization.md), [browser boundary](../docs/mcp-browser-consent.md) | Code entry, explicit review, approval/denial receipt | Browser, transport, startup and lifecycle tests |
+| Assistant connections | `components/admin/McpConnectionsPanel.tsx`, `lib/mcp-connections.ts`, Core `/auth/mcp-connections` | [ADR-016](../docs/adr/016-mcp-user-authorization.md), [connection management](../docs/mcp-connections.md) | Owned active consents; single confirmed revocation | Production HTTP, database race, browser and payload tests |
 | CRUD | Existing Core routes and their owning panels | Server API policy | Server-confirmed writes with retry | Security and interaction tests |
 
 ## Requests and state
@@ -34,3 +35,11 @@ Reading is the default; requested tracking writes need an unchecked optional con
 changed or uncertain decision returns to code review; it never retries approval automatically.
 Codes and confirmation remain in page memory only. Login returns to `/mcp/verify` without carrying
 a code in the URL. The Core service owns identity, provider provenance, expiry and one-time use.
+
+Assistant connections use the Security tab's existing cards and German action labels. Dates use
+German formatting in the browser's local time zone. Keep the full local connection ID available
+to distinguish identical public clients. This ID is not a credential. Show only approved scopes,
+the resource, creation and absolute expiry. No provider or request metadata belongs in this view.
+Single revocation uses the shared alert dialog, initially focuses Cancel, and waits for Core's
+confirmation. A failed or uncertain response keeps the dialog available for an explicit retry;
+successful removal returns focus to Refresh. List requests have bounded waits and abort on unmount.

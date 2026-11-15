@@ -26,6 +26,7 @@ import { ActivityPanel } from "@/components/admin/ActivityPanel";
 import { BackupRestorePanel } from "@/components/admin/BackupRestorePanel";
 import { PlatformCredentialsPanel } from "@/components/admin/PlatformCredentialsPanel";
 import { ActiveSessionsPanel } from "@/components/admin/ActiveSessionsPanel";
+import { McpConnectionsPanel } from "@/components/admin/McpConnectionsPanel";
 import {
     Settings,
     Sparkles,
@@ -125,8 +126,9 @@ export default function AdminPage() {
                         <ActivityPanel />
                     </TabsContent>
 
-                    <TabsContent value="security">
+                    <TabsContent value="security" className="space-y-6">
                         <ActiveSessionsPanel />
+                        <McpConnectionsPanel />
                     </TabsContent>
 
                     <TabsContent value="backup">

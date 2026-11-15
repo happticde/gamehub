@@ -20,6 +20,13 @@ User mode ignores `Core__ApiKey` and `Core__BaseUrl`, including after an authori
 End-user rollout with OpenID Connect (OIDC) still waits for
 the [local release gate #75](https://github.com/happticde/gamehub/issues/75).
 
+In versions including [#74](https://github.com/happticde/gamehub/issues/74), Admin **Security**
+shows each assistant connection and its approved permissions. Choose **Zugriff widerrufen**
+and confirm the connection ID to end only that connection. Other connections and your browser
+session remain valid. A new login and consent are required to reconnect. See the
+[connection management reference](https://github.com/happticde/gamehub/blob/main/docs/mcp-connections.md)
+for lifecycle and ownership details.
+
 ## Staged device login and credential volume
 
 This section applies only to a local build or published version that includes

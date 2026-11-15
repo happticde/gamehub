@@ -18,7 +18,7 @@ using Xunit;
 
 namespace GameHub.Tests;
 
-public sealed class McpDeviceStartupTests
+public sealed partial class McpDeviceStartupTests
 {
     [Theory]
     [InlineData(false)]
@@ -119,11 +119,12 @@ public sealed class McpDeviceStartupTests
         Assert.Equal(trusted ? HttpStatusCode.OK : HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    private static async Task<(string Token, Guid Account)> SeedAsync(WebApplicationFactory<CoreContext> factory)
+    private static async Task<(string Token, Guid Account)> SeedAsync(WebApplicationFactory<CoreContext> factory, Guid? tenant = null)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
-        var owner = new UserAccount { Id = Guid.NewGuid(), TenantId = TenantDefaults.DefaultTenantId,
+        if (tenant is { } tenantId) db.Tenants.Add(new() { Id = tenantId, Name = "Other tenant" });
+        var owner = new UserAccount { Id = Guid.NewGuid(), TenantId = tenant ?? TenantDefaults.DefaultTenantId,
             AccountType = UserAccountType.ExternalOidc, DisplayName = "Startup owner", CreatedAtUtc = DateTime.UtcNow };
         var family = Guid.NewGuid();
         var external = Guid.NewGuid();
