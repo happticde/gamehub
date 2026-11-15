@@ -28,5 +28,8 @@ LABEL org.opencontainers.image.version=$VERSION \
 WORKDIR /app
 COPY --from=build /app/publish .
 COPY --from=build /app/legal/ /app/legal/
+RUN mkdir -p /var/lib/gamehub-mcp \
+    && chown "$APP_UID:$APP_UID" /var/lib/gamehub-mcp \
+    && chmod 0700 /var/lib/gamehub-mcp
 USER $APP_UID
 ENTRYPOINT ["dotnet", "GameHub.Mcp.dll"]

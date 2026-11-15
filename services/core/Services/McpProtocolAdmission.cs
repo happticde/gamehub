@@ -75,18 +75,27 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
     private static readonly HashSet<string> TokenFields = [Parameters.ClientId, Parameters.Scope, Parameters.Resource,
         Parameters.GrantType, Parameters.DeviceCode, Parameters.RefreshToken];
     private static readonly HashSet<string> VerificationFields = [Parameters.UserCode, "action", "confirmation", "allow_tracking_write"];
+    private static readonly HashSet<string> RevocationFields = [Parameters.ClientId, Parameters.Token, Parameters.TokenTypeHint];
 
     /// <summary>Runs before authentication. Errors expose only stable protocol error names.</summary>
     public async Task InvokeAsync(HttpContext http, McpProtocolBudget budget, McpRestResource resource)
     {
         var path = (http.Request.Path.Value ?? "").TrimEnd('/').ToLowerInvariant();
-        if (path is not (McpDeviceProtocol.DevicePath or McpDeviceProtocol.TokenPath or McpDeviceProtocol.VerifyPath))
+        if (path is not (McpDeviceProtocol.DevicePath or McpDeviceProtocol.TokenPath or McpDeviceProtocol.VerifyPath
+            or McpDeviceProtocol.RevocationPath))
         {
             await next(http);
             return;
         }
         http.Response.Headers.CacheControl = "no-store";
         http.Response.Headers.Pragma = "no-cache";
+        var requestCancellation = http.RequestAborted;
+        using var revocationDeadline = CancellationTokenSource.CreateLinkedTokenSource(requestCancellation);
+        if (path == McpDeviceProtocol.RevocationPath)
+        {
+            revocationDeadline.CancelAfter(TimeSpan.FromSeconds(15));
+            http.RequestAborted = revocationDeadline.Token;
+        }
         using var lease = budget.AcquireConcurrency();
         if (!lease.IsAcquired || !budget.Admit(path))
         {
@@ -146,7 +155,8 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
             await Error(http, Errors.InvalidRequest);
             return;
         }
-        var allowed = verification ? VerificationFields : path == McpDeviceProtocol.DevicePath ? DeviceFields : TokenFields;
+        var allowed = verification ? VerificationFields : path == McpDeviceProtocol.DevicePath ? DeviceFields
+            : path == McpDeviceProtocol.RevocationPath ? RevocationFields : TokenFields;
         if (form.Any(field => !allowed.Contains(field.Key) || field.Value.Count != 1
                 || StringValues.IsNullOrEmpty(field.Value))
             || (!verification && form[Parameters.ClientId] != McpDeviceProtocol.ClientId)
@@ -179,6 +189,20 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
                         http.Response.StatusCode = 400;
                     else if (http.Response.StatusCode is >= 300 and < 400) http.Response.StatusCode = 400;
                 }
+            }
+            else if (path == McpDeviceProtocol.RevocationPath)
+            {
+                db.Database.SetCommandTimeout(5);
+                await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, http.RequestAborted);
+                await next(http);
+                if (http.Response.StatusCode == 200)
+                {
+                    await transaction.CommitAsync(http.RequestAborted);
+                    // RFC 7009's success receipt contains no credential or connection metadata.
+                    buffered.SetLength(0);
+                }
+                http.Response.Headers.Remove("Content-Length");
+                http.Response.Headers.Remove("Location");
             }
             else if (path == McpDeviceProtocol.DevicePath)
             {
@@ -245,6 +269,13 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
                 await transaction.CommitAsync(http.RequestAborted);
             }
         }
+        catch (OperationCanceledException) when (path == McpDeviceProtocol.RevocationPath && !requestCancellation.IsCancellationRequested)
+        {
+            http.RequestServices.GetRequiredService<CoreContext>().ChangeTracker.Clear();
+            buffered.SetLength(0);
+            http.Response.Headers.Remove("Content-Length");
+            http.Response.StatusCode = 503;
+        }
         catch (OperationCanceledException)
         {
             http.RequestServices.GetRequiredService<CoreContext>().ChangeTracker.Clear();
@@ -260,7 +291,7 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
             if (verification) http.Response.StatusCode = 503;
             else await Error(http, Errors.TemporarilyUnavailable, 503);
         }
-        finally { http.Response.Body = output; }
+        finally { http.Response.Body = output; http.RequestAborted = requestCancellation; }
         buffered.Position = 0;
         await buffered.CopyToAsync(output, http.RequestAborted);
     }

@@ -4,8 +4,9 @@
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) device protocol with the signed
 GameHub browser session, following [ADR-016](adr/016-mcp-user-authorization.md).
 Activation is **default-off**. This delivery does not enable guarded multi-user mode, publish an
-image or claim the completed Docker client login experience. Client setup/storage, tool token
-use, connection management and final release acceptance remain #72–#75.
+image or claim the completed Docker client experience. Explicit client login/storage and
+credential-bound logout are documented in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume).
+Tool token use, connection management and final release acceptance remain #73–#75.
 
 ## Browser flow
 
@@ -49,7 +50,7 @@ Route these paths explicitly at the public HTTPS reverse proxy:
 | Path | Destination |
 | --- | --- |
 | `/mcp/verify`, `/api/mcp/consent`, existing browser/auth paths | Next.js |
-| `POST /connect/device`, `POST /connect/token` | Core |
+| `POST /connect/device`, `POST /connect/token`, `POST /connect/revoke` | Core |
 | `/connect/verify` | No public route; dedicated BFF-to-Core HTTPS transport only |
 | Integration REST requests under `/api/library` | Core's existing operation authorization |
 
