@@ -97,6 +97,10 @@ Serialize approval against provider reissue blocking, account epochs and deletio
 [#98's redemption/refresh admission, expiry and reuse handlers](mcp-token-lifecycle.md), as well
 as #69's live access validation. Do not expose a merely protocol-valid credential early.
 
+The split prerequisite [#100 device decision transaction](mcp-device-consent.md) supplies
+one-time approval/denial, explicit stored authorization binding and buffered commit. It registers
+no production route and does not remove the browser/activation requirements above.
+
 The split prerequisite [#94 grant admission barrier](mcp-grant-admission.md) now supplies
 transactional owner/provider admission and independent grant creation. It consumes no pending
 code and enables no endpoint. #71 must integrate it with the library's one-time verification,
