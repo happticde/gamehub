@@ -80,6 +80,44 @@ public sealed partial class McpDeviceProtocolTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task UserClient_LostRefreshReceipt_LogoutClosesSuccessorUsingRetainedPredecessor(bool postgres)
+    {
+        if (!OperatingSystem.IsLinux() || !DeviceHost.CanRun(postgres)) return;
+        await using var host = await DeviceHost.CreateAsync(fixture: true, postgres: postgres);
+        var first = await host.ApprovedTokensAsync();
+        var successor = await host.RefreshAsync(first);
+        var independent = await host.ApprovedTokensAsync();
+        var directory = Path.Combine(Path.GetTempPath(), "mcp-lost-receipt-" + Guid.NewGuid().ToString("N"));
+        var settings = new McpLoginSettings(DeviceHost.Issuer, DeviceHost.Resource, "primary", directory);
+        try
+        {
+            // Model a committed server rotation whose response never reached local storage.
+            using (var selected = await new McpCredentialStore(settings).LockAsync())
+            {
+                await selected.WriteAsync(new McpCredential
+                {
+                    Issuer = settings.Issuer.AbsoluteUri, Resource = settings.Resource, Connection = settings.Connection,
+                    AccessToken = first.GetProperty("access_token").GetString()!, RefreshToken = first.GetProperty("refresh_token").GetString()!,
+                    Scope = first.GetProperty("scope").GetString()!, AccessExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1)
+                });
+                selected.BeginRefresh();
+            }
+            var terminal = new StringWriter();
+            Assert.Equal(System.Net.HttpStatusCode.OK, await host.AccessStatusAsync(successor));
+            Assert.Equal(0, await new McpLoginCommands(settings, host.Client, terminal).RunAsync("logout"));
+            Assert.Contains("Selected remote connection revoked", terminal.ToString());
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, await host.AccessStatusAsync(successor));
+            Assert.Equal(System.Net.HttpStatusCode.OK, await host.AccessStatusAsync(independent));
+            using var cleared = await new McpCredentialStore(settings).LockAsync();
+            Assert.Null(await cleared.ReadAsync());
+            Assert.False(cleared.RequiresRecovery);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task UserClient_RealProtocol_RestartsRotatesAndRejectsConfirmedReplay(bool postgres)
     {
         if (!OperatingSystem.IsLinux() || !DeviceHost.CanRun(postgres)) return;

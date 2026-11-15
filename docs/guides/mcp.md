@@ -137,7 +137,9 @@ Timeouts, cancellation, invalid or rejected responses, save failures and a proce
 marker in place. Fresh processes then require **logout followed by login**; they never replay the
 possibly consumed credential. Status reports this recovery state without exposing tokens. Logout
 attempts remote revocation using the retained credential and removes the selected local state;
-if remote logout cannot be confirmed, revoke that connection in GameHub. Never delete a marker
+if remote logout cannot be confirmed, revoke that connection in GameHub. Core can revoke the
+whole connection using its cryptographically validated, retained predecessor even after rotation.
+That credential is presented only for revocation, never replayed at the refresh endpoint. Never delete a marker
 to force an automatic retry. Even a rejected or lost tool response causes no automatic refresh,
 operator-key fallback or write replay. A later explicit tool call can retry a service outage when
 the credential itself is still usable. Contention on the local lock is bounded and can fail with
