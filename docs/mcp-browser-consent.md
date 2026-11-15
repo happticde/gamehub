@@ -6,7 +6,9 @@ GameHub browser session, following [ADR-016](adr/016-mcp-user-authorization.md).
 Activation is **default-off**. This delivery does not enable guarded multi-user mode, publish an
 image or claim the completed Docker client experience. Explicit client login/storage and
 credential-bound logout are documented in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume).
-Tool token use, connection management and final release acceptance remain #73–#75.
+Tool token use and connection management are implemented in #73/#74. The
+[local release gate and operations guide](mcp-local-release-gate.md) covers integrated image
+acceptance, key rotation/backup and the human enablement handoff.
 
 ## Browser flow
 
@@ -122,8 +124,9 @@ when terminating HTTPS upstream.
 
 Protect private certificates, share the encrypted ring across replicas, and retain old decryption
 material for outstanding grants. Restore keys and database together; changing the deployment's
-issuer/resource or public-client permissions is not an in-place trust upgrade. Key rotation,
-operator backup/restore and real Docker-client interoperability remain #75 acceptance work.
+issuer/resource or public-client permissions is not an in-place trust upgrade. Follow the
+[rotation and recovery procedures](mcp-local-release-gate.md#persistent-keys-backup-and-recovery)
+before changing persistent keys or restoring protocol state.
 The production local-validation adapter uses the already centrally pinned OpenIddict 7.8.0
 server-integration package, matching the proven stack; no protocol-library upgrade is included.
 

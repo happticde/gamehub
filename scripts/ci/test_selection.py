@@ -135,6 +135,13 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue(mixed["jobs"]["backend"])
         self.assertEqual(mixed["components"], ["core", "mcp"])
 
+    def test_authenticated_mcp_gate_always_selects_both_native_images_and_backend(self):
+        for path in ("scripts/ci/smoke-mcp-auth.py", "tests/GameHub.Tests/McpDockerGateTests.cs"):
+            with self.subTest(path=path):
+                plan = selection.select_checks([path])
+                self.assertEqual(plan, selection.make_plan(["workflow", "backend"], ["mcp"]))
+                self.assertEqual({entry["arch"] for entry in selection.image_matrix(plan)["include"]}, {"amd64", "arm64"})
+
     def test_docker_changes_select_only_affected_images_and_configuration_scan(self):
         for path, images in (("frontend/Dockerfile", ["frontend"]),
                              ("services/core/Dockerfile", ["core"]),
@@ -201,7 +208,7 @@ class ActionPinTests(unittest.TestCase):
     def test_actual_workflow_pins_select_every_consumer(self):
         for action, jobs, components in (
             ("actions/setup-node", ["workflow", "frontend", "cli", "docs"], []),
-            ("actions/setup-dotnet", ["workflow", "dependencies", "backend"], []),
+            ("actions/setup-dotnet", ["workflow", "dependencies", "backend"], selection.COMPONENTS),
             ("actions/setup-go", ["workflow", "backend", "frontend", "cli", "docs"], []),
             ("actions/cache", ["workflow", "dependencies", "backend", "frontend"], []),
             ("docker/setup-buildx-action", ["workflow"], selection.COMPONENTS),

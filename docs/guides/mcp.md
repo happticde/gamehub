@@ -17,8 +17,10 @@ Library tools can use a selected user connection with rotating renewal, or a Cor
 the separate compatibility mode. Select `Mcp__AuthenticationMode=User` for user authorization;
 `ApiKey` retains the earlier compatibility behavior and is the default for existing configurations.
 User mode ignores `Core__ApiKey` and `Core__BaseUrl`, including after an authorization failure.
-End-user rollout with OpenID Connect (OIDC) still waits for
-the [local release gate #75](https://github.com/happticde/gamehub/issues/75).
+The [local acceptance and operations guide](https://github.com/happticde/gamehub/blob/main/docs/mcp-local-release-gate.md)
+records the test boundary and release/enablement steps for OpenID Connect (OIDC) accounts.
+End-user rollout requires the merged and verified [release gate #75](https://github.com/happticde/gamehub/issues/75)
+and explicit operator configuration.
 
 In versions including [#74](https://github.com/happticde/gamehub/issues/74), Admin **Security**
 shows each assistant connection and its approved permissions. Choose **Zugriff widerrufen**
@@ -84,8 +86,7 @@ only that local credential. If remote revocation is unavailable or uncertain, ex
 a clear message require revocation through GameHub; removing a file does not prove server logout.
 Exit code **1** means invalid configuration, cancelled login or unsafe/unavailable storage. Success
 is **0**. A corrupt file is preserved for operator repair rather than treated as missing authorization.
-The dedicated connection-management screen is delivered in #74. During this staged development
-period, coordinate unresolved remote revocation with the operator; existing account-wide session
+Use Admin **Security** to resolve uncertain remote revocation. Existing account-wide session
 revocation also ends the connection but affects other sessions.
 
 Core uses OpenIddict's [OAuth 2.0 Token Revocation](https://www.rfc-editor.org/rfc/rfc7009)
@@ -294,6 +295,6 @@ review the intended game and value before asking for a change.
 For authentication or reachability failures, check the Core URL and permitted authentication
 mode. See [API overview](api.md) and [Troubleshooting](troubleshooting.md).
 
-The Docker image retains the existing API-key authentication. It does not add OIDC login or
-enable access to guarded multi-user library endpoints. User authentication and remote Streamable
-HTTP transport are planned follow-up work.
+The Docker image supports explicit user login and the separate API-key compatibility mode.
+User credentials preserve Core's guarded tenant/session boundaries; they never enable guarded
+mode themselves. Remote Streamable HTTP transport remains separate future work.

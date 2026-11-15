@@ -335,7 +335,8 @@ public sealed class McpGrantContractTests
             SqliteConnection? connection = null;
             if (postgres)
             {
-                var configured = Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION");
+                var configured = Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION")
+                    ?? Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
                 if (string.IsNullOrWhiteSpace(configured)) return null;
                 var builder = new NpgsqlConnectionStringBuilder(configured)
                 {
