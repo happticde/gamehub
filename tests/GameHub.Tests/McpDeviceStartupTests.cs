@@ -65,6 +65,55 @@ public sealed partial class McpDeviceStartupTests
         Assert.False(factory.Services.GetRequiredService<GameHub.Shared.Authentication.MultiUserMode>().IsEnabled);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProductionStartup_ProtectionRotation_RetiredKeyPreservesPendingConsentAndRenewal(bool postgres)
+    {
+        if (postgres && string.IsNullOrWhiteSpace(Postgres)) return;
+        await using var fixture = new StartupFixture(postgres);
+        string browser;
+        string code;
+        string deviceCode;
+        string confirmation;
+        using (var factory = fixture.Factory())
+        using (var client = factory.CreateClient(new() { BaseAddress = new Uri(StartupFixture.Issuer), AllowAutoRedirect = false }))
+        {
+            browser = (await SeedAsync(factory)).Token;
+            using var pending = await client.PostAsync("/connect/device", Form(("client_id", McpDeviceProtocol.ClientId),
+                ("scope", "library:read offline_access"), ("resource", StartupFixture.Resource)));
+            Assert.Equal(HttpStatusCode.OK, pending.StatusCode);
+            var device = await pending.Content.ReadFromJsonAsync<JsonElement>();
+            code = device.GetProperty("user_code").GetString()!;
+            deviceCode = device.GetProperty("device_code").GetString()!;
+            using var preview = await VerifyAsync(client, browser, code, "preview");
+            Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+            confirmation = (await preview.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("confirmation").GetString()!;
+        }
+        var previous = fixture.Values["Mcp:Device:ProtectionCertificate"]!;
+        var replacement = Path.Combine(Path.GetDirectoryName(previous)!, "replacement-protection.pfx");
+        using (var rsa = RSA.Create(2048))
+        using (var certificate = new CertificateRequest("CN=Replacement protection", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+                   .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(3)))
+            await File.WriteAllBytesAsync(replacement, certificate.Export(X509ContentType.Pfx));
+        fixture.Values["Mcp:Device:ProtectionCertificate"] = replacement;
+        fixture.Values["Mcp:Device:RetiredProtectionCertificates:0"] = previous;
+        using var reopened = fixture.Factory();
+        using var restarted = reopened.CreateClient(new() { BaseAddress = new Uri(StartupFixture.Issuer), AllowAutoRedirect = false });
+        using var decision = await VerifyAsync(restarted, browser, code, "approve", confirmation);
+        Assert.Equal(HttpStatusCode.NoContent, decision.StatusCode);
+        using var redemption = await restarted.PostAsync("/connect/token", Form(("client_id", McpDeviceProtocol.ClientId),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"), ("device_code", deviceCode), ("resource", StartupFixture.Resource)));
+        Assert.Equal(HttpStatusCode.OK, redemption.StatusCode);
+        var first = await redemption.Content.ReadFromJsonAsync<JsonElement>();
+        using var renewal = await restarted.PostAsync("/connect/token", Form(("client_id", McpDeviceProtocol.ClientId),
+            ("grant_type", "refresh_token"), ("refresh_token", first.GetProperty("refresh_token").GetString()!), ("resource", StartupFixture.Resource)));
+        Assert.Equal(HttpStatusCode.OK, renewal.StatusCode);
+        var renewed = await renewal.Content.ReadFromJsonAsync<JsonElement>();
+        using var library = await BearerGetAsync(restarted, "/api/library", renewed.GetProperty("access_token").GetString()!);
+        Assert.Equal(HttpStatusCode.OK, library.StatusCode);
+    }
+
     [Fact]
     public void ProductionStartup_DefaultOff_DoesNotRequireKeysOrEnableProtocol()
     {
@@ -158,7 +207,8 @@ public sealed partial class McpDeviceStartupTests
     }
 
     private static FormUrlEncodedContent Form(params (string Key, string Value)[] fields) => new(fields.Select(field => new KeyValuePair<string, string>(field.Key, field.Value)));
-    private static string? Postgres => Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION");
+    private static string? Postgres => Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION")
+        ?? Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
 
     private sealed class StartupFixture : IDisposable, IAsyncDisposable
     {

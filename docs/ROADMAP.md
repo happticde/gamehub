@@ -163,12 +163,13 @@ See the [MCP guide](guides/mcp.md) for client setup, including Codex.
   and tool catalog, and passes the verified images to the existing manual release workflow.
   The shared release version, license notices, and SBOMs also cover MCP. Image publication remains
   a manual release step; source support does not mean a GHCR tag already exists.
-- **Phase 2 — User authentication (planned):** Add a supported user login and token lifecycle for
-  OIDC-backed accounts. Preserve Core's tenant and session checks. Include cross-tenant isolation
-  and revoked-session tests before claiming support for guarded multi-user deployments. Phase 1
-  retains the existing Core API-key compatibility path. [ADR-016](adr/016-mcp-user-authorization.md)
-  proposes Device Authorization Grant with OpenIddict in Core. It remains under review and adds
-  no runtime support. [Issue #67](https://github.com/happticde/gamehub/issues/67) is the design gate.
+- **Phase 2 — User authentication (implementation and acceptance gate):** Explicit Docker device
+  login, verified OIDC-backed browser consent, independent connections, protected-volume storage,
+  rotating renewal and individual revocation follow accepted [ADR-016](adr/016-mcp-user-authorization.md).
+  The [local acceptance and operations guide](mcp-local-release-gate.md) defines the real image,
+  guarded two-owner, SQLite/PostgreSQL lifecycle and operator gates. Capability stays default-off;
+  [#75](https://github.com/happticde/gamehub/issues/75) records exact candidate readiness and human
+  release/enablement. API-key compatibility remains separate. Source support is not publication.
 - **Phase 3 — Remote transport (planned):** Add Streamable HTTP for centrally hosted MCP access.
   Define authentication, connection lifecycle, and deployment requirements before exposing it.
   ADR-016 proposes a Core-hosted HTTP adapter, Authorization Code with PKCE, separate resource

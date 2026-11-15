@@ -5,13 +5,15 @@ The source-based examples below require a stable .NET 10 SDK and a matching chec
 Library tools support user authorization and rotating renewal with `Mcp__AuthenticationMode=User`.
 Explicit device login, protected-volume storage, launch configuration and failure recovery are
 described in the [MCP guide](guides/mcp.md#staged-device-login-and-credential-volume).
-The examples below retain the separate API-key compatibility mode; guarded end-user rollout waits for #75.
+The examples below retain the separate API-key compatibility mode. See the
+[local acceptance and operations guide](mcp-local-release-gate.md) for tested versions,
+key/backup/rotation procedures and the human release and enablement handoff.
 
 Use Admin **Security** to inspect and individually revoke owned assistant connections.
 See [connection management](mcp-connections.md) for the browser boundary and lifecycle behavior.
 
-The separate Core [browser consent boundary](mcp-browser-consent.md) is default-off and staged
-for the upcoming user-authenticated client. Do not enable it for end users before release gate #75.
+The separate Core [browser consent boundary](mcp-browser-consent.md) is default-off.
+End-user enablement requires merged and verified release gate #75 plus operator configuration.
 
 The GameHub MCP server exposes your game library to any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io/). This lets you query and manage your library using natural language.
 

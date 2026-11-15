@@ -358,7 +358,8 @@ public sealed class McpGrantAdmissionTests
             string connection;
             if (postgres)
             {
-                var configured = Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION");
+                var configured = Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION")
+                    ?? Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
                 if (string.IsNullOrWhiteSpace(configured)) return null;
                 connection = new NpgsqlConnectionStringBuilder(configured)
                     { Database = "mcp_admission_" + Guid.NewGuid().ToString("N") }.ConnectionString;

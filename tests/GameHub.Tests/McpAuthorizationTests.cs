@@ -217,8 +217,10 @@ public sealed partial class McpAuthorizationTests
         private string? postgresConnection;
         public HttpClient Client { get; private set; } = null!;
 
-        public static bool CanRun(bool postgres) => !postgres || !string.IsNullOrWhiteSpace(
-            Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION"));
+        private static string? PostgresConnection => Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("GAMEHUB_TEST_POSTGRES_CONNECTION");
+
+        public static bool CanRun(bool postgres) => !postgres || !string.IsNullOrWhiteSpace(PostgresConnection);
 
         public static async Task<IntegrationHost> CreateAsync(bool write = false, bool expired = false,
             bool validation = true, bool postgres = false, bool wrongIssuer = false)
@@ -226,7 +228,7 @@ public sealed partial class McpAuthorizationTests
             var host = new IntegrationHost { scopes = write ? McpPermissions.ReadAndWrite : McpPermissions.LibraryRead };
             if (postgres)
                 host.postgresConnection = new NpgsqlConnectionStringBuilder(
-                    Environment.GetEnvironmentVariable("GAMEHUB_TEST_MCP_POSTGRES_CONNECTION"))
+                    PostgresConnection)
                     { Database = "mcp_authorization_" + Guid.NewGuid().ToString("N") }.ConnectionString;
             await host.StartAsync(expired, validation, wrongIssuer);
             return host;
