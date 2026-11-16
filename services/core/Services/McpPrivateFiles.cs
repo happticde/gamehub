@@ -153,7 +153,9 @@ internal sealed class McpPrivateXmlRepository(string directory) : IXmlRepository
     public IReadOnlyCollection<XElement> GetAllElements()
     {
         McpPrivateFiles.Directory(directory);
-        return System.IO.Directory.EnumerateFiles(directory).Select(path =>
+        // A different provider may be committing an atomic write. Temporary files are not
+        // committed keys and must not turn a concurrent reader into a storage failure.
+        return System.IO.Directory.EnumerateFiles(directory).Where(path => !path.EndsWith(".tmp", StringComparison.Ordinal)).Select(path =>
         {
             if (!path.EndsWith(".xml", StringComparison.Ordinal)) throw new McpKeyStoreException("invalid_ring");
             return McpPrivateFiles.ReadElement(McpPrivateFiles.Read(path));

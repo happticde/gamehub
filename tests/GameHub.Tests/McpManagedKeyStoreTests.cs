@@ -255,6 +255,19 @@ public sealed class McpManagedKeyStoreTests : IDisposable
         }
     }
 
+    [Fact]
+    public void KeyRing_ConcurrentUncommittedWrite_PreservesExistingPayloadReads()
+    {
+        Store.Setup(Frontend, Origin, true);
+        string payload;
+        using (var keys = Store.LoadProtocolKeys()) payload = keys.Provider.CreateProtector("fixture").Protect("existing payload");
+        var pending = Path.Combine(Core, "ring", "concurrent.xml.partial.tmp");
+        File.WriteAllText(pending, "<incomplete");
+        File.SetUnixFileMode(pending, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        using var reader = Store.LoadProtocolKeys();
+        Assert.Equal("existing payload", reader.Provider.CreateProtector("fixture").Unprotect(payload));
+    }
+
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
