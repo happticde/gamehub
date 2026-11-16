@@ -42,6 +42,18 @@ public sealed record McpDeviceSettings(bool Enabled, McpRestResource? Resource, 
     public static McpProtocolKeys LoadKeys(IConfiguration configuration)
     {
         var section = configuration.GetSection("Mcp:Device");
+        if (section["ManagedKeyDirectory"] is { } directory)
+        {
+            if (new[] { "KeyDirectory", "SigningCertificate", "EncryptionCertificate", "ProtectionCertificate",
+                    "SigningCertificatePassword", "EncryptionCertificatePassword", "ProtectionCertificatePassword" }
+                .Any(key => !string.IsNullOrEmpty(section[key]))
+                || section.GetSection("RetiredProtectionCertificates").GetChildren().Any()) throw Invalid();
+            var store = new McpManagedKeyStore(directory);
+            var state = store.ReadState();
+            if (state.PublicOrigin != section["PublicOrigin"] || state.ConsentKey != section["BffServiceKey"])
+                throw Invalid();
+            return store.LoadProtocolKeys();
+        }
         string PathFor(string key)
         {
             var path = section[key];

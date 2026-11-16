@@ -4,6 +4,7 @@ using System.Security.Cryptography.X509Certificates;
 using GameHub.Core.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenIddict.Abstractions;
@@ -13,12 +14,17 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace GameHub.Core.Services;
 
-/// <summary>Independent persistent protocol keys. Operators provision and protect the certificates.</summary>
-public sealed class McpProtocolKeys
+/// <summary>Independent persistent protocol keys with retained decryptors and reloadable managed state.</summary>
+public sealed class McpProtocolKeys : IDisposable
 {
-    internal IDataProtectionProvider Provider { get; }
-    internal X509Certificate2 Signing { get; }
-    internal X509Certificate2 Encryption { get; }
+    private readonly ReloadableProvider provider = new();
+    private volatile KeySnapshot snapshot = null!;
+    private readonly List<IDisposable> owned = [];
+    internal IDataProtectionProvider Provider => provider;
+    internal X509Certificate2 Signing => snapshot.Signing[^1];
+    internal X509Certificate2 Encryption => snapshot.Encryption[^1];
+    internal IReadOnlyList<X509Certificate2> SigningCertificates => snapshot.Signing;
+    internal IReadOnlyList<X509Certificate2> EncryptionCertificates => snapshot.Encryption;
 
     /// <summary>Requires an existing dedicated ring and three distinct, valid RSA private certificates.</summary>
     public McpProtocolKeys(DirectoryInfo directory, X509Certificate2 signing,
@@ -30,12 +36,73 @@ public sealed class McpProtocolKeys
         if (certificates.Select(certificate => Convert.ToHexString(certificate.GetPublicKey())).Distinct().Count() != 3
             || certificates.Any(certificate => !ValidCertificate(certificate)))
             throw new ArgumentException("Independent valid RSA protocol certificates are required.");
-        Signing = signing;
-        Encryption = encryption;
-        Provider = DataProtectionProvider.Create(directory, options => options
-            .SetApplicationName("GameHub.Mcp.Protocol.v1")
-            .ProtectKeysWithCertificate(protection)
-            .UnprotectKeysWithAnyCertificate([protection, .. retiredProtection]));
+        Set(directory, [signing], [encryption], [.. retiredProtection, protection], managed: false);
+    }
+
+    private McpProtocolKeys() { }
+
+    internal static McpProtocolKeys Managed(DirectoryInfo directory, X509Certificate2[] signing,
+        X509Certificate2[] encryption, X509Certificate2[] protection)
+    {
+        var keys = new McpProtocolKeys();
+        if (new[] { signing[^1], encryption[^1], protection[^1] }.Any(certificate => !ValidCertificate(certificate)))
+            throw new McpKeyStoreException("expired_certificate");
+        keys.Set(directory, signing, encryption, protection, managed: true);
+        return keys;
+    }
+
+    private void Set(DirectoryInfo directory, X509Certificate2[] signing, X509Certificate2[] encryption,
+        X509Certificate2[] protection, bool managed)
+    {
+        var currentProvider = DataProtectionProvider.Create(directory, options =>
+        {
+            options.SetApplicationName("GameHub.Mcp.Protocol.v1")
+                .ProtectKeysWithCertificate(protection[^1]).UnprotectKeysWithAnyCertificate(protection);
+            if (managed) options.Services.Configure<KeyManagementOptions>(settings =>
+                settings.XmlRepository = new McpPrivateXmlRepository(directory.FullName));
+        });
+        snapshot = new(signing, encryption);
+        Volatile.Write(ref provider.Current, currentProvider);
+        if (currentProvider is IDisposable disposable) owned.Add(disposable);
+        if (managed) owned.AddRange(signing.Concat(encryption).Concat(protection));
+    }
+
+    /// <summary>Switches managed issuance without dropping historical payload decryptors.</summary>
+    internal void Reload(McpProtocolKeys replacement)
+    {
+        snapshot = replacement.snapshot;
+        Volatile.Write(ref provider.Current, replacement.provider.Current);
+        owned.AddRange(replacement.owned);
+        replacement.owned.Clear();
+    }
+
+    internal void FailClosed() => Volatile.Write(ref provider.Current, new UnavailableProvider());
+
+    private sealed class UnavailableProvider : IDataProtectionProvider
+    {
+        public IDataProtector CreateProtector(string purpose) => throw new McpKeyStoreException("key_store_unavailable");
+    }
+
+    /// <summary>Releases owned managed certificates only when the host no longer serves requests.</summary>
+    public void Dispose() { foreach (var item in owned) item.Dispose(); owned.Clear(); }
+
+    private sealed record KeySnapshot(X509Certificate2[] Signing, X509Certificate2[] Encryption);
+    private sealed class ReloadableProvider : IDataProtectionProvider
+    {
+        internal IDataProtectionProvider Current = null!;
+        public IDataProtector CreateProtector(string purpose) => new Protector(this, [purpose]);
+        private sealed class Protector(ReloadableProvider owner, string[] purposes) : IDataProtector
+        {
+            public IDataProtector CreateProtector(string purpose) => new Protector(owner, [.. purposes, purpose]);
+            private IDataProtector Resolve()
+            {
+                var current = Volatile.Read(ref owner.Current).CreateProtector(purposes[0]);
+                foreach (var purpose in purposes.Skip(1)) current = current.CreateProtector(purpose);
+                return current;
+            }
+            public byte[] Protect(byte[] plaintext) => Resolve().Protect(plaintext);
+            public byte[] Unprotect(byte[] protectedData) => Resolve().Unprotect(protectedData);
+        }
     }
 
     private static bool ValidCertificate(X509Certificate2 certificate)
@@ -78,7 +145,7 @@ public static class McpDeviceProtocol
         if (resource.Issuer.AbsolutePath != "/")
             throw new ArgumentException("The staged device protocol requires a root HTTPS issuer.");
         services.AddSingleton(resource);
-        services.AddSingleton(keys);
+        services.AddSingleton(_ => keys);
         services.AddSingleton<McpProtocolBudget>();
         services.AddScoped<McpPollingAdmission>();
         services.AddHttpContextAccessor();
@@ -116,7 +183,8 @@ public static class McpDeviceProtocol
                 options.SetRefreshTokenReuseLeeway(null);
                 options.DisableSlidingRefreshTokenExpiration();
                 options.UseReferenceAccessTokens().UseReferenceRefreshTokens();
-                options.AddSigningCertificate(keys.Signing).AddEncryptionCertificate(keys.Encryption);
+                foreach (var certificate in keys.SigningCertificates) options.AddSigningCertificate(certificate);
+                foreach (var certificate in keys.EncryptionCertificates) options.AddEncryptionCertificate(certificate);
                 options.UseDataProtection().Configure(configuration => configuration.DataProtectionProvider = keys.Provider);
                 options.UseAspNetCore().EnableTokenEndpointPassthrough().EnableEndUserVerificationEndpointPassthrough();
                 // Keep native credential/client validation; replace only the single-token mutation
