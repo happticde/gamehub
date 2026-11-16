@@ -18,6 +18,14 @@ clients, and Core-hosted HTTP topology. This ADR implements no OAuth endpoints, 
 migrations, configuration, or transport changes. The bounded feasibility proof remains a
 prerequisite for schema adoption. Merge, release, and publication remain human-owned.
 
+**Proposed amendment (2026-11-16, #112):** The
+[minimal deployment and native-client contract](../mcp-minimal-setup-contract.md) proposes a
+Frontend gateway over the existing private service network, managed persistent keys, and bounded
+Client ID Metadata Document support for Codex CLI and Hermes Agent. It explicitly revises the
+direct-to-Core proxy and pre-registration limits below. The original accepted decision remains
+in force until the decision owner reviews and merges the amendment. This documentation enables
+no endpoint or deployment.
+
 ## Context and verified starting point
 
 - `services/mcp/Program.cs` launches a stdio server. `CoreApiClient` sends a configured API key to
