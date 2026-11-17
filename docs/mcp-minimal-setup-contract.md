@@ -1,6 +1,7 @@
 # Minimal MCP deployment and native-client contract
 
-**Status:** Proposed amendment to [Architecture Decision Record (ADR) 016](adr/016-mcp-user-authorization.md).
+**Status:** Accepted amendment to [Architecture Decision Record (ADR) 016](adr/016-mcp-user-authorization.md),
+through human-merged [#115](https://github.com/happticde/gamehub/pull/115) at `5be04c2`.
 **Decision owner:** @jankahnt. **Task:** [#112](https://github.com/happticde/gamehub/issues/112).
 **Release:** [Remote access](https://github.com/happticde/gamehub/milestone/2), acceptance
 [#80](https://github.com/happticde/gamehub/issues/80). **Not ready.**
@@ -12,10 +13,10 @@ adapter and tenant-scoped operations in its own process. This is a delivery cont
 installation guide for the current release. Commands, files and new routes below must be shipped
 and verified by the linked tasks before operators use them.
 
-Owner review and merge accept two changes to ADR-016: private Frontend-to-Core HTTP replaces the
+Owner review and merge of #115 accepted two changes to ADR-016: private Frontend-to-Core HTTP replaces the
 extra internal HTTPS listener, and restricted Client ID Metadata Documents (CIMD) replace mandatory
-remote pre-registration. Neither change is accepted merely by starting #112. The original decision
-applies until this amendment is merged. No runtime, dependency or deployment changes are included.
+remote pre-registration. The original decision applies with those amendments. Acceptance does not
+itself implement the runtime or authorize deployment, publication or enablement.
 
 ## Starting point and operator work
 
@@ -258,6 +259,9 @@ published document matched the release source. No real user/provider authorizati
 
 ## Persistence, maintenance and migration
 
+The [managed-key interface](mcp-managed-keys.md) documents #113's store layout, private commands,
+retention, adoption and recovery. Compose/configuration integration remains #114.
+
 #113 generates three independent durable protocol/protection certificates, independent internal
 credentials, and a persistent data-protection ring. No internal TLS certificate is needed for the
 selected topology. Provisioning is atomic, locked, and idempotent; missing or corrupt existing key
@@ -310,5 +314,5 @@ ships with negative/race tests in its owning task on both database providers.
 Approval here selects a bounded implementation path. Failure to meet it is an explicit owner
 decision, not permission to add manual certificates, extra client secrets, wildcard callbacks or
 another prerequisite project. Release remains **Not ready** while #112–#114 and #76–#80 are
-unmerged or their required checks are missing. Next: owner review/merge of #112, then #113.
+unmerged or their required checks are missing. #112 is merged; next: deliver and verify #113.
 The user owns merges, the manual Release workflow, documentation publication and enablement.

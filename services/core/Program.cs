@@ -14,6 +14,12 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using OpenIddict.Abstractions;
 
+if (args.FirstOrDefault() == "mcp-keys")
+{
+    Environment.ExitCode = McpKeyCommands.Run(args[1..], Console.Out);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Caching ---
@@ -390,6 +396,11 @@ builder.Services.AddSingleton(mcpDeviceSettings);
 if (mcpDeviceSettings.Enabled)
 {
     var protocolKeys = McpDeviceSettings.LoadKeys(builder.Configuration);
+    if (builder.Configuration["Mcp:Device:ManagedKeyDirectory"] is { } managedKeyDirectory)
+    {
+        builder.Services.AddSingleton(new McpManagedKeyStore(managedKeyDirectory));
+        builder.Services.AddHostedService<McpKeyMaintenance>();
+    }
     builder.Services.AddMcpDeviceProtocol(mcpDeviceSettings.Resource!, protocolKeys, browserConsent: true);
     builder.Services.AddMcpRestTokenValidation(mcpDeviceSettings.Resource!, options =>
     {
