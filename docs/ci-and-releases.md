@@ -281,7 +281,15 @@ The current Model Context Protocol (MCP) release goals are:
 | Release goal | Final acceptance issue |
 | --- | --- |
 | [MCP: Docker user authentication](https://github.com/happticde/gamehub/milestone/1) | [#75](https://github.com/happticde/gamehub/issues/75) |
-| [MCP: Remote access](https://github.com/happticde/gamehub/milestone/2) | [#80](https://github.com/happticde/gamehub/issues/80), after the local gate #75 |
+| [MCP: Simplified setup](https://github.com/happticde/gamehub/milestone/4) | [#118](https://github.com/happticde/gamehub/issues/118), after the local gate #75 |
+| [MCP: Remote access](https://github.com/happticde/gamehub/milestone/2) | [#80](https://github.com/happticde/gamehub/issues/80), building on the separately released setup |
+
+The setup release contains the decision, managed key lifecycle and Docker/Caddy integration
+in #112–#114, plus its own acceptance #118. It keeps the existing Docker user connection path.
+Remote transport and native Codex/Hermes login in #76–#80 belong to the later remote release;
+they do not block setup publication. Technical dependencies may cross milestones without sharing
+a publication gate. Publish the setup candidate before merging remote runtime changes into it,
+so the two delivery goals remain independently reviewable and releasable.
 
 Each delivery task has one milestone and links its final acceptance issue. The cross-release
 tracker [#66](https://github.com/happticde/gamehub/issues/66) links both milestones without joining

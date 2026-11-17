@@ -3,8 +3,10 @@
 **Status:** Accepted amendment to [Architecture Decision Record (ADR) 016](adr/016-mcp-user-authorization.md),
 through human-merged [#115](https://github.com/happticde/gamehub/pull/115) at `5be04c2`.
 **Decision owner:** @jankahnt. **Task:** [#112](https://github.com/happticde/gamehub/issues/112).
-**Release:** [Remote access](https://github.com/happticde/gamehub/milestone/2), acceptance
-[#80](https://github.com/happticde/gamehub/issues/80). **Not ready.**
+**Setup release:** [Simplified setup](https://github.com/happticde/gamehub/milestone/4), acceptance
+[#118](https://github.com/happticde/gamehub/issues/118).
+**Later remote release:** [Remote access](https://github.com/happticde/gamehub/milestone/2), acceptance
+[#80](https://github.com/happticde/gamehub/issues/80). Native remote clients are outside the setup release.
 
 Select one public Frontend gateway, the existing private Docker service network, automatically
 provisioned durable keys, and automatic identification of two named native clients. Core remains
@@ -260,7 +262,7 @@ published document matched the release source. No real user/provider authorizati
 ## Persistence, maintenance and migration
 
 The [managed-key interface](mcp-managed-keys.md) documents #113's store layout, private commands,
-retention, adoption and recovery. Compose/configuration integration remains #114.
+retention, adoption and recovery. Human-merged #114 supplies Compose/configuration integration.
 
 #113 generates three independent durable protocol/protection certificates, independent internal
 credentials, and a persistent data-protection ring. No internal TLS certificate is needed for the
@@ -313,6 +315,9 @@ ships with negative/race tests in its owning task on both database providers.
 
 Approval here selects a bounded implementation path. Failure to meet it is an explicit owner
 decision, not permission to add manual certificates, extra client secrets, wildcard callbacks or
-another prerequisite project. Release remains **Not ready** while #112–#114 and #76–#80 are
-unmerged or their required checks are missing. #112 is merged; next: deliver and verify #113.
+another prerequisite project. The owner separated publication on 2026-11-17: human-merged #112–#114
+ship through the standalone [setup acceptance](mcp-setup-release-gate.md), without waiting for
+#76–#80. The existing Docker client remains its user connection path. The native-client sections
+above are requirements for the later remote release, which remains **Not ready** until #80 passes.
+Each gate records its own exact candidate and checks; setup readiness is maintained in #118.
 The user owns merges, the manual Release workflow, documentation publication and enablement.
