@@ -1,10 +1,13 @@
 # Managed MCP deployment verification
 
-Task [#114](https://github.com/happticde/gamehub/issues/114), release
-[Remote access](https://github.com/happticde/gamehub/milestone/2), acceptance
-[#80](https://github.com/happticde/gamehub/issues/80). **Not ready** until the required tasks are
-human-merged and the final real-client/operator acceptance passes. The associated pull request
-records the exact checked commit and hosted checks. Baseline: human-merged #116 at `fd355dc`.
+This [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) evidence covers task
+[#114](https://github.com/happticde/gamehub/issues/114), human-merged through
+[#117](https://github.com/happticde/gamehub/pull/117) at `1143c47`. It belongs to the independent
+[Simplified setup release](https://github.com/happticde/gamehub/milestone/4), acceptance
+[#118](https://github.com/happticde/gamehub/issues/118), with the existing Docker user connection
+path. The [setup gate](mcp-setup-release-gate.md) records candidate readiness. Native remote-client
+acceptance #80 belongs to a later release and does not block this one. The associated pull request
+records the checked implementation commit and hosted checks. Baseline: human-merged #116 at `fd355dc`.
 
 ## Delivered boundary
 
@@ -21,7 +24,7 @@ All application builds and tests ran in Docker. No dependency or lockfile change
 | Check | Result |
 | --- | --- |
 | Full .NET Release suite with real SQLite and disposable PostgreSQL | 1,079 passed |
-| Final managed deployment cases on both providers | 3 passed; HTTP-to-HTTPS context, duplicate/wrong proof, wrong generation/consent, signed owner and resource boundaries |
+| Final managed deployment cases on both providers | 3 passed; authenticated secure request context, duplicate/wrong proof, wrong generation/consent, signed owner and resource boundaries |
 | Frontend security suite | 93 passed, including actual native Node requests and private-file rejection |
 | Frontend lint and production build | Passed |
 | Actual Core and Frontend production images | Built and ran as their existing non-root identities |
@@ -33,7 +36,7 @@ All application builds and tests ran in Docker. No dependency or lockfile change
 | Disable, recreate, then re-enable with preserved state | Browser library retained, device route closed while disabled, existing connection usable after re-enable |
 | Actual-image readiness diagnostics | Six bounded success/failure cases; disabled, origin/provider prerequisites, mismatched generation and mismatched consent; no key values printed |
 | Public handbook | 16 contracts and production/search/publication-boundary build passed |
-| Repository CI tooling tests | 75 cases, 20 tool-dependent skips; dependency/image guard and whitespace checks passed |
+| Repository workflow tooling tests | 75 cases, 20 tool-dependent skips; dependency/image guard and whitespace checks passed |
 
 The first full test attempt exhausted Docker disk capacity. After removing rebuildable buildcache,
 the final run used a named disposable database (not PostgreSQL's system database) and passed in full.
@@ -69,7 +72,9 @@ work in ordinary suites; ordinary green tests alone are not image-gate evidence.
    volumes. Dispose only the dedicated fixture containers, networks, volumes and private receipts.
 
 Tests use server-side browser cookies and verified synthetic owner/session provenance over real
-HTTP routes. They do not automate a real provider sign-in or claim real Codex/Hermes acceptance.
+web routes. They do not automate a real provider sign-in or claim real Codex/Hermes acceptance.
 The separately networked Caddy fixture exercises the approved separate-host routing boundary on
-one Docker engine; deployment over an operator's actual private cross-host connection remains
-part of #80. Readiness proves service wiring and storage, not public exposure or provider reachability.
+one Docker engine. Operators must check their real provider and private cross-host connection
+before enabling an installation; this is an explicit setup-release limitation, not a requirement
+to wait for remote-client implementation. #80 additionally requires the full real remote-client
+path. Readiness proves service wiring and storage, not public exposure or provider reachability.
