@@ -128,6 +128,7 @@ test("dedicated server adapter fixes destination and trust headers without forwa
         "server-only": {},
         "@/lib/oidc": { getOidcConfig: () => ({ issuer: "https://provider.example", redirectUri: `${origin}/api/auth/oidc/callback`, bffServiceKey: "different-oidc-key" }) },
         "@/lib/browser-origin-security": { trustedBrowserOrigin: value => value },
+        "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => null },
     }, {
         process: { env: { MCP_DEVICE_ENABLED: "true", PUBLIC_ORIGIN: origin, MCP_ISSUER: `${origin}/`, MCP_BFF_SERVICE_KEY: "independent-mcp-fixture-service-key", MCP_CORE_ORIGIN: "https://internal.example/" } },
         fetch: async (...args) => { calls.push(args); return new Response(null, { status: 204 }); },

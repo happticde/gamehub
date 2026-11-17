@@ -1,0 +1,27 @@
+# Use with the existing base file and project name. Inclusion explicitly opts in.
+# Setup is on-demand; it never deploys services or changes provider/account admission.
+services:
+  core:
+    environment:
+      Mcp__Managed__Enabled: "true"
+    volumes:
+      - mcp_core_state:/var/lib/gamehub-mcp
+  frontend:
+    environment:
+      MCP_MANAGED_ENABLED: "true"
+    volumes:
+      - mcp_frontend_state:/var/lib/gamehub-mcp-frontend:ro
+  mcp-setup:
+    profiles: [mcp-setup]
+    user: "0:0"
+    restart: "no"
+    entrypoint: [dotnet, GameHub.Core.dll, mcp-keys, setup]
+    command: []
+    healthcheck:
+      disable: true
+    volumes:
+      - mcp_core_state:/var/lib/gamehub-mcp
+      - mcp_frontend_state:/var/lib/gamehub-mcp-frontend
+volumes:
+  mcp_core_state:
+  mcp_frontend_state:

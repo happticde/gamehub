@@ -154,7 +154,7 @@ class SelectionTests(unittest.TestCase):
                              ("services/ingest/Dockerfile", ["ingest"]),
                              ("services/mcp/Dockerfile", ["mcp"]),
                              (".dockerignore", ["core", "ingest", "mcp"]),
-                             ("docker-compose.yml", [])):
+                             ("docker-compose.yml", []), ("compose.mcp.yaml", [])):
             with self.subTest(path=path):
                 plan = selection.select_checks([path])
                 self.assertTrue(plan["jobs"]["dependencies"])

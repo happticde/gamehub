@@ -2,6 +2,11 @@
 # Save as compose.yaml in your installation folder. See docs/guides/installation.md.
 
 services:
+  # Kept at the exact Core release; activated only by the explicit setup command.
+  mcp-setup:
+    profiles: [mcp-setup]
+    image: ghcr.io/happticde/gamehub-core:${GAMEHUB_VERSION:?Set a published release tag, for example v0.1.0}
+
   frontend:
     image: ghcr.io/happticde/gamehub-frontend:${GAMEHUB_VERSION:?Set a published release tag, for example v0.1.0}
     restart: unless-stopped

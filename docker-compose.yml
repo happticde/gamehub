@@ -2,6 +2,13 @@
 # To deploy: docker compose up -d --build
 
 services:
+  # Image/build selection lives in the base entry point; compose.mcp.yaml supplies the offline command.
+  mcp-setup:
+    profiles: [mcp-setup]
+    build:
+      context: .
+      dockerfile: services/core/Dockerfile
+
   frontend:
     build:
       context: frontend

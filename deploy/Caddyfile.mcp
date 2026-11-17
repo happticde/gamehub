@@ -1,0 +1,18 @@
+# Adapt only the existing public hostname and existing protected Frontend upstream.
+# The cross-host link must already use a trusted private network or encrypted tunnel.
+# No access log: authorization queries and codes must not enter request logs.
+games.example.com {
+    @private path /connect/verify /connect/verify/* /connect/authorize/consent /connect/authorize/consent/* /internal /internal/*
+    handle @private {
+        respond 404
+    }
+    handle {
+        reverse_proxy FRONTEND_PRIVATE_ADDRESS:3000 {
+            header_up Host games.example.com
+            header_up -X-GameHub-Mcp-Transport-Key
+            header_up -X-GameHub-Mcp-Bff-Key
+            header_up -X-GameHub-Mcp-Generation
+            flush_interval -1
+        }
+    }
+}

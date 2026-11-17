@@ -22,6 +22,19 @@ import {
  * current request, so server-rendered Core fetches can succeed without a visible login flash.
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
+    // Protocol routes must never read browser cookies or redirect an assistant to browser login.
+    // Private/unknown connect paths fail closed even when the external proxy is misconfigured.
+    const path = request.nextUrl.pathname;
+    if (path === "/connect" || path.startsWith("/connect/")) {
+        if (!["/connect/device", "/connect/token", "/connect/revoke"].includes(path)) {
+            return new NextResponse(null, { status: 404 });
+        }
+        return NextResponse.next();
+    }
+    if (path === "/internal" || path.startsWith("/internal/")
+        || path === "/mcp" || path.startsWith("/.well-known/oauth")) {
+        return new NextResponse(null, { status: 404 });
+    }
     const isLoginPage = request.nextUrl.pathname === "/login";
     const externalRequestUrl = getExternalRequestUrl(request);
 

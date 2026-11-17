@@ -150,7 +150,7 @@ def select_checks(paths, full=False, action_plan=None):
               or name.startswith("Directory.") or name.endswith((".sln", ".slnx"))):
             jobs.update(("backend", "semgrep", "dependencies"))
             components.update(("core", "ingest", "mcp"))
-        elif name.startswith("docker-compose") and name.endswith((".yml", ".yaml")):
+        elif (name.startswith("docker-compose") or name == "compose.mcp.yaml") and name.endswith((".yml", ".yaml")):
             jobs.add("dependencies")
         else:
             # New directories and unrecognized build inputs must not silently lose coverage.
