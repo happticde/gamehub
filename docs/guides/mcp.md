@@ -32,11 +32,11 @@ for lifecycle and ownership details.
 ## Staged device login and credential volume
 
 This section applies only to a local build or published version that includes
-[#72](https://github.com/happticde/gamehub/issues/72). Core must have the default-off
-[browser consent and protocol deployment](https://github.com/happticde/gamehub/blob/main/docs/mcp-browser-consent.md) correctly configured.
-Keep the public HTTPS issuer distinct from the external login provider. Route
-`POST /connect/device`, `POST /connect/token` and `POST /connect/revoke` directly to Core;
-the browser uses Next.js `/mcp/verify`. Normal certificate checks stay enabled and credential
+[#72](https://github.com/happticde/gamehub/issues/72). Prepare the server using the
+[managed Docker/Caddy setup](mcp-deployment.md) in versions containing #114. Earlier manual deployments
+retain their explicit legacy configuration until adoption. Keep the public HTTPS issuer distinct
+from the external login provider. The managed setup routes device/token/revocation through Frontend;
+the browser uses `/mcp/verify`. Normal certificate checks stay enabled and credential
 requests never follow redirects.
 
 Set these non-secret process variables in your terminal or private assistant configuration:

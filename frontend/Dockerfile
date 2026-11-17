@@ -71,6 +71,8 @@ COPY --from=builder /app/public ./public
 COPY --from=helper-builder /downloads ./public/downloads/helper
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/lib/mcp-managed-config.mjs ./lib/mcp-managed-config.mjs
+COPY --from=builder /app/scripts/mcp-readiness.mjs ./scripts/mcp-readiness.mjs
 
 USER nextjs
 

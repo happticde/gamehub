@@ -3,9 +3,15 @@ import "server-only";
 import { getOidcConfig } from "@/lib/oidc";
 import { trustedBrowserOrigin } from "@/lib/browser-origin-security";
 import type { McpConsentInput } from "@/lib/mcp-consent-contract";
+import { getManagedMcpConfig, managedMcpHeaders } from "@/lib/mcp-managed-config.mjs";
 
 /** Independent server-only transport. The generic Core adapter adds /api and cannot serve this flow. */
 export function getMcpConsentConfig() {
+    const managed = getManagedMcpConfig();
+    if (managed) {
+        getOidcConfig();
+        return { ...managed, destination: new URL("/connect/verify", managed.core), headers: managedMcpHeaders(managed) };
+    }
     if (process.env.MCP_DEVICE_ENABLED !== "true") throw new Error("mcp_consent_disabled");
     const oidc = getOidcConfig();
     const instance = trustedBrowserOrigin(process.env.PUBLIC_ORIGIN);
@@ -22,7 +28,7 @@ export function getMcpConsentConfig() {
     const destination = new URL(process.env.MCP_CORE_ORIGIN ?? "");
     if (destination.protocol !== "https:" || destination.username || destination.password
         || destination.pathname !== "/" || destination.search || destination.hash) throw new Error("invalid_mcp_destination");
-    return { instance, key, destination: new URL("/connect/verify", destination) };
+    return { instance, key, destination: new URL("/connect/verify", destination), headers: { Host: new URL(instance).host } };
 }
 
 /** Never forwards browser headers, owner selectors, queries or redirects; never retries a decision. */
@@ -34,10 +40,10 @@ export async function sendMcpConsent(input: McpConsentInput, accessToken: string
     return fetch(config.destination, {
         method: "POST",
         headers: {
+            ...config.headers,
             "Content-Type": "application/x-www-form-urlencoded",
             "X-GameHub-Mcp-Bff-Key": config.key,
             Authorization: `Bearer ${accessToken}`,
-            Host: new URL(config.instance).host,
         },
         body, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
     });

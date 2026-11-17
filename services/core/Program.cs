@@ -21,6 +21,8 @@ if (args.FirstOrDefault() == "mcp-keys")
 }
 
 var builder = WebApplication.CreateBuilder(args);
+var managedMcpDeployment = McpManagedDeployment.Load(builder.Configuration);
+if (managedMcpDeployment is not null) builder.Services.AddSingleton(managedMcpDeployment);
 
 // --- Caching ---
 builder.Services.AddMemoryCache();
@@ -440,6 +442,7 @@ builder.Services.AddDbContext<CoreContext>(o =>
 });
 
 var app = builder.Build();
+if (managedMcpDeployment is not null) app.UseMiddleware<McpManagedGatewayMiddleware>();
 if (mcpDeviceSettings.Enabled && mcpDeviceSettings.KnownProxies.Count > 0) app.UseForwardedHeaders();
 if (mcpDeviceSettings.Enabled) app.UseMcpDeviceProtocol();
 

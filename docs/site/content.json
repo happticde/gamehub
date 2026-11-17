@@ -6,6 +6,6 @@
     { "label": "Backup and restore", "items": ["guides/backup-restore.md", "guides/disaster-recovery.md"] },
     { "label": "Self-hosting", "items": ["guides/deployment.md", "guides/configuration.md", "guides/authentication.md", "guides/keycloak.md", "guides/upgrades.md"] },
     { "label": "Solve problems", "items": ["guides/troubleshooting.md"] },
-    { "label": "Integrations", "items": ["guides/cli.md", "guides/api.md", "guides/mcp.md"] }
+    { "label": "Integrations", "items": ["guides/cli.md", "guides/api.md", "guides/mcp.md", "guides/mcp-deployment.md"] }
   ]
 }
