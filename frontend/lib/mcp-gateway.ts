@@ -1,9 +1,11 @@
 import "server-only";
 import { getManagedMcpConfig, managedMcpHeaders } from "@/lib/mcp-managed-config.mjs";
+import { parseMcpRemoteStart } from "@/lib/mcp-remote-contract";
 
 /** Only exact protocol routes exposed by this gateway. The public edge keeps /mcp private. */
 export function isMcpGatewayRoute(path: string, method: string): boolean {
     if (path === "/mcp") return ["GET", "POST", "DELETE"].includes(method);
+    if (path === "/connect/authorize") return method === "GET";
     if (["/connect/device", "/connect/token", "/connect/revoke"].includes(path)) return method === "POST";
     if (method === "GET") return /^\/api\/library(?:\/(?:[1-9][0-9]*|random|stats|tags))?$/.test(path);
     return method === "PATCH" && /^\/api\/library\/[1-9][0-9]*\/personal$/.test(path);
@@ -24,10 +26,12 @@ export async function forwardMcpRequest(request: Request): Promise<Response> {
         }
         const library = url.pathname.startsWith("/api/library");
         const remote = url.pathname === "/mcp";
+        const authorize = url.pathname === "/connect/authorize";
         const authorization = request.headers.get("authorization");
         if (library && (!authorization || !/^Bearer [!-~]+$/.test(authorization))) return new Response(null, { status: 401 });
         if (remote && authorization !== null && !/^Bearer [!-~]+$/i.test(authorization)) return new Response(null, { status: 401 });
-        if (!library && url.search) return new Response(null, { status: 400 });
+        if (!library && !authorize && url.search) return new Response(null, { status: 400 });
+        if (authorize && url.search.length > 4096) return new Response(null, { status: 400 });
         const headers = new Headers(managedMcpHeaders(config));
         // Allowlist instead of deleting known dangerous headers: cookies, tenant selectors,
         // browser credentials, forwarding and supplied service keys can never enter Core.
@@ -36,7 +40,7 @@ export async function forwardMcpRequest(request: Request): Promise<Response> {
             const value = request.headers.get(name);
             if (value) headers.set(name, value);
         }
-        const destination = new URL(url.pathname + (library ? url.search : ""), config.core);
+        const destination = new URL(url.pathname + (library || authorize ? url.search : ""), config.core);
         const init: RequestInit & { duplex: "half" } = {
             method: request.method, headers, body: request.body, redirect: "manual", cache: "no-store",
             signal: AbortSignal.any([request.signal, AbortSignal.timeout(15_000)]),
@@ -46,6 +50,12 @@ export async function forwardMcpRequest(request: Request): Promise<Response> {
         const upstream = await fetch(destination, init);
         if (upstream.status >= 300 && upstream.status < 400) {
             await upstream.body?.cancel();
+            if (authorize && upstream.status === 302) {
+                const location = parseMcpRemoteStart(upstream.headers.get("location") ?? "", config.instance);
+                return new Response(null, { status: 302, headers: {
+                    Location: location.href, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+                } });
+            }
             return new Response(null, { status: 502 });
         }
         const outgoing = new Headers({ "Cache-Control": "no-store", Pragma: "no-cache" });

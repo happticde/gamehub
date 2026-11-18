@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { McpConsentPermissions } from "@/components/McpConsentPermissions";
 import { fetchAuthenticated } from "@/lib/authenticated-fetch";
 import type { McpConsentInput, McpConsentPreview } from "@/lib/mcp-consent-contract";
 
@@ -83,17 +84,9 @@ export function McpConsentForm() {
                 </dl>
                 <p className="text-sm text-muted-foreground">The assistant identifies itself as GameHub MCP. This public name does not prove which app or device is connecting.</p>
             </div>
-            <fieldset className="space-y-3 rounded-md border p-4" disabled={pending}>
-                <legend className="px-1 font-medium">Access to grant</legend>
-                <p className="text-sm">Read your library, game details, tags and statistics.</p>
-                {preview.trackingWriteRequested && <div className="flex items-start gap-3">
-                    <input id="tracking-consent" type="checkbox" checked={tracking} className="mt-1 h-4 w-4 accent-primary"
-                        onChange={event => setTracking(event.target.checked)} />
-                    <label htmlFor="tracking-consent" className="text-sm font-medium leading-relaxed">Also allow changes to play status and ratings.</label>
-                </div>}
-                {preview.renewalRequested && <p className="text-sm text-muted-foreground">The assistant can renew this connection for up to 30 days unless access is revoked.</p>}
-                <p className="text-sm text-muted-foreground">No access to platform credentials, imports, backups or account settings.</p>
-            </fieldset>
+            <McpConsentPermissions trackingWriteRequested={preview.trackingWriteRequested}
+                renewalRequested={preview.renewalRequested} disabled={pending} tracking={tracking}
+                onTrackingChange={setTracking} />
             <p className="text-sm text-muted-foreground">This review expires in at most five minutes. Approve only if the instance, account and code match your intended connection.</p>
             <div className="flex flex-wrap gap-3">
                 <Button type="button" variant="outline" disabled={pending} onClick={() => void submit("deny")}>Deny connection</Button>

@@ -13,7 +13,8 @@ public sealed class McpClientRevocation(CoreContext db, McpGrantAdmission admiss
     public async ValueTask HandleAsync(OpenIddictServerEvents.HandleRevocationRequestContext context)
     {
         var principal = context.GenericTokenPrincipal;
-        if (context.Request.ClientId != McpDeviceProtocol.ClientId || principal is null)
+        if (context.Request.ClientId is not { } clientId || principal is null
+            || !principal.GetPresenters().SequenceEqual([clientId]))
         { context.Reject(Errors.InvalidToken); return; }
         var type = principal.HasTokenType(TokenTypeIdentifiers.RefreshToken)
             ? TokenTypeIdentifiers.RefreshToken : TokenTypeIdentifiers.AccessToken;

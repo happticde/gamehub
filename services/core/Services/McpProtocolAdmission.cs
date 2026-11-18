@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.RateLimiting;
 using GameHub.Core.Data;
+using GameHub.Core.Mcp;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
@@ -74,6 +75,8 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
     private static readonly HashSet<string> DeviceFields = [Parameters.ClientId, Parameters.Scope, Parameters.Resource];
     private static readonly HashSet<string> TokenFields = [Parameters.ClientId, Parameters.Scope, Parameters.Resource,
         Parameters.GrantType, Parameters.DeviceCode, Parameters.RefreshToken];
+    private static readonly HashSet<string> RemoteTokenFields = [Parameters.ClientId, Parameters.Scope, Parameters.Resource,
+        Parameters.GrantType, Parameters.Code, Parameters.RedirectUri, Parameters.CodeVerifier, Parameters.RefreshToken];
     private static readonly HashSet<string> VerificationFields = [Parameters.UserCode, "action", "confirmation", "allow_tracking_write"];
     private static readonly HashSet<string> RevocationFields = [Parameters.ClientId, Parameters.Token, Parameters.TokenTypeHint];
 
@@ -155,11 +158,15 @@ public sealed class McpProtocolMiddleware(RequestDelegate next)
             await Error(http, Errors.InvalidRequest);
             return;
         }
+        var client = form[Parameters.ClientId].ToString();
+        var local = client == McpDeviceProtocol.ClientId;
+        var remote = (path is McpDeviceProtocol.TokenPath or McpDeviceProtocol.RevocationPath)
+            && McpRemoteClient.Find(client) is not null && http.RequestServices.GetService<McpRemoteResource>() is not null;
         var allowed = verification ? VerificationFields : path == McpDeviceProtocol.DevicePath ? DeviceFields
-            : path == McpDeviceProtocol.RevocationPath ? RevocationFields : TokenFields;
+            : path == McpDeviceProtocol.RevocationPath ? RevocationFields : remote ? RemoteTokenFields : TokenFields;
         if (form.Any(field => !allowed.Contains(field.Key) || field.Value.Count != 1
                 || StringValues.IsNullOrEmpty(field.Value))
-            || (!verification && form[Parameters.ClientId] != McpDeviceProtocol.ClientId)
+            || (!verification && !local && !remote)
             || (verification && (form[Parameters.UserCode].Count != 1 || form[Parameters.UserCode].ToString().Length > 32
                 || form["action"].ToString() is not ("preview" or "approve" or "deny")
                 || (form["action"] != "preview" && form["confirmation"].Count != 1)

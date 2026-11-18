@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server.js";
 import { parseMcpConsentInput, parseMcpConsentPreview } from "../lib/mcp-consent-contract.ts";
 import { isTrustedBrowserMutation } from "../lib/browser-origin-security.ts";
 import { safeReturnPath } from "../lib/auth-return-path.ts";
+import * as remoteContract from "../lib/mcp-remote-contract.ts";
 
 const origin = "https://issuer.example";
 const display = () => ({ confirmation: "opaque-confirmation", instance: origin, resource: `${origin}/api`,
@@ -73,6 +74,48 @@ async function routeHarness(options = {}) {
     });
     return { POST: route.POST, calls, request };
 }
+
+test("native decision rejects unsafe input and navigates only to the exact committed callback", async () => {
+    const clientId = "https://chatgpt.com/oauth/codex/client.json";
+    const pending = "urn:ietf:params:oauth:request_uri:" + "A".repeat(43);
+    const callback = "http://localhost:43127/callback?" + new URLSearchParams({ state: "fixture", code: "fixture", iss: origin + "/" });
+    const calls = [];
+    let upstreamLocation = callback;
+    const route = await loadTs("app/api/mcp/authorize/route.ts", {
+        "next/server": { NextResponse },
+        "@/lib/browser-request": { rejectUnsafeBrowserRequest: request => isTrustedBrowserMutation(request.headers, origin)
+            ? null : new NextResponse(null, { status: 403 }) },
+        "@/lib/auth-session": { ACCESS_TOKEN_COOKIE: "access", REFRESH_TOKEN_COOKIE: "refresh",
+            isAccessTokenFresh: token => token === "browser-ticket", rotateRefreshToken: () => { throw new Error("unexpected rotation"); } },
+        "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => ({ instance: origin }) },
+        "@/lib/mcp-remote-contract": remoteContract,
+        "@/lib/mcp-consent": { sendMcpRemoteConsent: async (input, decision, token) => {
+            calls.push({ client: input.clientId, action: decision.action, write: decision.allowTrackingWrite, token });
+            return new Response(null, { status: 302, headers: { Location: upstreamLocation } });
+        } },
+    });
+    const input = new URLSearchParams({ client_id: clientId, request_uri: pending,
+        action: "approve", confirmation: "p".repeat(43) }).toString();
+    const request = (body, headers = {}) => new NextRequest(`${origin}/api/mcp/authorize`, {
+        method: "POST", body, headers: { origin, "content-type": "application/x-www-form-urlencoded",
+            cookie: "access=browser-ticket", authorization: "Bearer caller-provided", ...headers },
+    });
+    assert.equal((await route.POST(request(input, { origin: "https://other.example" }))).status, 403);
+    assert.equal((await route.POST(request(input + "&action=deny"))).status, 400);
+    assert.equal((await route.POST(request(input + "&tenantId=arbitrary"))).status, 400);
+    assert.equal((await route.POST(request("x".repeat(4097)))).status, 400);
+    assert.equal(calls.length, 0);
+    const approved = await route.POST(request(input));
+    assert.equal(approved.status, 303);
+    assert.equal(approved.headers.get("location"), callback);
+    assert.equal(approved.headers.get("referrer-policy"), "no-referrer");
+    assert.deepEqual(calls[0], { client: clientId, action: "approve", write: false, token: "browser-ticket" });
+    upstreamLocation = callback.replace(encodeURIComponent(origin + "/"), encodeURIComponent("https://other.example/"));
+    const uncertain = new URL((await route.POST(request(input))).headers.get("location"));
+    assert.equal(uncertain.pathname, "/mcp/authorize");
+    assert.equal(uncertain.searchParams.get("result"), "uncertain");
+    assert.equal(calls.length, 2);
+});
 
 test("cross-origin and sibling requests fail before body parsing, cookies or upstream work", async () => {
     for (const headers of [{ origin: "https://evil.example" }, { "sec-fetch-site": "cross-site" }, { origin: "https://sibling.issuer.example" }]) {

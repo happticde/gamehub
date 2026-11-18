@@ -68,7 +68,8 @@ test("real native Node request uses internal Host and generated proof; route/hea
     const port = server.address().port;
     const config = { instance: origin, core: new URL(`http://127.0.0.1:${port}`), key: state.ConsentKey,
         generation: state.Generation, transportKey: state.TransportKey };
-    const modules = { "server-only": {}, "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => config, managedMcpHeaders } };
+    const modules = { "server-only": {}, "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => config, managedMcpHeaders },
+        "@/lib/mcp-remote-contract": loadTs("lib/mcp-remote-contract.ts", {}) };
     const gateway = loadTs("lib/mcp-gateway.ts", modules);
     try {
         const request = (path, method = "POST", headers = {}) => new Request(origin + path, {
@@ -124,7 +125,8 @@ test("private HTTP transport forwards bounded protocol headers and cancels an up
     await once(server, "listening");
     const config = { instance: origin, core: new URL(`http://127.0.0.1:${server.address().port}`),
         generation: state.Generation, transportKey: state.TransportKey };
-    const modules = { "server-only": {}, "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => config, managedMcpHeaders } };
+    const modules = { "server-only": {}, "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => config, managedMcpHeaders },
+        "@/lib/mcp-remote-contract": loadTs("lib/mcp-remote-contract.ts", {}) };
     const { forwardMcpRequest } = loadTs("lib/mcp-gateway.ts", modules);
     const abort = new AbortController();
     const request = (path = "/mcp", headers = {}) => new Request(origin + path, {
@@ -168,4 +170,50 @@ test("private HTTP transport forwards bounded protocol headers and cancels an up
         server.closeAllConnections();
         await new Promise(resolve => server.close(resolve));
     }
+});
+
+test("native login gateway forwards only the fixed browser receipt and never follows a redirect", async () => {
+    const clientId = "https://chatgpt.com/oauth/codex/client.json";
+    const pending = "urn:ietf:params:oauth:request_uri:" + "A".repeat(43);
+    const receipt = origin + "/mcp/authorize?" + new URLSearchParams({ client_id: clientId, request_uri: pending });
+    let target = receipt;
+    let observed;
+    const server = createServer((request, response) => {
+        observed = request.headers;
+        response.writeHead(302, { Location: target }).end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const config = { instance: origin, core: new URL(`http://127.0.0.1:${server.address().port}`),
+        generation: state.Generation, transportKey: state.TransportKey };
+    const contract = loadTs("lib/mcp-remote-contract.ts", {});
+    const { forwardMcpRequest } = loadTs("lib/mcp-gateway.ts", { "server-only": {},
+        "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => config, managedMcpHeaders },
+        "@/lib/mcp-remote-contract": contract });
+    const start = () => new Request(origin + "/connect/authorize?client_id=fixture", {
+        headers: { host: "games.example", cookie: "browser=private", authorization: "Bearer browser",
+            "x-gamehub-mcp-bff-key": "untrusted" },
+    });
+    try {
+        const accepted = await forwardMcpRequest(start());
+        assert.equal(accepted.status, 302);
+        assert.equal(accepted.headers.get("location"), receipt);
+        assert.equal(accepted.headers.get("referrer-policy"), "no-referrer");
+        assert.equal(observed.cookie, undefined);
+        assert.equal(observed.authorization, undefined);
+        assert.equal(observed["x-gamehub-mcp-bff-key"], undefined);
+        for (const location of ["https://other.example/mcp/authorize", receipt + "&code=fixture",
+            receipt.replace("/mcp/authorize", "/connect/authorize/consent")]) {
+            target = location;
+            const rejected = await forwardMcpRequest(start());
+            assert.equal(rejected.headers.get("location"), null);
+            assert.ok(rejected.status >= 400);
+        }
+        const callback = "http://127.0.0.1:43219/callback?state=fixture&code=fixture&iss=" + encodeURIComponent(origin + "/");
+        assert.equal(contract.parseMcpRemoteCallback(callback, origin, clientId, "approve").href, callback);
+        assert.throws(() => contract.parseMcpRemoteCallback(callback.replace("127.0.0.1", "other.example"), origin, clientId, "approve"));
+        assert.throws(() => contract.parseMcpRemoteCallback(callback + "&iss=other", origin, clientId, "approve"));
+        assert.throws(() => contract.parseMcpRemoteCallback(callback, origin,
+            "https://nousresearch.github.io/hermes-agent/docs/oauth/client-metadata.json", "approve"));
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });

@@ -410,7 +410,8 @@ if (mcpDeviceSettings.Enabled)
         builder.Services.AddSingleton(new McpManagedKeyStore(managedKeyDirectory));
         builder.Services.AddHostedService<McpKeyMaintenance>();
     }
-    builder.Services.AddMcpDeviceProtocol(mcpDeviceSettings.Resource!, protocolKeys, browserConsent: true);
+    builder.Services.AddMcpDeviceProtocol(mcpDeviceSettings.Resource!, protocolKeys, browserConsent: true,
+        remoteAuthorization: managedMcpDeployment is not null);
     builder.Services.AddMcpRestTokenValidation(mcpDeviceSettings.Resource!, options =>
     {
         options.UseLocalServer();
@@ -450,6 +451,7 @@ builder.Services.AddDbContext<CoreContext>(o =>
 
 var app = builder.Build();
 if (managedMcpDeployment is not null) app.UseMiddleware<McpManagedGatewayMiddleware>();
+if (managedMcpDeployment is not null) app.UseMiddleware<McpRemoteAuthorizationMiddleware>();
 if (mcpDeviceSettings.Enabled && mcpDeviceSettings.KnownProxies.Count > 0) app.UseForwardedHeaders();
 if (mcpDeviceSettings.Enabled) app.UseMcpDeviceProtocol();
 
@@ -499,5 +501,9 @@ app.UseAuthorization();
 
 app.MapControllers();
 if (mcpDeviceSettings.Enabled) app.MapMcpDeviceEndpoints();
-if (managedMcpDeployment is not null) app.MapPrivateMcpTransport();
+if (managedMcpDeployment is not null)
+{
+    app.MapPrivateMcpTransport();
+    app.MapMcpRemoteConsent();
+}
 app.Run();
