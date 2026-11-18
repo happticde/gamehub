@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using GameHub.Core.Data;
+using GameHub.Core.Mcp;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
@@ -136,7 +137,7 @@ public static class McpDeviceProtocol
     /// independently validated deployment trust; Core startup calls it only when explicitly enabled.
     /// </summary>
     public static IServiceCollection AddMcpDeviceProtocol(this IServiceCollection services,
-        McpRestResource resource, McpProtocolKeys keys, bool browserConsent = false)
+        McpRestResource resource, McpProtocolKeys keys, bool browserConsent = false, bool remoteAuthorization = false)
     {
         foreach (var uri in new[] { resource.Issuer, resource.Resource })
             if (!uri.IsAbsoluteUri || uri.Scheme != "https" || uri.UserInfo.Length != 0
@@ -151,6 +152,8 @@ public static class McpDeviceProtocol
         services.AddHttpContextAccessor();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddScoped<McpGrantAdmission>();
+        var remote = remoteAuthorization ? McpRemoteResource.Create(resource) : null;
+        if (remote is not null) McpRemoteAuthorization.Register(services, remote);
         // Framework request logging can print query strings; protocol logging can print payloads.
         // Application-owned structured diagnostics remain available, without protocol values.
         services.AddLogging(logging =>
@@ -187,6 +190,7 @@ public static class McpDeviceProtocol
                 foreach (var certificate in keys.EncryptionCertificates) options.AddEncryptionCertificate(certificate);
                 options.UseDataProtection().Configure(configuration => configuration.DataProtectionProvider = keys.Provider);
                 options.UseAspNetCore().EnableTokenEndpointPassthrough().EnableEndUserVerificationEndpointPassthrough();
+                if (remote is not null) McpRemoteAuthorization.Configure(options, resource.Issuer, remote);
                 // Keep native credential/client validation; replace only the single-token mutation
                 // with GameHub's connection-wide transaction and ownership admission.
                 options.RemoveEventHandler(OpenIddictServerHandlers.Revocation.RevokeToken.Descriptor);
@@ -213,6 +217,8 @@ public static class McpDeviceProtocol
                     builder.UseInlineHandler(context =>
                     {
                         if (context.EndpointType != OpenIddictServerEndpointType.DeviceAuthorization
+                            && !(remote is not null && context.EndpointType == OpenIddictServerEndpointType.Authorization
+                                && context.GenerateRequestToken && !context.GenerateAuthorizationCode)
                             && (context.Principal is null || string.IsNullOrEmpty(context.Principal.GetAuthorizationId())))
                             context.Reject(Errors.AccessDenied);
                         return default;
@@ -236,15 +242,20 @@ public static class McpDeviceProtocol
                 options.AddEventHandler<OpenIddictServerEvents.ValidateTokenRequestContext>(builder =>
                     builder.UseInlineHandler(context =>
                     {
-                        if (!ExactResource(context.Request, resource)) context.Reject(Errors.InvalidTarget);
-                        else if (context.ClientId != ClientId) context.Reject(Errors.InvalidClient);
+                        var expected = McpRemoteResource.ForClient(context.ClientId, resource, remote);
+                        if (expected is null) context.Reject(Errors.InvalidClient);
+                        else if (!ExactResource(context.Request, expected)) context.Reject(Errors.InvalidTarget);
+                        else if (context.ClientId == ClientId ? context.Request.IsAuthorizationCodeGrantType()
+                            : !(context.Request.IsAuthorizationCodeGrantType() || context.Request.IsRefreshTokenGrantType()))
+                            context.Reject(Errors.UnauthorizedClient);
                         return default;
                     }).SetOrder(int.MinValue + 100));
                 options.AddEventHandler<OpenIddictServerEvents.HandleTokenRequestContext>(builder =>
                     builder.UseInlineHandler(context =>
                     {
                         if (context.Principal is not { } principal
-                            || !principal.GetResources().SequenceEqual([resource.Resource.AbsoluteUri])
+                            || McpRemoteResource.ForClient(context.ClientId, resource, remote) is not { } expected
+                            || !principal.GetResources().SequenceEqual([expected])
                             || !AllowedScopes(principal.GetScopes())) context.Reject(Errors.InvalidGrant);
                         // OpenIddict also enforces no scope widening on redemption/refresh.
                         return default;
@@ -328,10 +339,13 @@ public static class McpDeviceProtocol
     }
 
     private static bool ExactResource(OpenIddictRequest request, McpRestResource resource) =>
-        (ImmutableArray<string?>)request[Parameters.Resource] is [var value]
-        && value == resource.Resource.AbsoluteUri;
+        ExactResource(request, resource.Resource.AbsoluteUri);
 
-    private static bool AllowedScopes(ImmutableArray<string> scopes) => scopes.Contains(McpPermissions.LibraryRead)
+    internal static bool ExactResource(OpenIddictRequest request, string resource) =>
+        (ImmutableArray<string?>)request[Parameters.Resource] is [var value]
+        && value == resource;
+
+    internal static bool AllowedScopes(ImmutableArray<string> scopes) => scopes.Contains(McpPermissions.LibraryRead)
         && scopes.All(scope => scope is McpPermissions.LibraryRead or McpPermissions.TrackingWrite or Scopes.OfflineAccess);
 
     private static void Sanitize(OpenIddictResponse response)

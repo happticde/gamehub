@@ -3,6 +3,7 @@ import "server-only";
 import { getOidcConfig } from "@/lib/oidc";
 import { trustedBrowserOrigin } from "@/lib/browser-origin-security";
 import type { McpConsentInput } from "@/lib/mcp-consent-contract";
+import type { McpRemoteRequest } from "@/lib/mcp-remote-contract";
 import { getManagedMcpConfig, managedMcpHeaders } from "@/lib/mcp-managed-config.mjs";
 
 /** Independent server-only transport. The generic Core adapter adds /api and cannot serve this flow. */
@@ -46,5 +47,27 @@ export async function sendMcpConsent(input: McpConsentInput, accessToken: string
             Authorization: `Bearer ${accessToken}`,
         },
         body, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+}
+
+type RemoteDecision = { action: "preview" } | {
+    action: "approve" | "deny"; confirmation: string; allowTrackingWrite: boolean;
+};
+
+/** The managed browser route alone can contact the private authorization continuation. */
+export async function sendMcpRemoteConsent(request: McpRemoteRequest, decision: RemoteDecision, accessToken: string) {
+    const config = getManagedMcpConfig();
+    if (!config) throw new Error("mcp_remote_consent_disabled");
+    const body = new URLSearchParams({ client_id: request.clientId, request_uri: request.requestUri, action: decision.action });
+    if (decision.action !== "preview") body.set("confirmation", decision.confirmation);
+    if (decision.action === "approve") body.set("allow_tracking_write", String(decision.allowTrackingWrite));
+    return fetch(new URL("/connect/authorize/consent", config.core), {
+        method: "POST", body, cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(10_000),
+        headers: {
+            ...managedMcpHeaders(config),
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-GameHub-Mcp-Bff-Key": config.key,
+            Authorization: `Bearer ${accessToken}`,
+        },
     });
 }

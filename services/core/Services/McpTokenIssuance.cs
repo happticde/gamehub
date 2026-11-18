@@ -29,17 +29,19 @@ public sealed class McpTokenIssuance(McpGrantAdmission admission, IHttpContextAc
         var state = http.Features.Get<McpTokenTransaction>();
         var authentication = context.Transaction.GetProperty<ProcessAuthenticationContext>(
             typeof(ProcessAuthenticationContext).FullName!);
-        var refresh = context.Request.IsRefreshTokenGrantType();
-        var principal = refresh ? authentication?.RefreshTokenPrincipal : authentication?.DeviceCodePrincipal;
-        if (state is null || principal is null
-            || (!refresh && !context.Request.IsDeviceCodeGrantType()))
+        var (principal, type) = context.Request.GrantType switch
+        {
+            GrantTypes.RefreshToken => (authentication?.RefreshTokenPrincipal, TokenTypeIdentifiers.RefreshToken),
+            GrantTypes.AuthorizationCode => (authentication?.AuthorizationCodePrincipal, TokenTypeIdentifiers.Private.AuthorizationCode),
+            GrantTypes.DeviceCode => (authentication?.DeviceCodePrincipal, TokenTypeIdentifiers.Private.DeviceCode),
+            _ => (null, null)
+        };
+        if (state is null || principal is null || type is null)
         {
             context.Reject(Errors.InvalidGrant);
             return;
         }
-        state.Grant = await admission.AdmitAsync(principal, refresh
-            ? TokenTypeIdentifiers.RefreshToken : TokenTypeIdentifiers.Private.DeviceCode,
-            cancellationToken: http.RequestAborted);
+        state.Grant = await admission.AdmitAsync(principal, type, cancellationToken: http.RequestAborted);
         if (state.Grant is null)
         {
             context.Reject(Errors.InvalidGrant);

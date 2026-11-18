@@ -10,7 +10,7 @@
 | Destructive confirmation | `components/ui/alert-dialog.tsx` | Existing mutation contracts | Explicit confirmation | Cancel and confirm checks |
 | Search | `hooks/useDebouncedMetadataSearch.ts`, `lib/latest-request-gate.ts` | Request gate | Debounced remote search | Slow, stale, cleared, and failed request checks |
 | Authentication | `lib/authenticated-fetch.ts`, server BFF routes | Server authentication policy | BFF-confirmed final 401 | Security tests |
-| Assistant consent | `components/McpConsentForm.tsx`, `lib/mcp-consent.ts`, `/api/mcp/consent` | [ADR-016](../docs/adr/016-mcp-user-authorization.md), [browser boundary](../docs/mcp-browser-consent.md) | Code entry, explicit review, approval/denial receipt | Browser, transport, startup and lifecycle tests |
+| Assistant consent | `components/McpConsentPermissions.tsx`, `lib/mcp-consent.ts`, `/api/mcp/consent`, `/api/mcp/authorize` | [ADR-016](../docs/adr/016-mcp-user-authorization.md), [browser boundary](../docs/mcp-browser-consent.md) | Code entry for Docker connections, managed remote browser review, explicit approval or denial | Browser, transport, startup and lifecycle tests |
 | Assistant connections | `components/admin/McpConnectionsPanel.tsx`, `lib/mcp-connections.ts`, Core `/auth/mcp-connections` | [ADR-016](../docs/adr/016-mcp-user-authorization.md), [connection management](../docs/mcp-connections.md) | Owned active consents; single confirmed revocation | Production HTTP, database race, browser and payload tests |
 | CRUD | Existing Core routes and their owning panels | Server API policy | Server-confirmed writes with retry | Security and interaction tests |
 
@@ -35,6 +35,11 @@ Reading is the default; requested tracking writes need an unchecked optional con
 changed or uncertain decision returns to code review; it never retries approval automatically.
 Codes and confirmation remain in page memory only. Login returns to `/mcp/verify` without carrying
 a code in the URL. The Core service owns identity, provider provenance, expiry and one-time use.
+
+Remote consent displays the public client name, exact GameHub address and signed-in account.
+Its short-lived request handle carries sign-in back to `/mcp/authorize`. The access code travels
+only in the committed navigation to the validated native callback. An uncertain decision returns
+to review and requires a fresh confirmation before another attempt.
 
 Assistant connections use the Security tab's existing cards and German action labels. Dates use
 German formatting in the browser's local time zone. Keep the full local connection ID available

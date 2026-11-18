@@ -134,6 +134,13 @@ and request cancellation use the existing gateway. The shipped Caddy site return
 even for requests bearing the generated gateway credential. The existing Docker client keeps its
 separate REST resource and grant.
 
+Core can stage the remote browser flow through the managed gateway. OpenIddict stores an
+encrypted, five-minute authorization request and issues a two-minute authorization code after
+the account approves it. The browser continuation carries only a request reference. An approval
+is bound to the displayed account and its verified provider session. The callback receives the
+code, original state, and exact issuer after Core commits the decision. The shipped Frontend
+and Caddy block the public authorization entry point until the remote release gate.
+
 `/connect/verify` and the new `/connect/authorize/consent`, including trailing-slash/subpath variants,
 are private server-to-server paths. They return 404 at the public edge and have no public gateway
 handler, even if Caddy is misconfigured. Core still requires service trust plus verified owner proof.

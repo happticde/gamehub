@@ -1,6 +1,4 @@
 using System.Data;
-using System.Globalization;
-using System.Security.Claims;
 using GameHub.Core.Data;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
@@ -123,14 +121,7 @@ public sealed class McpDeviceConsent(CoreContext db, McpGrantAdmission admission
             descriptor.AuthorizationId = grant.AuthorizationId;
             await tokens.UpdateAsync(device, descriptor, cancellation);
 
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(Protocol));
-            principal.SetClaim(Claims.Subject, grant.AccountId.ToString("D"));
-            principal.SetClaim(GameHubClaimTypes.TenantId, grant.TenantId.ToString("D"));
-            principal.SetClaim(GameHubClaimTypes.AccountSessionId, grant.FamilyId.ToString("D"));
-            principal.SetClaim(GameHubClaimTypes.SessionVersion, grant.SessionVersion.ToString(CultureInfo.InvariantCulture));
-            var scopes = grant.Scopes.Split(' ').ToList();
-            if (pending.HasScope(Scopes.OfflineAccess)) scopes.Add(Scopes.OfflineAccess);
-            principal.SetScopes(scopes).SetResources(grant.Resource).SetAuthorizationId(grant.AuthorizationId);
+            var principal = grant.CreatePrincipal(Protocol, pending.HasScope(Scopes.OfflineAccess));
             await Results.SignIn(principal, authenticationScheme: Protocol).ExecuteAsync(http);
         }
         else

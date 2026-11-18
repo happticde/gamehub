@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using GameHub.Core.Data;
+using GameHub.Core.Mcp;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -15,7 +16,20 @@ namespace GameHub.Core.Services;
 public sealed record McpGrantAdmissionResult(
     Guid GrantId, Guid AccountId, Guid TenantId, Guid FamilyId, Guid ProviderSessionId,
     string AuthorizationId, long SessionVersion, string Resource, string Scopes,
-    DateTime ExpiresAtUtc);
+    DateTime ExpiresAtUtc)
+{
+    internal ClaimsPrincipal CreatePrincipal(string authenticationScheme, bool allowRenewal)
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(authenticationScheme));
+        principal.SetClaim(Claims.Subject, AccountId.ToString("D"));
+        principal.SetClaim(GameHubClaimTypes.TenantId, TenantId.ToString("D"));
+        principal.SetClaim(GameHubClaimTypes.AccountSessionId, FamilyId.ToString("D"));
+        principal.SetClaim(GameHubClaimTypes.SessionVersion, SessionVersion.ToString(CultureInfo.InvariantCulture));
+        var scopes = Scopes.Split(' ').ToList();
+        if (allowRenewal) scopes.Add(OpenIddictConstants.Scopes.OfflineAccess);
+        return principal.SetScopes(scopes).SetResources(Resource).SetAuthorizationId(AuthorizationId);
+    }
+}
 
 /// <summary>
 /// Orders consent and integration work against durable lifecycle changes. The caller must own
@@ -24,17 +38,30 @@ public sealed record McpGrantAdmissionResult(
 /// </summary>
 public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, TimeProvider timeProvider)
 {
+    private McpRemoteResource? Remote { get; }
+
+    /// <summary>Uses the independently configured native-client resource when managed setup is active.</summary>
+    public McpGrantAdmission(CoreContext db, McpRestResource resource, TimeProvider timeProvider,
+        IServiceProvider services) : this(db, resource, timeProvider) =>
+        Remote = services.GetService<McpRemoteResource>();
+
     /// <summary>
     /// Creates consent from an explicitly authenticated normal browser ticket. Requested scopes
     /// must come from the library-validated pending request, never an approval form's scope list.
     /// Pending-code binding and one-time verification must complete before the caller commits.
     /// </summary>
-    public async Task<McpGrantAdmissionResult?> CreateAsync(
+    public Task<McpGrantAdmissionResult?> CreateAsync(
         AuthenticateResult browser, IReadOnlyCollection<string> requestedScopes, bool allowTrackingWrite,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CreateAsync(browser, requestedScopes, allowTrackingWrite, McpDeviceProtocol.ClientId, cancellationToken);
+
+    internal async Task<McpGrantAdmissionResult?> CreateAsync(
+        AuthenticateResult browser, IReadOnlyCollection<string> requestedScopes, bool allowTrackingWrite,
+        string clientId, CancellationToken cancellationToken)
     {
         RequireTransaction();
-        if (!requestedScopes.Contains(McpPermissions.LibraryRead)
+        var expected = McpRemoteResource.ForClient(clientId, resource, Remote);
+        if (expected is null || !requestedScopes.Contains(McpPermissions.LibraryRead)
             || requestedScopes.Count != requestedScopes.Distinct(StringComparer.Ordinal).Count()
             || requestedScopes.Any(scope => scope is not (McpPermissions.LibraryRead
                 or McpPermissions.TrackingWrite or Scopes.OfflineAccess))
@@ -49,7 +76,7 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
             .Select(row => row.Id).SingleAsync(cancellationToken);
 
         var application = await db.Set<McpProtocolApplication>().AsNoTracking()
-            .SingleOrDefaultAsync(row => row.ClientId == McpDeviceProtocol.ClientId, cancellationToken);
+            .SingleOrDefaultAsync(row => row.ClientId == clientId, cancellationToken);
         if (application is not { ClientType: ClientTypes.Public, ConsentType: ConsentTypes.Explicit }) return null;
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var familyId = Guid.NewGuid();
@@ -76,8 +103,8 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
         {
             Id = Guid.NewGuid(), UserAccountId = owner.AccountId, TenantId = owner.TenantId,
             AccountSessionId = familyId, ProtocolAuthorizationId = authorizationId,
-            OidcProviderSessionId = providerId, ClientId = McpDeviceProtocol.ClientId,
-            Resource = resource.Resource.AbsoluteUri, Scopes = scopes,
+            OidcProviderSessionId = providerId, ClientId = clientId,
+            Resource = expected, Scopes = scopes,
             ApprovedSessionVersion = owner.Epoch, CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(30)
         };
         db.McpGrants.Add(grant);
@@ -146,20 +173,23 @@ public sealed class McpGrantAdmission(CoreContext db, McpRestResource resource, 
         // authorization request's resource metadata. Both must identify exactly this resource.
         var resources = tokenType == TokenTypeIdentifiers.AccessToken
             ? principal.GetAudiences() : principal.GetResources();
-        if (tokenType is not (TokenTypeIdentifiers.Private.DeviceCode or TokenTypeIdentifiers.RefreshToken
-                or TokenTypeIdentifiers.AccessToken)
+        if (tokenType is not (TokenTypeIdentifiers.Private.DeviceCode or TokenTypeIdentifiers.Private.AuthorizationCode
+                or TokenTypeIdentifiers.RefreshToken or TokenTypeIdentifiers.AccessToken)
+            || principal.GetPresenters().ToArray() is not [var clientId]
+            || McpRemoteResource.ForClient(clientId, resource, Remote) is not { } expected
+            || (tokenType == TokenTypeIdentifiers.Private.DeviceCode && clientId != McpDeviceProtocol.ClientId)
+            || (tokenType == TokenTypeIdentifiers.Private.AuthorizationCode && clientId == McpDeviceProtocol.ClientId)
             || !TryOwner(principal, Claims.Subject, out var owner)
             || principal.GetAuthorizationId() is not { Length: > 0 } authorizationId
             || principal.GetTokenId() is not { Length: > 0 } tokenId
-            || !resources.SequenceEqual([resource.Resource.AbsoluteUri])
-            || !principal.GetPresenters().SequenceEqual([McpDeviceProtocol.ClientId])) return null;
+            || !resources.SequenceEqual([expected])) return null;
 
         var grant = await db.McpGrants.AsNoTracking().SingleOrDefaultAsync(row =>
             row.UserAccountId == owner.AccountId && row.TenantId == owner.TenantId
             && row.AccountSessionId == owner.FamilyId && row.ProtocolAuthorizationId == authorizationId,
             cancellationToken);
         if (grant is null || grant.ApprovedSessionVersion != owner.Epoch
-            || grant.Resource != resource.Resource.AbsoluteUri || grant.ClientId != McpDeviceProtocol.ClientId
+            || grant.Resource != expected || grant.ClientId != clientId
             || grant.Scopes is not (McpPermissions.LibraryRead or McpPermissions.ReadAndWrite)) return null;
         var scopes = principal.GetScopes();
         if (!scopes.Contains(McpPermissions.LibraryRead)

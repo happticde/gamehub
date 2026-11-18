@@ -3,7 +3,7 @@
 # No access log: authorization queries and codes must not enter request logs.
 games.example.com {
     # Keep the exact remote transport private until its authorization and release gate pass.
-    @private path /mcp /mcp/ /connect/verify /connect/verify/* /connect/authorize/consent /connect/authorize/consent/* /internal /internal/*
+    @private path /mcp /mcp/ /connect/verify /connect/verify/* /connect/authorize /connect/authorize/* /internal /internal/*
     handle @private {
         respond 404
     }

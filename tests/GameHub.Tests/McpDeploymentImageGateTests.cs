@@ -70,7 +70,7 @@ public sealed partial class McpDeviceStartupTests
         using var libraryPage = await client.SendAsync(browserRequest);
         Assert.Equal(HttpStatusCode.OK, libraryPage.StatusCode);
         foreach (var path in new[] { "/connect/verify", "/connect/verify/", "/connect/verify/subpath",
-                     "/connect/authorize/consent", "/connect/authorize/consent/", "/connect/register",
+                     "/connect/authorize", "/connect/authorize/", "/connect/authorize/consent", "/connect/authorize/consent/", "/connect/register",
                      "/internal/mcp/readiness", "/mcp" })
         {
             using var response = await client.GetAsync(path);
