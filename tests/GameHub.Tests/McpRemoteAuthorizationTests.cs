@@ -50,6 +50,11 @@ public sealed partial class McpDeviceStartupTests
         Assert.Equal(HttpStatusCode.BadRequest, badMethod.StatusCode);
         using var badRedirect = await http.GetAsync(StartUri(clientId, "https://unauthorized.example/callback"));
         Assert.Equal(HttpStatusCode.BadRequest, badRedirect.StatusCode);
+        foreach (var prompt in new[] { "none", "consent login" })
+        {
+            using var badPrompt = await http.GetAsync(StartUri(clientId, callback, prompt: prompt));
+            Assert.Equal(HttpStatusCode.BadRequest, badPrompt.StatusCode);
+        }
         if (clientId == HermesId)
         {
             using var wrongPort = await http.GetAsync(StartUri(clientId, "http://localhost:27895/callback"));
@@ -57,7 +62,7 @@ public sealed partial class McpDeviceStartupTests
         }
         Assert.Empty(stub.Requests);
 
-        using var initial = await http.GetAsync(StartUri(clientId, callback));
+        using var initial = await http.GetAsync(StartUri(clientId, callback, prompt: clientId == HermesId ? "consent" : null));
         Assert.Equal(HttpStatusCode.Redirect, initial.StatusCode);
         var review = initial.Headers.Location!;
         Assert.Equal(StartupFixture.Issuer + "mcp/authorize", review.GetLeftPart(UriPartial.Path));
@@ -158,12 +163,12 @@ public sealed partial class McpDeviceStartupTests
         return store.ReadState();
     }
 
-    private static string StartUri(string clientId, string redirect, string challengeMethod = "S256") =>
+    private static string StartUri(string clientId, string redirect, string challengeMethod = "S256", string? prompt = null) =>
         QueryHelpers.AddQueryString(McpRemoteResource.AuthorizationPath, new Dictionary<string, string?>
         {
             ["client_id"] = clientId, ["response_type"] = "code", ["redirect_uri"] = redirect,
             ["scope"] = "library:read tracking:write offline_access", ["resource"] = RemoteResource,
-            ["state"] = NativeState, ["code_challenge_method"] = challengeMethod,
+            ["state"] = NativeState, ["code_challenge_method"] = challengeMethod, ["prompt"] = prompt,
             ["code_challenge"] = Base64UrlTextEncoder.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(Verifier)))
         });
 

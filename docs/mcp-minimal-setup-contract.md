@@ -126,6 +126,16 @@ non-default HTTPS port is part of the authority and must match everywhere.
 | Existing allowed `/api/library` operations | Dedicated local-token gateway allowlist only; retain #69's exact methods, fields and paths |
 | Existing `/api/core/*`, browser login/callback and provider logout | Existing browser BFF behavior; no generic assistant-token adapter |
 
+The managed gateway serves both discovery documents through the existing Caddy upstream. An
+unauthenticated request to the transport receives a `Bearer` challenge with the protected-resource
+metadata URL and `library:read`. A rejected bearer token adds `invalid_token` to the 401 response.
+A valid remote identity missing the read permission receives 403 with `insufficient_scope`.
+Authorization-server metadata describes the bounded Codex and Hermes client documents, the code
+flow with `S256`, and the optional `tracking:write` and `offline_access` scopes. Public discovery
+requires no credentials. Basic resource access requires `library:read`. The advertised issuer is
+exactly `O/`, matching the native authorization response. The shipped Caddy rules still gate remote
+login and transport until #80.
+
 The private `/mcp` route uses the MCP C# software development kit (SDK) in Core. It runs one
 server context per request and has no transport session identifier to share, expire, or restore
 after a restart. The SDK accepts legacy initialization and current discovery. Streaming responses

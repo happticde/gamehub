@@ -30,13 +30,14 @@ internal sealed record McpRemoteClient(string Id, string Name, IReadOnlyList<str
     }
 }
 
-internal sealed record McpRemoteResource(Uri Uri)
+internal sealed record McpRemoteResource(Uri Issuer, Uri Uri)
 {
+    internal const string Path = "/mcp";
     internal const string AuthorizationPath = "/connect/authorize";
     internal const string ConsentPath = "/connect/authorize/consent";
     internal const string BrowserPath = "/mcp/authorize";
 
-    internal static McpRemoteResource Create(McpRestResource rest) => new(new Uri(rest.Issuer, "mcp"));
+    internal static McpRemoteResource Create(McpRestResource rest) => new(rest.Issuer, new Uri(rest.Issuer, Path));
 
     internal static string? ForClient(string? client, McpRestResource rest, McpRemoteResource? remote) =>
         client == McpDeviceProtocol.ClientId ? rest.Resource.AbsoluteUri

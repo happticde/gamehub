@@ -54,12 +54,19 @@ function loadTs(path, modules) {
 }
 
 test("real native Node request uses internal Host and generated proof; route/header/redirect boundaries hold", async () => {
+    const discovery = "/.well-known/oauth-protected-resource/mcp";
+    const issuer = "/.well-known/oauth-authorization-server";
+    const challenge = `Bearer resource_metadata="${origin}${discovery}", scope="library:read"`;
     const seen = [];
     const server = createServer(async (request, response) => {
         const chunks = [];
         for await (const chunk of request) chunks.push(chunk);
         seen.push({ headers: request.headers, path: request.url, body: Buffer.concat(chunks).toString() });
         if (request.url === "/connect/revoke") { response.writeHead(302, { location: "https://attacker.example" }).end(); return; }
+        if (request.url === "/mcp") { response.writeHead(401, { "www-authenticate": challenge }).end(); return; }
+        if (request.url === discovery || request.url === issuer) {
+            response.writeHead(200, { "content-type": "application/json" }).end("{}"); return;
+        }
         response.writeHead(400, { "content-type": "application/json", "set-cookie": "forbidden", "x-secret": "forbidden" });
         response.end('{"error":"authorization_pending"}');
     });
@@ -105,6 +112,25 @@ test("real native Node request uses internal Host and generated proof; route/hea
         assert.equal(seen[3].headers.host, `127.0.0.1:${port}`);
         assert.equal(seen[3].headers.authorization, "Bearer signed-owner-fixture");
         assert.equal(seen[3].headers["x-gamehub-mcp-bff-key"], state.ConsentKey);
+
+        for (const path of [discovery, issuer]) {
+            const response = await gateway.forwardMcpRequest(request(path, "GET"));
+            assert.equal(response.status, 200);
+            assert.equal(response.headers.get("cache-control"), "no-store");
+            const upstream = seen.at(-1);
+            assert.equal(upstream.path, path);
+            for (const name of ["authorization", "cookie", "x-api-key", "x-forwarded-host"]) {
+                assert.equal(upstream.headers[name], undefined);
+            }
+            assert.equal((await gateway.forwardMcpRequest(request(`${path}?resource=other`, "GET"))).status, 400);
+            assert.equal((await gateway.forwardMcpRequest(request(path))).status, 404);
+            assert.equal((await gateway.forwardMcpRequest(request(path + "/", "GET"))).status, 404);
+        }
+        const transport = await gateway.forwardMcpRequest(request("/mcp", "POST", { authorization: "Basic untrusted" }));
+        assert.equal(transport.status, 401);
+        assert.equal(transport.headers.get("www-authenticate"), challenge);
+        assert.equal(seen.at(-1).headers.authorization, undefined);
+        assert.equal(seen.length, 7);
     } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
