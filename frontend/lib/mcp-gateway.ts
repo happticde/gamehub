@@ -1,8 +1,9 @@
 import "server-only";
 import { getManagedMcpConfig, managedMcpHeaders } from "@/lib/mcp-managed-config.mjs";
 
-/** Only delivered protocol endpoints. Remote transport/discovery/authorization are added by #76–#78. */
+/** Only exact protocol routes exposed by this gateway. The public edge keeps /mcp private. */
 export function isMcpGatewayRoute(path: string, method: string): boolean {
+    if (path === "/mcp") return ["GET", "POST", "DELETE"].includes(method);
     if (["/connect/device", "/connect/token", "/connect/revoke"].includes(path)) return method === "POST";
     if (method === "GET") return /^\/api\/library(?:\/(?:[1-9][0-9]*|random|stats|tags))?$/.test(path);
     return method === "PATCH" && /^\/api\/library\/[1-9][0-9]*\/personal$/.test(path);
@@ -22,13 +23,16 @@ export async function forwardMcpRequest(request: Request): Promise<Response> {
             return new Response(null, { status: 403 });
         }
         const library = url.pathname.startsWith("/api/library");
+        const remote = url.pathname === "/mcp";
         const authorization = request.headers.get("authorization");
         if (library && (!authorization || !/^Bearer [!-~]+$/.test(authorization))) return new Response(null, { status: 401 });
+        if (remote && authorization !== null && !/^Bearer [!-~]+$/i.test(authorization)) return new Response(null, { status: 401 });
         if (!library && url.search) return new Response(null, { status: 400 });
         const headers = new Headers(managedMcpHeaders(config));
         // Allowlist instead of deleting known dangerous headers: cookies, tenant selectors,
         // browser credentials, forwarding and supplied service keys can never enter Core.
-        for (const name of ["accept", "content-type", ...(library ? ["authorization"] : [])]) {
+        for (const name of ["accept", "content-type", ...(library || remote ? ["authorization"] : []),
+            ...(remote ? ["origin", "mcp-protocol-version", "mcp-method", "mcp-name"] : [])]) {
             const value = request.headers.get(name);
             if (value) headers.set(name, value);
         }

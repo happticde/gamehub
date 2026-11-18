@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using GameHub.Core.Data;
 using GameHub.Core.Models.Auth;
+using GameHub.Core.Mcp;
 using GameHub.Core.Services;
 using GameHub.Shared;
 using GameHub.Shared.Authentication;
@@ -22,7 +23,11 @@ if (args.FirstOrDefault() == "mcp-keys")
 
 var builder = WebApplication.CreateBuilder(args);
 var managedMcpDeployment = McpManagedDeployment.Load(builder.Configuration);
-if (managedMcpDeployment is not null) builder.Services.AddSingleton(managedMcpDeployment);
+if (managedMcpDeployment is not null)
+{
+    builder.Services.AddSingleton(managedMcpDeployment);
+    builder.Services.AddPrivateMcpTransport();
+}
 
 // --- Caching ---
 builder.Services.AddMemoryCache();
@@ -101,6 +106,8 @@ builder.Services.AddHttpClient<IngestClient>(c =>
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
     });
 builder.Services.AddScoped<UnificationService>();
+builder.Services.AddScoped(services => new LibraryOperations(
+    services.GetRequiredService<CoreContext>(), services.GetRequiredService<ILogger<LibraryOperations>>()));
 builder.Services.AddScoped<PlatformCredentialManagementService>();
 builder.Services.AddScoped<ProviderSyncStatusService>();
 builder.Services.AddScoped<AccountDeletionService>();
@@ -492,4 +499,5 @@ app.UseAuthorization();
 
 app.MapControllers();
 if (mcpDeviceSettings.Enabled) app.MapMcpDeviceEndpoints();
+if (managedMcpDeployment is not null) app.MapPrivateMcpTransport();
 app.Run();
