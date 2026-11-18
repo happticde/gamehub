@@ -16,7 +16,7 @@ internal sealed class McpRemoteAuthorizationMiddleware(RequestDelegate next, ILo
     private const int MaximumBody = 4096;
     private static readonly HashSet<string> StartFields = [Parameters.ClientId, Parameters.ResponseType, Parameters.ResponseMode,
         Parameters.RedirectUri, Parameters.Resource, Parameters.Scope, Parameters.State, Parameters.CodeChallenge,
-        Parameters.CodeChallengeMethod];
+        Parameters.CodeChallengeMethod, Parameters.Prompt];
     private static readonly HashSet<string> ConsentFields = [Parameters.ClientId, Parameters.RequestUri,
         "action", "confirmation", "allow_tracking_write"];
 
@@ -88,6 +88,7 @@ internal sealed class McpRemoteAuthorizationMiddleware(RequestDelegate next, ILo
             || values[Parameters.Resource] != resource.Uri.AbsoluteUri
             || values[Parameters.ResponseType] != ResponseTypes.Code
             || (values.ContainsKey(Parameters.ResponseMode) && values[Parameters.ResponseMode] != ResponseModes.Query)
+            || (values.ContainsKey(Parameters.Prompt) && values[Parameters.Prompt] != PromptValues.Consent)
             || values[Parameters.CodeChallengeMethod] != CodeChallengeMethods.Sha256
             || values[Parameters.CodeChallenge].ToString() is not { Length: 43 } challenge
             || !McpRemoteAuthorization.IsBase64Url(challenge) || StringValues.IsNullOrEmpty(values[Parameters.State])

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using GameHub.Core.Mcp;
 
 namespace GameHub.Core.Services;
 
@@ -56,19 +57,24 @@ public sealed class McpManagedGatewayMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context, McpManagedDeployment deployment)
     {
         var path = context.Request.Path.Value ?? "";
-        var remote = context.Request.Path.StartsWithSegments("/mcp", StringComparison.OrdinalIgnoreCase);
+        var remote = context.Request.Path.StartsWithSegments(McpRemoteResource.Path, StringComparison.OrdinalIgnoreCase);
+        var discovery = path.StartsWith(McpRemoteDiscovery.MetadataPrefix, StringComparison.OrdinalIgnoreCase);
         var protocol = path.StartsWith("/connect", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/.well-known/oauth", StringComparison.OrdinalIgnoreCase)
+            || discovery
             || remote
             || path.StartsWith("/internal/mcp", StringComparison.OrdinalIgnoreCase);
         if (!protocol && !context.Request.Headers.ContainsKey(McpManagedDeployment.TransportHeader))
         { await next(context); return; }
         context.Response.Headers.CacheControl = "no-store";
         if (!deployment.IsTrusted(context)) { context.Response.StatusCode = 404; return; }
+        if (discovery && (!HttpMethods.IsGet(context.Request.Method) || path is not
+                (McpRemoteDiscovery.ResourceMetadataPath or McpRemoteDiscovery.ServerMetadataPath)))
+        { context.Response.StatusCode = 404; return; }
+        if (remote && path != McpRemoteResource.Path) { context.Response.StatusCode = 404; return; }
+        if ((remote || discovery) && context.Request.QueryString.HasValue)
+        { context.Response.StatusCode = 400; return; }
         if (remote)
         {
-            if (path != "/mcp") { context.Response.StatusCode = 404; return; }
-            if (context.Request.QueryString.HasValue) { context.Response.StatusCode = 400; return; }
             if (context.Request.Headers.TryGetValue("Origin", out var origin)
                 && (origin.Count != 1 || origin[0] != deployment.Origin))
             { context.Response.StatusCode = 403; return; }

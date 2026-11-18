@@ -503,6 +503,7 @@ app.MapControllers();
 if (mcpDeviceSettings.Enabled) app.MapMcpDeviceEndpoints();
 if (managedMcpDeployment is not null)
 {
+    app.MapMcpRemoteDiscovery();
     app.MapPrivateMcpTransport();
     app.MapMcpRemoteConsent();
 }

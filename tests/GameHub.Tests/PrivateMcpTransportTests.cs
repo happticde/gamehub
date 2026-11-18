@@ -55,6 +55,9 @@ public sealed class PrivateMcpTransportTests
             using var denied = await http.SendAsync(gateway);
             Assert.Equal(method == HttpMethod.Post ? HttpStatusCode.Unauthorized : HttpStatusCode.MethodNotAllowed,
                 denied.StatusCode);
+            if (method == HttpMethod.Post)
+                Assert.Equal($"Bearer resource_metadata=\"{Origin}/.well-known/oauth-protected-resource/mcp\", scope=\"library:read\", error=\"invalid_token\"",
+                    Assert.Single(denied.Headers.WwwAuthenticate).ToString());
             Assert.Equal("no-store", denied.Headers.CacheControl?.ToString());
         }
 
@@ -72,6 +75,29 @@ public sealed class PrivateMcpTransportTests
             using var response = await http.SendAsync(request);
             Assert.Equal(expected, response.StatusCode);
         }
+    }
+
+    [Theory]
+    [InlineData(null, HttpStatusCode.Unauthorized, "")]
+    [InlineData("Basic unsupported", HttpStatusCode.Unauthorized, "")]
+    [InlineData("Bearer invalid", HttpStatusCode.Unauthorized, ", error=\"invalid_token\"")]
+    [InlineData("Bearer missing-read-scope", HttpStatusCode.Forbidden, ", error=\"insufficient_scope\"")]
+    public async Task Transport_BearerChallenge_UsesCanonicalMetadataAndMinimumScope(string? authorization,
+        HttpStatusCode expected, string error)
+    {
+        await using var database = new FixtureDatabase();
+        await using var app = await StartAsync(database, authorizeFixture: true);
+        using var http = app.GetTestClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        AddGatewayProof(request.Headers);
+        request.Headers.Host = "internal.example:8080";
+        request.Headers.Add("X-Forwarded-Host", "untrusted.example");
+        if (authorization is not null) request.Headers.Add("Authorization", authorization);
+        using var response = await http.SendAsync(request);
+        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal($"Bearer resource_metadata=\"{Origin}/.well-known/oauth-protected-resource/mcp\", scope=\"library:read\"{error}",
+            Assert.Single(response.Headers.WwwAuthenticate).ToString());
+        Assert.Empty(await response.Content.ReadAsStringAsync());
     }
 
     [Theory]
@@ -207,6 +233,7 @@ public sealed class PrivateMcpTransportTests
         builder.Services.AddControllers().AddJsonOptions(options =>
             options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
         builder.Services.AddSingleton(new McpManagedDeployment("unused", Generation, Origin, TransportKey));
+        builder.Services.AddSingleton(McpRemoteResource.Create(new McpRestResource(new Uri(Origin + "/"), new Uri(Origin + "/api"))));
         builder.Services.AddPrivateMcpTransport();
         if (authorizeFixture)
         {
@@ -260,14 +287,15 @@ public sealed class PrivateMcpTransportTests
         {
             var tenant = Request.Headers.Authorization.ToString() switch
             {
-                "Bearer owner-one-fixture" => TenantDefaults.DefaultTenantId,
+                "Bearer owner-one-fixture" or "Bearer missing-read-scope" => TenantDefaults.DefaultTenantId,
                 "Bearer owner-two-fixture" => OtherTenant,
                 _ => Guid.Empty
             };
             if (tenant == Guid.Empty) return Task.FromResult(AuthenticateResult.NoResult());
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim(GameHubClaimTypes.TenantId, tenant.ToString())], PrivateMcpTransport.Scheme));
-            principal.SetScopes(McpPermissions.LibraryRead);
+            principal.SetScopes(Request.Headers.Authorization == "Bearer missing-read-scope"
+                ? McpPermissions.TrackingWrite : McpPermissions.LibraryRead);
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
         }
     }
