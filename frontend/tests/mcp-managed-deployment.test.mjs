@@ -106,3 +106,66 @@ test("real native Node request uses internal Host and generated proof; route/hea
         assert.equal(seen[3].headers["x-gamehub-mcp-bff-key"], state.ConsentKey);
     } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
+
+test("private HTTP transport forwards bounded protocol headers and cancels an upstream event stream", async () => {
+    let upstreamHeaders;
+    let upstreamPath;
+    let reportClosed;
+    const upstreamClosed = new Promise(resolve => { reportClosed = resolve; });
+    const server = createServer(async (request, response) => {
+        upstreamHeaders = request.headers;
+        upstreamPath = request.url;
+        for await (const chunk of request) assert.ok(chunk.length > 0);
+        response.on("close", reportClosed);
+        response.writeHead(200, { "content-type": "text/event-stream", "set-cookie": "forbidden" });
+        response.write("data: first\n\n");
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const config = { instance: origin, core: new URL(`http://127.0.0.1:${server.address().port}`),
+        generation: state.Generation, transportKey: state.TransportKey };
+    const modules = { "server-only": {}, "@/lib/mcp-managed-config.mjs": { getManagedMcpConfig: () => config, managedMcpHeaders } };
+    const { forwardMcpRequest } = loadTs("lib/mcp-gateway.ts", modules);
+    const abort = new AbortController();
+    const request = (path = "/mcp", headers = {}) => new Request(origin + path, {
+        method: "POST", body: "{}", signal: abort.signal, headers: {
+            host: "games.example", origin, authorization: "Bearer assistant-fixture",
+            "content-type": "application/json", accept: "application/json, text/event-stream",
+            "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/call", "mcp-name": "search_library",
+            "mcp-session-id": "untrusted", "x-gamehub-mcp-transport-key": "untrusted",
+            "x-gamehub-tenant-id": "untrusted", "x-gamehub-mcp-bff-key": "untrusted",
+            "x-forwarded-host": "untrusted", cookie: "browser=private", ...headers,
+        },
+    });
+    try {
+        assert.equal((await forwardMcpRequest(request("/mcp", { host: "other.example" }))).status, 403);
+        assert.equal((await forwardMcpRequest(request("/mcp", { origin: "https://other.example" }))).status, 403);
+        assert.equal((await forwardMcpRequest(request("/mcp?extra=1"))).status, 400);
+        assert.equal((await forwardMcpRequest(request("/mcp/sse"))).status, 404);
+        assert.equal(upstreamPath, undefined);
+        const response = await forwardMcpRequest(request());
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("set-cookie"), null);
+        assert.equal(upstreamPath, "/mcp");
+        assert.equal(upstreamHeaders.origin, origin);
+        assert.equal(upstreamHeaders.authorization, "Bearer assistant-fixture");
+        assert.equal(upstreamHeaders["mcp-protocol-version"], "2026-07-28");
+        assert.equal(upstreamHeaders["mcp-method"], "tools/call");
+        assert.equal(upstreamHeaders["mcp-name"], "search_library");
+        assert.equal(upstreamHeaders["x-gamehub-mcp-transport-key"], state.TransportKey);
+        for (const name of ["mcp-session-id", "x-gamehub-tenant-id", "x-gamehub-mcp-bff-key", "x-forwarded-host", "cookie"]) {
+            assert.equal(upstreamHeaders[name], undefined);
+        }
+        const reader = response.body.getReader();
+        assert.equal(new TextDecoder().decode((await reader.read()).value), "data: first\n\n");
+        abort.abort();
+        await assert.rejects(reader.read(), { name: "AbortError" });
+        await Promise.race([upstreamClosed, once(AbortSignal.timeout(5_000), "abort").then(() => {
+            throw new Error("The upstream stream remained open after the client disconnected.");
+        })]);
+    } finally {
+        abort.abort();
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+    }
+});

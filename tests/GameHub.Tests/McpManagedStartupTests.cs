@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GameHub.Core.Services;
@@ -10,6 +11,40 @@ namespace GameHub.Tests;
 
 public sealed partial class McpDeviceStartupTests
 {
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
+    public async Task ManagedStartup_RemoteTransport_RequiresGatewayAndSeparateUserAuthorization()
+    {
+        await using var fixture = new StartupFixture(postgres: false);
+        using (var legacy = fixture.Factory())
+        using (var legacyClient = legacy.CreateClient(new() { BaseAddress = new Uri(StartupFixture.Issuer) }))
+        using (var unavailable = await legacyClient.PostAsync("/mcp", null))
+            Assert.Equal(HttpStatusCode.NotFound, unavailable.StatusCode);
+
+        var root = Path.GetDirectoryName(fixture.Values["Mcp:Device:KeyDirectory"])!;
+        var core = Path.Combine(root, "remote-core");
+        var store = new McpManagedKeyStore(core);
+        store.Setup(Path.Combine(root, "remote-frontend"), StartupFixture.Issuer.TrimEnd('/'), enabled: true);
+        var generated = store.ReadState();
+        foreach (var key in fixture.Values.Keys.Where(key => key.StartsWith("Mcp:Device:", StringComparison.Ordinal)).ToArray())
+            fixture.Values.Remove(key);
+        fixture.Values["Mcp:Managed:Enabled"] = "true";
+        fixture.Values["Mcp:Managed:Directory"] = core;
+        using var managed = fixture.Factory();
+        using var client = managed.CreateClient(new() { BaseAddress = new Uri(StartupFixture.Issuer) });
+        var browser = (await SeedAsync(managed)).Token;
+
+        using var direct = await client.PostAsync("/mcp", null);
+        Assert.Equal(HttpStatusCode.NotFound, direct.StatusCode);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        request.Headers.Add(McpManagedDeployment.TransportHeader, generated.TransportKey);
+        request.Headers.Add(McpManagedDeployment.GenerationHeader, generated.Generation);
+        request.Headers.Add("X-Api-Key", fixture.Values["Authentication:ApiKey"]);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", browser);
+        using var rejected = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, rejected.StatusCode);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

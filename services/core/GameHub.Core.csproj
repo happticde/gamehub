@@ -18,6 +18,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <!-- Override EF Core's vulnerable SQLitePCLRaw 2.1.11 minimum with the maintained bundle. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />

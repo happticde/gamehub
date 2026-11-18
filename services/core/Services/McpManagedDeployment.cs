@@ -56,14 +56,23 @@ public sealed class McpManagedGatewayMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context, McpManagedDeployment deployment)
     {
         var path = context.Request.Path.Value ?? "";
+        var remote = context.Request.Path.StartsWithSegments("/mcp", StringComparison.OrdinalIgnoreCase);
         var protocol = path.StartsWith("/connect", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/.well-known/oauth", StringComparison.OrdinalIgnoreCase)
-            || path.Equals("/mcp", StringComparison.OrdinalIgnoreCase)
+            || remote
             || path.StartsWith("/internal/mcp", StringComparison.OrdinalIgnoreCase);
         if (!protocol && !context.Request.Headers.ContainsKey(McpManagedDeployment.TransportHeader))
         { await next(context); return; }
         context.Response.Headers.CacheControl = "no-store";
         if (!deployment.IsTrusted(context)) { context.Response.StatusCode = 404; return; }
+        if (remote)
+        {
+            if (path != "/mcp") { context.Response.StatusCode = 404; return; }
+            if (context.Request.QueryString.HasValue) { context.Response.StatusCode = 400; return; }
+            if (context.Request.Headers.TryGetValue("Origin", out var origin)
+                && (origin.Count != 1 || origin[0] != deployment.Origin))
+            { context.Response.StatusCode = 403; return; }
+        }
         // Caller-selected forwarding headers never supply public authority or an owner.
         context.Request.Headers.Remove("Forwarded");
         foreach (var header in context.Request.Headers.Keys.Where(name => name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)).ToArray())

@@ -126,6 +126,14 @@ non-default HTTPS port is part of the authority and must match everywhere.
 | Existing allowed `/api/library` operations | Dedicated local-token gateway allowlist only; retain #69's exact methods, fields and paths |
 | Existing `/api/core/*`, browser login/callback and provider logout | Existing browser BFF behavior; no generic assistant-token adapter |
 
+The private `/mcp` route uses the MCP C# software development kit (SDK) in Core. It runs one
+server context per request and has no transport session identifier to share, expire, or restore
+after a restart. The SDK accepts legacy initialization and current discovery. Streaming responses
+and request cancellation use the existing gateway. The shipped Caddy site returns 404 for
+`/mcp` while remote authorization is pending. Core independently denies remote authentication
+even for requests bearing the generated gateway credential. The existing Docker client keeps its
+separate REST resource and grant.
+
 `/connect/verify` and the new `/connect/authorize/consent`, including trailing-slash/subpath variants,
 are private server-to-server paths. They return 404 at the public edge and have no public gateway
 handler, even if Caddy is misconfigured. Core still requires service trust plus verified owner proof.

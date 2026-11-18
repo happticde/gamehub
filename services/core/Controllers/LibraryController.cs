@@ -22,8 +22,7 @@ public class LibraryController : ControllerBase
 {
     private const int MaxCustomTagsPerGame = 50;
     private const int MaxCustomTagNameLength = 64;
-    private const int DefaultLibraryPageSize = 50;
-    private const int MaxLibraryPageSize = 500;
+    private readonly LibraryOperations _library;
 
     private readonly UnificationService _unifier;
     private readonly ProviderSyncStatusService _providerSyncStatus;
@@ -48,12 +47,14 @@ public class LibraryController : ControllerBase
         ActivityLogService activityLog,
         IGameMetadataProvider metadataProvider,
         PhysicalGameCaptureService? physicalCapture = null,
-        PhysicalProductLookupService? physicalProductLookup = null)
+        PhysicalProductLookupService? physicalProductLookup = null,
+        LibraryOperations? library = null)
     {
         _unifier = unifier;
         _providerSyncStatus = providerSyncStatus;
         _enrichment = enrichment;
         _db = db;
+        _library = library ?? new LibraryOperations(db, logger);
         _logger = logger;
         _syncStatus = syncStatus;
         _tenantContext = tenantContext;
@@ -173,96 +174,10 @@ public class LibraryController : ControllerBase
         [FromQuery] string sortOrder = "asc",
         [FromQuery] bool includeIgnored = false,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 50)
-    {
-        // Normalize caller-controlled pagination before it reaches Skip/Take. The frontend offers
-        // 25/50/100, while the broader API contract retains its existing maximum for MCP clients.
-        if (pageSize < 1) pageSize = DefaultLibraryPageSize;
-        if (pageSize > MaxLibraryPageSize) pageSize = MaxLibraryPageSize;
-        if (page < 1) page = 1;
-
-        var query = BuildLibraryQuery(
-            search,
-            tags,
-            platforms,
-            physicalPlatforms,
-            playStatus,
-            developer,
-            publisher,
-            includeIgnored);
-        
-        // Includes are needed for the returned shape
-        query = query.Include(g => g.Items)
-                     .Include(g => g.PhysicalCopies)
-                     .Include(g => g.Tags);
-
-        // Get total count for pagination metadata
-        var totalCount = await query.CountAsync();
-        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
-        if (page > totalPages) page = totalPages;
-
-        // Dynamic sorting — default to title ascending
-        var sortedQuery = (sortBy?.ToLowerInvariant(), sortOrder.ToLowerInvariant()) switch
-        {
-            ("rating", "desc")       => query.OrderByDescending(g => g.Rating ?? -1),
-            ("rating", _)            => query.OrderBy(g => g.Rating ?? 999),
-            ("releasedate", "desc")  => query.OrderByDescending(g => g.FirstReleaseDate ?? DateTime.MinValue),
-            ("releasedate", _)       => query.OrderBy(g => g.FirstReleaseDate ?? DateTime.MaxValue),
-            ("title", "desc")        => query.OrderByDescending(g => g.Title),
-            _                        => query.OrderBy(g => g.Title), // default: title asc
-        };
-
-        // A unique tie-breaker keeps equal titles, ratings, and release dates on stable pages.
-        var games = await sortedQuery
-            .ThenBy(g => g.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        var result = games.Select(g => new
-        {
-            g.Id,
-            g.Title,
-            g.Slug,
-            g.CoverUrl,
-            g.Summary,
-            g.Genres,
-            g.Developers,
-            g.Publishers,
-            Tags = g.Tags.Select(t => t.Name).ToList(),
-            g.FirstReleaseDate,
-            g.Rating,
-            g.PlayStatus,
-            g.UserRating,
-            g.MetadataSource,
-            g.EnrichedAt,
-            Platforms = g.Items.Select(i => new
-            {
-                i.Platform,
-                i.ExternalId,
-                i.LastSynced
-            }).ToList(),
-            PhysicalCopies = g.PhysicalCopies
-                .OrderBy(copy => copy.Platform)
-                .ThenBy(copy => copy.Id)
-                .Select(copy => new
-                {
-                    copy.Id,
-                    copy.Platform,
-                    copy.NormalizedGtin
-                })
-                .ToList()
-        });
-
-        // Use the untyped or object-typed PagedResult since we mapped to an anonymous type
-        return Ok(new PagedResult<object>
-        {
-            Items = result.Cast<object>().ToList(),
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize
-        });
-    }
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default) =>
+        Ok(await _library.SearchAsync(search, tags, platforms, physicalPlatforms, playStatus, developer,
+            publisher, sortBy, sortOrder, includeIgnored, page, pageSize, cancellationToken));
 
     /// <summary>
     /// GET: api/library/random
@@ -279,104 +194,14 @@ public class LibraryController : ControllerBase
         [FromQuery] PlayStatus[]? playStatus,
         [FromQuery] string[]? developer,
         [FromQuery] string[]? publisher,
-        [FromQuery] bool includeIgnored = false)
+        [FromQuery] bool includeIgnored = false,
+        CancellationToken cancellationToken = default)
     {
-        var query = BuildLibraryQuery(
-            search,
-            tags,
-            platforms,
-            physicalPlatforms,
-            playStatus,
-            developer,
-            publisher,
-            includeIgnored);
-
-        var randomGameId = await query
-            .OrderBy(g => EF.Functions.Random())
-            .Select(g => g.Id)
-            .FirstOrDefaultAsync();
-
-        if (randomGameId == 0)
-        {
-            return NotFound(new { Message = "No games found matching the current filters." });
-        }
-
-        return Ok(new { Id = randomGameId });
-    }
-
-    private IQueryable<UnifiedGame> BuildLibraryQuery(
-        string? search,
-        string[]? tags,
-        Platform[]? platforms,
-        PhysicalGamePlatform[]? physicalPlatforms,
-        PlayStatus[]? playStatus,
-        string[]? developer,
-        string[]? publisher,
-        bool includeIgnored)
-    {
-        var query = _db.UnifiedGames.AsNoTracking();
-
-        if (!includeIgnored)
-        {
-            query = query.Where(g => !g.IsIgnored);
-        }
-
-        // Filter by search term if provided
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            query = query.Where(g => g.Title.ToLower().Contains(search.ToLower()));
-        }
-
-        // Filter by tags if any are provided
-        if (tags != null && tags.Any(t => !string.IsNullOrWhiteSpace(t)))
-        {
-            var lowerTags = tags.Where(t => !string.IsNullOrWhiteSpace(t))
-                                .Select(t => t.ToLower())
-                                .ToList();
-            
-            query = query.Where(g => g.Tags.Any(t => lowerTags.Contains(t.Name.ToLower())));
-        }
-
-        // Filter by platforms if any are provided
-        if (platforms != null && platforms.Length > 0)
-        {
-            query = query.Where(g => g.Items.Any(i => platforms.Contains(i.Platform)));
-        }
-
-        // Physical ownership is deliberately separate from digital provider platforms.
-        if (physicalPlatforms != null && physicalPlatforms.Length > 0)
-        {
-            query = query.Where(g =>
-                g.PhysicalCopies.Any(copy => physicalPlatforms.Contains(copy.Platform)));
-        }
-
-        // Filter by PlayStatus if any are provided
-        if (playStatus != null && playStatus.Length > 0)
-        {
-            query = query.Where(g => playStatus.Contains(g.PlayStatus));
-        }
-
-        // Filter by developers (OR logic: game must match at least one selected developer)
-        if (developer != null && developer.Any(d => !string.IsNullOrWhiteSpace(d)))
-        {
-            var lowerDevs = developer.Where(d => !string.IsNullOrWhiteSpace(d))
-                                     .Select(d => d.ToLower())
-                                     .ToList();
-            query = query.Where(g => g.Developers != null &&
-                lowerDevs.Any(d => g.Developers.ToLower().Contains(d)));
-        }
-
-        // Filter by publishers (OR logic: game must match at least one selected publisher)
-        if (publisher != null && publisher.Any(p => !string.IsNullOrWhiteSpace(p)))
-        {
-            var lowerPubs = publisher.Where(p => !string.IsNullOrWhiteSpace(p))
-                                     .Select(p => p.ToLower())
-                                     .ToList();
-            query = query.Where(g => g.Publishers != null &&
-                lowerPubs.Any(p => g.Publishers.ToLower().Contains(p)));
-        }
-
-        return query;
+        var id = await _library.GetRandomIdAsync(search, tags, platforms, physicalPlatforms, playStatus,
+            developer, publisher, includeIgnored, cancellationToken);
+        return id is null
+            ? NotFound(new { Message = "No games found matching the current filters." })
+            : Ok(new { Id = id.Value });
     }
 
 
@@ -387,73 +212,10 @@ public class LibraryController : ControllerBase
     /// </summary>
     [HttpGet("{id}")]
     [McpOperation(McpPermissions.LibraryRead)]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<IActionResult> GetById(int id, CancellationToken cancellationToken = default)
     {
-        var game = await _db.UnifiedGames
-            .Include(g => g.Items)
-            .Include(g => g.PhysicalCopies)
-            .Include(g => g.Tags)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(g => g.Id == id);
-
-        if (game == null)
-            return NotFound(new { Message = $"Game with ID {id} not found." });
-
-        var customTags = await _db.Set<TagAssignment>()
-            .AsNoTracking()
-            .Where(assignment => assignment.UnifiedGameId == id && assignment.IsCustom)
-            .Select(assignment => assignment.Tag!.Name)
-            .OrderBy(name => name)
-            .ToListAsync();
-
-        List<string> SplitCsv(string? csv) =>
-            string.IsNullOrWhiteSpace(csv) ? new List<string>() : csv.Split(", ").ToList();
-
-        var result = new
-        {
-            game.Id,
-            game.Title,
-            game.Slug,
-            game.CoverUrl,
-            game.Summary,
-            
-            // Expanded Metadata Fields parsed back into arrays
-            Genres = SplitCsv(game.Genres),
-            Platforms = SplitCsv(game.Platforms),
-            Artworks = SplitCsv(game.Artworks),
-            Screenshots = SplitCsv(game.Screenshots),
-            Developers = SplitCsv(game.Developers),
-            Publishers = SplitCsv(game.Publishers),
-            Tags = game.Tags.Select(t => t.Name).ToList(),
-            CustomTags = customTags,
-
-            game.FirstReleaseDate,
-            game.Rating,
-            game.PlayStatus,
-            game.UserRating,
-            game.MetadataSource,
-            game.EnrichedAt,
-            
-            Items = game.Items.Select(i => new
-            {
-                i.Id,
-                i.Platform,
-                i.ExternalId,
-                i.LastSynced
-            }).ToList(),
-            PhysicalCopies = game.PhysicalCopies
-                .OrderBy(copy => copy.Platform)
-                .ThenBy(copy => copy.Id)
-                .Select(copy => new
-                {
-                    copy.Id,
-                    copy.Platform,
-                    copy.NormalizedGtin
-                })
-                .ToList()
-        };
-
-        return Ok(result);
+        var game = await _library.GetGameAsync(id, cancellationToken);
+        return game is null ? NotFound(new { Message = $"Game with ID {id} not found." }) : Ok(game);
     }
 
     /// <summary>
@@ -766,15 +528,8 @@ public class LibraryController : ControllerBase
     /// </summary>
     [HttpGet("tags")]
     [McpOperation(McpPermissions.LibraryRead)]
-    public async Task<IActionResult> GetTags()
-    {
-        var tags = await _db.Tags
-            .Select(t => t.Name)
-            .OrderBy(n => n)
-            .ToListAsync();
-
-        return Ok(tags);
-    }
+    public async Task<IActionResult> GetTags(CancellationToken cancellationToken = default) =>
+        Ok(await _library.GetTagsAsync(cancellationToken));
 
     /// <summary>
     /// GET: api/library/tag-suggestions
@@ -1344,119 +1099,8 @@ public class LibraryController : ControllerBase
     /// </summary>
     [HttpGet("stats")]
     [McpOperation(McpPermissions.LibraryRead)]
-    public async Task<IActionResult> GetStats()
-    {
-        // --- Summary counts ---
-        var totalGames = await _db.UnifiedGames.CountAsync(g => !g.IsIgnored);
-        var enrichedCount = await _db.UnifiedGames.CountAsync(g => g.EnrichedAt != null && !g.IsIgnored);
-        var totalPlatformLinks = await _db.LibraryItems.CountAsync(i => i.UnifiedGame != null && !i.UnifiedGame.IsIgnored);
-
-        // Games that appear on more than one platform
-        var multiPlatformCount = await _db.UnifiedGames
-            .Where(g => g.Items.Count > 1 && !g.IsIgnored)
-            .CountAsync();
-
-        // Average rating (only games that have one)
-        var averageRating = await _db.UnifiedGames
-            .Where(g => g.Rating != null && !g.IsIgnored)
-            .AverageAsync(g => (double?)g.Rating) ?? 0;
-
-        // --- Per-platform breakdown ---
-        var platformCounts = await _db.LibraryItems
-            .Where(i => i.UnifiedGame != null && !i.UnifiedGame.IsIgnored)
-            .GroupBy(i => i.Platform)
-            .Select(g => new { Platform = g.Key.ToString(), Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .ToListAsync();
-
-        // --- Genre distribution (parse comma-separated Genres field) ---
-        var rawGenres = await _db.UnifiedGames
-            .Where(g => g.Genres != null && g.Genres != "" && !g.IsIgnored)
-            .Select(g => g.Genres!)
-            .ToListAsync();
-
-        var genreCounts = rawGenres
-            .SelectMany(csv => csv.Split(", "))
-            .Where(g => !string.IsNullOrWhiteSpace(g))
-            .GroupBy(g => g.Trim())
-            .Select(g => new { Name = g.Key, Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .Take(15)
-            .ToList();
-
-        // --- Rating distribution (10-point buckets) ---
-        var ratedGames = await _db.UnifiedGames
-            .Where(g => g.Rating != null && !g.IsIgnored)
-            .Select(g => g.Rating!.Value)
-            .ToListAsync();
-
-        var ratingDistribution = Enumerable.Range(0, 10)
-            .Select(i => new
-            {
-                Bucket = $"{i * 10}-{i * 10 + 9}",
-                Count = ratedGames.Count(r => r >= i * 10 && r < (i + 1) * 10)
-            })
-            // Add the 100 bucket (games rated exactly 100 fall into 90-100)
-            .Select(b => b.Bucket == "90-99"
-                ? new { Bucket = "90-100", Count = ratedGames.Count(r => r >= 90) }
-                : b)
-            .Where(b => b.Count > 0)
-            .ToList();
-
-        // --- Top-rated games (top 10) ---
-        var topRated = await _db.UnifiedGames
-            .Where(g => g.Rating != null && g.Rating > 0 && !g.IsIgnored)
-            .OrderByDescending(g => g.Rating)
-            .Take(10)
-            .Select(g => new
-            {
-                g.Id,
-                g.Title,
-                g.CoverUrl,
-                g.Rating,
-                g.Genres
-            })
-            .ToListAsync();
-
-        // --- Play status distribution ---
-        var playStatusCounts = await _db.UnifiedGames
-            .Where(g => !g.IsIgnored)
-            .GroupBy(g => g.PlayStatus)
-            .Select(g => new { Status = g.Key.ToString(), Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .ToListAsync();
-
-        // --- Recently added (last 10 enriched) ---
-        var recentlyAdded = await _db.UnifiedGames
-            .Include(g => g.Items)
-            .Where(g => g.EnrichedAt != null && !g.IsIgnored)
-            .OrderByDescending(g => g.EnrichedAt)
-            .Take(10)
-            .Select(g => new
-            {
-                g.Id,
-                g.Title,
-                g.CoverUrl,
-                g.EnrichedAt,
-                Platforms = g.Items.Select(i => i.Platform.ToString()).ToList()
-            })
-            .ToListAsync();
-
-        return Ok(new
-        {
-            TotalGames = totalGames,
-            EnrichedCount = enrichedCount,
-            TotalPlatformLinks = totalPlatformLinks,
-            MultiPlatformCount = multiPlatformCount,
-            AverageRating = Math.Round(averageRating, 1),
-            PlatformCounts = platformCounts,
-            GenreCounts = genreCounts,
-            PlayStatusCounts = playStatusCounts,
-            RatingDistribution = ratingDistribution,
-            TopRated = topRated,
-            RecentlyAdded = recentlyAdded
-        });
-    }
+    public async Task<IActionResult> GetStats(CancellationToken cancellationToken = default) =>
+        Ok(await _library.GetStatsAsync(cancellationToken));
 
     /// <summary>
     /// POST: api/library/retroactive-ignore
@@ -1718,27 +1362,9 @@ public class LibraryController : ControllerBase
             && (request.IsIgnoredSpecified || request.AdditionalFields?.Count > 0))
             return BadRequest(new { Message = "Integration tracking accepts only playStatus and userRating." });
 
-        var game = await _db.UnifiedGames.FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
-
-        if (game == null)
-            return NotFound(new { Message = $"Game with ID {id} not found" });
-
-        game.PlayStatus = request.PlayStatus;
-        game.UserRating = request.UserRating;
-        if (request.IsIgnored.HasValue) game.IsIgnored = request.IsIgnored.Value;
-        game.IsPlayStatusManual = true; // Lock it so syncs don't overwrite
-
-        await _db.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation("Updated personal tracking for game {Id}: Status={Status}, Rating={Rating}, IsIgnored={IsIgnored}",
-            id, request.PlayStatus, request.UserRating?.ToString() ?? "none", game.IsIgnored);
-
-        return Ok(new
-        {
-            Message = "Personal tracking updated successfully.",
-            game.PlayStatus,
-            game.UserRating
-        });
+        var result = await _library.UpdateTrackingAsync(id, request.PlayStatus, request.UserRating,
+            request.IsIgnored, cancellationToken);
+        return result is null ? NotFound(new { Message = $"Game with ID {id} not found" }) : Ok(result);
     }
 
     // =========================================================================

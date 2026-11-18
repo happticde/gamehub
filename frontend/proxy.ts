@@ -31,8 +31,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         }
         return NextResponse.next();
     }
+    if (path === "/mcp") return NextResponse.next();
     if (path === "/internal" || path.startsWith("/internal/")
-        || path === "/mcp" || path.startsWith("/.well-known/oauth")) {
+        || path.startsWith("/.well-known/oauth")) {
         return new NextResponse(null, { status: 404 });
     }
     const isLoginPage = request.nextUrl.pathname === "/login";
