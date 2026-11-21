@@ -416,7 +416,7 @@ if (mcpDeviceSettings.Enabled)
     {
         options.UseLocalServer();
         options.UseDataProtection().Configure(settings => settings.DataProtectionProvider = protocolKeys.Provider);
-    });
+    }, remoteAuthorization: managedMcpDeployment is not null);
     builder.Services.AddScoped<McpDeviceConsent>();
     builder.Services.AddScoped<McpBrowserConsent>();
     builder.Services.Configure<ForwardedHeadersOptions>(mcpDeviceSettings.ConfigureForwarding);
@@ -496,6 +496,7 @@ app.MapHealthChecks("/health");
 
 // --- Authentication & Authorization ---
 // The MVC attempt filter runs after authenticated identity and bounded model binding.
+if (managedMcpDeployment is not null) app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

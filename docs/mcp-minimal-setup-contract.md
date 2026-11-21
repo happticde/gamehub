@@ -139,10 +139,14 @@ login and transport until #80.
 The private `/mcp` route uses the MCP C# software development kit (SDK) in Core. It runs one
 server context per request and has no transport session identifier to share, expire, or restore
 after a restart. The SDK accepts legacy initialization and current discovery. Streaming responses
-and request cancellation use the existing gateway. The shipped Caddy site returns 404 for
-`/mcp` while remote authorization is pending. Core independently denies remote authentication
-even for requests bearing the generated gateway credential. The existing Docker client keeps its
-separate REST resource and grant.
+and request cancellation use the existing gateway. Core accepts an access token only for the
+exact `/mcp` resource and rechecks the owning grant, account, provider session, and token on
+every request. The generated gateway credential grants access to the private route. A separate
+user grant authorizes each operation. Core limits the transport to 16 concurrent requests per
+replica and returns 429 when that capacity is full. Tracking requires explicit write consent.
+Core checks it again inside the transaction that commits the update, using the same database
+locks as refresh and revocation. The existing Docker client uses its separate REST resource and
+grant. The shipped Caddy site returns 404 for `/mcp` until the remote release gate in #80.
 
 Core can stage the remote browser flow through the managed gateway. OpenIddict stores an
 encrypted, five-minute authorization request and issues a two-minute authorization code after
