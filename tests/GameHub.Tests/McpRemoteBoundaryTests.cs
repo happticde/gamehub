@@ -114,13 +114,25 @@ public sealed partial class McpDeviceStartupTests
             .Select(game => game.UserRating).SingleAsync();
         Assert.Equal(writeResponse.Contains("Personal tracking updated successfully.", StringComparison.Ordinal) ? 5 : 4,
             persistedRating);
+        var renewalBody = await renewal.Content.ReadFromJsonAsync<JsonElement>();
         if (renewal.IsSuccessStatusCode)
         {
-            var rotated = await renewal.Content.ReadFromJsonAsync<JsonElement>();
-            using var denied = await RemoteRequestAsync(gateway, rotated.GetProperty("access_token").GetString()!, "tools/list");
+            using var denied = await RemoteRequestAsync(gateway, renewalBody.GetProperty("access_token").GetString()!, "tools/list");
             Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
         }
-        else Assert.Equal(HttpStatusCode.BadRequest, renewal.StatusCode);
+        else
+        {
+            // PostgreSQL may abort the serializable refresh when the tracking write or logout wins the lock.
+            var error = renewalBody.GetProperty("error").GetString();
+            Assert.True((renewal.StatusCode, error) is (HttpStatusCode.BadRequest, "invalid_grant")
+                or (HttpStatusCode.ServiceUnavailable, "temporarily_unavailable"),
+                $"Unexpected renewal outcome: {(int)renewal.StatusCode} {error}");
+            Assert.False(renewalBody.TryGetProperty("access_token", out _));
+            Assert.False(renewalBody.TryGetProperty("refresh_token", out _));
+        }
+        using var afterRevocationRefresh = await gateway.PostAsync(McpDeviceProtocol.TokenPath, Form(("client_id", HermesId),
+            ("grant_type", "refresh_token"), ("resource", RemoteResource), ("refresh_token", write.Refresh)));
+        Assert.Equal(HttpStatusCode.BadRequest, afterRevocationRefresh.StatusCode);
         using var revoked = await RemoteRequestAsync(gateway, write.Access, "tools/list");
         Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
         using var afterLogout = await RemoteRequestAsync(gateway, write.Access, "tools/call",
