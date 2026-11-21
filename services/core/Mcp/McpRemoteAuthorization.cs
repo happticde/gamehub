@@ -21,6 +21,9 @@ internal static class McpRemoteAuthorization
 
     internal static void Configure(OpenIddictServerBuilder options, Uri issuer, McpRemoteResource resource)
     {
+        // The managed route advertises the native-client profile, not the shared device server's defaults.
+        options.SetConfigurationEndpointUris(Array.Empty<Uri>());
+        options.SetJsonWebKeySetEndpointUris(Array.Empty<Uri>());
         options.SetAuthorizationEndpointUris(McpRemoteResource.AuthorizationPath, McpRemoteResource.ConsentPath);
         options.AllowAuthorizationCodeFlow().RequireProofKeyForCodeExchange();
         options.RegisterResources(resource.Uri);
@@ -37,6 +40,7 @@ internal static class McpRemoteAuthorization
                     || !client.AllowsRedirect(context.Request.RedirectUri, client.RedirectUris)
                     || context.Request.ResponseType != ResponseTypes.Code
                     || (context.Request.ResponseMode is not null and not ResponseModes.Query)
+                    || (context.Request.Prompt is not null and not PromptValues.Consent)
                     || context.Request.CodeChallengeMethod != CodeChallengeMethods.Sha256
                     || context.Request.CodeChallenge is not { Length: 43 } challenge || !IsBase64Url(challenge)
                     || string.IsNullOrEmpty(context.Request.State) || !McpDeviceProtocol.AllowedScopes(context.Request.GetScopes())

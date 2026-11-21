@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
 using OpenIddict.Abstractions;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace GameHub.Core.Mcp;
 
@@ -33,20 +34,39 @@ internal static class PrivateMcpTransport
     }
 
     internal static void MapPrivateMcpTransport(this IEndpointRouteBuilder endpoints) =>
-        endpoints.MapMcp("/mcp").RequireAuthorization(ReadPolicy);
+        endpoints.MapMcp(McpRemoteResource.Path).RequireAuthorization(ReadPolicy);
 
     internal static bool HasRemotePermission(ClaimsPrincipal principal, string permission) =>
+        HasRemoteIdentity(principal) && principal.HasScope(permission);
+
+    private static bool HasRemoteIdentity(ClaimsPrincipal principal) =>
         principal.Identities.ToArray() is [{ IsAuthenticated: true, AuthenticationType: Scheme }]
         && principal.FindAll(GameHubClaimTypes.TenantId).ToArray() is [var tenant]
-        && Guid.TryParse(tenant.Value, out var tenantId) && tenantId != Guid.Empty
-        && principal.HasScope(permission);
+        && Guid.TryParse(tenant.Value, out var tenantId) && tenantId != Guid.Empty;
 
     // Production has no remote user validator until the exact-resource authorization path is ready.
     private sealed class UnavailableRemoteAuthentication(
-        IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
+        IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder,
+        McpRemoteResource resource)
         : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
         protected override Task<AuthenticateResult> HandleAuthenticateAsync() =>
             Task.FromResult(AuthenticateResult.NoResult());
+
+        protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+        {
+            var hasBearer = Request.Headers.Authorization.Any(value => value is not null
+                && (value.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
+                    || value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)));
+            McpRemoteDiscovery.SetReadChallenge(Response, resource, hasBearer ? Errors.InvalidToken : null);
+            return base.HandleChallengeAsync(properties);
+        }
+
+        protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
+        {
+            if (HasRemoteIdentity(Context.User) && !Context.User.HasScope(McpPermissions.LibraryRead))
+                McpRemoteDiscovery.SetReadChallenge(Response, resource, Errors.InsufficientScope);
+            return base.HandleForbiddenAsync(properties);
+        }
     }
 }

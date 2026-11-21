@@ -5,6 +5,9 @@ import { parseMcpRemoteStart } from "@/lib/mcp-remote-contract";
 /** Only exact protocol routes exposed by this gateway. The public edge keeps /mcp private. */
 export function isMcpGatewayRoute(path: string, method: string): boolean {
     if (path === "/mcp") return ["GET", "POST", "DELETE"].includes(method);
+    if (path === "/.well-known/oauth-protected-resource/mcp" || path === "/.well-known/oauth-authorization-server") {
+        return method === "GET";
+    }
     if (path === "/connect/authorize") return method === "GET";
     if (["/connect/device", "/connect/token", "/connect/revoke"].includes(path)) return method === "POST";
     if (method === "GET") return /^\/api\/library(?:\/(?:[1-9][0-9]*|random|stats|tags))?$/.test(path);
@@ -29,13 +32,13 @@ export async function forwardMcpRequest(request: Request): Promise<Response> {
         const authorize = url.pathname === "/connect/authorize";
         const authorization = request.headers.get("authorization");
         if (library && (!authorization || !/^Bearer [!-~]+$/.test(authorization))) return new Response(null, { status: 401 });
-        if (remote && authorization !== null && !/^Bearer [!-~]+$/i.test(authorization)) return new Response(null, { status: 401 });
+        const forwardAuthorization = library || (remote && /^Bearer(?: |$)/i.test(authorization ?? ""));
         if (!library && !authorize && url.search) return new Response(null, { status: 400 });
         if (authorize && url.search.length > 4096) return new Response(null, { status: 400 });
         const headers = new Headers(managedMcpHeaders(config));
         // Allowlist instead of deleting known dangerous headers: cookies, tenant selectors,
         // browser credentials, forwarding and supplied service keys can never enter Core.
-        for (const name of ["accept", "content-type", ...(library || remote ? ["authorization"] : []),
+        for (const name of ["accept", "content-type", ...(forwardAuthorization ? ["authorization"] : []),
             ...(remote ? ["origin", "mcp-protocol-version", "mcp-method", "mcp-name"] : [])]) {
             const value = request.headers.get(name);
             if (value) headers.set(name, value);
@@ -43,6 +46,8 @@ export async function forwardMcpRequest(request: Request): Promise<Response> {
         const destination = new URL(url.pathname + (library || authorize ? url.search : ""), config.core);
         const init: RequestInit & { duplex: "half" } = {
             method: request.method, headers, body: request.body, redirect: "manual", cache: "no-store",
+            // An upstream 401 must reach the client without Fetch trying to replay the streamed body.
+            credentials: "omit",
             signal: AbortSignal.any([request.signal, AbortSignal.timeout(15_000)]),
             // Node's native fetch requires duplex for an incoming streamed body.
             duplex: "half",
