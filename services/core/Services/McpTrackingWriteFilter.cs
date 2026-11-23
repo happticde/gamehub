@@ -13,6 +13,19 @@ namespace GameHub.Core.Services;
 internal sealed class McpValidatedIdentityFeature(ClaimsPrincipal principal)
 {
     internal ClaimsPrincipal Principal { get; } = principal.Clone();
+
+    internal bool MatchesRequest(ClaimsPrincipal request, string scheme)
+    {
+        if (request.Identities.ToArray() is not [{ IsAuthenticated: true } identity]
+            || identity.AuthenticationType != scheme) return false;
+        static string? One(ClaimsPrincipal principal, string type) =>
+            principal.FindAll(type).Select(claim => claim.Value).ToArray() is [var value] ? value : null;
+        foreach (var type in new[] { OpenIddictConstants.Claims.Subject,
+                     GameHubClaimTypes.TenantId, GameHubClaimTypes.AccountSessionId, GameHubClaimTypes.SessionVersion })
+            if (One(Principal, type) is not { } value || One(request, type) != value) return false;
+        return One(request, ClaimTypes.NameIdentifier) == One(Principal, OpenIddictConstants.Claims.Subject)
+            && request.GetScopes().SequenceEqual(Principal.GetScopes());
+    }
 }
 
 /// <summary>Commits personal tracking and final integration admission in one database transaction.</summary>
@@ -33,7 +46,7 @@ public sealed class McpTrackingWriteFilter(CoreContext db, ILogger<McpTrackingWr
         // A reconstructed library principal omits the token/authorization/resource metadata.
         // It cannot substitute for the original, successfully validated protocol identity.
         var validated = http.Features.Get<McpValidatedIdentityFeature>();
-        if (validated is null || !MatchesRequest(http.User, validated.Principal))
+        if (validated is null || !validated.MatchesRequest(http.User, McpAuthorization.IntegrationScheme))
         {
             context.Result = new ForbidResult(McpAuthorization.IntegrationScheme);
             return;
@@ -86,18 +99,5 @@ public sealed class McpTrackingWriteFilter(CoreContext db, ILogger<McpTrackingWr
             // Rollback does not reset tracked entities. No later filter may save partial work.
             if (!committed) db.ChangeTracker.Clear();
         }
-    }
-
-    private static bool MatchesRequest(ClaimsPrincipal request, ClaimsPrincipal protocol)
-    {
-        if (request.Identities.ToArray() is not [{ IsAuthenticated: true,
-                AuthenticationType: McpAuthorization.IntegrationScheme }]) return false;
-        string? One(ClaimsPrincipal principal, string type) =>
-            principal.FindAll(type).Select(claim => claim.Value).ToArray() is [var value] ? value : null;
-        foreach (var type in new[] { OpenIddictConstants.Claims.Subject,
-                     GameHubClaimTypes.TenantId, GameHubClaimTypes.AccountSessionId, GameHubClaimTypes.SessionVersion })
-            if (One(protocol, type) is not { } value || One(request, type) != value) return false;
-        return One(request, ClaimTypes.NameIdentifier) == One(protocol, OpenIddictConstants.Claims.Subject)
-            && request.GetScopes().SequenceEqual(protocol.GetScopes());
     }
 }

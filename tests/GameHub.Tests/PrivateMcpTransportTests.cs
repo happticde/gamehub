@@ -199,6 +199,50 @@ public sealed class PrivateMcpTransportTests
         Assert.Contains("First game", await ReadTextAsync(next, "search_library"));
     }
 
+    [Fact]
+    public async Task Transport_ConcurrentRequests_RejectOverflowAndRecoverWhenCallsFinish()
+    {
+        const int capacity = 16;
+        var query = new BlockNextQuery();
+        await using var database = new FixtureDatabase(query);
+        await database.SeedAsync();
+        await using var app = await StartAsync(database, authorizeFixture: true);
+        using var http = Connect(app, "owner-one-fixture");
+        query.Arm(capacity);
+        var pending = Enumerable.Range(0, capacity).Select(_ => CallAsync()).ToArray();
+        try
+        {
+            await query.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            using var overflow = await CallAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(HttpStatusCode.TooManyRequests, overflow.StatusCode);
+        }
+        finally
+        {
+            query.Release.SetResult();
+            foreach (var call in pending)
+            {
+                using var response = await call.WaitAsync(TimeSpan.FromSeconds(10));
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            }
+        }
+        await using var next = await CreateClientAsync(http, "2026-07-28");
+        Assert.Contains("First game", await ReadTextAsync(next, "search_library"));
+
+        async Task<HttpResponseMessage> CallAsync()
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+            {
+                Content = new StringContent(
+                    """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_library","arguments":{}}}""",
+                    Encoding.UTF8, "application/json")
+            };
+            request.Headers.Accept.ParseAdd("application/json");
+            request.Headers.Accept.ParseAdd("text/event-stream");
+            request.Headers.Add("Mcp-Protocol-Version", "2025-11-25");
+            return await http.SendAsync(request);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -243,6 +287,7 @@ public sealed class PrivateMcpTransportTests
         }
         var app = builder.Build();
         app.UseMiddleware<McpManagedGatewayMiddleware>();
+        app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapPrivateMcpTransport();
@@ -357,22 +402,24 @@ public sealed class PrivateMcpTransportTests
         private int _armed;
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        internal void Arm() => Interlocked.Exchange(ref _armed, 1);
+        internal void Arm(int count = 1) => Interlocked.Exchange(ref _armed, count);
 
         public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
             CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Exchange(ref _armed, 0) != 1) return result;
-            Entered.SetResult();
+            var remaining = Interlocked.Decrement(ref _armed);
+            if (remaining < 0) return result;
+            if (remaining == 0) Entered.SetResult();
             try
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                await Release.Task.WaitAsync(cancellationToken);
                 return result;
             }
             catch (OperationCanceledException)
             {
-                Cancelled.SetResult();
+                Cancelled.TrySetResult();
                 throw;
             }
         }

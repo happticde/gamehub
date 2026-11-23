@@ -168,7 +168,8 @@ public sealed partial class McpDeviceStartupTests
         Assert.Equal(trusted ? HttpStatusCode.OK : HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    private static async Task<(string Token, Guid Account)> SeedAsync(WebApplicationFactory<CoreContext> factory, Guid? tenant = null)
+    private static async Task<(string Token, Guid Account)> SeedAsync(WebApplicationFactory<CoreContext> factory,
+        Guid? tenant = null, string? gameTitle = null)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CoreContext>();
@@ -184,17 +185,21 @@ public sealed partial class McpDeviceStartupTests
         db.OidcProviderSessions.Add(new() { Id = Guid.NewGuid(), UserAccountId = owner.Id, TenantId = owner.TenantId,
             ExternalIdentityId = external, AccountSessionId = family,
             SessionKeyHash = OidcProviderSessionKey.Hash("https://provider.example", family.ToString()), CreatedAtUtc = DateTime.UtcNow });
+        using var tenantScope = scope.ServiceProvider.GetRequiredService<TenantExecutionContext>().BeginScope(owner.TenantId);
+        if (gameTitle is not null)
+            db.UnifiedGames.Add(new() { Title = gameTitle, Slug = "fixture-game" });
         await db.SaveChangesAsync();
         return (scope.ServiceProvider.GetRequiredService<JwtTokenService>().CreateToken(owner, family).AccessToken, owner.Id);
     }
 
-    private static async Task<HttpResponseMessage> VerifyAsync(HttpClient client, string token, string code, string action, string? confirmation = null)
+    private static async Task<HttpResponseMessage> VerifyAsync(HttpClient client, string token, string code,
+        string action, string? confirmation = null, string bffKey = StartupFixture.McpKey)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/connect/verify");
         var fields = new List<KeyValuePair<string, string>> { new("user_code", code), new("action", action) };
         if (confirmation is not null) fields.Add(new("confirmation", confirmation));
         request.Content = new FormUrlEncodedContent(fields);
-        request.Headers.Add(McpDeviceSettings.BffHeader, StartupFixture.McpKey);
+        request.Headers.Add(McpDeviceSettings.BffHeader, bffKey);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await client.SendAsync(request);
     }

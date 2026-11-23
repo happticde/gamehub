@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using GameHub.Core.Data;
+using GameHub.Core.Mcp;
 using GameHub.Shared.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -76,7 +77,7 @@ public static class McpAuthorization
     /// </summary>
     public static IServiceCollection AddMcpRestTokenValidation(
         this IServiceCollection services, McpRestResource resource,
-        Action<OpenIddictValidationBuilder> configure)
+        Action<OpenIddictValidationBuilder> configure, bool remoteAuthorization = false)
     {
         foreach (var uri in new[] { resource.Issuer, resource.Resource })
             if (!uri.IsAbsoluteUri || uri.Scheme != "https" || !string.IsNullOrEmpty(uri.UserInfo)
@@ -98,6 +99,8 @@ public static class McpAuthorization
                 configure(options);
                 options.SetIssuer(resource.Issuer);
                 options.AddAudiences(resource.Resource.AbsoluteUri);
+                // Each endpoint still requires its own single exact audience after validation.
+                if (remoteAuthorization) options.AddAudiences(McpRemoteResource.Create(resource).Uri.AbsoluteUri);
                 options.EnableTokenEntryValidation();
                 options.EnableAuthorizationEntryValidation();
                 options.UseAspNetCore();
@@ -115,7 +118,10 @@ public sealed class McpIntegrationAuthenticationHandler(
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var resource = Context.RequestServices.GetService<McpRestResource>();
-        if (resource is null) return AuthenticateResult.NoResult();
+        var remote = Scheme.Name == PrivateMcpTransport.Scheme
+            ? Context.RequestServices.GetService<McpRemoteResource>() : null;
+        if (resource is null || (Scheme.Name == PrivateMcpTransport.Scheme && remote is null))
+            return AuthenticateResult.NoResult();
         var header = Request.Headers.Authorization;
         if (header.Count != 1 || header[0] is not { } value
             || !value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
@@ -130,13 +136,13 @@ public sealed class McpIntegrationAuthenticationHandler(
                 OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
             if (!protocol.Succeeded || protocol.Principal is null
                 || !await Context.RequestServices.GetRequiredService<McpSessionValidationService>()
-                    .IsActiveAsync(protocol.Principal, resource, Context.RequestAborted))
+                    .IsActiveAsync(protocol.Principal, resource, remote, Context.RequestAborted))
                 return AuthenticateResult.Fail("Integration session unavailable.");
 
             // Rebuild one trusted identity: arbitrary protocol claims cannot add roles or a
             // competing tenant identity to the library request.
             var principal = protocol.Principal;
-            var identity = new ClaimsIdentity(McpAuthorization.IntegrationScheme);
+            var identity = new ClaimsIdentity(Scheme.Name);
             foreach (var type in new[] { OpenIddictConstants.Claims.Subject, GameHubClaimTypes.TenantId,
                          GameHubClaimTypes.AccountSessionId, GameHubClaimTypes.SessionVersion })
                 identity.AddClaim(new Claim(type, principal.FindFirstValue(type)!));
@@ -155,5 +161,31 @@ public sealed class McpIntegrationAuthenticationHandler(
             Logger.LogWarning("Integration authentication is unavailable.");
             return AuthenticateResult.Fail("Integration session unavailable.");
         }
+    }
+
+    /// <inheritdoc/>
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        if (Scheme.Name == PrivateMcpTransport.Scheme
+            && Context.RequestServices.GetService<McpRemoteResource>() is { } resource)
+        {
+            var hasBearer = Request.Headers.Authorization.Any(value => value is not null
+                && (value.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
+                    || value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)));
+            McpRemoteDiscovery.SetReadChallenge(Response, resource,
+                hasBearer ? OpenIddictConstants.Errors.InvalidToken : null);
+        }
+        return base.HandleChallengeAsync(properties);
+    }
+
+    /// <inheritdoc/>
+    protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        if (Scheme.Name == PrivateMcpTransport.Scheme
+            && Context.RequestServices.GetService<McpRemoteResource>() is { } resource
+            && Context.User.Identity?.AuthenticationType == Scheme.Name
+            && !Context.User.HasScope(McpPermissions.LibraryRead))
+            McpRemoteDiscovery.SetReadChallenge(Response, resource, OpenIddictConstants.Errors.InsufficientScope);
+        return base.HandleForbiddenAsync(properties);
     }
 }

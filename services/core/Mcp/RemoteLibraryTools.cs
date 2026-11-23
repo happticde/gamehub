@@ -58,18 +58,23 @@ internal sealed class RemoteLibraryTools(LibraryOperations library, IOptions<Jso
     [McpServerTool(Name = "set_play_status")]
     [Authorize(Policy = PrivateMcpTransport.TrackingPolicy)]
     [Description("Set a game's manual play status: Unplayed, Played, Playing, Completed, or Abandoned.")]
-    public async Task<string> SetPlayStatus(int gameId, string playStatus, CancellationToken cancellationToken) =>
-        Serialize(await library.UpdatePlayStatusAsync(gameId, Parse<PlayStatus>(playStatus), cancellationToken)
-            ?? throw new McpException($"Game with ID {gameId} not found."));
+    public async Task<string> SetPlayStatus(int gameId, string playStatus, McpRemoteTracking tracking,
+        CancellationToken cancellationToken)
+    {
+        var status = Parse<PlayStatus>(playStatus);
+        return Serialize(await tracking.WriteAsync(() => library.UpdatePlayStatusAsync(gameId, status, cancellationToken),
+            cancellationToken) ?? throw new McpException($"Game with ID {gameId} not found."));
+    }
 
     [McpServerTool(Name = "set_rating")]
     [Authorize(Policy = PrivateMcpTransport.TrackingPolicy)]
     [Description("Set a personal rating from 1 to 5, or clear it with null.")]
-    public async Task<string> SetRating(int gameId, int? rating, CancellationToken cancellationToken)
+    public async Task<string> SetRating(int gameId, int? rating, McpRemoteTracking tracking,
+        CancellationToken cancellationToken)
     {
         if (rating is < 1 or > 5) throw new McpException("Rating must be between 1 and 5, or null.");
-        return Serialize(await library.UpdateRatingAsync(gameId, rating, cancellationToken)
-            ?? throw new McpException($"Game with ID {gameId} not found."));
+        return Serialize(await tracking.WriteAsync(() => library.UpdateRatingAsync(gameId, rating, cancellationToken),
+            cancellationToken) ?? throw new McpException($"Game with ID {gameId} not found."));
     }
 
     private string Serialize(object value) => JsonSerializer.Serialize(value, json.Value.JsonSerializerOptions);

@@ -173,10 +173,11 @@ public sealed partial class McpDeviceStartupTests
         });
 
     private static async Task<HttpResponseMessage> ConsentAsync(HttpClient http, McpManagedState generated,
-        string? owner, string client, string pending, string action, string? proof = null)
+        string? owner, string client, string pending, string action, string? proof = null, bool allowTrackingWrite = false)
     {
         var fields = new List<KeyValuePair<string, string>> { new("client_id", client), new("request_uri", pending), new("action", action) };
         if (proof is not null) fields.Add(new("confirmation", proof));
+        if (allowTrackingWrite) fields.Add(new("allow_tracking_write", "true"));
         using var request = new HttpRequestMessage(HttpMethod.Post, McpRemoteResource.ConsentPath)
         { Content = new FormUrlEncodedContent(fields) };
         request.Headers.Add(McpDeviceSettings.BffHeader, generated.ConsentKey);
